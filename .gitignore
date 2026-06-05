@@ -1,0 +1,27 @@
+# Dependencies and build outputs
+node_modules/
+dist/
+build/
+target/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local clipboard/storage artifacts
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+blobs/
+clipboard-dumps/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
