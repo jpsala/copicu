@@ -34,9 +34,10 @@ Este documento no reemplaza `README.md`: el README es la entrada publica del rep
 - Visibilidad actual confirmada 2026-06-09 con `gh repo view`: `PUBLIC`.
 - El repo fue renombrado de `copyq-tauri` a `copicu`.
 - Metadata GitHub inicial cargada: descripcion y topics publicos.
+- Release Windows inicial creado: `v0.1.0-alpha.1`.
 - `README.md` raiz fue reescrito como README publico de producto.
 - `.env.example` existe como template publico para AI provider config.
-- `README.md`, `.env.example` y varios documentos nuevos aparecen como untracked en el worktree actual; antes de publicar hay que hacer commit limpio.
+- Commit publico inicial creado y pusheado: `1628ec0b24d330d381ca0b577aff43d4df8aef4f`.
 
 ## Decisiones Tomadas
 
@@ -232,6 +233,26 @@ Mejoras futuras:
 - agregar badges despues de CI/licencia/release;
 - agregar quickstart para usuarios no-dev cuando haya instalador;
 - agregar FAQ.
+
+## Releases
+
+### v0.1.0-alpha.1
+
+Estado: publicado como prerelease el 2026-06-09.
+
+Asset:
+
+- `Copicu_0.1.0_x64-setup.exe`
+- Tipo: instalador NSIS Windows x64, current-user install.
+- SHA256: `931DE5582DD6912AA0332CF51E751FA5B55D88085114A502CF610A3D74095266`.
+- URL: `https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.1`.
+
+Notas:
+
+- primer alpha publico Windows;
+- build dogfood/early-stage;
+- Windows es la plataforma primaria testeada para este release;
+- no presentarlo todavia como estable.
 
 ## Public-Ready Audit
 
