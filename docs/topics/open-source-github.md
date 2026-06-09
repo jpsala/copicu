@@ -14,6 +14,7 @@ triggers:
 primary_refs:
   - ../../README.md
   - ../../.env.example
+  - ../active-work/013-open-source-growth.md
   - ../PROJECT.md
   - ../topics/product-register.md
   - ../topics/ai-search-and-actions.md
@@ -190,19 +191,23 @@ Topics recomendados:
 
 Estado 2026-06-09: descripcion y topics aplicados al repo `jpsala/copicu`.
 
-## Archivos Publicos A Agregar
+## Archivos Publicos Agregados
 
-Pendientes recomendados:
+Agregados 2026-06-09:
 
-- `LICENSE` con MIT.
 - `CONTRIBUTING.md`.
 - `SECURITY.md`.
-- `CODE_OF_CONDUCT.md` opcional.
 - `.github/ISSUE_TEMPLATE/bug_report.md`.
 - `.github/ISSUE_TEMPLATE/feature_request.md`.
 - `.github/ISSUE_TEMPLATE/script_idea.md`.
 - `.github/pull_request_template.md`.
-- screenshots/gifs bajo un path publico documentado, por ejemplo `docs/assets/` o `.github/assets/`.
+- `docs/assets/README.md`.
+- `docs/assets/source-data/synthetic-clips.md`.
+
+Pendiente:
+
+- `CODE_OF_CONDUCT.md` si se decide formalizarlo.
+- screenshots/gifs bajo `docs/assets/`.
 
 ## README Publico
 
@@ -228,11 +233,67 @@ Contenido actual deseado:
 Mejoras futuras:
 
 - agregar screenshots del picker;
-- agregar gif de busqueda/paste;
+- agregar gif/video de busqueda/paste;
 - agregar gif o captura de AI command mode y Markdown output;
+- mantener explicacion honesta de performance para historiales grandes: Copicu no renderiza todo el historial en React; usa SQLite paginado + `@tanstack/react-virtual`; no prometer "no consume memoria" ni "items infinitos" sin benchmark;
 - agregar badges despues de CI/licencia/release;
 - agregar quickstart para usuarios no-dev cuando haya instalador;
 - agregar FAQ.
+
+## Growth / Promocion
+
+Plan vivo: `docs/active-work/013-open-source-growth.md`.
+
+Direccion:
+
+- primero convertir visitas al repo en instalaciones y reportes utiles;
+- despues publicar en canales tecnicos con demos visuales;
+- pedir feedback especifico sobre clipboard, paste, scripts y Windows edge cases;
+- evitar promocion generica sin screenshots/gifs ni quickstart claro.
+
+Canales recomendados:
+
+- GitHub repo, releases y topics como landing inicial;
+- Show HN cuando haya assets y mensaje claro;
+- Reddit con framing especifico por comunidad, no post duplicado;
+- Tauri/Rust/devtool communities con posts tecnicos;
+- Product Hunt/GitHub Pages mas adelante, cuando el producto y assets esten mas pulidos.
+
+Mensaje de performance recomendado:
+
+> Copicu is designed for large clipboard histories: SQLite keeps the history local and queryable, while TanStack Virtual keeps the picker from rendering thousands of rows at once.
+
+Evitar:
+
+- "no consume memoria";
+- "historial infinito";
+- "millones de items sin diferencia";
+- "CopyQ replacement" sin aclarar que es CopyQ-inspired, not CopyQ-compatible.
+
+## Public Demo Assets
+
+Decision 2026-06-09: usar demos reproducibles como parte del crecimiento open source.
+
+Tipos:
+
+- demos generadas/storyboard con Playwright + FFmpeg;
+- grabaciones reales de la app con app data aislada y datos sinteticos;
+- videos largos tipo YouTube para instalacion, first run y features por separado.
+
+Primer output generado:
+
+- `docs/assets/videos/copicu-synthetic-picker-demo.mp4`
+- `docs/assets/gifs/copicu-synthetic-picker-demo.gif`
+- `docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png`
+
+Reglas para cualquier demo publica:
+
+- no usar contenido real del clipboard;
+- no mostrar `.env`, DBs, blobs, logs privados ni rutas sensibles;
+- usar fixtures sinteticos versionados o generados;
+- marcar claramente cuando la demo sea sintetica;
+- para demos reales, correr Copicu con `COPICU_APP_DATA_DIR` aislado;
+- revisar frames/poster antes de linkear desde README o publicar.
 
 ### Agentic Development Context
 
@@ -298,7 +359,7 @@ Checklist antes de consolidar el repo publico:
 - [x] `.gitignore` cubre secretos, logs, data local, `.agents/` y build outputs.
 - [x] README no promete soporte estable; release marcado alpha/prerelease.
 - [x] LICENSE agregada.
-- [ ] CONTRIBUTING y SECURITY agregados o decision explicita de postergar.
+- [x] CONTRIBUTING y SECURITY agregados o decision explicita de postergar.
 - [x] GitHub description/topics definidos.
 - [x] Primer release/status alpha decidido.
 
@@ -314,8 +375,8 @@ Checklist antes de consolidar el repo publico:
 
 ## Proximo Corte Recomendado
 
-1. Agregar `CONTRIBUTING.md`, `SECURITY.md` y templates GitHub.
-2. Crear screenshots/gifs publicos del picker, Settings AI y AI command mode.
+1. Crear screenshots/gifs publicos del picker, Settings AI y AI command mode con datos sinteticos.
+2. Linkear el primer asset visual desde README.
 3. Agregar badges al README despues de definir CI/release workflow.
 4. Evaluar GitHub Pages cuando existan assets publicos.
 5. Crear workflow de release Windows reproducible.

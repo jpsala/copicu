@@ -6,6 +6,55 @@ Copicu started as a CopyQ-inspired clipboard manager, but the goal is not to clo
 
 The clipboard is usually treated as a passive list of things you copied. Copicu treats it as working memory: searchable, previewable, editable, taggable, scriptable, and reusable.
 
+![Synthetic Copicu picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
+
+## Install Windows Alpha
+
+Copicu currently ships as a Windows alpha prerelease.
+
+1. Download the latest Windows installer from [Releases](https://github.com/jpsala/copicu/releases).
+2. Run the `Copicu_*_x64-setup.exe` installer.
+3. Open Copicu and use the picker to search, copy, edit, tag, or paste synthetic/test clipboard items first.
+
+Current alpha release:
+
+- [v0.1.0-alpha.1](https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.1)
+- Asset: `Copicu_0.1.0_x64-setup.exe`
+- Windows x64 NSIS installer
+- SHA256: `931DE5582DD6912AA0332CF51E751FA5B55D88085114A502CF610A3D74095266`
+
+This is early software. Do not test with sensitive clipboard content until you are comfortable with the alpha limitations and local data model.
+
+## Alpha Limitations
+
+Copicu is usable for experimentation and dogfooding, but it is not stable software yet.
+
+Known limitations:
+
+- Windows is the primary tested platform right now.
+- APIs, settings, script contracts, and UI behavior can still change.
+- Paste-to-previous-window depends on Windows focus behavior, target apps, timing, and paste shortcuts.
+- Scripts are trusted local automation, not a secure sandbox or marketplace.
+- AI is optional and disabled by default; selected-content AI actions may send selected clipboard content to the configured provider.
+- Rich clipboard formats are still evolving. Text and image-only capture exist, but full HTML/RTF/custom-format fidelity is not a compatibility promise.
+- Copicu is CopyQ-inspired, not CopyQ-compatible. It does not run CopyQ scripts or promise full CopyQ parity.
+
+Good alpha feedback includes Windows version, target app, install method, Copicu version or commit, exact steps, and synthetic reproduction data.
+
+## What To Test And Report
+
+The most useful alpha reports are narrow and reproducible:
+
+- clipboard capture from common Windows apps;
+- paste-to-previous-window behavior in specific target apps;
+- shortcut, tray, hide/show, and focus behavior;
+- picker search, keyboard navigation, and preview readability;
+- script/action ideas that would save real daily effort;
+- AI command mode friction, using only synthetic or non-sensitive clips;
+- performance symptoms with large synthetic histories.
+
+Please do not paste real clipboard payloads into issues. Reduce examples to synthetic data.
+
 ## Why Copicu Exists
 
 Power users copy useful fragments all day:
@@ -87,6 +136,16 @@ The main surface is the picker:
 - run actions from item menus or the command palette.
 
 The UI should feel fast, discreet, precise, and useful immediately. Motion and polish are used to clarify state and focus, not to decorate the app.
+
+## Large Histories
+
+Copicu is designed for large clipboard histories without treating the picker like a giant DOM list.
+
+The current architecture uses SQLite for local history/metadata and paginated queries, while `@tanstack/react-virtual` keeps the picker from rendering thousands of rows in React at once. The UI renders only the visible rows plus a small overscan buffer.
+
+This is a design direction, not an unlimited-history benchmark claim. Storage size, indexes, blob payloads, thumbnails, retention policy, preview generation, and query shape still matter. Copicu should handle thousands of items more gracefully than a fully rendered React list, but public benchmarks are still needed before making stronger claims.
+
+Current local synthetic benchmark work measures paged search over generated test data, not real clipboard payloads. On one 10k-item synthetic dataset, skipping result-count recalculation for incremental page loads roughly halved some query timings. That is useful engineering evidence, but it is not a broad performance guarantee.
 
 ## Scripts And Actions
 
@@ -248,6 +307,7 @@ Common commands:
 npm install
 npm run build
 npm run visual:check
+npm run perf:history -- 10000
 npm run rust:test
 npm run tauri:dev
 ```
@@ -313,6 +373,7 @@ Internal project docs:
 
 Contributions are welcome, especially around:
 
+- public screenshots and gifs with synthetic data;
 - clipboard capture reliability;
 - Windows focus and paste behavior;
 - rich MIME, HTML, RTF, and image handling;
@@ -326,7 +387,7 @@ Contributions are welcome, especially around:
 - packaging and releases;
 - docs, tests, and examples.
 
-Before starting a large feature, open an issue or discussion. Copicu is CopyQ-inspired, but not aiming for full CopyQ parity by default.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Before starting a large feature, open an issue or discussion. Copicu is CopyQ-inspired, but not aiming for full CopyQ parity by default.
 
 ## Name
 

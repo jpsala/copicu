@@ -1,0 +1,6 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Copicu documentation
+    url: https://github.com/jpsala/copicu#readme
+    about: Start with the README and linked docs.
+

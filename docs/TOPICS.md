@@ -31,7 +31,8 @@ primary_refs:
 | --- | --- | --- |
 | Producto, MVP, CopyQ, alcance, recomendaciones | [Direccion de producto](topics/product-direction.md) | Resume la direccion inicial y donde mirar. |
 | Product register, personalidad visual, anti-referencias, principios de diseño | [Product Register](topics/product-register.md) | Brief compacto de audiencia, tono, anti-referencias y principios UI/producto. |
-| Open source, GitHub publico, README publico, web del proyecto, contributors | [Open Source And GitHub](topics/open-source-github.md) | Decisiones y checklist para publicar el repo, web inicial, metadata GitHub, archivos OSS y audit previo. |
+| Open source, GitHub publico, README publico, web del proyecto, contributors, promocion, growth, Show HN | [Open Source And GitHub](topics/open-source-github.md), [Open Source Growth](active-work/013-open-source-growth.md) | Decisiones y checklist para publicar el repo, web inicial, metadata GitHub, archivos OSS, audit previo y plan de promocion. |
+| Performance, memoria, consumo, idle, velocidad, historiales grandes, benchmarks | [Performance And Memory](topics/performance-and-memory.md), [Performance Active Work](active-work/014-performance-memory.md) | Prioridad de optimizaciones, dev vs produccion, payload del feed, thumbnails, polling, busqueda, scripts y bundle. |
 | Como hace algo CopyQ, baseline tecnico, comportamiento de Enter/paste, copycube | [CopyQ Technical Baseline](topics/copyq-technical-baseline.md) | Fuentes y patterns de CopyQ para consultar antes de reinventar flujos. |
 | Ambicion Copicu, plugins, AI, metadata, busqueda potente | [Ambicion de producto](topics/product-ambition.md) | Define que se quiere construir por encima del baseline CopyQ. |
 | Filtering, filtros, query syntax, busqueda local potente, FTS | [Filtering And Query Syntax](topics/filtering-and-query-syntax.md) | Contrato deterministico de busqueda local y filtros; base para picker, actions y AI planner. |
