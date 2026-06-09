@@ -170,6 +170,28 @@ Incidente dev observado:
 - via WebView2 CDP se vio `#root` vacio y Vite sirviendo `504 Outdated Optimize Dep` para dependencias optimizadas;
 - recargar WebViews por CDP resolvio el montaje; si vuelve a pasar, reiniciar `npm run tauri:dev` o limpiar cache de Vite antes de asumir bug de React.
 
+Decimotercer corte aplicado:
+
+- documentada politica multi-monitor en `docs/topics/window-state-and-monitor-policy.md`;
+- agregado registry compartido `src-tauri/src/window_state.rs`;
+- `main`, `settings` y `ai-output` son redimensionables y persisten bounds por monitor;
+- `ui-host`, `notifications` y `whichkey` quedan opt-out por ser superficies fijas/posicionadas;
+- el picker `main` restaura contra el monitor del cursor al abrir;
+- las ventanas document restauran contra monitor actual/primario y ajustan bounds al `workArea` si el monitor guardado no esta disponible;
+- `CustomWindowFrame` agrego handles compartidos de resize con `startResizeDragging`;
+- `tauri.conf.json` vuelve a `resizable: true` para `main`;
+- `default.json` agrega `core:window:allow-start-resize-dragging`.
+
+Checks iniciales pasaron:
+
+- `npm run build`;
+- `cargo check` con `CARGO_TARGET_DIR=target-codex-check`.
+
+Validacion posterior:
+
+- `npm run visual:check` y un subset focalizado (`shell loads`, `settings panel`) fallaron por el incidente conocido de Vite/WebView: `root still empty`, `@vite/client` lento y `page.goto` timeout/abort. No hubo assertion especifica de overflow/resize del cambio.
+- `npm run dev:restart` dejo la app viva en `src-tauri\target\debug\copicu.exe`, con `renderer: module-load`, heartbeat y shortcuts registrados.
+
 ## Diagnostico Inicial
 
 El picker ya tiene valor funcional, pero la composicion visual sigue arrastrando decisiones de MVP:

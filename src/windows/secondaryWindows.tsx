@@ -1,0 +1,2461 @@
+import {
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
+import { Menu, Tabs } from "@mantine/core";
+import { invoke } from "@tauri-apps/api/core";
+import { LogicalSize } from "@tauri-apps/api/dpi";
+import { emitTo, listen, type Event } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import Pin from "lucide-react/dist/esm/icons/pin.mjs";
+import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
+import Plus from "lucide-react/dist/esm/icons/plus.mjs";
+import Search from "lucide-react/dist/esm/icons/search.mjs";
+import Terminal from "lucide-react/dist/esm/icons/terminal.mjs";
+import X from "lucide-react/dist/esm/icons/x.mjs";
+import {
+  applyCopicuAppearance,
+  THEME_PRESET_OPTIONS,
+  THEME_PRESET_SEARCH_TEXT,
+  type ThemeId,
+  type ThemeSetting,
+} from "../themeCatalog";
+import {
+  UiAlert,
+  UiBadge,
+  UiButton,
+  UiIconButton,
+  UiKbd,
+  UiLoader,
+  UiNumberInput,
+  UiPaper,
+  UiSelect,
+  UiSwitch,
+  UiTextInput,
+  UiTextarea,
+  UiTooltip,
+} from "../ui/controls";
+import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
+
+
+type TagSummary = {
+  id: number;
+  slug: string;
+  label: string;
+  color: string | null;
+  pinned: boolean;
+  sortOrder: number | null;
+  itemCount: number;
+  autoApplyEnabled: boolean;
+};
+
+type CreateTagRequest = {
+  label: string;
+  color?: string | null;
+};
+
+type UpdateTagConfigRequest = {
+  tagId: number;
+  label?: string | null;
+  color?: string | null;
+  pinned?: boolean;
+  sortOrder?: number | null;
+  hotkey?: string | null;
+  autoApplyEnabled?: boolean;
+};
+
+type SetItemTagsRequest = {
+  itemId: number;
+  tags: string[];
+};
+
+type HistoryItem = {
+  id: number;
+  content_kind: "text" | string;
+  text: string;
+  preview_text: string;
+  text_char_count: number;
+  mime_primary: string | null;
+  thumbnail_data_url: string | null;
+  created_at_unix_ms: number;
+  last_used_at_unix_ms: number | null;
+  use_count: number;
+  content_hash: string;
+  title: string | null;
+  tags: string | null;
+  notes: string | null;
+  is_marked: boolean;
+};
+
+type ActivateItemRequest = {
+  itemId: number;
+  copy: boolean;
+  markUsed: boolean;
+  hidePicker: boolean;
+  focusPrevious: boolean;
+  paste: boolean;
+  pasteShortcut: "default" | "shiftInsert" | "ctrlV";
+};
+
+type ActionTrigger =
+  | "itemMenu"
+  | "commandPalette"
+  | "localShortcut"
+  | "globalShortcut"
+  | "clipboardChange"
+  | "tray"
+  | "cli"
+  | "devRun";
+
+type SelectionRequirement = "none" | "optional" | "one" | "oneOrMore" | "many";
+type ActionInputSource = "pickerSelection" | "clipboard" | "historySearch" | "none";
+type ClipKind = "text" | "html" | "image" | "fileList" | "unknown";
+
+type ActionInput = {
+  source: ActionInputSource;
+  selection: SelectionRequirement;
+  kinds: ClipKind[] | null;
+  mime: string[] | null;
+  query: string | null;
+};
+
+type ActionDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  shortcut?: string | null;
+  triggers: ActionTrigger[];
+  input: ActionInput;
+  capabilities: string[];
+  builtin: boolean;
+  source: "builtin" | "script";
+  script: {
+    path: string;
+    fileName: string;
+    sourceHash: string;
+  } | null;
+  diagnostics: Array<{
+    severity: "info" | "warning" | "error";
+    message: string;
+  }>;
+  logging: {
+    name: string | null;
+    redact: boolean;
+  } | null;
+};
+
+type ActionContext = {
+  trigger: ActionTrigger;
+  shortcut: string | null;
+  currentItemId: number | null;
+  selectedItemIds: number[];
+  view: {
+    query: string;
+    visibleItemIds: number[];
+    currentIndex: number | null;
+  } | null;
+};
+
+type AiScriptContext = {
+  currentQuery: string;
+  visibleItemIds: number[];
+  currentItemId: number | null;
+  selectedItemIds: number[];
+};
+
+type RunActionRequest = {
+  actionId: string;
+  context: ActionContext;
+};
+
+type ActionRunResult = {
+  actionId: string;
+  status: "completed" | "failed";
+  message: string;
+  toasts?: ToastOptions[];
+  effects?: ActionEffect[];
+};
+
+type ActionEffect = {
+  type: "picker.filter";
+  query: string;
+};
+
+type ToastTone = "info" | "success" | "warning" | "danger";
+
+type ToastOptions = {
+  title?: string;
+  message: string;
+  tone?: ToastTone;
+  durationMs?: number;
+};
+
+type ToastItem = Required<Pick<ToastOptions, "message" | "tone" | "durationMs">> &
+  Pick<ToastOptions, "title"> & {
+    id: number;
+  };
+
+type CompoundHotkeyPendingEvent = {
+  prefixLabel: string;
+  nextSteps: string[];
+  entries?: WhichKeyEntry[];
+  expiresAtUnixMs?: number;
+};
+
+type WhichKeyEntry = {
+  key: string;
+  label: string;
+  group: string;
+  routeId: string;
+  disabled: boolean;
+  diagnostic?: string | null;
+};
+
+type WhichKeyState = {
+  prefix: string;
+  entries: WhichKeyEntry[];
+  expiresAtUnixMs: number;
+  visible: boolean;
+};
+
+type UiHostRequest = {
+  id: string;
+  kind: "alert" | "confirm" | "input";
+  title: string;
+  body: string;
+  confirmLabel?: string | null;
+  cancelLabel?: string | null;
+  placeholder?: string | null;
+  defaultValue?: string | null;
+  submitLabel?: string | null;
+};
+
+type MarkdownOutputPayload = {
+  title: string;
+  markdown: string;
+  summary?: string | null;
+  source?: string | null;
+  suggestedFileName?: string | null;
+};
+
+type ActivationOptions = Omit<ActivateItemRequest, "itemId">;
+type EnterAction = "copy" | "paste";
+
+type AppSettings = {
+  schemaVersion: 1;
+  general: {
+    globalShortcut: string;
+    launchOnStartup: boolean;
+  };
+  picker: {
+    hideOnFocusLost: boolean;
+    enterAction: EnterAction;
+  };
+  history: {
+    retentionCount: number;
+  };
+  appearance: {
+    theme: ThemeSetting;
+    themeId: ThemeId;
+  };
+  scripts: {
+    folderPath: string;
+  };
+  ai: {
+    enabled: boolean;
+    endpoint: string;
+    model: string;
+  };
+};
+
+type UpdateHistoryItemRequest = {
+  id: number;
+  text: string;
+  title: string | null;
+  notes: string | null;
+  tags: string | null;
+  mimePrimary: string | null;
+  marked?: boolean | null;
+};
+
+type SetHistoryItemsMarkedRequest = {
+  ids: number[];
+  marked: boolean;
+};
+
+type SetHistoryQueryMarkedRequest = {
+  query: string;
+  marked: boolean;
+};
+
+
+const DEFAULT_TOAST_DURATION_MS = 3600;
+const STICKY_TOAST_DURATION_MS = 0;
+const WHICHKEY_REVEAL_DELAY_MS = 300;
+const NOTIFICATIONS_WINDOW_LABEL = "notifications";
+const UI_HOST_WINDOW_LABEL = "ui-host";
+const SETTINGS_WINDOW_LABEL = "settings";
+const AI_OUTPUT_WINDOW_LABEL = "ai-output";
+const WHICHKEY_WINDOW_LABEL = "whichkey";
+const NOTIFICATION_TOAST_EVENT = "copicu://toast";
+const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
+const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
+const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
+const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
+const PICKER_FILTER_EVENT = "copicu://picker/filter";
+const HISTORY_CHANGED_EVENT = "copicu://history/changed";
+const NOTIFICATIONS_WINDOW_WIDTH = 340;
+const NOTIFICATION_ROW_HEIGHT = 78;
+const NOTIFICATIONS_WINDOW_CHROME = 10;
+const NOTIFICATIONS_WINDOW_MAX_HEIGHT = 430;
+const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
+  "history:read-content",
+  "history:search",
+  "history:write-metadata",
+  "history:delete",
+  "clipboard:read",
+  "clipboard:write",
+  "ui:toast",
+  "ui:notify",
+  "ui:alert",
+  "ui:confirm",
+  "ui:input",
+  "ui:markdown-output",
+  "log:write",
+  "commands:run",
+  "picker:open",
+  "picker:filter",
+  "picker:activate",
+  "picker:show",
+  "picker:hide",
+  "window:remember-previous",
+  "window:focus-previous",
+  "input:paste",
+]);
+
+const DEFAULT_SETTINGS: AppSettings = {
+  schemaVersion: 1,
+  general: {
+    globalShortcut: "Ctrl+Shift+,",
+    launchOnStartup: false,
+  },
+  picker: {
+    hideOnFocusLost: true,
+    enterAction: "copy",
+  },
+  history: {
+    retentionCount: 0,
+  },
+  appearance: {
+    theme: "system",
+    themeId: "default",
+  },
+  scripts: {
+    folderPath: "Documents\\Copicu\\Scripts",
+  },
+  ai: {
+    enabled: false,
+    endpoint: "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4.1-mini",
+  },
+};
+
+function normalizeRetentionCount(value: number | string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+  if (value === 0) {
+    return 0;
+  }
+  return Math.min(100000, Math.max(100, Math.round(value)));
+}
+
+function activateHostItem(request: ActivateItemRequest) {
+  return invoke("activate_item", { request });
+}
+
+function applyAppearance(appearance: AppSettings["appearance"]) {
+  applyCopicuAppearance(document.documentElement, appearance);
+}
+
+
+function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
+  return invoke("set_history_items_marked", { request });
+}
+
+function setHistoryQueryMarked(request: SetHistoryQueryMarkedRequest) {
+  return invoke("set_history_query_marked", { request });
+}
+
+function listActions() {
+  return invoke<ActionDefinition[]>("list_actions");
+}
+
+function listTags() {
+  return invoke<TagSummary[]>("list_tags");
+}
+
+function createTag(request: CreateTagRequest) {
+  return invoke<TagSummary>("create_tag", { request });
+}
+
+function updateTagConfig(request: UpdateTagConfigRequest) {
+  return invoke<TagSummary>("update_tag_config", { request });
+}
+
+function setItemTags(request: SetItemTagsRequest) {
+  return invoke<void>("set_item_tags", { request });
+}
+
+function countMarkedHistoryItems() {
+  return invoke<number>("count_marked_history_items");
+}
+
+function runHostAction(request: RunActionRequest) {
+  return invoke<ActionRunResult>("run_action", { request });
+}
+
+function handleCompoundHotkeyStep(shortcut: string) {
+  return invoke<{
+    handled: boolean;
+    pending: boolean;
+    executed: boolean;
+    diagnostic: string | null;
+  }>("handle_compound_hotkey_step", { request: { shortcut } });
+}
+
+function clearCompoundHotkeyPending() {
+  return invoke("clear_compound_hotkey_pending");
+}
+
+function hideWhichKeyWindow() {
+  return invoke("hide_whichkey_window");
+}
+
+function getCompoundHotkeyPending() {
+  return invoke<CompoundHotkeyPendingEvent | null>("get_compound_hotkey_pending");
+}
+
+function openSettingsWindow() {
+  return invoke("open_settings_window");
+}
+
+function showPicker() {
+  return invoke("show_picker");
+}
+
+function openPickerForTag(slug: string) {
+  return invoke("open_picker_for_tag", { slug });
+}
+
+function closeSettingsWindow() {
+  return invoke("close_settings_window");
+}
+
+function positionNotificationsWindow() {
+  return invoke("position_notifications_window");
+}
+
+
+type RendererDiagnosticMode = "off" | "errors" | "debug";
+type RendererDiagnosticLevel = "error" | "debug";
+
+function rendererDiagnosticMode(): RendererDiagnosticMode {
+  const rawOverride =
+    new URLSearchParams(window.location.search).get("copicuDiagnostics") ??
+    window.localStorage?.getItem("copicuDiagnostics") ??
+    import.meta.env.VITE_COPICU_RENDERER_DIAGNOSTICS;
+  const override = rawOverride?.trim().toLocaleLowerCase();
+  if (override === "debug" || override === "true" || override === "1") {
+    return "debug";
+  }
+  if (override === "errors" || override === "error") {
+    return "errors";
+  }
+  if (override === "off" || override === "false" || override === "0") {
+    return "off";
+  }
+  return import.meta.env.DEV ? "debug" : "errors";
+}
+
+function rendererDebugDiagnosticsEnabled() {
+  return rendererDiagnosticMode() === "debug";
+}
+
+function recordRendererDiagnostic(
+  event: string,
+  detail?: string,
+  level: RendererDiagnosticLevel = "debug",
+) {
+  if (!isTauriRuntime()) {
+    return Promise.resolve();
+  }
+  const mode = rendererDiagnosticMode();
+  if (mode === "off" || (mode === "errors" && level !== "error")) {
+    return Promise.resolve();
+  }
+  return invoke("record_renderer_diagnostic", {
+    event,
+    detail: detail ?? null,
+  }).catch((error) => {
+    console.warn("renderer diagnostic failed", error);
+  });
+}
+
+function resolveUiHostRequest(id: string, value: unknown) {
+  return invoke("resolve_ui_host_request", {
+    request: {
+      id,
+      value,
+    },
+  });
+}
+
+function openMarkdownOutput(payload: MarkdownOutputPayload) {
+  return invoke("open_markdown_output", { payload });
+}
+
+function copyMarkdownOutput(markdown: string) {
+  return invoke("copy_markdown_output", { markdown });
+}
+
+function addMarkdownOutputToHistory(markdown: string) {
+  return invoke<number>("add_markdown_output_to_history", { markdown });
+}
+
+function exportMarkdownOutput(payload: MarkdownOutputPayload) {
+  return invoke<string>("export_markdown_output", { payload });
+}
+
+function isTauriRuntime() {
+  return Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+}
+
+function currentWindowLabel() {
+  const devWindowLabel = new URLSearchParams(window.location.search).get("window");
+  if (import.meta.env.DEV && devWindowLabel) {
+    return devWindowLabel;
+  }
+
+  if (!isTauriRuntime()) {
+    return "main";
+  }
+
+  try {
+    return getCurrentWindow().label;
+  } catch {
+    return "main";
+  }
+}
+
+const IS_NOTIFICATIONS_WINDOW = currentWindowLabel() === NOTIFICATIONS_WINDOW_LABEL;
+const IS_UI_HOST_WINDOW = currentWindowLabel() === UI_HOST_WINDOW_LABEL;
+const IS_SETTINGS_WINDOW = currentWindowLabel() === SETTINGS_WINDOW_LABEL;
+const IS_AI_OUTPUT_WINDOW = currentWindowLabel() === AI_OUTPUT_WINDOW_LABEL;
+const IS_WHICHKEY_WINDOW = currentWindowLabel() === WHICHKEY_WINDOW_LABEL;
+
+if (isTauriRuntime()) {
+  recordRendererDiagnostic("module-load", `label=${currentWindowLabel()}`);
+  window.addEventListener("error", (event) => {
+    recordRendererDiagnostic(
+      "window-error",
+      `${event.message} ${event.filename}:${event.lineno}:${event.colno}`,
+      "error",
+    );
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    recordRendererDiagnostic("unhandled-rejection", String(event.reason), "error");
+  });
+  if (rendererDebugDiagnosticsEnabled()) {
+    window.addEventListener("focus", () => {
+      recordRendererDiagnostic("window-focus", `label=${currentWindowLabel()}`);
+    });
+    window.addEventListener("blur", () => {
+      recordRendererDiagnostic("window-blur", `label=${currentWindowLabel()}`);
+    });
+    document.addEventListener("visibilitychange", () => {
+      recordRendererDiagnostic(
+        "visibility",
+        `label=${currentWindowLabel()} state=${document.visibilityState}`,
+      );
+    });
+    window.setInterval(() => {
+      const active = document.activeElement;
+      recordRendererDiagnostic(
+        "heartbeat",
+        `label=${currentWindowLabel()} visibility=${document.visibilityState} active=${active?.tagName ?? "none"}:${active?.getAttribute("aria-label") ?? active?.getAttribute("placeholder") ?? ""}`,
+      );
+    }, 2000);
+  }
+}
+
+
+function WhichKeyPanel({ state }: { state: WhichKeyState }) {
+  const groups = new Map<string, WhichKeyEntry[]>();
+  for (const entry of state.entries) {
+    const group = entry.group || "Shortcuts";
+    groups.set(group, [...(groups.get(group) ?? []), entry]);
+  }
+
+  return (
+    <>
+      <div className="whichkey-header">
+        <span>{state.prefix}</span>
+        <strong>Next key</strong>
+      </div>
+      <div className="whichkey-groups">
+        {Array.from(groups, ([group, entries]) => (
+          <section key={group} className="whichkey-group">
+            <h2>{group}</h2>
+            <div className="whichkey-entry-list">
+              {entries.map((entry) => (
+                <div
+                  key={`${entry.routeId}-${entry.key}`}
+                  className={`whichkey-entry${entry.disabled ? " is-disabled" : ""}`}
+                >
+                  <UiKbd>{entry.key}</UiKbd>
+                  <span>{entry.label}</span>
+                  {entry.diagnostic ? <em>{entry.diagnostic}</em> : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
+export function WhichKeyWindowApp() {
+  const [state, setState] = useState<WhichKeyState | null>(null);
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
+  const armedAtRef = useRef<number>(0);
+
+  const hideWindow = useCallback(() => {
+    void hideWhichKeyWindow().catch((error) => {
+      console.warn("whichkey hide failed", error);
+    });
+  }, []);
+
+  const clearAndHide = useCallback(() => {
+    void clearCompoundHotkeyPending().finally(hideWindow);
+  }, [hideWindow]);
+
+  const syncPending = useCallback(() => {
+    void getCompoundHotkeyPending()
+      .then((pending) => {
+        if (!pending) {
+          recordRendererDiagnostic("whichkey-sync", "pending=none");
+          setState(null);
+          armedAtRef.current = 0;
+          hideWindow();
+          return;
+        }
+        const entries =
+          pending.entries && pending.entries.length > 0
+            ? pending.entries
+            : pending.nextSteps.map((step) => ({
+                key: step,
+                label: `Press ${step}`,
+                group: "Shortcuts",
+                routeId: step,
+                disabled: false,
+                diagnostic: null,
+              }));
+        setState({
+          prefix: pending.prefixLabel,
+          entries,
+          expiresAtUnixMs: pending.expiresAtUnixMs ?? Date.now() + 3000,
+          visible: true,
+        });
+        recordRendererDiagnostic(
+          "whichkey-sync",
+          `pending=${pending.prefixLabel} entries=${entries.length}`,
+        );
+        if (armedAtRef.current === 0) {
+          armedAtRef.current = Date.now() + 250;
+        }
+      })
+      .catch((error) => {
+        setDiagnostic(String(error));
+      });
+  }, [hideWindow]);
+
+  useEffect(() => {
+    document.body.classList.add("whichkey-window");
+    return () => {
+      document.body.classList.remove("whichkey-window");
+    };
+  }, []);
+
+  useEffect(() => {
+    syncPending();
+    let unlisten: (() => void) | null = null;
+    const interval = rendererDebugDiagnosticsEnabled()
+      ? window.setInterval(syncPending, 150)
+      : null;
+    void listen<CompoundHotkeyPendingEvent>(COMPOUND_HOTKEY_PENDING_EVENT, () => {
+      syncPending();
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+    window.addEventListener("focus", syncPending);
+    return () => {
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+      unlisten?.();
+      window.removeEventListener("focus", syncPending);
+    };
+  }, [syncPending]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        clearAndHide();
+        return;
+      }
+
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+
+      if (!state || Date.now() < armedAtRef.current) {
+        return;
+      }
+
+      const shortcut = compoundShortcutFromKeyboardEvent(event);
+      if (!shortcut) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      void handleCompoundHotkeyStep(shortcut)
+        .then((response) => {
+          if (!response.pending) {
+            setState(null);
+            armedAtRef.current = 0;
+            if (response.diagnostic) {
+              setDiagnostic(response.diagnostic);
+              window.setTimeout(hideWindow, 500);
+            } else {
+              hideWindow();
+            }
+            return;
+          }
+          syncPending();
+        })
+        .catch((error) => {
+          setDiagnostic(String(error));
+          window.setTimeout(() => clearAndHide(), 700);
+        });
+    };
+
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+    };
+  }, [clearAndHide, hideWindow, state, syncPending]);
+
+  return (
+    <main className="whichkey-app">
+      <section className="whichkey-window-panel" aria-label="WhichKey shortcuts">
+        {state ? <WhichKeyPanel state={state} /> : (
+          <div className="whichkey-empty">
+            {diagnostic ?? "Waiting for shortcut"}
+          </div>
+        )}
+        {diagnostic && state ? <p className="whichkey-diagnostic">{diagnostic}</p> : null}
+      </section>
+    </main>
+  );
+}
+
+export function SettingsWindowApp() {
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [draft, setDraft] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
+  const [tags, setTags] = useState<TagSummary[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const nextToastIdRef = useRef(1);
+
+  const actionSummary = useMemo(() => {
+    const builtinCount = actionDefinitions.filter((action) => action.source === "builtin").length;
+    const scriptCount = actionDefinitions.filter((action) => action.source === "script").length;
+    const diagnosticCount = actionDefinitions.reduce(
+      (count, action) => count + action.diagnostics.length,
+      0,
+    );
+    return { builtinCount, scriptCount, diagnosticCount };
+  }, [actionDefinitions]);
+  const scriptActions = useMemo(
+    () => actionDefinitions.filter((action) => action.source === "script"),
+    [actionDefinitions],
+  );
+  const tagSummary = useMemo(() => {
+    const pinnedCount = tags.filter((tag) => tag.pinned).length;
+    const itemCount = tags.reduce((count, tag) => count + tag.itemCount, 0);
+    return { pinnedCount, itemCount };
+  }, [tags]);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  const pushToast = useCallback(
+    ({
+      title,
+      message,
+      tone = "info",
+      durationMs = DEFAULT_TOAST_DURATION_MS,
+    }: ToastOptions) => {
+      const id = nextToastIdRef.current++;
+      const toast = {
+        id,
+        title,
+        message,
+        tone,
+        durationMs,
+      };
+
+      setToasts((current) => [...current, toast]);
+      if (durationMs > 0) {
+        window.setTimeout(() => dismissToast(id), durationMs);
+      }
+    },
+    [dismissToast],
+  );
+
+  const closeWindow = useCallback(() => {
+    if (isTauriRuntime()) {
+      void closeSettingsWindow();
+      return;
+    }
+    setDraft(settings);
+  }, [settings]);
+
+  const saveSettings = useCallback(async () => {
+    try {
+      setError(null);
+      const nextSettings = await invoke<AppSettings>("update_settings", {
+        settings: draft,
+      });
+      setSettings(nextSettings);
+      setDraft(nextSettings);
+      if (isTauriRuntime()) {
+        await emitTo("main", SETTINGS_UPDATED_EVENT, nextSettings);
+        await closeSettingsWindow();
+      }
+    } catch (saveError) {
+      setError(String(saveError));
+    }
+  }, [draft]);
+
+  const runStandaloneScriptAction = useCallback(
+    async (action: ActionDefinition) => {
+      const trigger: ActionTrigger = action.triggers.includes("devRun")
+        ? "devRun"
+        : "commandPalette";
+      if (!actionRunnableForTrigger(action, trigger, [])) {
+        setError(`${action.title} cannot run without picker selection.`);
+        return;
+      }
+
+      try {
+        setError(null);
+        const result = await runHostAction({
+          actionId: action.id,
+          context: {
+            trigger,
+            shortcut: null,
+            currentItemId: null,
+            selectedItemIds: [],
+            view: null,
+          },
+        });
+
+        const resultToasts = result.toasts ?? [];
+        if (resultToasts.length > 0) {
+          resultToasts.forEach((toast) => pushToast(toast));
+        }
+        if (result.status === "failed") {
+          throw new Error(result.message);
+        }
+        if (resultToasts.length === 0) {
+          pushToast({
+            title: action.title,
+            message: result.message,
+            tone: "success",
+          });
+        }
+      } catch (runError) {
+        const message = String(runError);
+        setError(message);
+        pushToast({
+          title: `${action.title} failed`,
+          message,
+          tone: "danger",
+          durationMs: STICKY_TOAST_DURATION_MS,
+        });
+      }
+    },
+    [pushToast],
+  );
+
+  const refreshTags = useCallback(async () => {
+    setTagsLoading(true);
+    try {
+      const nextTags = await listTags();
+      setTags(nextTags);
+      setError(null);
+    } catch (loadError) {
+      setError(String(loadError));
+    } finally {
+      setTagsLoading(false);
+    }
+  }, []);
+
+  const createSettingsTag = useCallback(
+    async (label: string) => {
+      const trimmed = label.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      try {
+        setError(null);
+        const created = await createTag({ label: trimmed });
+        await refreshTags();
+        pushToast({
+          title: "Tag created",
+          message: created.label,
+          tone: "success",
+        });
+      } catch (createError) {
+        const message = String(createError);
+        setError(message);
+        pushToast({
+          title: "Create tag failed",
+          message,
+          tone: "danger",
+          durationMs: STICKY_TOAST_DURATION_MS,
+        });
+        throw createError;
+      }
+    },
+    [pushToast, refreshTags],
+  );
+
+  const updateSettingsTag = useCallback(
+    async (tagId: number, request: Omit<UpdateTagConfigRequest, "tagId">) => {
+      try {
+        setError(null);
+        const updated = await updateTagConfig({ tagId, ...request });
+        await refreshTags();
+        return updated;
+      } catch (updateError) {
+        const message = String(updateError);
+        setError(message);
+        pushToast({
+          title: "Update tag failed",
+          message,
+          tone: "danger",
+          durationMs: STICKY_TOAST_DURATION_MS,
+        });
+        throw updateError;
+      }
+    },
+    [pushToast, refreshTags],
+  );
+
+  const openTagFiltered = useCallback(
+    async (tag: TagSummary) => {
+      const filterQuery = `tag:${tag.slug}`;
+      try {
+        setError(null);
+        if (isTauriRuntime()) {
+          await openPickerForTag(tag.slug);
+        }
+        pushToast({
+          title: "Picker filtered",
+          message: filterQuery,
+        });
+      } catch (openError) {
+        const message = String(openError);
+        setError(message);
+        pushToast({
+          title: "Open filtered failed",
+          message,
+          tone: "danger",
+          durationMs: STICKY_TOAST_DURATION_MS,
+        });
+      }
+    },
+    [pushToast],
+  );
+
+  useEffect(() => {
+    document.body.classList.add("settings-window");
+    return () => {
+      document.body.classList.remove("settings-window");
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    invoke<AppSettings>("get_settings")
+      .then((nextSettings) => {
+        if (active) {
+          setSettings(nextSettings);
+          setDraft(nextSettings);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(String(loadError));
+        }
+      });
+
+    listActions()
+      .then((actions) => {
+        if (active) {
+          setActionDefinitions(actions);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(String(loadError));
+        }
+      });
+
+    listTags()
+      .then((nextTags) => {
+        if (active) {
+          setTags(nextTags);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(String(loadError));
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    applyAppearance(settings.appearance);
+    if (settings.appearance.theme !== "system") {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mediaQuery) {
+      return undefined;
+    }
+
+    const syncSystemTheme = () => applyAppearance(settings.appearance);
+    mediaQuery.addEventListener("change", syncSystemTheme);
+    return () => mediaQuery.removeEventListener("change", syncSystemTheme);
+  }, [settings.appearance]);
+
+  return (
+    <CustomWindowFrame title="Copicu Settings" variant="document">
+      <main className="settings-window-app">
+        <SettingsPanel
+          draft={draft}
+          query={query}
+          error={error}
+          actionSummary={actionSummary}
+          scriptActions={scriptActions}
+          tags={tags}
+          tagsLoading={tagsLoading}
+          tagSummary={tagSummary}
+          onDraftChange={setDraft}
+          onQueryChange={setQuery}
+          onRunScript={runStandaloneScriptAction}
+          onCreateTag={createSettingsTag}
+          onUpdateTag={updateSettingsTag}
+          onOpenTagFiltered={openTagFiltered}
+          onCancel={closeWindow}
+          onSave={() => void saveSettings()}
+        />
+        <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      </main>
+    </CustomWindowFrame>
+  );
+}
+
+
+export function NotificationsApp() {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const nextToastIdRef = useRef(1);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.add("notifications-window");
+    return () => {
+      document.body.classList.remove("notifications-window");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    const windowHandle = getCurrentWindow();
+    if (toasts.length > 0) {
+      const nextHeight = Math.min(
+        NOTIFICATIONS_WINDOW_MAX_HEIGHT,
+        NOTIFICATIONS_WINDOW_CHROME + toasts.length * NOTIFICATION_ROW_HEIGHT,
+      );
+      void windowHandle.setSize(new LogicalSize(NOTIFICATIONS_WINDOW_WIDTH, nextHeight));
+      void windowHandle.show();
+    } else {
+      void windowHandle.hide();
+    }
+  }, [toasts.length]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+
+    let active = true;
+    let unlisten: (() => void) | null = null;
+
+    void listen<ToastItem>(NOTIFICATION_TOAST_EVENT, (event: Event<ToastItem>) => {
+      if (!active) {
+        return;
+      }
+
+      const toast = {
+        ...event.payload,
+        id: event.payload.id || nextToastIdRef.current++,
+        tone: event.payload.tone ?? "info",
+        durationMs: event.payload.durationMs ?? DEFAULT_TOAST_DURATION_MS,
+      };
+
+      setToasts((current) => [...current, toast]);
+      if (toast.durationMs > 0) {
+        window.setTimeout(() => dismissToast(toast.id), toast.durationMs);
+      }
+    }).then((value) => {
+      unlisten = value;
+    });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [dismissToast]);
+
+  return <ToastStack toasts={toasts} onDismiss={dismissToast} />;
+}
+
+export function UiHostApp() {
+  const [request, setRequest] = useState<UiHostRequest | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    document.body.classList.add("ui-host-window");
+    return () => {
+      document.body.classList.remove("ui-host-window");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      const previewKind = new URLSearchParams(window.location.search).get("prompt");
+      setRequest({
+        id: "preview",
+        kind: previewKind === "alert" ? "alert" : "input",
+        title: previewKind === "alert" ? "Clipboard text" : "Tag selected items",
+        body: previewKind === "alert" ? "Current clipboard text length: 42" : "Choose a short tag for this batch.",
+        placeholder: previewKind === "alert" ? null : "#tag",
+        defaultValue: "",
+        submitLabel: previewKind === "alert" ? null : "Apply tag",
+        confirmLabel: previewKind === "alert" ? "OK" : null,
+        cancelLabel: previewKind === "alert" ? null : "Cancel",
+      });
+      return undefined;
+    }
+
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen<UiHostRequest>(UI_HOST_REQUEST_EVENT, (event: Event<UiHostRequest>) => {
+      if (!active) {
+        return;
+      }
+      setRequest(event.payload);
+      setInputValue(event.payload.defaultValue ?? "");
+    }).then((value) => {
+      unlisten = value;
+    });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (request?.kind === "input") {
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    }
+  }, [request]);
+
+  const resolve = useCallback(
+    async (value: unknown) => {
+      if (!request) {
+        return;
+      }
+      const requestId = request.id;
+      setRequest(null);
+      if (isTauriRuntime()) {
+        try {
+          await resolveUiHostRequest(requestId, value);
+        } catch {
+          // The Rust side owns diagnostics. The prompt should still close locally.
+        }
+      }
+    },
+    [request],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void resolve(request?.kind === "confirm" ? false : null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [request, resolve]);
+
+  if (!request) {
+    return null;
+  }
+
+  const submitLabel =
+    request.kind === "confirm"
+      ? request.confirmLabel || "Confirm"
+      : request.kind === "alert"
+        ? request.confirmLabel || "OK"
+        : request.submitLabel || "Submit";
+  const cancelLabel = request.cancelLabel || "Cancel";
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void resolve(request.kind === "confirm" ? true : request.kind === "alert" ? null : inputValue);
+  };
+
+  return (
+    <main className="ui-host-shell">
+      <UiPaper component="form" className={`ui-host-panel is-${request.kind}`} onSubmit={submit}>
+        <div className="ui-host-copy">
+          <strong>{request.title}</strong>
+          {request.body ? <p>{request.body}</p> : null}
+        </div>
+        {request.kind === "input" ? (
+          <UiTextInput
+            ref={inputRef}
+            aria-label={request.title}
+            value={inputValue}
+            placeholder={request.placeholder ?? ""}
+            onChange={(event) => setInputValue(event.currentTarget.value)}
+          />
+        ) : null}
+        <div className="ui-host-buttons">
+          {request.kind !== "alert" ? (
+            <UiButton type="button" variant="default" onClick={() => void resolve(request.kind === "confirm" ? false : null)}>
+              {cancelLabel}
+            </UiButton>
+          ) : null}
+          <UiButton type="submit" variant="filled">{submitLabel}</UiButton>
+        </div>
+      </UiPaper>
+    </main>
+  );
+}
+
+
+function ToastStack({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastItem[];
+  onDismiss: (id: number) => void;
+}) {
+  if (toasts.length === 0) {
+    return null;
+  }
+
+  return createPortal(
+    <ol className="toast-stack" aria-live="polite" aria-label="Notifications">
+      {[...toasts].reverse().map((toast) => (
+        <li
+          key={toast.id}
+          className={`toast-item toast-${toast.tone}`}
+          style={
+            { "--toast-duration": `${toast.durationMs}ms` } as CSSProperties &
+              Record<"--toast-duration", string>
+          }
+        >
+          <div>
+            {toast.title ? <strong>{toast.title}</strong> : null}
+            <p>{toast.message}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Dismiss notification"
+            onClick={() => onDismiss(toast.id)}
+          >
+            ×
+          </button>
+        </li>
+      ))}
+    </ol>,
+    document.body,
+  );
+}
+
+
+type SettingsPanelProps = {
+  draft: AppSettings;
+  query: string;
+  error: string | null;
+  actionSummary: {
+    builtinCount: number;
+    scriptCount: number;
+    diagnosticCount: number;
+  };
+  scriptActions: ActionDefinition[];
+  tags: TagSummary[];
+  tagsLoading: boolean;
+  tagSummary: {
+    pinnedCount: number;
+    itemCount: number;
+  };
+  onDraftChange: (settings: AppSettings) => void;
+  onQueryChange: (query: string) => void;
+  onRunScript: (action: ActionDefinition) => void;
+  onCreateTag: (label: string) => Promise<void>;
+  onUpdateTag: (
+    tagId: number,
+    request: Omit<UpdateTagConfigRequest, "tagId">,
+  ) => Promise<TagSummary>;
+  onOpenTagFiltered: (tag: TagSummary) => void;
+  onCancel: () => void;
+  onSave: () => void;
+};
+
+type SettingSection =
+  | "general"
+  | "picker"
+  | "history"
+  | "appearance"
+  | "tags"
+  | "scripts"
+  | "ai";
+
+type SettingSectionDefinition = {
+  id: SettingSection;
+  label: string;
+  description: string;
+};
+
+function SettingsPanel({
+  draft,
+  query,
+  error,
+  actionSummary,
+  scriptActions,
+  tags,
+  tagsLoading,
+  tagSummary,
+  onDraftChange,
+  onQueryChange,
+  onRunScript,
+  onCreateTag,
+  onUpdateTag,
+  onOpenTagFiltered,
+  onCancel,
+  onSave,
+}: SettingsPanelProps) {
+  const [activeSection, setActiveSection] = useState<SettingSection>("general");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visible = (section: SettingSection, label: string, description: string) =>
+    normalizedQuery.length === 0 ||
+    `${section} ${label} ${description}`.toLocaleLowerCase().includes(normalizedQuery);
+  const scriptSearchText = scriptActions
+    .map((action) =>
+      [
+        action.id,
+        action.title,
+        action.description,
+        action.script?.fileName ?? "",
+        action.script?.path ?? "",
+        action.diagnostics.map((diagnostic) => diagnostic.message).join(" "),
+      ].join(" "),
+    )
+    .join(" ");
+  const tagSearchText = tags
+    .map((tag) =>
+      [
+        tag.label,
+        tag.slug,
+        tag.itemCount,
+        tag.pinned ? "pinned" : "",
+      ].join(" "),
+    )
+    .join(" ");
+  const settingSections: SettingSectionDefinition[] = [
+    {
+      id: "general",
+      label: "General",
+      description: "Core entry points",
+    },
+    {
+      id: "picker",
+      label: "Picker",
+      description: "Keyboard and window behavior",
+    },
+    {
+      id: "history",
+      label: "History",
+      description: "Storage and retention",
+    },
+    {
+      id: "appearance",
+      label: "Appearance",
+      description: "Theme and preset",
+    },
+    {
+      id: "tags",
+      label: "Tags",
+      description: "Labels, pinning and filtered script links",
+    },
+    {
+      id: "scripts",
+      label: "Actions",
+      description: "Scripts and command palette",
+    },
+    {
+      id: "ai",
+      label: "AI",
+      description: "Provider endpoint and model for AI-assisted search",
+    },
+  ];
+  const sectionMatches = (section: SettingSectionDefinition) =>
+    normalizedQuery.length === 0 ||
+    `${section.id} ${section.label} ${section.description}`.toLocaleLowerCase().includes(normalizedQuery) ||
+    (section.id === "scripts" && scriptSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery));
+  const displayedSections =
+    normalizedQuery.length === 0
+      ? settingSections.filter((section) => section.id === activeSection)
+      : settingSections.filter(sectionMatches);
+
+  return (
+    <form
+      className="settings-panel"
+      aria-label="Settings"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+        <div className="settings-header">
+          <div>
+            <span>Settings</span>
+            <strong>Copicu preferences</strong>
+          </div>
+          <UiTextInput
+            aria-label="Search settings"
+            label="Search"
+            value={query}
+            placeholder="Filter settings"
+            rightSection={
+              query.length > 0 ? (
+                <UiIconButton
+                  aria-label="Clear settings search"
+                  type="button"
+                  variant="subtle"
+                  size="xs"
+                  onClick={() => onQueryChange("")}
+                >
+                  x
+                </UiIconButton>
+              ) : null
+            }
+            onChange={(event) => onQueryChange(event.currentTarget.value)}
+            autoFocus
+          />
+        </div>
+
+        <div className="settings-status-strip" aria-label="Current settings summary">
+          <UiBadge className="settings-summary-badge" variant="light">{draft.general.globalShortcut}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{draft.picker.enterAction === "copy" ? "Enter copies" : "Enter pastes"}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{tags.length} tags</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{actionSummary.scriptCount} scripts</UiBadge>
+        </div>
+
+        <Tabs
+          className="settings-layout"
+          classNames={{ tabLabel: "settings-nav-tab-label" }}
+          orientation="vertical"
+          value={activeSection}
+          onChange={(value) => {
+            if (!value) {
+              return;
+            }
+            setActiveSection(value as SettingSection);
+            if (query.length > 0) {
+              onQueryChange("");
+            }
+          }}
+        >
+          <Tabs.List className="settings-nav" aria-label="Settings sections">
+            {settingSections.map((section) => (
+              <Tabs.Tab
+                key={section.id}
+                value={section.id}
+                disabled={normalizedQuery.length > 0 && !sectionMatches(section)}
+              >
+                <span>{section.label}</span>
+                <small>{section.description}</small>
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+
+          <div className="settings-list">
+            {displayedSections.some((section) => section.id === "general") ? (
+              <SettingsSection title="General" description="Core app behavior and entry points.">
+                {visible("general", "Open picker", "Global shortcut to open the picker from anywhere") ? (
+                  <SettingRow label="Open picker" description="Global shortcut registered by the native shortcut backend.">
+                    <UiTextInput
+                      aria-label="Open picker shortcut"
+                      value={draft.general.globalShortcut}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          general: {
+                            ...draft.general,
+                            globalShortcut: event.currentTarget.value,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("general", "Launch on Windows startup", "Start Copicu when Windows starts") ? (
+                  <SettingRow label="Launch on Windows startup" description="Registers Copicu with the OS autostart manager.">
+                    <UiSwitch
+                      label="Launch on Windows startup"
+                      checked={draft.general.launchOnStartup}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          general: {
+                            ...draft.general,
+                            launchOnStartup: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "picker") ? (
+              <SettingsSection title="Picker" description="Selection, activation and window behavior.">
+                {visible("picker", "Enter action", "Copy or paste selected item") ? (
+                  <SettingRow label="Enter action" description="Shift+Enter always uses the alternate action.">
+                    <UiSelect
+                      aria-label="Enter action"
+                      value={draft.picker.enterAction}
+                      data={[
+                        { value: "copy", label: "Copy" },
+                        { value: "paste", label: "Paste" },
+                      ]}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            enterAction: (value ?? "copy") as EnterAction,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("picker", "Hide on focus lost", "Hide picker when another app gets focus") ? (
+                  <SettingRow label="Hide on focus lost" description="Hides the picker after a short blur delay.">
+                    <UiSwitch
+                      label="Hide on focus lost"
+                      checked={draft.picker.hideOnFocusLost}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            hideOnFocusLost: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "history") ? (
+              <SettingsSection title="History" description="Retention, dedupe and blob storage.">
+                {visible("history", "Retention count", "Maximum number of history items") ? (
+                  <SettingRow label="Retention count" description="Maximum items kept before pruning. Use 0 for unlimited.">
+                    <UiNumberInput
+                      aria-label="Retention count"
+                      min={0}
+                      max={100000}
+                      step={100}
+                      value={draft.history.retentionCount}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          history: {
+                            ...draft.history,
+                            retentionCount: normalizeRetentionCount(value),
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "appearance") ? (
+              <SettingsSection title="Appearance" description="Visual behavior for the picker and settings.">
+                {visible("appearance", "Theme", "System light dark mode") ? (
+                  <SettingRow label="Theme" description="Use the OS theme or force a specific appearance.">
+                    <UiSelect
+                      aria-label="Theme"
+                      value={draft.appearance.theme}
+                      data={[
+                        { value: "system", label: "System" },
+                        { value: "light", label: "Light" },
+                        { value: "dark", label: "Dark" },
+                      ]}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          appearance: {
+                            ...draft.appearance,
+                            theme: (value ?? "system") as ThemeSetting,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("appearance", "Preset", THEME_PRESET_SEARCH_TEXT) ? (
+                  <SettingRow label="Preset" description="Visual token preset shared by picker, prompts and Mantine controls.">
+                    <UiSelect
+                      aria-label="Theme preset"
+                      value={draft.appearance.themeId}
+                      data={THEME_PRESET_OPTIONS}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          appearance: {
+                            ...draft.appearance,
+                            themeId: (value ?? "default") as ThemeId,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "tags") ? (
+              <SettingsSection title="Tags" description="Manage tag metadata. Filtered shortcuts live in Actions scripts.">
+                {visible("tags", "Tag summary", "Counts pinned tags scripts actions") ? (
+                  <SettingRow label="Tag summary" description="Current normalized tags derived from metadata and tag configs.">
+                    <div className="action-summary" aria-label="Tag summary">
+                      <UiBadge className="settings-summary-badge" variant="light">{tags.length} tags</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">{tagSummary.itemCount} items</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">{tagSummary.pinnedCount} pinned</UiBadge>
+                    </div>
+                  </SettingRow>
+                ) : null}
+                {visible("tags", "Tag list", `Search create pin open filtered actions scripts ${tagSearchText}`) ? (
+                  <SettingRow label="Tag list" description="Create tags, pin frequent tags and open the picker with a tag filter." wide>
+                    <TagSettingsList
+                      tags={tags}
+                      loading={tagsLoading}
+                      onCreateTag={onCreateTag}
+                      onUpdateTag={onUpdateTag}
+                      onOpenFiltered={onOpenTagFiltered}
+                    />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "scripts") ? (
+              <SettingsSection title="Actions" description="Built-ins, local scripts, shortcuts and diagnostics.">
+                {visible("scripts", "Scripts folder", "Folder for local TypeScript JavaScript actions") ? (
+                  <SettingRow label="Scripts folder" description="Local folder for editable TypeScript and JavaScript actions.">
+                    <UiTextInput
+                      aria-label="Scripts folder"
+                      value={draft.scripts.folderPath}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          scripts: {
+                            ...draft.scripts,
+                            folderPath: event.currentTarget.value,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("scripts", "Discovered actions", "Built-in and local script registry diagnostics") ? (
+                  <SettingRow label="Discovered actions" description="Current registry from built-ins and discovered local scripts.">
+                    <div className="action-summary" aria-label="Discovered actions summary">
+                      <UiBadge className="settings-summary-badge" variant="light">{actionSummary.builtinCount} built-in</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">{actionSummary.scriptCount} scripts</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">{actionSummary.diagnosticCount} diagnostics</UiBadge>
+                    </div>
+                  </SettingRow>
+                ) : null}
+                {visible(
+                  "scripts",
+                  "Script registry",
+                  `Discovered script files diagnostics source hash triggers capabilities ${scriptSearchText}`,
+                ) ? (
+                  <SettingRow label="Script registry" description="Debug view for discovered local actions and parse diagnostics." wide>
+                    <ScriptRegistryList actions={scriptActions} onRunScript={onRunScript} />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "ai") ? (
+              <SettingsSection title="AI" description="Provider settings for future AI-assisted history search and script tools.">
+                {visible("ai", "Enable AI", "Allow Copicu to call configured AI provider") ? (
+                  <SettingRow label="Enable AI" description="AI calls stay disabled until explicitly enabled.">
+                    <UiSwitch
+                      label="Enable AI"
+                      checked={draft.ai.enabled}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          ai: {
+                            ...draft.ai,
+                            enabled: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("ai", "Credentials", "COPICU_AI_API_KEY .env OpenRouter OpenAI") ? (
+                  <SettingRow
+                    label="Credentials"
+                    description="Put secrets in .env or the process environment. Copicu reads COPICU_AI_API_KEY, with COPICU_AI_ENDPOINT and COPICU_AI_MODEL as optional overrides."
+                  >
+                    <ReadOnlyStatus value="COPICU_AI_API_KEY" />
+                  </SettingRow>
+                ) : null}
+                {visible("ai", "Endpoint", "OpenAI-compatible API endpoint base URL") ? (
+                  <SettingRow label="Endpoint" description=".env COPICU_AI_ENDPOINT overrides this field when present.">
+                    <UiTextInput
+                      aria-label="AI endpoint"
+                      value={draft.ai.endpoint}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          ai: {
+                            ...draft.ai,
+                            endpoint: event.currentTarget.value,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("ai", "Model", "AI model id") ? (
+                  <SettingRow label="Model" description=".env COPICU_AI_MODEL overrides this field when present.">
+                    <UiTextInput
+                      aria-label="AI model"
+                      value={draft.ai.model}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          ai: {
+                            ...draft.ai,
+                            model: event.currentTarget.value,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.length === 0 ? (
+              <p className="settings-empty">No settings match this filter.</p>
+            ) : null}
+          </div>
+        </Tabs>
+
+        {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
+        <div className="settings-buttons">
+          <UiButton type="button" variant="default" onClick={onCancel}>
+            Cancel
+          </UiButton>
+          <UiButton type="submit" variant="filled">Save</UiButton>
+        </div>
+    </form>
+  );
+}
+
+function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="settings-section">
+      <header>
+        <strong>{title}</strong>
+        <p>{description}</p>
+      </header>
+      <div className="settings-section-rows">{children}</div>
+    </section>
+  );
+}
+
+function SettingRow({
+  label,
+  description,
+  children,
+  disabled = false,
+  locked = false,
+  wide = false,
+}: {
+  label: string;
+  description: string;
+  children: ReactNode;
+  disabled?: boolean;
+  locked?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <section className={`setting-row ${disabled ? "is-disabled" : ""} ${wide ? "is-wide" : ""}`}>
+      <div>
+        {locked || disabled ? <span>{disabled ? "Planned" : "Current"}</span> : null}
+        <strong>{label}</strong>
+        <p>{description}</p>
+      </div>
+      <div className="setting-control">{children}</div>
+    </section>
+  );
+}
+
+function ReadOnlyStatus({ value, tone = "neutral" }: { value: string; tone?: "neutral" | "success" }) {
+  return (
+    <UiBadge className={`readonly-status is-${tone}`} variant={tone === "success" ? "light" : "default"}>
+      {value}
+    </UiBadge>
+  );
+}
+
+function TagSettingsList({
+  tags,
+  loading,
+  onCreateTag,
+  onUpdateTag,
+  onOpenFiltered,
+}: {
+  tags: TagSummary[];
+  loading: boolean;
+  onCreateTag: (label: string) => Promise<void>;
+  onUpdateTag: (
+    tagId: number,
+    request: Omit<UpdateTagConfigRequest, "tagId">,
+  ) => Promise<TagSummary>;
+  onOpenFiltered: (tag: TagSummary) => void;
+}) {
+  const [tagQuery, setTagQuery] = useState("");
+  const [newTagLabel, setNewTagLabel] = useState("");
+  const normalizedQuery = tagQuery.trim().toLocaleLowerCase();
+
+  const filteredTags = tags.filter((tag) =>
+    normalizedQuery.length === 0 ||
+    tagSearchText(tag).includes(normalizedQuery),
+  );
+  const sortedTags = [...filteredTags].sort((left, right) => {
+    if (left.pinned !== right.pinned) {
+      return left.pinned ? -1 : 1;
+    }
+    return left.label.localeCompare(right.label, undefined, { sensitivity: "base" });
+  });
+
+  const createCurrentTag = async () => {
+    const label = newTagLabel.trim();
+    if (!label) {
+      return;
+    }
+    await onCreateTag(label);
+    setNewTagLabel("");
+    setTagQuery("");
+  };
+
+  return (
+    <div className="tag-settings-panel">
+      <div className="tag-settings-toolbar">
+        <UiTextInput
+          aria-label="Search tags"
+          leftSection={<Search size={14} strokeWidth={2.2} aria-hidden="true" />}
+          value={tagQuery}
+          placeholder="Search tags"
+          onChange={(event) => setTagQuery(event.currentTarget.value)}
+        />
+        <div className="tag-create-form">
+          <UiTextInput
+            aria-label="New tag label"
+            value={newTagLabel}
+            placeholder="New tag"
+            onChange={(event) => setNewTagLabel(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void createCurrentTag();
+              }
+            }}
+          />
+          <UiTooltip label="Create tag">
+            <UiIconButton
+              aria-label="Create tag"
+              type="button"
+              variant="filled"
+              disabled={!newTagLabel.trim()}
+              onClick={() => void createCurrentTag()}
+            >
+              <Plus size={15} strokeWidth={2.3} aria-hidden="true" />
+            </UiIconButton>
+          </UiTooltip>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="tag-settings-loading">
+          <UiLoader size="xs" />
+          <span>Loading tags</span>
+        </div>
+      ) : sortedTags.length === 0 ? (
+        <p className="script-empty" aria-label="Tags empty">
+          {tags.length === 0 ? "No tags yet." : "No tags match this search."}
+        </p>
+      ) : (
+        <div className="tag-settings-list" aria-label="Tags">
+          {sortedTags.map((tag) => (
+            <section key={tag.id} className="tag-settings-item">
+              <div className="tag-identity">
+                <strong title={`#${tag.slug}`}>{tag.label}</strong>
+              </div>
+              <UiBadge className="tag-chip" variant="light">
+                {tag.itemCount} items
+              </UiBadge>
+              <div className="tag-actions">
+                <UiTooltip label={tag.pinned ? "Unpin tag" : "Pin tag"}>
+                  <UiIconButton
+                    aria-label={tag.pinned ? `Unpin ${tag.label}` : `Pin ${tag.label}`}
+                    type="button"
+                    variant={tag.pinned ? "light" : "subtle"}
+                    onClick={() => void onUpdateTag(tag.id, { pinned: !tag.pinned })}
+                  >
+                    {tag.pinned ? (
+                      <PinOff size={14} strokeWidth={2.2} aria-hidden="true" />
+                    ) : (
+                      <Pin size={14} strokeWidth={2.2} aria-hidden="true" />
+                    )}
+                  </UiIconButton>
+                </UiTooltip>
+                <UiButton
+                  type="button"
+                  size="xs"
+                  variant="default"
+                  onClick={() => onOpenFiltered(tag)}
+                >
+                  Open filtered
+                </UiButton>
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScriptRegistryList({
+  actions,
+  onRunScript,
+}: {
+  actions: ActionDefinition[];
+  onRunScript: (action: ActionDefinition) => void;
+}) {
+  if (actions.length === 0) {
+    return (
+      <p className="script-empty" aria-label="Script registry empty">
+        No scripts discovered.
+      </p>
+    );
+  }
+
+  return (
+    <div className="script-registry-list" aria-label="Script registry">
+      {actions.map((action) => {
+        const diagnosticCount = action.diagnostics.length;
+        const hasErrors = action.diagnostics.some((diagnostic) => diagnostic.severity === "error");
+        const statusLabel = hasErrors
+          ? "error"
+          : diagnosticCount > 0
+            ? `${diagnosticCount} diagnostics`
+            : "ready";
+        const canRun =
+          !hasErrors &&
+          unsupportedCapabilities(action).length === 0 &&
+          (action.triggers.includes("devRun") || action.triggers.includes("commandPalette"));
+
+        return (
+          <details
+            key={`${action.script?.path ?? action.id}-${action.id}`}
+            className={`script-registry-item ${hasErrors ? "has-errors" : ""}`}
+            open={diagnosticCount > 0}
+          >
+            <summary>
+              <span className="script-title">{action.title}</span>
+              <span className={`script-status ${hasErrors ? "is-error" : ""}`}>
+                {statusLabel}
+              </span>
+            </summary>
+            <div className="script-details">
+              <span title={action.script?.path ?? action.id}>
+                {action.script?.fileName ?? action.id}
+              </span>
+              <span>{action.triggers.length > 0 ? action.triggers.join(", ") : "no triggers"}</span>
+              <span>
+                {action.capabilities.length > 0
+                  ? action.capabilities.join(", ")
+                  : "no capabilities"}
+              </span>
+              <span>{shortHash(action.script?.sourceHash)}</span>
+            </div>
+            <div className="script-actions">
+              <Menu withinPortal position="bottom-end">
+                <Menu.Target>
+                  <UiButton type="button" variant="default" size="xs" style={{ minWidth: 70 }}>
+                    Actions
+                  </UiButton>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    disabled={!canRun}
+                    leftSection={<Terminal size={14} strokeWidth={2.2} />}
+                    onClick={() => onRunScript(action)}
+                  >
+                    Run
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </div>
+            {action.diagnostics.length > 0 ? (
+              <ul className="script-diagnostics">
+                {action.diagnostics.map((diagnostic, index) => (
+                  <li
+                    key={`${diagnostic.severity}-${index}-${diagnostic.message}`}
+                    className={`diagnostic-${diagnostic.severity}`}
+                  >
+                    <strong>{diagnostic.severity}</strong>
+                    <span>{diagnostic.message}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </details>
+        );
+      })}
+    </div>
+  );
+}
+
+
+function shortHash(value: string | null | undefined) {
+  if (!value) {
+    return "no hash";
+  }
+  return value.length <= 10 ? value : value.slice(0, 10);
+}
+
+function tagSearchText(tag: TagSummary) {
+  return [
+    tag.label,
+    tag.slug,
+    tag.autoApplyEnabled ? "auto apply" : "",
+    tag.pinned ? "pinned" : "",
+  ].join(" ").toLocaleLowerCase();
+}
+
+function actionRunnableForTrigger(
+  action: ActionDefinition,
+  trigger: ActionTrigger,
+  items: HistoryItem[],
+) {
+  return (
+    action.triggers.includes(trigger) &&
+    !actionHasErrorDiagnostics(action) &&
+    unsupportedCapabilities(action).length === 0 &&
+    actionMatchesSelection(action, items) &&
+    actionMatchesKinds(action, items) &&
+    actionMatchesMime(action, items)
+  );
+}
+
+function itemMenuScriptActions(actions: ActionDefinition[], items: HistoryItem[]) {
+  return actions.filter(
+    (action) =>
+      action.source === "script" &&
+      actionRunnableForTrigger(action, "itemMenu", itemsForActionContext(action, items)),
+  );
+}
+
+function itemsForActionContext(action: ActionDefinition, items: HistoryItem[]) {
+  if (action.input.selection === "none" || action.input.source === "none") {
+    return [];
+  }
+  return items;
+}
+
+function actionHasErrorDiagnostics(action: ActionDefinition) {
+  return action.diagnostics.some((diagnostic) => diagnostic.severity === "error");
+}
+
+function unsupportedCapabilities(action: ActionDefinition) {
+  if (action.source !== "script") {
+    return [];
+  }
+  return action.capabilities.filter((capability) => !SUPPORTED_SCRIPT_CAPABILITIES.has(capability));
+}
+
+function actionMatchesSelection(action: ActionDefinition, items: HistoryItem[]) {
+  switch (action.input.selection) {
+    case "none":
+      return items.length === 0;
+    case "optional":
+      return true;
+    case "one":
+      return items.length === 1;
+    case "oneOrMore":
+      return items.length >= 1;
+    case "many":
+      return items.length >= 2;
+  }
+}
+
+function actionMatchesKinds(action: ActionDefinition, items: HistoryItem[]) {
+  if (!action.input.kinds || items.length === 0) {
+    return true;
+  }
+  return items.every((item) => action.input.kinds?.includes(clipKindForItem(item)));
+}
+
+function actionMatchesMime(action: ActionDefinition, items: HistoryItem[]) {
+  if (!action.input.mime || items.length === 0) {
+    return true;
+  }
+  return items.every((item) =>
+    action.input.mime?.some((pattern) => mimePatternMatches(pattern, item.mime_primary ?? "")),
+  );
+}
+
+function clipKindForItem(item: HistoryItem): ClipKind {
+  switch (item.content_kind) {
+    case "text":
+      return "text";
+    case "html":
+      return "html";
+    case "image":
+      return "image";
+    case "fileList":
+      return "fileList";
+    default:
+      return "unknown";
+  }
+}
+
+function mimePatternMatches(pattern: string, mime: string) {
+  if (pattern === "*" || pattern === mime) {
+    return true;
+  }
+  if (pattern.endsWith("/*")) {
+    return mime.startsWith(`${pattern.slice(0, -2)}/`);
+  }
+  return false;
+}
+
+function actionSearchText(action: ActionDefinition) {
+  return [
+    action.title,
+    action.description,
+    action.id,
+    action.shortcut ?? "",
+    action.source,
+    action.capabilities.join(" "),
+    action.script?.fileName ?? "",
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
+}
+
+type ShortcutKeyboardEvent = Pick<
+  globalThis.KeyboardEvent | ReactKeyboardEvent,
+  "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "repeat"
+>;
+
+function shortcutFromKeyboardEvent(event: ShortcutKeyboardEvent) {
+  const key = shortcutKeyFromKeyboardEvent(event);
+  if (!key) {
+    return null;
+  }
+  const hasModifier = event.ctrlKey || event.altKey || event.shiftKey || event.metaKey;
+  if (!hasModifier && isPrintableShortcutKey(key)) {
+    return null;
+  }
+  const parts = [];
+  if (event.ctrlKey) {
+    parts.push("Ctrl");
+  }
+  if (event.altKey) {
+    parts.push("Alt");
+  }
+  if (event.shiftKey) {
+    parts.push("Shift");
+  }
+  if (event.metaKey) {
+    parts.push("Meta");
+  }
+  parts.push(key);
+  return parts.join("+");
+}
+
+function compoundShortcutFromKeyboardEvent(event: ShortcutKeyboardEvent) {
+  const key = shortcutKeyFromKeyboardEvent(event);
+  if (!key) {
+    return null;
+  }
+  const parts = [];
+  if (event.ctrlKey) {
+    parts.push("Ctrl");
+  }
+  if (event.altKey) {
+    parts.push("Alt");
+  }
+  if (event.shiftKey) {
+    parts.push("Shift");
+  }
+  if (event.metaKey) {
+    parts.push("Meta");
+  }
+  parts.push(key);
+  return parts.join("+");
+}
+
+function shortcutKeyFromKeyboardEvent(event: ShortcutKeyboardEvent) {
+  const keyFromCode = normalizeShortcutCode(event.code);
+  if (keyFromCode) {
+    return keyFromCode;
+  }
+  return normalizeShortcutKey(event.key);
+}
+
+function normalizeShortcutString(shortcut: string | null | undefined) {
+  if (shortcutContainsSequenceDelimiter(shortcut ?? "")) {
+    const steps = (shortcut ?? "")
+      .split(/,\s+/)
+      .map((step) => normalizeShortcutStepString(step, true))
+      .filter((step): step is string => Boolean(step));
+    return steps.length > 0 ? steps.join(", ") : null;
+  }
+
+  return normalizeShortcutStepString(shortcut ?? "", false);
+}
+
+function shortcutHasModifier(shortcut: string) {
+  return shortcut.split("+").slice(0, -1).some((part) =>
+    ["Ctrl", "Alt", "Shift", "Meta"].includes(part.trim()),
+  );
+}
+
+function normalizeShortcutStepString(shortcut: string, allowPrintableWithoutModifier: boolean) {
+  const rawParts = shortcut
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (rawParts.length === 0) {
+    return null;
+  }
+
+  const modifiers = new Set<string>();
+  let key: string | null = null;
+  for (const part of rawParts) {
+    const normalizedPart = part.toLocaleLowerCase();
+    if (["ctrl", "control", "cmdorctrl"].includes(normalizedPart)) {
+      modifiers.add("Ctrl");
+    } else if (["alt", "option"].includes(normalizedPart)) {
+      modifiers.add("Alt");
+    } else if (normalizedPart === "shift") {
+      modifiers.add("Shift");
+    } else if (["meta", "cmd", "command", "win", "super"].includes(normalizedPart)) {
+      modifiers.add("Meta");
+    } else {
+      key = normalizeShortcutKey(part);
+    }
+  }
+
+  if (!key) {
+    return null;
+  }
+  const ordered = ["Ctrl", "Alt", "Shift", "Meta"].filter((modifier) => modifiers.has(modifier));
+  if (!allowPrintableWithoutModifier && ordered.length === 0 && isPrintableShortcutKey(key)) {
+    return null;
+  }
+  return [...ordered, key].join("+");
+}
+
+function normalizeShortcutCode(code: string | undefined) {
+  if (!code) {
+    return null;
+  }
+  if (/^Key[A-Z]$/.test(code)) {
+    return code.slice(3);
+  }
+  if (/^Digit[0-9]$/.test(code)) {
+    return code.slice(5);
+  }
+  if (/^Numpad[0-9]$/.test(code)) {
+    return code.slice(6);
+  }
+  const namedCodes: Record<string, string> = {
+    Backquote: "`",
+    Backslash: "\\",
+    BracketLeft: "[",
+    BracketRight: "]",
+    Comma: ",",
+    Equal: "=",
+    IntlBackslash: "\\",
+    Minus: "-",
+    Period: ".",
+    Quote: "'",
+    Semicolon: ";",
+    Slash: "/",
+    NumpadAdd: "+",
+    NumpadDecimal: ".",
+    NumpadDivide: "/",
+    NumpadMultiply: "*",
+    NumpadSubtract: "-",
+  };
+  return namedCodes[code] ?? null;
+}
+
+function shortcutContainsSequenceDelimiter(shortcut: string) {
+  return /,\s+/.test(shortcut);
+}
+
+function normalizeShortcutKey(key: string) {
+  if (key.length === 1) {
+    return key === " " ? "Space" : key.toLocaleUpperCase();
+  }
+  const compact = key.replace(/\s+/g, "").toLocaleLowerCase();
+  const namedKeys: Record<string, string> = {
+    arrowdown: "ArrowDown",
+    arrowleft: "ArrowLeft",
+    arrowright: "ArrowRight",
+    arrowup: "ArrowUp",
+    backspace: "Backspace",
+    delete: "Delete",
+    del: "Delete",
+    end: "End",
+    enter: "Enter",
+    escape: "Escape",
+    esc: "Escape",
+    home: "Home",
+    insert: "Insert",
+    ins: "Insert",
+    pagedown: "PageDown",
+    pageup: "PageUp",
+    return: "Enter",
+    space: "Space",
+    spacebar: "Space",
+    tab: "Tab",
+  };
+  if (/^f([1-9]|1[0-2])$/.test(compact)) {
+    return compact.toLocaleUpperCase();
+  }
+  return namedKeys[compact] ?? null;
+}
+
+function isPrintableShortcutKey(key: string) {
+  return key.length === 1 || key === "Space";
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}

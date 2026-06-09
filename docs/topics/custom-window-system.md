@@ -12,6 +12,7 @@ triggers:
   - window chrome
   - ventanas custom
 primary_refs:
+  - docs/topics/window-state-and-monitor-policy.md
   - docs/topics/ui-surface-architecture.md
   - docs/topics/ui-rethink.md
   - docs/topics/mantine-ui-system.md
@@ -352,7 +353,7 @@ Semantica especial de pin:
 
 - En `main`, pin significa `always-on-top`.
 - Mientras pin esta activo, `hide-on-focus-lost` no debe ocultar la ventana aunque el setting global este activo.
-- El picker inicia pinned para mantener el comportamiento previo, pero `show_main_window` no debe repinear si el usuario lo desactivo durante la sesion.
+- El picker no inicia pinned: por defecto debe ocultarse cuando pierde foco. `show_main_window` no debe repinear la ventana implicitamente.
 - Esta semantica no debe contaminar el componente base: otras ventanas pueden usar `pin` solo como always-on-top sin adoptar la regla de focus-lost.
 
 Validacion automatica realizada:
@@ -374,6 +375,21 @@ Validacion manual parcial antes de pausar:
 - una instancia dev viva cargo el frontend nuevo con `.custom-window-frame` y boton hide;
 - mover desde drag strip con mouse Win32 movio la ventana visible de `main`;
 - resize por borde en Windows no cambio el tamano con `decorations: false`; por eso `resizable` se bajo a `false` en `tauri.conf.json` para no prometer resize nativo en este corte.
+
+Tercer corte aplicado el 2026-06-09:
+
+- agregado `src-tauri/src/window_state.rs` como registry compartido para comportamiento nativo de ventanas;
+- `main`, `settings` y `ai-output` quedan `resizable: true`, guardan/restauran posicion y tamano, y mantienen bounds separados por monitor;
+- `ui-host`, `notifications` y `whichkey` quedan opt-out: no resize y no persistencia de bounds porque son superficies fijas/posicionadas;
+- `main` restaura contra el monitor del cursor al abrir, para que el picker use la ultima geometria de cada monitor;
+- `settings` y `ai-output` restauran contra monitor actual/primario disponible;
+- si el monitor guardado ya no existe, los bounds se ajustan al `workArea` de un monitor disponible, sin borrar el registro de otros monitores;
+- `tauri.conf.json` vuelve a `resizable: true` para `main`;
+- `settings` se crea con `.resizable(true)`;
+- `CustomWindowFrame` agrega handles compartidos de resize por borde/esquina usando `startResizeDragging(direction)`;
+- agregado permiso `core:window:allow-start-resize-dragging`.
+
+La politica completa quedo documentada en `docs/topics/window-state-and-monitor-policy.md`.
 
 Validacion manual pendiente, a hacer con JP guiando la sesion:
 

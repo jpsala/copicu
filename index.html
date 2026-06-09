@@ -7,6 +7,49 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      window.__copicuBoot = {
+        htmlAt: performance.now(),
+        htmlEpoch: Date.now(),
+      };
+      console.info("[copicu:boot] html parsed", window.__copicuBoot);
+      setTimeout(() => {
+        const root = document.getElementById("root");
+        if (root && root.childElementCount === 0) {
+          console.warn("[copicu:boot] root still empty", {
+            elapsed: performance.now() - window.__copicuBoot.htmlAt,
+            readyState: document.readyState,
+            resources: performance.getEntriesByType("resource").map((entry) => ({
+              name: entry.name,
+              duration: entry.duration,
+              startTime: entry.startTime,
+            })),
+          });
+        }
+      }, 5000);
+    </script>
+    <script type="module">
+      const boot = (window.__copicuBoot ??= {});
+      boot.bootAt = performance.now();
+
+      console.info("[copicu:boot] bootstrap module loaded", {
+        elapsedFromHtml: boot.htmlAt === undefined ? null : boot.bootAt - boot.htmlAt,
+        readyState: document.readyState,
+      });
+
+      boot.appImportStartAt = performance.now();
+      import("/src/main.tsx")
+        .then(() => {
+          boot.appImportEndAt = performance.now();
+          console.info("[copicu:boot] app module loaded", {
+            elapsedFromHtml: boot.htmlAt === undefined ? null : boot.appImportEndAt - boot.htmlAt,
+            importDuration: boot.appImportEndAt - (boot.appImportStartAt ?? boot.appImportEndAt),
+          });
+        })
+        .catch((error) => {
+          boot.appImportError = error instanceof Error ? error.message : String(error);
+          console.error("[copicu:boot] app module import failed", error);
+        });
+    </script>
   </body>
 </html>

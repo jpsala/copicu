@@ -949,6 +949,30 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   expect(getCalls).toHaveLength(1);
 });
 
+test("F2 edits content only and Shift+F2 edits metadata", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await expect(search).toBeVisible();
+  await search.click();
+
+  await page.keyboard.press("F2");
+  const contentDialog = page.getByRole("dialog", { name: "Edit clipboard item" });
+  await expect(contentDialog).toBeVisible();
+  await expect(contentDialog.getByRole("textbox", { name: "Content" })).toBeVisible();
+  await expect(contentDialog.getByRole("textbox", { name: "Metadata" })).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(contentDialog).toBeHidden();
+
+  await page.keyboard.press("Shift+F2");
+  const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
+  await expect(metadataDialog).toBeVisible();
+  await expect(metadataDialog.getByRole("textbox", { name: "Metadata" })).toBeVisible();
+  await expect(metadataDialog.getByRole("textbox", { name: "Content" })).toHaveCount(0);
+});
+
 test("manual scroll is not reset by history refresh", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);

@@ -1,6 +1,16 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 
+export type WindowResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
+
 function isTauriRuntime() {
   return Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 }
@@ -75,6 +85,20 @@ export async function startCurrentWindowDrag(): Promise<void> {
     void recordWindowChromeEvent("drag-start-returned");
   } catch (error) {
     void recordWindowChromeEvent("drag-start-error", String(error));
+    throw error;
+  }
+}
+
+export async function startCurrentWindowResize(direction: WindowResizeDirection): Promise<void> {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  void recordWindowChromeEvent("resize-start-request", direction);
+  try {
+    await getCurrentWindow().startResizeDragging(direction);
+    void recordWindowChromeEvent("resize-start-returned", direction);
+  } catch (error) {
+    void recordWindowChromeEvent("resize-start-error", `${direction}: ${String(error)}`);
     throw error;
   }
 }

@@ -1,4 +1,9 @@
-import { Maximize2, Minimize2, Minus, Pin, PinOff, X } from "lucide-react";
+import Maximize2 from "lucide-react/dist/esm/icons/maximize-2.mjs";
+import Minimize2 from "lucide-react/dist/esm/icons/minimize-2.mjs";
+import Minus from "lucide-react/dist/esm/icons/minus.mjs";
+import Pin from "lucide-react/dist/esm/icons/pin.mjs";
+import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
+import X from "lucide-react/dist/esm/icons/x.mjs";
 import { type MouseEvent, useCallback, useEffect, useState } from "react";
 import { UiIconButton, UiTooltip } from "../controls";
 import {
@@ -25,12 +30,12 @@ export function WindowControls({
   hideLabel = "Hide",
   onHide,
 }: WindowControlsProps) {
-  const [isPinned, setIsPinned] = useState(true);
+  const [isPinned, setIsPinned] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
     if (controls.includes("pin")) {
-      void readWindowPinState(true).then(setIsPinned);
+      void readWindowPinState(false).then(setIsPinned);
     }
     if (controls.includes("maximize")) {
       void readWindowMaximizedState(false).then(setIsMaximized);

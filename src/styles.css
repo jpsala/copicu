@@ -372,6 +372,84 @@ button {
   overflow: hidden;
 }
 
+.window-resize-handles {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  pointer-events: none;
+}
+
+.window-resize-handle {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.window-resize-handle.is-north,
+.window-resize-handle.is-south {
+  right: 8px;
+  left: 8px;
+  height: 6px;
+}
+
+.window-resize-handle.is-north {
+  top: 0;
+  cursor: ns-resize;
+}
+
+.window-resize-handle.is-south {
+  bottom: 0;
+  cursor: ns-resize;
+}
+
+.window-resize-handle.is-east,
+.window-resize-handle.is-west {
+  top: 8px;
+  bottom: 8px;
+  width: 6px;
+}
+
+.window-resize-handle.is-east {
+  right: 0;
+  cursor: ew-resize;
+}
+
+.window-resize-handle.is-west {
+  left: 0;
+  cursor: ew-resize;
+}
+
+.window-resize-handle.is-north-east,
+.window-resize-handle.is-north-west,
+.window-resize-handle.is-south-east,
+.window-resize-handle.is-south-west {
+  width: 10px;
+  height: 10px;
+}
+
+.window-resize-handle.is-north-east {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.window-resize-handle.is-north-west {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.window-resize-handle.is-south-east {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.window-resize-handle.is-south-west {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
 .picker-panel {
   position: relative;
   display: grid;

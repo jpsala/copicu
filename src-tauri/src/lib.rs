@@ -10,12 +10,14 @@ mod image_capture;
 pub mod storage;
 mod ui_host;
 mod window_focus;
+#[cfg(not(test))]
+mod window_state;
 
 #[cfg(not(test))]
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -77,6 +79,10 @@ const PICKER_SHORTCUT_LABEL: &str = "Ctrl+Shift+,";
 #[cfg(not(test))]
 const HIDE_ON_FOCUS_LOST_DELAY: Duration = Duration::from_millis(320);
 #[cfg(not(test))]
+const STARTUP_HIDE_ENFORCE_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(test))]
+const STARTUP_HIDE_ENFORCE_ATTEMPTS: usize = 24;
+#[cfg(not(test))]
 const NATIVE_WINDOW_TASK_DELAY: Duration = Duration::from_millis(90);
 #[cfg(not(test))]
 const SCRIPT_ACTION_REFRESH_INTERVAL: Duration = Duration::from_millis(1500);
@@ -91,6 +97,12 @@ const ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS: bool = false;
 #[derive(Clone, Default)]
 struct PickerFocusPolicy {
     generation: Arc<AtomicU64>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone)]
+struct InitialMainWindowHide {
+    pending: Arc<AtomicBool>,
 }
 
 #[cfg(not(test))]
@@ -169,12 +181,25 @@ struct GlobalScriptShortcutAction {
 }
 
 #[cfg(not(test))]
-fn diag_log(event: &str, detail: impl AsRef<str>) {
+#[cfg(debug_assertions)]
+fn dev_log(args: std::fmt::Arguments<'_>) {
+    eprintln!("{args}");
+}
+
+#[cfg(not(test))]
+#[cfg(not(debug_assertions))]
+fn dev_log(_args: std::fmt::Arguments<'_>) {}
+
+#[cfg(not(test))]
+fn diag_log(_event: &str, _detail: impl AsRef<str>) {
+    #[cfg(debug_assertions)]
+    {
     let unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default();
-    eprintln!("[diag {unix_ms}] {event}: {}", detail.as_ref());
+        eprintln!("[diag {unix_ms}] {_event}: {}", _detail.as_ref());
+    }
 }
 
 #[cfg(not(test))]
@@ -204,9 +229,77 @@ impl PickerFocusPolicy {
 
                 if let Err(error) = window.hide() {
                     eprintln!("window delayed hide on focus lost failed: {error}");
+                } else {
+                    diag_log("window.focus.hide", "focus lost");
                 }
             }) {
                 eprintln!("window delayed hide dispatch failed: {error}");
+            }
+        });
+    }
+}
+
+#[cfg(not(test))]
+impl Default for InitialMainWindowHide {
+    fn default() -> Self {
+        Self {
+            pending: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
+
+#[cfg(not(test))]
+impl InitialMainWindowHide {
+    fn cancel(&self) {
+        self.pending.store(false, Ordering::SeqCst);
+    }
+
+    fn is_pending(&self) -> bool {
+        self.pending.load(Ordering::SeqCst)
+    }
+
+    fn hide_now<R: tauri::Runtime>(&self, window: &tauri::Window<R>, reason: &str) -> bool {
+        if !self.is_pending() {
+            return false;
+        }
+
+        if let Err(error) = window.hide() {
+            eprintln!("initial main window hide failed: {error}");
+            return false;
+        }
+
+        diag_log("window.startup.hide", reason);
+        true
+    }
+
+    fn schedule<R: tauri::Runtime + 'static>(&self, window: tauri::WebviewWindow<R>) {
+        let policy = self.clone();
+        let app = window.app_handle().clone();
+        thread::spawn(move || {
+            for attempt in 1..=STARTUP_HIDE_ENFORCE_ATTEMPTS {
+                thread::sleep(STARTUP_HIDE_ENFORCE_INTERVAL);
+                if !policy.is_pending() {
+                    return;
+                }
+
+                let policy_for_main_thread = policy.clone();
+                let window_for_main_thread = window.clone();
+                if let Err(error) = app.run_on_main_thread(move || {
+                    if policy_for_main_thread.is_pending()
+                        && window_for_main_thread.is_visible().unwrap_or(false)
+                    {
+                        if let Err(error) = window_for_main_thread.hide() {
+                            eprintln!("initial main window delayed hide failed: {error}");
+                        } else {
+                            diag_log(
+                                "window.startup.hide",
+                                format!("delayed enforcement attempt={attempt}"),
+                            );
+                        }
+                    }
+                }) {
+                    eprintln!("initial main window hide dispatch failed: {error}");
+                }
             }
         });
     }
@@ -1104,6 +1197,7 @@ pub fn run() {
                     WindowEvent::CloseRequested { api, .. } => {
                         diag_log("window.event", "main close requested");
                         api.prevent_close();
+                        save_window_bounds_from_event(window);
                         if let Err(error) = window.hide() {
                             eprintln!("window hide on close failed: {error}");
                         }
@@ -1112,28 +1206,58 @@ pub fn run() {
                     | WindowEvent::Moved(_)
                     | WindowEvent::Resized(_) => {
                         diag_log("window.event", format!("main {event:?}"));
+                        if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
+                            save_window_bounds_from_event(window);
+                        }
+                        if matches!(event, WindowEvent::Focused(true))
+                            && window
+                                .app_handle()
+                                .try_state::<InitialMainWindowHide>()
+                                .map(|policy| policy.hide_now(window, "initial focus"))
+                                .unwrap_or(false)
+                        {
+                            return;
+                        }
                         let focus_policy = window.app_handle().state::<PickerFocusPolicy>();
                         focus_policy.cancel_pending_hide();
                     }
                     WindowEvent::Focused(false) if should_hide_on_focus_lost(window) => {
                         diag_log("window.event", "main focused false schedule hide");
+                        save_window_bounds_from_event(window);
                         let focus_policy = window.app_handle().state::<PickerFocusPolicy>();
                         focus_policy.schedule_hide(window.clone());
                     }
                     WindowEvent::Focused(false) => {
                         diag_log("window.event", "main focused false hide disabled");
+                        save_window_bounds_from_event(window);
                     }
                     _ => {}
                 },
-                SETTINGS_WINDOW_LABEL => {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
+                SETTINGS_WINDOW_LABEL => match event {
+                    WindowEvent::CloseRequested { api, .. } => {
                         diag_log("window.event", "settings close requested");
                         api.prevent_close();
+                        save_window_bounds_from_event(window);
                         if let Err(error) = window.hide() {
                             eprintln!("settings window hide on close failed: {error}");
                         }
                     }
-                }
+                    WindowEvent::Moved(_)
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::Focused(false) => {
+                        save_window_bounds_from_event(window);
+                    }
+                    _ => {}
+                },
+                AI_OUTPUT_WINDOW_LABEL => match event {
+                    WindowEvent::CloseRequested { .. }
+                    | WindowEvent::Moved(_)
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::Focused(false) => {
+                        save_window_bounds_from_event(window);
+                    }
+                    _ => {}
+                },
                 WHICHKEY_WINDOW_LABEL => match event {
                     WindowEvent::CloseRequested { api, .. } => {
                         diag_log("window.event", "whichkey close requested");
@@ -1234,13 +1358,17 @@ pub fn run() {
                 })?;
             let storage = storage::AppStorage::open(&app_data_dir)
                 .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?;
-            eprintln!("sqlite storage ready: {}", storage.db_path().display());
+            dev_log(format_args!("sqlite storage ready: {}", storage.db_path().display()));
+            let window_registry = window_state::WindowStateRegistry::open(app_data_dir.clone());
 
             app.manage(PickerFocusPolicy::default());
+            let initial_main_window_hide = InitialMainWindowHide::default();
+            app.manage(initial_main_window_hide.clone());
             app.manage(GlobalScriptShortcuts::default());
             app.manage(CompoundShortcutRuntime::default());
             app.manage(CurrentPickerShortcut::default());
             app.manage(ui_host::UiHostState::default());
+            app.manage(window_registry.clone());
             app.manage(storage.clone());
             let suppression = clipboard::SelfWriteSuppression::default();
             app.manage(suppression.clone());
@@ -1249,6 +1377,13 @@ pub fn run() {
                 if let Err(error) = initialize_picker_window(&window) {
                     eprintln!("picker window configuration failed: {error}");
                 }
+                if let Err(error) =
+                    window_registry.restore(&window, window_state::RestoreTarget::LastMonitor)
+                {
+                    eprintln!("picker window state restore failed: {error}");
+                }
+                log_main_window_startup_state(&window);
+                initial_main_window_hide.schedule(window.clone());
                 schedule_dev_empty_root_recovery(window.clone());
                 if let Err(error) = previous_window.register_own_window(&window) {
                     eprintln!("own window registration failed: {error}");
@@ -1332,7 +1467,7 @@ fn open_settings_window_on_main_thread<R: tauri::Runtime>(
         .min_inner_size(680.0, 460.0)
         .decorations(false)
         .transparent(false)
-        .resizable(false)
+        .resizable(true)
         .shadow(false)
         .skip_taskbar(false)
         .visible(false)
@@ -1341,6 +1476,11 @@ fn open_settings_window_on_main_thread<R: tauri::Runtime>(
         .map_err(|error| format!("settings window build failed: {error}"))?,
     };
 
+    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+        registry
+            .restore(&window, window_state::RestoreTarget::LastMonitor)
+            .map_err(|error| format!("settings window state restore failed: {error}"))?;
+    }
     window
         .show()
         .map_err(|error| format!("settings window show failed: {error}"))?;
@@ -1435,6 +1575,11 @@ pub(crate) fn open_ai_output_window<R: tauri::Runtime>(
         .map_err(|error| format!("ai-output window build failed: {error}"))?,
     };
 
+    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+        registry
+            .restore(&window, window_state::RestoreTarget::LastMonitor)
+            .map_err(|error| format!("ai-output window state restore failed: {error}"))?;
+    }
     window
         .show()
         .map_err(|error| format!("ai-output window show failed: {error}"))?;
@@ -1597,6 +1742,15 @@ fn show_main_window<R: tauri::Runtime>(
         }
     }
 
+    if let Some(initial_hide) = app.try_state::<InitialMainWindowHide>() {
+        initial_hide.cancel();
+    }
+
+    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+        if let Err(error) = registry.restore(&window, window_state::RestoreTarget::CursorMonitor) {
+            eprintln!("main window state restore failed: {error}");
+        }
+    }
     if let Err(error) = window.show() {
         return Err(format!("window show failed: {error}"));
     }
@@ -1660,34 +1814,45 @@ fn show_main_window<R: tauri::Runtime>(
 fn initialize_picker_window<R: tauri::Runtime>(
     window: &tauri::WebviewWindow<R>,
 ) -> Result<(), String> {
+    if let Some(registry) = window
+        .app_handle()
+        .try_state::<window_state::WindowStateRegistry>()
+    {
+        registry.apply_runtime_config(window)?;
+    }
     window
-        .set_always_on_top(true)
-        .map_err(|error| format!("window initial always-on-top failed: {error}"))
+        .set_always_on_top(false)
+        .map_err(|error| format!("window initial always-on-top reset failed: {error}"))
+}
+
+#[cfg(not(test))]
+fn save_window_bounds_from_event<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    if let Some(registry) = window
+        .app_handle()
+        .try_state::<window_state::WindowStateRegistry>()
+    {
+        if let Err(error) = registry.save_from_window_event(window) {
+            eprintln!("window state save failed: {error}");
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn log_main_window_startup_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let visible = window.is_visible().unwrap_or(false);
+    let focused = window.is_focused().unwrap_or(false);
+    let always_on_top = window.is_always_on_top().unwrap_or(false);
+    dev_log(format_args!(
+        "main window startup state: visible={visible} focused={focused} always_on_top={always_on_top}"
+    ));
+    diag_log(
+        "window.startup",
+        format!("visible={visible} focused={focused} always_on_top={always_on_top}"),
+    );
 }
 
 #[cfg(all(not(test), debug_assertions))]
-fn schedule_dev_empty_root_recovery<R: tauri::Runtime + 'static>(window: tauri::WebviewWindow<R>) {
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(900));
-        let app = window.app_handle().clone();
-        if let Err(error) = app.run_on_main_thread(move || {
-            if let Err(error) = window.eval(
-                r#"
-                (() => {
-                  const root = document.getElementById("root");
-                  if (root && root.childElementCount === 0) {
-                    console.warn("[copicu] empty root after startup; reloading dev WebView");
-                    location.reload();
-                  }
-                })();
-                "#,
-            ) {
-                eprintln!("dev empty-root recovery eval failed: {error}");
-            }
-        }) {
-            eprintln!("dev empty-root recovery dispatch failed: {error}");
-        }
-    });
+fn schedule_dev_empty_root_recovery<R: tauri::Runtime + 'static>(_window: tauri::WebviewWindow<R>) {
 }
 
 #[cfg(any(test, not(debug_assertions)))]
@@ -2314,10 +2479,10 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
         }
 
         if compound_prefixes.contains_key(&shortcut) {
-            eprintln!(
+            dev_log(format_args!(
                 "compound script shortcut shares registered prefix: {} -> {}",
                 first_step, action.id
-            );
+            ));
             continue;
         }
 
@@ -2331,10 +2496,10 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
 
         match app.global_shortcut().register(shortcut) {
             Ok(()) => {
-                eprintln!(
+                dev_log(format_args!(
                     "compound script shortcut prefix registered: {} -> {}",
                     first_step, action.id
-                );
+                ));
                 compound_prefixes.insert(
                     shortcut,
                     hotkeys::HotkeySequence::parse(&first_step.to_string())
@@ -2374,10 +2539,10 @@ fn register_simple_global_script_shortcut<R: tauri::Runtime>(
 
     match app.global_shortcut().register(shortcut) {
         Ok(()) => {
-            eprintln!(
+            dev_log(format_args!(
                 "global script shortcut registered: {} -> {}",
                 shortcut_label, action.id
-            );
+            ));
             registered.insert(
                 shortcut,
                 GlobalScriptShortcutAction {
@@ -2893,7 +3058,7 @@ fn code_from_shortcut_key(key: &str) -> Option<Code> {
 #[cfg(not(test))]
 fn log_shortcut_registration<R: tauri::Runtime, M: Manager<R>>(app: &M) {
     if app.global_shortcut().is_registered(picker_shortcut()) {
-        eprintln!("global shortcut registered: {PICKER_SHORTCUT_LABEL}");
+        dev_log(format_args!("global shortcut registered: {PICKER_SHORTCUT_LABEL}"));
     } else {
         eprintln!("global shortcut not registered: {PICKER_SHORTCUT_LABEL}");
     }

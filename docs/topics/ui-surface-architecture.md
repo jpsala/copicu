@@ -12,6 +12,7 @@ triggers:
   - Mantine
   - impeccable
 primary_refs:
+  - docs/topics/window-state-and-monitor-policy.md
   - docs/topics/ui-rethink.md
   - docs/topics/custom-window-system.md
   - docs/topics/mantine-ui-system.md
@@ -124,6 +125,7 @@ Labels actuales:
 - `notifications`: toast stack auxiliar.
 
 Para ventanas custom, seguir `docs/topics/custom-window-system.md`: custom chrome compartido por composicion, `main` y `settings` ya usan superficies solidas frameless, y se evita `transparent: true` como default de dogfood.
+Para resize y persistencia de posicion/tamano, seguir `docs/topics/window-state-and-monitor-policy.md`: la politica nativa vive en `src-tauri/src/window_state.rs`, y los handles visuales de resize viven en `CustomWindowFrame`.
 
 Contrato vigente de chrome custom:
 
@@ -131,6 +133,7 @@ Contrato vigente de chrome custom:
 - `pin` comun significa solo `always-on-top`; efectos laterales por superficie quedan afuera del componente base.
 - En `main`, pinned suspende `hide-on-focus-lost` desde Rust. No copiar esa regla a otras ventanas salvo decision explicita.
 - `settings` usa variante `document`: close real, skip taskbar falso, sin pin ni hide especial.
+- `main`, `settings` y `ai-output` guardan bounds por monitor; `ui-host`, `notifications` y `whichkey` son opt-out por ahora.
 - Las ventanas pueden adoptar la base visual sin cambiar aun su ventana fisica a frameless; la migracion real requiere ajustar Tauri config/capabilities por label.
 
 Nota vigente: `@mantine/notifications` no reemplaza la ventana `notifications` cuando hace falta elegir monitor/posicion por Tauri; Mantine posiciona dentro del documento de la WebView.

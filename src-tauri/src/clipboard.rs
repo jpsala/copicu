@@ -24,6 +24,14 @@ const CLIPBOARD_RETRY_DELAYS: [Duration; 4] = [
     Duration::from_millis(64),
 ];
 
+#[cfg(debug_assertions)]
+fn dev_log(args: std::fmt::Arguments<'_>) {
+    eprintln!("{args}");
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_log(_args: std::fmt::Arguments<'_>) {}
+
 #[derive(Clone, Serialize)]
 pub struct CaptureStats {
     captured_count: u64,
@@ -148,7 +156,7 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             Ok(text) => text,
             Err(error) => {
                 record_event(&self.state, CaptureOutcome::ReadError, probe_result, None);
-                eprintln!("clipboard read skipped: {error}");
+                dev_log(format_args!("clipboard read skipped: {error}"));
                 return;
             }
         };
@@ -161,7 +169,7 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                 probe_result,
                 None,
             );
-            eprintln!("clipboard text ignored: empty");
+            dev_log(format_args!("clipboard text ignored: empty"));
             return;
         }
 
@@ -178,13 +186,13 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                 probe_result,
                 Some(preview),
             );
-            eprintln!("clipboard text ignored: self_write");
+            dev_log(format_args!("clipboard text ignored: self_write"));
             return;
         }
 
         if has_image_with_text {
             note_image_with_text_skipped(&self.state);
-            eprintln!("clipboard image ignored: text_available");
+            dev_log(format_args!("clipboard image ignored: text_available"));
         }
 
         let outcome = record_candidate(
@@ -203,10 +211,10 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                     }
                     Err(error) => eprintln!("clipboard storage insert failed: {error}"),
                 }
-                eprintln!("clipboard text captured");
+                dev_log(format_args!("clipboard text captured"));
             }
             CaptureOutcome::IgnoredDuplicateOrCoalesced => {
-                eprintln!("clipboard text ignored: duplicate_or_coalesced")
+                dev_log(format_args!("clipboard text ignored: duplicate_or_coalesced"))
             }
             CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::CapturedImage
@@ -222,7 +230,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
             Ok(image) => image,
             Err(error) => {
                 record_event(&self.state, CaptureOutcome::ReadError, probe_result, None);
-                eprintln!("clipboard image read skipped: {error}");
+                dev_log(format_args!("clipboard image read skipped: {error}"));
                 return;
             }
         };
@@ -234,7 +242,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
                 probe_result,
                 None,
             );
-            eprintln!("clipboard image ignored: self_write");
+            dev_log(format_args!("clipboard image ignored: self_write"));
             return;
         }
 
@@ -254,15 +262,15 @@ impl<R: Runtime> TextClipboardHandler<R> {
                     }
                     Err(error) => eprintln!("clipboard image storage insert failed: {error}"),
                 }
-                eprintln!(
+                dev_log(format_args!(
                     "clipboard image captured: {}x{} {} bytes",
                     image.width,
                     image.height,
                     image.png_bytes.len()
-                );
+                ));
             }
             CaptureOutcome::IgnoredDuplicateOrCoalesced => {
-                eprintln!("clipboard image ignored: duplicate_or_coalesced")
+                dev_log(format_args!("clipboard image ignored: duplicate_or_coalesced"))
             }
             CaptureOutcome::CapturedText
             | CaptureOutcome::IgnoredEmpty
@@ -388,7 +396,7 @@ pub fn spawn_text_watcher<R: Runtime>(
     thread::Builder::new()
         .name("copicu-clipboard-watch".to_string())
         .spawn(move || {
-            eprintln!("clipboard watcher started");
+            dev_log(format_args!("clipboard watcher started"));
             watcher.start_watch();
         })
         .map_err(|error| -> Box<dyn Error + Send + Sync> { Box::new(error) })?;

@@ -71,6 +71,35 @@ Motivo: Windows 10/11 modernos suelen tener WebView2 disponible o pueden descarg
 
 No usar `skip` salvo build interno muy controlado: Tauri lo marca como no recomendado porque la app depende de WebView2.
 
+### `WebView2Loader.dll`
+
+En Windows GNU, `webview2-com-sys` deja `WebView2Loader.dll` como dependencia dinamica junto al binario de Cargo. El instalador NSIS debe instalar esa DLL junto a `copicu.exe`; si falta, el primer launch instalado falla con:
+
+```text
+The code execution cannot proceed because WebView2Loader.dll was not found.
+```
+
+Patron vigente:
+
+- `bundle.resources` incluye `target/release/WebView2Loader.dll`;
+- `bundle.windows.nsis.installerHooks` usa `nsis-hooks.nsh`;
+- el hook post-install copia `resources/WebView2Loader.dll` a `$INSTDIR/WebView2Loader.dll`;
+- el hook tambien borra `bench_history_search.exe` si quedo de una build alpha anterior.
+
+## Produccion Sin Consola
+
+El binario de release debe compilar como Windows GUI app, no consola. Mantener en `src-tauri/src/main.rs`:
+
+```rust
+#![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
+```
+
+Los logs informativos de startup, clipboard watcher, foco anterior y shortcuts deben quedar detras de `debug_assertions` o un diagnostico explicito. El instalador publico no debe abrir terminal ni imprimir diagnosticos normales.
+
+## Binarios Dev
+
+No dejar herramientas de benchmark bajo `src-tauri/src/bin` si no deben distribuirse. Tauri enumera binarios Cargo y puede empaquetarlos. Para herramientas locales usar `src-tauri/examples/` y wrappers dev como `npm run perf:history`.
+
 ## Updater
 
 Para updates futuros con Tauri Updater:

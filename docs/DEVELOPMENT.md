@@ -154,6 +154,8 @@ Desde la raiz del repo:
 ```powershell
 npm install
 npm run dev
+npm run dev:restart
+npm run dev:built:fresh
 npm run build
 npm run visual:check
 npm run rust:test
@@ -165,6 +167,12 @@ npm run tauri:build
 ## Runtime Dev Vivo
 
 Regla operativa: mientras no exista un binario instalable estable, los cambios deben reflejarse en la instancia viva de Copicu.
+
+`npm run dev:restart` usa built-dev por defecto para evitar la inestabilidad de Vite dev server en WebView2. Esta es una decision operativa: el modo diario prioriza confiabilidad nativa sobre HMR. Para dogfood real de Copicu usar built-dev; para diagnosticar Vite dev explicitamente, usar:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1 -ViteDev
+```
 
 Antes de arrancar o reiniciar:
 
@@ -179,7 +187,7 @@ Cerrar solo procesos viejos de Copicu/Vite/Tauri que correspondan al producto y 
 
 - Vite escucha `127.0.0.1:1420`.
 - `copicu.exe` corre desde el worktree actual.
-- Los logs muestran `global shortcut registered` y los shortcuts/rutas esperadas.
+- Los logs muestran `global shortcut registered`, `main window startup state: visible=false` y los shortcuts/rutas esperadas.
 - La app responde (`Get-Process -Name copicu | Select Id,Responding,Path`).
 
 Si el branch esta atrasado respecto de la DB real y aparece `migration number too high`, no downgradear ni borrar la DB real de AppData. Para dogfood de branch/worktree, usar datos aislados:

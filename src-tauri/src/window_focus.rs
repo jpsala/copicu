@@ -14,6 +14,14 @@ pub struct PreviousWindow {
 type NativeWindowId = isize;
 const FOREGROUND_TRACK_INTERVAL: Duration = Duration::from_millis(250);
 
+#[cfg(debug_assertions)]
+fn dev_log(args: std::fmt::Arguments<'_>) {
+    eprintln!("{args}");
+}
+
+#[cfg(not(debug_assertions))]
+fn dev_log(_args: std::fmt::Arguments<'_>) {}
+
 impl PreviousWindow {
     #[cfg(not(test))]
     pub fn register_own_window<R: tauri::Runtime>(
@@ -59,19 +67,19 @@ impl PreviousWindow {
         }
 
         self.set_previous(foreground_id)?;
-        eprintln!("previous window remembered");
+        dev_log(format_args!("previous window remembered"));
         Ok(())
     }
 
     pub fn focus_previous(&self) -> Result<(), String> {
         let hwnd = self.current()?;
-        eprintln!("previous window focus requested");
+        dev_log(format_args!("previous window focus requested"));
         platform::focus_window(hwnd)
     }
 
     pub fn send_paste_shortcut(&self, shortcut: &PasteShortcut) -> Result<(), String> {
         let hwnd = self.current()?;
-        eprintln!("paste shortcut requested: {shortcut:?}");
+        dev_log(format_args!("paste shortcut requested: {shortcut:?}"));
         platform::send_paste_shortcut(hwnd, shortcut)
     }
 
@@ -102,7 +110,7 @@ impl PreviousWindow {
         if *hwnd != Some(foreground_id) {
             *hwnd = Some(foreground_id);
             if let Some(process_id) = platform::window_process_id(foreground_id) {
-                eprintln!("previous window updated: pid={process_id}");
+                dev_log(format_args!("previous window updated: pid={process_id}"));
             }
         }
         Ok(())
@@ -151,7 +159,7 @@ fn own_window_id<R: tauri::Runtime>(_window: &tauri::WebviewWindow<R>) -> Option
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::NativeWindowId;
+    use super::{dev_log, NativeWindowId};
     use crate::host::PasteShortcut;
     use std::{
         mem::size_of,
@@ -193,7 +201,7 @@ mod platform {
         }
 
         if let Some(process_id) = window_process_id(window_id) {
-            eprintln!("previous window focus target: pid={process_id}");
+            dev_log(format_args!("previous window focus target: pid={process_id}"));
         }
         let accepted = unsafe { SetForegroundWindow(hwnd) }.as_bool();
         if !accepted {

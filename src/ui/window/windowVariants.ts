@@ -14,3 +14,11 @@ export const DEFAULT_WINDOW_CONTROLS: Record<CustomWindowVariant, WindowControlI
   prompt: ["close"],
   toast: [],
 };
+
+export const DEFAULT_WINDOW_RESIZABLE: Record<CustomWindowVariant, boolean> = {
+  floatingPicker: true,
+  document: true,
+  utility: true,
+  prompt: false,
+  toast: false,
+};

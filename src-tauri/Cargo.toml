@@ -4,10 +4,16 @@ version = "0.1.0"
 description = "A local keyboard-first clipboard manager inspired by CopyQ."
 authors = ["JP"]
 edition = "2021"
+default-run = "copicu"
+autobins = false
 
 [lib]
 name = "copicu_lib"
 crate-type = ["rlib"]
+
+[[bin]]
+name = "copicu"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }

@@ -1,0 +1,7 @@
+{
+  "build": {
+    "beforeDevCommand": null,
+    "devUrl": null,
+    "frontendDist": "../dist"
+  }
+}

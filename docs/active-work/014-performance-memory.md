@@ -31,6 +31,50 @@ Checks de referencia:
 - `cd src-tauri; cargo check`: pasa.
 - `npm run rust:test`: bloqueado antes de correr tests por compile error test-only en `apply_autostart_setting`/`autolaunch()`; `cargo check` normal pasa.
 
+Profiling de arranque dev 2026-06-09:
+
+- Hallazgo P0: `npm run tauri:dev` quedaba sin arrancar la app porque `tauri dev` invocaba `cargo run` sin `--bin` y el crate ya tiene dos binarios (`copicu`, `bench_history_search`). Fix aplicado: `default-run = "copicu"` en `src-tauri/Cargo.toml`.
+- Medicion con target vacio aislado: Vite listo aprox 1.1s, puerto escuchando aprox 1.8s, Rust `Finished` aprox 168s; el costo dominante fue compilar desde cero.
+- Medicion incremental tras tocar manifest: Vite listo aprox 1.1s, `cargo run` lanzado aprox 3.8s, Rust recompilo `copicu` en 8.4s, app respondio/logueo storage+shortcut aprox 13.7s.
+- Medicion incremental sin cambios: Vite listo aprox 1.0s, puerto aprox 1.5s, `tauri dev` lanzo `cargo run` aprox 3.8s, Cargo `Finished` aprox 4.5s, storage/watcher/shortcut/foco aprox 5.0s.
+- Medicion separada: `npm run dev` solo reporta Vite ready en aprox 0.2s; `cargo run --no-default-features --bin copicu` con Vite ya vivo llega a foco/storage/shortcut en aprox 1.4s. La lentitud incremental visible proviene mayormente de la orquestacion de `tauri dev` antes de lanzar Cargo, no del setup Rust de Copicu.
+- Logs de medicion quedaron en `.codex-run/startup-profile/`. App dev viva relanzada con logs en `.codex-run/live-dev-startup-profile/` y app data aislada.
+
+Incidente de restart/menu 2026-06-09:
+
+- `Win+A, P, R` / `npm run dev:restart` reprodujo pantalla negra: ventana Tauri visible y proceso `Responding=True`, pero WebView con `#root` vacio y sin input. Eso no es responsive aunque Windows lo reporte como tal.
+- Medicion real de una corrida problematica: Vite reporto `ready` en 0.3-1.7s y Cargo termino en 10-16s, pero React no monto hasta mucho despues. En corrida final `tauri-dev-20260609-133308.err.log`, foco inicial `[diag 1781022811384]` y `renderer: module-load` `[diag 1781022926211]`: aprox 115s de pantalla negra antes de UI usable. Despues aparecieron heartbeats con `active=INPUT:Search clipboard history`.
+- Hallazgo: redirigir stdout/stderr de Vite o lanzar Vite separado desde PowerShell puede dejar el proceso escuchando en `1420` pero sin responder HTTP (`curl /` y `/src/main.tsx` timeout). Eso produce WebView negra. El script `dev:restart` fue revertido a usar `npm run tauri:dev` como fuente de verdad y ahora imprime progreso por fases leyendo logs.
+- Hallazgo adicional: con `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` se facilito inspeccionar CDP, pero no debe estar activo por defecto en el menu. `dev:restart` lo deja deshabilitado salvo `-RemoteDebug`.
+- Cambios aplicados: `scripts/dev/restart-dev.ps1` mata procesos del repo, lanza `npm run tauri:dev`, imprime tiempos por fase (`Vite ready`, `Cargo`, `shortcuts`, `renderer: module-load`, `input focused`) y falla si no ve renderer. `index.html` tiene fallback dev-only para importar `/src/main.tsx` si `#root` queda vacio; `src-tauri` tambien intenta un recovery dev por `window.eval`.
+- Estado actual: app viva desde `C:\dev\chat\copyq-tauri\src-tauri\target\debug\copicu.exe`, pid observado `36936`, `Responding=True`, renderer module-load confirmado por logs. Pero el tiempo hasta responsive sigue siendo inaceptable en algunas corridas y debe seguir investigandose en sesion nueva.
+- Proximo foco: aislar por que Vite/WebView tarda ~115s en ejecutar modulos aunque Vite diga ready; revisar si lo causa cache Vite/WebView2, optimizer, stdout redirection, plugin React/Vite 8, o el fallback duplicado. No dar por resuelto hasta medir una corrida `npm run dev:restart` con `renderer_ready` en pocos segundos.
+
+Corte boot/lazy surfaces 2026-06-09:
+
+- Snapshot previo preservado en `.codex-run/snapshots/20260609-145936`; no se revirtieron cambios del incidente dev restart/menu.
+- `index.html` conserva un bootstrap inline que registra tiempos de boot y hace `import("/src/main.tsx")`; se evita pedir `src/boot.tsx` como modulo separado en Vite dev.
+- `src/main.tsx` conserva el picker como ruta inicial y usa `React.lazy`/`Suspense` para ventanas secundarias.
+- Ventanas lazy extraidas:
+  - `src/windows/secondaryWindows.tsx`: `SettingsWindowApp`, `UiHostApp`, `NotificationsApp`, `WhichKeyWindowApp`.
+  - `src/windows/AiOutputWindowApp.tsx`: AI Markdown output + `react-markdown`, `remark-gfm`, `rehype-highlight`.
+- El picker inicial ya no importa estaticamente `react-markdown`, `remark-gfm` ni `rehype-highlight`; esos deps quedan en el chunk de AI output.
+- Build despues del corte: `dist/assets/index-*.js` aprox 2.75 kB, `main-*.js` aprox 264.12 kB, `secondaryWindows-*.js` aprox 35.37 kB, `AiOutputWindowApp-*.js` aprox 325.47 kB, `CustomWindowFrame-*.js` aprox 243.23 kB, CSS aprox 257.59 kB.
+- `scripts/dev/profile-vite-probes.ps1` sigue mostrando Vite dev no confiable: status HTTP `000` y/o requests sin `finish`; no usar esto como salud del renderer. Corrida `.codex-run/vite-probes/20260609-154427`: `00-empty.ts`, `01-react.tsx` y `02-tauri-api.ts` devolvieron `000` tras 30s; el log de Vite mostro requests retenidos aprox 90s. Corrida `.codex-run/vite-probes/20260609-154640` con timeout mayor: todos los probes devolvieron `000`; `00-empty.ts` tardo 25.556s y los demas aprox 2.0s, con log cortado en `start GET /src/dev-probes/00-empty.ts`.
+- `npm run dev:built:fresh` sigue siendo el modo usable sin Vite dev server. Corrida con target compartido `.codex-run/built-dev-measure/20260609-154820` fallo antes de arrancar por `os error 32` en build script Tauri/Cargo. Corrida fria con `CARGO_TARGET_DIR` aislado `.codex-run/built-dev-measure/20260609-155304`: build frontend termino en 5.714s y `renderer: module-load` llego en 218.106s, dominado por compilacion Rust fria. Corridas incrementales con el mismo target aislado: `.codex-run/built-dev-measure/20260609-155716` llego a `renderer: module-load` en 12.075s; `.codex-run/built-dev-measure/20260609-155758` llego a shortcut en 2.931s, `renderer: module-load` en 2.956s y heartbeat `active=INPUT:Search clipboard history` en 5.161s.
+- Checks del corte: `npm run build` pasa; `cd src-tauri; cargo check` pasa.
+
+Cierre dev restart/menu 2026-06-09:
+
+- Hallazgo concreto 1: imports desde el barrel `lucide-react` hacian que Vite dev transformara cientos de modulos `lucide-react/dist/esm/icons/*`. Se cambiaron imports de iconos a paths profundos `.mjs`; el build bajo de 2976 a 1291 modulos transformados.
+- Hallazgo concreto 2: `COPICU_VITE_RESTART_MODE` con `optimizeDeps.include=[]` rompia React en WebView: errores `react/index.js does not provide an export named 'Fragment'` y `react/jsx-dev-runtime.js ... 'jsxDEV'`. Se reactivo `optimizeDeps` minimo para React, JSX runtime, Mantine, Tauri API y virtualizer.
+- Hallazgo concreto 3: `server.warmup`, cache/revalidacion y la inyeccion de `/@vite/client` podian bloquear requests del WebView durante decenas de segundos. En restart mode se desactiva warmup, se fuerza `Cache-Control: no-store` y se remueve la inyeccion de `/@vite/client` del HTML transformado.
+- Aun con esos fixes, `tauri dev` + Vite dev siguio variable y lento: corridas medidas quedaron aprox 52-54s hasta heartbeat. Ya no queda el fallo de import React ni el bloqueo de 115s, pero Vite dev no queda como camino usable principal.
+- Decision operativa aplicada: `npm run dev:restart` ahora usa built-dev por defecto (`npm run dev:built:fresh` bajo el script), sin Vite dev server. `scripts/dev/restart-dev.ps1 -ViteDev` queda como modo diagnostico explicito para seguir investigando Vite.
+- Implicacion aceptada: el modo dev diario de Copicu prioriza confiabilidad nativa sobre HMR. Para dogfood real, tray, shortcuts, paste, WebView y Rust, usar built-dev. Para iteracion UI pura se puede crear mas adelante un modo preview/frontend separado, pero no usar Vite dev WebView2 como señal primaria de salud.
+- Corrida valida de `npm run dev:restart` built-dev: `.codex-run/dev-restart/logs/restart-20260609-163810.log`; frontend build +9.5s, shortcuts +20.8s, `renderer: module-load` +20.8s, heartbeat `active=INPUT:Search clipboard history` +22.8s. Proceso vivo: `src-tauri\target\debug\copicu.exe`, sin Vite escuchando en 1420.
+- Checks despues del cierre: `npm run build` pasa; `cd src-tauri; cargo check` pasa.
+
 Primer corte ya implementado antes de la pausa:
 
 - thumbnails reales desde `thumbnail_path`;
@@ -274,13 +318,19 @@ Hipotesis: el picker paga bundle de superficies que no necesita al abrir.
 
 Checklist:
 
-- [ ] Separar entrypoints o lazy imports por ventanas.
-- [ ] Lazy-load markdown/syntax highlight.
-- [ ] Medir bundle antes/despues.
+- [x] Separar entrypoints o lazy imports por ventanas.
+- [x] Lazy-load markdown/syntax highlight.
+- [x] Medir bundle antes/despues parcial.
 
 Aceptacion:
 
 - Picker inicial carga menos JS/CSS sin romper ventanas secundarias.
+
+Cierre 2026-06-09:
+
+- Primer corte implementado por lazy windows, no por entrypoints HTML multiples.
+- Faltan validaciones visuales/manuales especificas de Settings, UiHost, Notifications, AI Output y WhichKey si se toca comportamiento; el corte actual compila y el picker inicial monta en `dev:built:fresh`.
+- `npm run dev:restart` queda solucionado como built-dev default. Vite dev sigue siendo factor inestable y solo debe usarse con `scripts/dev/restart-dev.ps1 -ViteDev` para diagnostico.
 
 ### Task 9: Render Feed Micro-Optimizations
 
