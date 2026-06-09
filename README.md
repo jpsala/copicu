@@ -6,28 +6,28 @@ Copicu started as a CopyQ-inspired clipboard manager, but the goal is not to clo
 
 The clipboard is usually treated as a passive list of things you copied. Copicu treats it as working memory: searchable, previewable, editable, taggable, scriptable, and reusable.
 
-## Install Windows Alpha
+## Install Windows Release Candidate
 
-Copicu currently ships as a Windows alpha prerelease.
+Copicu currently ships as a Windows release candidate.
 
 1. Download the latest Windows installer from [Releases](https://github.com/jpsala/copicu/releases).
 2. Run the `Copicu_*_x64-setup.exe` installer.
 3. Open Copicu and use the picker to search, copy, edit, tag, or paste synthetic/test clipboard items first.
 
-Current alpha release:
+Current release candidate:
 
-- [v0.1.0-alpha.2](https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.2)
+- [v0.1.0-rc.1](https://github.com/jpsala/copicu/releases/tag/v0.1.0-rc.1)
 - Asset: `Copicu_0.1.0_x64-setup.exe`
 - Windows x64 NSIS installer
 - SHA256: `020859310D0FFF55199FC2D13D5B6BBBA882360AAC9AC824A677641EC655BB95`
 
-`v0.1.0-alpha.2` fixes the Windows installer layout for `WebView2Loader.dll` and builds the app as a GUI application so launching Copicu does not open a console window.
+`v0.1.0-rc.1` includes the Windows installer fixes for `WebView2Loader.dll` and launches as a normal GUI application without opening a console window.
 
-This is early software. Do not test with sensitive clipboard content until you are comfortable with the alpha limitations and local data model.
+Copicu is used daily as a local clipboard manager. The core picker, history capture, search, editing, tags, shortcuts, and paste workflow are in active use.
 
-## Alpha Limitations
+## Current Limitations
 
-Copicu is usable for experimentation and dogfooding, but it is not stable software yet.
+Copicu is reliable enough for daily Windows use, but some areas are still evolving.
 
 Known limitations:
 
@@ -39,11 +39,11 @@ Known limitations:
 - Rich clipboard formats are still evolving. Text and image-only capture exist, but full HTML/RTF/custom-format fidelity is not a compatibility promise.
 - Copicu is CopyQ-inspired, not CopyQ-compatible. It does not run CopyQ scripts or promise full CopyQ parity.
 
-Good alpha feedback includes Windows version, target app, install method, Copicu version or commit, exact steps, and synthetic reproduction data.
+Good feedback includes Windows version, target app, install method, Copicu version or commit, exact steps, and synthetic reproduction data.
 
 ## What To Test And Report
 
-The most useful alpha reports are narrow and reproducible:
+The most useful reports are narrow and reproducible:
 
 - clipboard capture from common Windows apps;
 - paste-to-previous-window behavior in specific target apps;
@@ -288,9 +288,9 @@ The direction is a fast, private, keyboard-first clipboard workbench with:
 
 ## Status
 
-Copicu is active early-stage software.
+Copicu is active release-candidate software.
 
-It is usable for experimentation and dogfooding, but APIs and behavior are still evolving. The current priority is to keep the native core reliable while growing the product around search, metadata, scripts, and AI-assisted actions.
+It is already used daily as a local clipboard manager, while APIs and advanced workflows are still evolving. The current priority is to keep the native core reliable while growing the product around search, metadata, scripts, and AI-assisted actions.
 
 ## Development
 
