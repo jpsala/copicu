@@ -23,6 +23,12 @@ No abrir documentos largos si el topic de entrada alcanza para decidir.
 7. `TOPICS.md`: router de temas.
 8. `GLOSSARY.md`: aliases, nombres cortos y definiciones recurrentes.
 
+## Documentacion De Usuario
+
+- `../README.md`: entrada publica del proyecto.
+- `user/README.md`: guia clara de que es Copicu, que hace y como se usa.
+- `user/scripts.md`: guia exhaustiva de scripts, metadata, API host, capabilities y ejemplos.
+
 ## Contexto Inicial
 
 La discusion inicial sobre stack, producto, arquitectura, spikes, milestones y riesgos ya fue integrada en estos documentos. No debe quedar un archivo raiz paralelo como fuente de verdad.

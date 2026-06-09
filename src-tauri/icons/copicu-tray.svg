@@ -1,0 +1,31 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="paper" x1="60" y1="30" x2="198" y2="226" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#C9D7EA"/>
+    </linearGradient>
+    <linearGradient id="clip" x1="76" y1="29" x2="186" y2="103" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60E3FF"/>
+      <stop offset="1" stop-color="#2C70FF"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="44" y1="69" x2="219" y2="190" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2DD4BF"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+    <filter id="softShadow" x="23" y="19" width="210" height="219" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#102033" flood-opacity=".22"/>
+    </filter>
+  </defs>
+  <g filter="url(#softShadow)">
+    <path d="M50 25h107l56 56v143c0 13-11 24-24 24H50c-13 0-24-11-24-24V49c0-13 11-24 24-24Z" fill="url(#paper)"/>
+    <path d="M157 25v44c0 11 9 20 20 20h36L157 25Z" fill="#9DB4D2"/>
+    <rect x="62" y="13" width="112" height="48" rx="22" fill="url(#clip)"/>
+    <rect x="87" y="2" width="60" height="39" rx="19.5" fill="#EAF7FF"/>
+  </g>
+  <path d="M20 158c45 42 145 33 213-18" stroke="url(#orbit)" stroke-width="22" stroke-linecap="round"/>
+  <path d="M18 108c39-49 136-60 214-28" stroke="url(#orbit)" stroke-width="18" stroke-linecap="round" stroke-opacity=".42"/>
+  <circle cx="27" cy="158" r="23" fill="#35E0C0"/>
+  <circle cx="232" cy="80" r="23" fill="#7C3AED"/>
+  <circle cx="231" cy="140" r="17" fill="#2C70FF"/>
+  <path d="M72 110h99M72 150h82M72 191h109" stroke="#334155" stroke-width="16" stroke-linecap="round"/>
+</svg>

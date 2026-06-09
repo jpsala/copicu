@@ -20,6 +20,7 @@ La direccion vigente es:
 - separar payload original de metadata estructurada;
 - preparar arquitectura para plugins personales JavaScript/TypeScript, con Rust como host nativo interno y sin sandbox complejo inicial;
 - dejar espacio claro para capacidades AI;
+- usar animaciones modernas, sutiles y cuidadas para orientar foco, transiciones y feedback sin volver lenta ni ruidosa la herramienta;
 - validar temprano clipboard monitoring, tray, global shortcuts y paste-to-previous-window.
 
 ## MVP Propuesto

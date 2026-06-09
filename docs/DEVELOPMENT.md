@@ -2,7 +2,7 @@
 
 ## Estado
 
-Proyecto en etapa inicial. Todavia no hay scaffold de aplicacion ni package manager definido en archivos.
+Scaffold inicial creado con Tauri 2, React, Vite y TypeScript. El MVP 0 sigue en fase de native spike: watcher, tray, shortcut `Ctrl+Shift+,`, SQLite inicial, reload post-restart, picker preview-first, copy/hide, API host, self-write suppression y paste-to-previous-window ya estan implementados. Paste default es target-aware en Windows: browsers conocidos usan `Ctrl+V`; otros targets usan `Shift+Insert`. El siguiente corte tecnico es cerrar verificaciones restantes del MVP 0 y decidir si el delay post-focus de 700 ms queda temporal o configurable.
 
 ## Stack Objetivo
 
@@ -35,16 +35,41 @@ Frontend:
 - settings;
 - navegacion por teclado;
 - menus de acciones.
+- cliente de la API host: no debe ser dueño exclusivo de logica durable de clipboard, paste, ventana o storage.
 
 Rust:
 
 - watcher de clipboard;
 - normalizacion y hashing;
 - acceso SQLite si el plugin SQL no alcanza;
+- API host para acciones reutilizables por UI, shortcuts, tray y plugins;
 - paste-to-active/previous-window;
 - modulos especificos por OS;
 - host de plugins/runtime bridge;
 - coordinacion de tareas background.
+
+API host inicial esperada:
+
+- `history.list/search/get/markUsed/delete/pin`.
+- `clipboard.writeItem/writeText/readPreview`.
+- `picker.show/hide/focus/filter/select/activateItem`.
+- `window.rememberPrevious/focusPrevious`.
+- `input.sendPasteShortcut`.
+- `settings.get/set`.
+
+Las acciones compuestas deben aceptar opciones explicitas. Ejemplo:
+
+```text
+activateItem(itemId, {
+  copy: true,
+  hidePicker: true,
+  focusPrevious: false,
+  paste: false,
+  pasteShortcut: "default"
+})
+```
+
+En MVP 0, `Enter` usa copy + hide y `Shift+Enter` usa copy + hide + focus previous + paste. Para paste-to-previous-window, seguir el baseline CopyQ: copiar al clipboard primero, ocultar/enfocar ventana previa y luego enviar `Shift+Insert` por defecto, con posibilidad futura de `Ctrl+V` por regla.
 
 Plugins:
 
@@ -54,6 +79,7 @@ Plugins:
 - recargar plugins manualmente y, si conviene, con file watching durante desarrollo;
 - usar JavaScript/TypeScript como lenguaje principal de autor de plugins, porque no debe requerir saber Rust o Tauri para extender la app;
 - llamar al host Rust/Tauri solo a traves de una API estable para clipboard, storage, busqueda, UI actions, hotkeys y capacidades nativas;
+- usar las mismas primitivas que la UI para activar items, escribir clipboard, ocultar picker, enfocar ventana previa y pegar;
 - requerir recompilacion solo para cambios del host, APIs nativas nuevas o capabilities que no existan todavia;
 - evaluar Python como runner externo opcional para scripts locales o librerias especificas, pero no asumirlo para el primer runtime.
 
@@ -123,14 +149,99 @@ Estos spikes van antes de invertir fuerte en polish de UI.
 
 ## Comandos
 
-No hay comandos definidos todavia. Cuando se cree el scaffold, actualizar esta seccion con:
+Desde la raiz del repo:
 
-- instalar dependencias;
-- ejecutar dev server/app;
-- test;
-- lint;
-- build;
-- comandos Tauri.
+```powershell
+npm install
+npm run dev
+npm run build
+npm run visual:check
+npm run rust:test
+npm run image:sources
+npm run tauri:dev
+npm run tauri:build
+```
+
+## Runtime Dev Vivo
+
+Regla operativa: mientras no exista un binario instalable estable, los cambios deben reflejarse en la instancia viva de Copicu.
+
+Antes de arrancar o reiniciar:
+
+```powershell
+Get-NetTCPConnection -LocalPort 1420 -ErrorAction SilentlyContinue
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'copyq-tauri|copicu|tauri dev|vite --host 127.0.0.1 --port 1420' } |
+  Select-Object ProcessId,Name,ExecutablePath,CommandLine
+```
+
+Cerrar solo procesos viejos de Copicu/Vite/Tauri que correspondan al producto y esten ocupando el puerto, registrando shortcuts o corriendo desde otro worktree. Despues de relanzar, validar:
+
+- Vite escucha `127.0.0.1:1420`.
+- `copicu.exe` corre desde el worktree actual.
+- Los logs muestran `global shortcut registered` y los shortcuts/rutas esperadas.
+- La app responde (`Get-Process -Name copicu | Select Id,Responding,Path`).
+
+Si el branch esta atrasado respecto de la DB real y aparece `migration number too high`, no downgradear ni borrar la DB real de AppData. Para dogfood de branch/worktree, usar datos aislados:
+
+```powershell
+$env:CARGO_TARGET_DIR = "$PWD\src-tauri\target-hotkeys-dev"
+$env:COPICU_APP_DATA_DIR = "$PWD\.codex-run\app-data"
+npm run tauri:dev
+```
+
+Guardar logs de reinicio bajo `.codex-run/` cuando se lance en background, y revisar `stderr` antes de decir que la app quedo actualizada.
+
+Checks actuales:
+
+```powershell
+npm run build
+npm run visual:check
+npm run rust:test
+cd src-tauri
+cargo check
+```
+
+En esta maquina, `cargo test` crudo puede fallar con `STATUS_ENTRYPOINT_NOT_FOUND` si el loader toma DLLs API-set desde Miniconda. Usar `npm run rust:test`, que ejecuta `cargo test` con entradas `miniconda3` removidas de `PATH` para ese proceso.
+
+Todavia no hay comando de lint dedicado.
+
+Validacion manual de paste-to-previous-window en Windows, con `npm run tauri:dev` ya corriendo y `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/manual/validate-paste-targets.ps1
+```
+
+El script usa solo tokens sinteticos y targets temporales: Notepad, Chrome/Edge con HTML local y un editor-like WinForms TextBox. Browser usa `pasteShortcut: "default"` para validar la regla target-aware.
+
+Validacion manual de fuentes de imagen en Windows, con `npm run tauri:dev` ya corriendo y `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`:
+
+```powershell
+npm run image:sources
+```
+
+El script usa imagenes sinteticas y fuentes comunes: screenshot, Paint, browser y Snipping Tool.
+
+## Investigacion De Documentacion
+
+Usar Context7 CLI bajo demanda para consultar documentacion tecnica actual sin cargar un MCP persistente:
+
+```powershell
+npx ctx7 library tauri "global shortcut plugin"
+npx ctx7 docs /websites/v2_tauri_app "global shortcut register Tauri 2"
+```
+
+Validar con documentacion oficial, GitHub o issues cuando el resultado defina arquitectura, permisos, bugs por plataforma o cambios recientes.
+
+Antes de incorporar librerias o fijar una arquitectura para una necesidad tecnica, documentar la investigacion en topics:
+
+- `docs/topics/technical-research-process.md`
+- `docs/topics/clipboard.md`
+- `docs/topics/global-shortcut-and-tray.md`
+- `docs/topics/sqlite-storage.md`
+- `docs/topics/windows-focus-and-paste.md`
+
+Cada topic debe cubrir discovery, opciones evaluadas, fuentes, pattern recomendado, decision actual y preguntas abiertas.
 
 ## Verificacion
 
@@ -139,5 +250,6 @@ Antes de cerrar cambios:
 1. Ejecutar checks disponibles.
 2. Verificar manualmente flujo afectado.
 3. Para UI, probar desktop y ventana angosta si aplica.
-4. Para clipboard, evitar datos reales y usar fixtures sinteticos.
-5. Actualizar docs si cambia una decision durable.
+4. Para UI relevante, usar `pbakaus/impeccable` si esta disponible y no bloquea el corte.
+5. Para clipboard, evitar datos reales y usar fixtures sinteticos.
+6. Actualizar docs si cambia una decision durable.

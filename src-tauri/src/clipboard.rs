@@ -1,0 +1,617 @@
+use clipboard_rs::{
+    Clipboard, ClipboardContext, ClipboardHandler, ClipboardWatcher, ClipboardWatcherContext,
+};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::{
+    collections::VecDeque,
+    error::Error,
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tauri::{AppHandle, Runtime};
+
+const COALESCE_WINDOW: Duration = Duration::from_millis(150);
+const SELF_WRITE_SUPPRESSION_WINDOW: Duration = Duration::from_millis(1500);
+const MAX_CAPTURE_EVENTS: usize = 80;
+const MAX_TEXT_PREVIEW_CHARS: usize = 700;
+const CLIPBOARD_RETRY_DELAYS: [Duration; 4] = [
+    Duration::from_millis(8),
+    Duration::from_millis(16),
+    Duration::from_millis(32),
+    Duration::from_millis(64),
+];
+
+#[derive(Clone, Serialize)]
+pub struct CaptureStats {
+    captured_count: u64,
+    captured_image_count: u64,
+    ignored_duplicate_count: u64,
+    ignored_empty_count: u64,
+    ignored_image_with_text_count: u64,
+    self_write_suppressed_count: u64,
+    read_error_count: u64,
+    event_count: u64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CaptureSnapshot {
+    stats: CaptureStats,
+    events: Vec<CaptureEvent>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CaptureEvent {
+    index: u64,
+    at_unix_ms: u128,
+    outcome: CaptureOutcome,
+    has_probe: bool,
+    probe_error: Option<String>,
+    probe: Option<crate::clipboard_probe::ClipboardProbe>,
+    text_preview: Option<String>,
+    text_char_count: Option<usize>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureOutcome {
+    CapturedText,
+    CapturedImage,
+    IgnoredDuplicateOrCoalesced,
+    IgnoredEmpty,
+    SelfWriteSuppressed,
+    ReadError,
+}
+
+#[derive(Default)]
+struct ClipboardCaptureState {
+    last_hash: Option<String>,
+    last_change_at: Option<Instant>,
+    captured_count: u64,
+    captured_image_count: u64,
+    ignored_duplicate_count: u64,
+    ignored_empty_count: u64,
+    ignored_image_with_text_count: u64,
+    self_write_suppressed_count: u64,
+    read_error_count: u64,
+    event_count: u64,
+    events: VecDeque<CaptureEvent>,
+}
+
+pub struct ClipboardCapture {
+    state: Arc<Mutex<ClipboardCaptureState>>,
+}
+
+#[derive(Clone, Default)]
+pub struct SelfWriteSuppression {
+    pending: Arc<Mutex<Option<PendingSelfWrite>>>,
+}
+
+struct PendingSelfWrite {
+    normalized_hash: String,
+    expires_at: Instant,
+}
+
+struct TextClipboardHandler<R: Runtime> {
+    app: AppHandle<R>,
+    clipboard: ClipboardContext,
+    state: Arc<Mutex<ClipboardCaptureState>>,
+    suppression: SelfWriteSuppression,
+    storage: crate::storage::AppStorage,
+    previous_window: crate::window_focus::PreviousWindow,
+}
+
+impl<R: Runtime> TextClipboardHandler<R> {
+    fn new(
+        app: AppHandle<R>,
+        state: Arc<Mutex<ClipboardCaptureState>>,
+        suppression: SelfWriteSuppression,
+        storage: crate::storage::AppStorage,
+        previous_window: crate::window_focus::PreviousWindow,
+    ) -> clipboard_rs::Result<Self> {
+        Ok(Self {
+            app,
+            clipboard: ClipboardContext::new()?,
+            state,
+            suppression,
+            storage,
+            previous_window,
+        })
+    }
+}
+
+impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
+    fn on_clipboard_change(&mut self) {
+        let probe_result = crate::clipboard_probe::probe_clipboard();
+        let has_image_without_text = probe_result
+            .as_ref()
+            .is_ok_and(|probe| probe.has_image && !probe.has_text);
+        let has_image_with_text = probe_result
+            .as_ref()
+            .is_ok_and(|probe| probe.has_image && probe.has_text);
+
+        if has_image_without_text {
+            self.capture_image(probe_result);
+            return;
+        }
+
+        let text = match get_text_with_retry(&mut self.clipboard) {
+            Ok(text) => text,
+            Err(error) => {
+                record_event(&self.state, CaptureOutcome::ReadError, probe_result, None);
+                eprintln!("clipboard read skipped: {error}");
+                return;
+            }
+        };
+
+        let normalized = normalize_text(&text);
+        if normalized.is_empty() {
+            record_event(
+                &self.state,
+                CaptureOutcome::IgnoredEmpty,
+                probe_result,
+                None,
+            );
+            eprintln!("clipboard text ignored: empty");
+            return;
+        }
+
+        let text_char_count = normalized.chars().count();
+        let preview = TextPreview {
+            text: preview_text(&normalized),
+            char_count: text_char_count,
+        };
+        let hash = hash_text(&normalized);
+        if self.suppression.consume_if_matches(&hash) {
+            record_event(
+                &self.state,
+                CaptureOutcome::SelfWriteSuppressed,
+                probe_result,
+                Some(preview),
+            );
+            eprintln!("clipboard text ignored: self_write");
+            return;
+        }
+
+        if has_image_with_text {
+            note_image_with_text_skipped(&self.state);
+            eprintln!("clipboard image ignored: text_available");
+        }
+
+        let outcome = record_candidate(
+            &self.state,
+            hash.clone(),
+            probe_result,
+            Some(preview),
+            CaptureOutcome::CapturedText,
+        );
+        match outcome {
+            CaptureOutcome::CapturedText => {
+                match self.storage.insert_text(&normalized, &hash) {
+                    Ok(item_id) => {
+                        self.run_clipboard_change_actions(item_id);
+                    }
+                    Err(error) => eprintln!("clipboard storage insert failed: {error}"),
+                }
+                eprintln!("clipboard text captured");
+            }
+            CaptureOutcome::IgnoredDuplicateOrCoalesced => {
+                eprintln!("clipboard text ignored: duplicate_or_coalesced")
+            }
+            CaptureOutcome::IgnoredEmpty
+            | CaptureOutcome::CapturedImage
+            | CaptureOutcome::SelfWriteSuppressed
+            | CaptureOutcome::ReadError => {}
+        };
+    }
+}
+
+impl<R: Runtime> TextClipboardHandler<R> {
+    fn capture_image(&self, probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>) {
+        let image = match crate::image_capture::read_clipboard_image() {
+            Ok(image) => image,
+            Err(error) => {
+                record_event(&self.state, CaptureOutcome::ReadError, probe_result, None);
+                eprintln!("clipboard image read skipped: {error}");
+                return;
+            }
+        };
+
+        if self.suppression.consume_if_matches(&image.normalized_hash) {
+            record_event(
+                &self.state,
+                CaptureOutcome::SelfWriteSuppressed,
+                probe_result,
+                None,
+            );
+            eprintln!("clipboard image ignored: self_write");
+            return;
+        }
+
+        let outcome = record_candidate(
+            &self.state,
+            image.normalized_hash.clone(),
+            probe_result,
+            None,
+            CaptureOutcome::CapturedImage,
+        );
+        match outcome {
+            CaptureOutcome::CapturedImage => {
+                match self.storage.insert_image(&image) {
+                    Ok(item_id) => {
+                        self.run_clipboard_change_actions(item_id);
+                    }
+                    Err(error) => eprintln!("clipboard image storage insert failed: {error}"),
+                }
+                eprintln!(
+                    "clipboard image captured: {}x{} {} bytes",
+                    image.width,
+                    image.height,
+                    image.png_bytes.len()
+                );
+            }
+            CaptureOutcome::IgnoredDuplicateOrCoalesced => {
+                eprintln!("clipboard image ignored: duplicate_or_coalesced")
+            }
+            CaptureOutcome::CapturedText
+            | CaptureOutcome::IgnoredEmpty
+            | CaptureOutcome::SelfWriteSuppressed
+            | CaptureOutcome::ReadError => {}
+        };
+    }
+
+    fn run_clipboard_change_actions(&self, item_id: i64) {
+        #[cfg(not(test))]
+        crate::actions::run_clipboard_change_actions(
+            &self.app,
+            &self.storage,
+            &self.suppression,
+            &self.previous_window,
+            item_id,
+        );
+        #[cfg(test)]
+        let _ = item_id;
+    }
+}
+
+impl ClipboardCapture {
+    pub fn stats(&self) -> CaptureStats {
+        let state = self.state.lock().expect("clipboard state mutex poisoned");
+
+        capture_stats(&state)
+    }
+
+    pub fn snapshot(&self) -> CaptureSnapshot {
+        let state = self.state.lock().expect("clipboard state mutex poisoned");
+
+        CaptureSnapshot {
+            stats: capture_stats(&state),
+            events: state.events.iter().cloned().rev().collect(),
+        }
+    }
+}
+
+impl SelfWriteSuppression {
+    pub fn suppress_hash(&self, normalized_hash: String) {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("self-write suppression mutex poisoned");
+
+        *pending = Some(PendingSelfWrite {
+            normalized_hash,
+            expires_at: Instant::now() + SELF_WRITE_SUPPRESSION_WINDOW,
+        });
+    }
+
+    pub fn clear_if_hash(&self, normalized_hash: &str) {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("self-write suppression mutex poisoned");
+
+        if pending
+            .as_ref()
+            .is_some_and(|pending| pending.normalized_hash == normalized_hash)
+        {
+            *pending = None;
+        }
+    }
+
+    fn consume_if_matches(&self, normalized_hash: &str) -> bool {
+        let mut pending = self
+            .pending
+            .lock()
+            .expect("self-write suppression mutex poisoned");
+
+        let Some(current) = pending.as_ref() else {
+            return false;
+        };
+
+        if Instant::now() > current.expires_at {
+            *pending = None;
+            return false;
+        }
+
+        if current.normalized_hash != normalized_hash {
+            return false;
+        }
+
+        *pending = None;
+        true
+    }
+}
+
+pub fn spawn_text_watcher<R: Runtime>(
+    app: AppHandle<R>,
+    storage: crate::storage::AppStorage,
+    suppression: SelfWriteSuppression,
+    previous_window: crate::window_focus::PreviousWindow,
+) -> clipboard_rs::Result<ClipboardCapture> {
+    let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
+    let handler = TextClipboardHandler::new(
+        app,
+        Arc::clone(&state),
+        suppression,
+        storage,
+        previous_window,
+    )?;
+    let mut watcher = ClipboardWatcherContext::<TextClipboardHandler<R>>::new()?;
+    watcher.add_handler(handler);
+    let capture = ClipboardCapture {
+        state: Arc::clone(&state),
+    };
+
+    thread::Builder::new()
+        .name("copicu-clipboard-watch".to_string())
+        .spawn(move || {
+            eprintln!("clipboard watcher started");
+            watcher.start_watch();
+        })
+        .map_err(|error| -> Box<dyn Error + Send + Sync> { Box::new(error) })?;
+
+    Ok(capture)
+}
+
+fn normalize_text(text: &str) -> String {
+    text.replace("\r\n", "\n").trim().to_string()
+}
+
+fn hash_text(text: &str) -> String {
+    let digest = Sha256::digest(text.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn get_text_with_retry(clipboard: &mut ClipboardContext) -> clipboard_rs::Result<String> {
+    retry_clipboard_operation(|| clipboard.get_text(), &CLIPBOARD_RETRY_DELAYS)
+}
+
+fn retry_clipboard_operation<T, E, F>(mut operation: F, delays: &[Duration]) -> Result<T, E>
+where
+    F: FnMut() -> Result<T, E>,
+{
+    for delay in delays {
+        match operation() {
+            Ok(value) => return Ok(value),
+            Err(_) => thread::sleep(*delay),
+        }
+    }
+
+    operation()
+}
+
+fn record_candidate(
+    state: &Arc<Mutex<ClipboardCaptureState>>,
+    hash: String,
+    probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>,
+    preview: Option<TextPreview>,
+    captured_outcome: CaptureOutcome,
+) -> CaptureOutcome {
+    let mut state = state.lock().expect("clipboard state mutex poisoned");
+    let now = Instant::now();
+    let duplicate = state.last_hash.as_ref() == Some(&hash);
+    let coalesced = state
+        .last_change_at
+        .is_some_and(|last_change_at| now.duration_since(last_change_at) <= COALESCE_WINDOW);
+
+    if duplicate || coalesced {
+        state.ignored_duplicate_count += 1;
+        state.last_change_at = Some(now);
+        push_event(
+            &mut state,
+            CaptureOutcome::IgnoredDuplicateOrCoalesced,
+            probe_result,
+            preview,
+        );
+        return CaptureOutcome::IgnoredDuplicateOrCoalesced;
+    }
+
+    state.last_hash = Some(hash);
+    state.last_change_at = Some(now);
+    state.captured_count += 1;
+    if matches!(captured_outcome, CaptureOutcome::CapturedImage) {
+        state.captured_image_count += 1;
+    }
+    push_event(&mut state, captured_outcome.clone(), probe_result, preview);
+    captured_outcome
+}
+
+fn record_event(
+    state: &Arc<Mutex<ClipboardCaptureState>>,
+    outcome: CaptureOutcome,
+    probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>,
+    preview: Option<TextPreview>,
+) {
+    let mut state = state.lock().expect("clipboard state mutex poisoned");
+
+    match &outcome {
+        CaptureOutcome::IgnoredEmpty => state.ignored_empty_count += 1,
+        CaptureOutcome::SelfWriteSuppressed => state.self_write_suppressed_count += 1,
+        CaptureOutcome::ReadError => state.read_error_count += 1,
+        CaptureOutcome::CapturedText
+        | CaptureOutcome::CapturedImage
+        | CaptureOutcome::IgnoredDuplicateOrCoalesced => {}
+    }
+
+    push_event(&mut state, outcome, probe_result, preview);
+}
+
+fn note_image_with_text_skipped(state: &Arc<Mutex<ClipboardCaptureState>>) {
+    let mut state = state.lock().expect("clipboard state mutex poisoned");
+    state.ignored_image_with_text_count += 1;
+}
+
+fn push_event(
+    state: &mut ClipboardCaptureState,
+    outcome: CaptureOutcome,
+    probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>,
+    preview: Option<TextPreview>,
+) {
+    state.event_count += 1;
+
+    let (probe, probe_error) = match probe_result {
+        Ok(probe) => (Some(probe), None),
+        Err(error) => (None, Some(error)),
+    };
+
+    state.events.push_back(CaptureEvent {
+        index: state.event_count,
+        at_unix_ms: now_unix_ms(),
+        outcome,
+        has_probe: probe.is_some(),
+        probe_error,
+        probe,
+        text_preview: preview.as_ref().map(|preview| preview.text.clone()),
+        text_char_count: preview.map(|preview| preview.char_count),
+    });
+
+    while state.events.len() > MAX_CAPTURE_EVENTS {
+        state.events.pop_front();
+    }
+}
+
+struct TextPreview {
+    text: String,
+    char_count: usize,
+}
+
+fn preview_text(text: &str) -> String {
+    let mut preview = String::new();
+    for character in text.chars().take(MAX_TEXT_PREVIEW_CHARS) {
+        preview.push(character);
+    }
+    preview
+}
+
+fn capture_stats(state: &ClipboardCaptureState) -> CaptureStats {
+    CaptureStats {
+        captured_count: state.captured_count,
+        captured_image_count: state.captured_image_count,
+        ignored_duplicate_count: state.ignored_duplicate_count,
+        ignored_empty_count: state.ignored_empty_count,
+        ignored_image_with_text_count: state.ignored_image_with_text_count,
+        self_write_suppressed_count: state.self_write_suppressed_count,
+        read_error_count: state.read_error_count,
+        event_count: state.event_count,
+    }
+}
+
+fn now_unix_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_text_trims_and_normalizes_newlines() {
+        assert_eq!(normalize_text("  one\r\ntwo  "), "one\ntwo");
+    }
+
+    #[test]
+    fn hash_text_is_stable() {
+        assert_eq!(hash_text("same"), hash_text("same"));
+        assert_ne!(hash_text("same"), hash_text("other"));
+    }
+
+    #[test]
+    fn retry_clipboard_operation_retries_until_success() {
+        let mut attempts = 0;
+
+        let result = retry_clipboard_operation(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err("locked")
+                } else {
+                    Ok("ready")
+                }
+            },
+            &[Duration::ZERO, Duration::ZERO],
+        );
+
+        assert_eq!(result, Ok("ready"));
+        assert_eq!(attempts, 3);
+    }
+
+    #[test]
+    fn record_candidate_ignores_consecutive_duplicates() {
+        let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
+        let first = hash_text("first");
+
+        let empty_probe = || Err("test probe skipped".to_string());
+
+        assert!(matches!(
+            record_candidate(
+                &state,
+                first.clone(),
+                empty_probe(),
+                None,
+                CaptureOutcome::CapturedText
+            ),
+            CaptureOutcome::CapturedText
+        ));
+        assert!(matches!(
+            record_candidate(
+                &state,
+                first,
+                empty_probe(),
+                None,
+                CaptureOutcome::CapturedText
+            ),
+            CaptureOutcome::IgnoredDuplicateOrCoalesced
+        ));
+
+        let state = state.lock().expect("clipboard state mutex poisoned");
+        assert_eq!(state.captured_count, 1);
+        assert_eq!(state.ignored_duplicate_count, 1);
+        assert_eq!(state.event_count, 2);
+    }
+
+    #[test]
+    fn self_write_suppression_consumes_matching_hash_once() {
+        let suppression = SelfWriteSuppression::default();
+        let hash = hash_text("synthetic");
+
+        suppression.suppress_hash(hash.clone());
+
+        assert!(suppression.consume_if_matches(&hash));
+        assert!(!suppression.consume_if_matches(&hash));
+    }
+
+    #[test]
+    fn self_write_suppression_keeps_different_hash_pending() {
+        let suppression = SelfWriteSuppression::default();
+        let hash = hash_text("synthetic");
+
+        suppression.suppress_hash(hash.clone());
+
+        assert!(!suppression.consume_if_matches(&hash_text("other")));
+        assert!(suppression.consume_if_matches(&hash));
+    }
+}

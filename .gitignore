@@ -3,6 +3,17 @@ node_modules/
 dist/
 build/
 target/
+src-tauri/target*/
+.tmp/
+test-results/
+playwright-report/
+logs/
+.codex-run/
+.agents/
+tmp-*.log
+*.log
+__pycache__/
+*.pyc
 
 # Local environment and secrets
 .env
