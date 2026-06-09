@@ -290,17 +290,17 @@ Notas:
 
 Checklist antes de consolidar el repo publico:
 
-- [ ] `git status` revisado.
-- [ ] No hay `.env` trackeado.
-- [ ] No hay SQLite local, clipboard dumps ni blobs privados trackeados.
-- [ ] No hay logs sensibles trackeados.
-- [ ] No hay API keys ni tokens en historial del commit a publicar.
-- [ ] `.gitignore` cubre secretos, logs y data local.
-- [ ] README no promete soporte que todavia no existe.
+- [x] `git status` revisado antes del publish inicial.
+- [x] No hay `.env` trackeado en el publish inicial.
+- [x] No hay SQLite local, clipboard dumps ni blobs privados trackeados en el publish inicial.
+- [x] No hay logs sensibles trackeados en el publish inicial.
+- [x] Secret scan basico hecho antes del publish inicial.
+- [x] `.gitignore` cubre secretos, logs, data local, `.agents/` y build outputs.
+- [x] README no promete soporte estable; release marcado alpha/prerelease.
 - [x] LICENSE agregada.
 - [ ] CONTRIBUTING y SECURITY agregados o decision explicita de postergar.
-- [ ] GitHub description/topics definidos.
-- [ ] Primer release/status alpha decidido.
+- [x] GitHub description/topics definidos.
+- [x] Primer release/status alpha decidido.
 
 ## Preguntas Abiertas
 
@@ -314,9 +314,9 @@ Checklist antes de consolidar el repo publico:
 
 ## Proximo Corte Recomendado
 
-1. Hacer audit local de secretos y datos privados.
-2. Agregar `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md` y templates GitHub.
-3. Decidir si el repo se renombra de `copyq-tauri` a `copicu`.
-4. Crear screenshots/gifs publicos.
-5. Preparar GitHub metadata.
-6. Crear release Windows alpha con instalador NSIS.
+1. Agregar `CONTRIBUTING.md`, `SECURITY.md` y templates GitHub.
+2. Crear screenshots/gifs publicos del picker, Settings AI y AI command mode.
+3. Agregar badges al README despues de definir CI/release workflow.
+4. Evaluar GitHub Pages cuando existan assets publicos.
+5. Crear workflow de release Windows reproducible.
+6. Mantener audit de secretos/datos privados antes de cada release.

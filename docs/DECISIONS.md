@@ -35,6 +35,9 @@
 | No instalar GitHub MCP por ahora | accepted | GitHub MCP puede sumar contexto y superficie de herramientas; conviene reservarlo para investigacion repetida sobre repos/issues. | Conversacion 2026-06-05 |
 | Usar `pbakaus/impeccable` para UI cuando valga la pena | accepted | De ahora en adelante forma parte del workflow normal de UI para pantallas nuevas, cambios visuales relevantes, responsive, overflow, focus states, motion y polish. Complementa Playwright/manual QA; no bloquea backend-only ni hotfixes si no esta disponible. | Conversacion 2026-06-05 + `docs/topics/ui-design-and-impeccable.md` |
 | NSIS como instalador Windows principal | accepted | Es el target Tauri 2 mas simple para releases Windows de Copicu: genera `-setup.exe`, soporta instalacion `currentUser` sin admin y evita la friccion de MSI/WiX salvo deployment corporativo. | Research 2026-06-06 + `docs/topics/windows-installer.md` |
+| Publicar Copicu como open source con MIT | accepted | El repo se publico como `jpsala/copicu`, con README publico, licencia MIT, contexto agentico portable y primer release Windows alpha. MIT reduce friccion para usuarios/contribuidores. | Conversacion 2026-06-09 + `docs/topics/open-source-github.md` |
+| Usar README/repo como web inicial del proyecto | accepted | Menor friccion para primer corte publico; GitHub Pages queda para cuando haya screenshots/gifs y una release mas madura. | Conversacion 2026-06-09 + `docs/topics/open-source-github.md` |
+| Publicar contexto agentico portable en Markdown | accepted | `AGENTS.md`, `docs/`, `docs/topics/`, `docs/active-work/` y `specs/` permiten que un contributor clone el repo y use agentes con contexto. `.agents/` queda ignorado por ser cache/local tooling. | Conversacion 2026-06-09 + README |
 
 ## Pendientes
 
@@ -48,3 +51,4 @@
 | FTS5 y ranking de busqueda | pending | La query syntax ya existe con `LIKE`; proximo paso tecnico es evaluar FTS5 para texto/title/notes/tags, manteniendo el mismo contrato externo. |
 | Source filters para busqueda | pending | `app:`/`window:` quedan pendientes hasta capturar source process/window de forma confiable y decidir privacidad de window titles. |
 | Instalar GitHub MCP | deferred | Reabrir solo si la investigacion sobre issues/repos de Tauri se vuelve repetida. |
+| GitHub Pages / web propia | deferred | El repo/README cumple como web inicial; reabrir cuando existan screenshots/gifs, assets publicos y un release menos alpha. |

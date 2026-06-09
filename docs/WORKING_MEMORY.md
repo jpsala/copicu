@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto.
 
-Ultima actualizacion manual: 2026-06-08.
+Ultima actualizacion manual: 2026-06-09.
 
 ## Lectura Rapida
 
@@ -13,6 +13,7 @@ Ultima actualizacion manual: 2026-06-08.
 | Actions/Scripting API | incident-fixed-validated | `docs/active-work/004-actions-scripting.md` | Diseñar patron parametrizable para abrir picker filtrado; no duplicar un script completo por tag. |
 | MVP 0 | dogfood hardening | `docs/active-work/post-mvp-hardening.md` | Seguir privacidad mínima, dogfood real, drag/manual order y política visible de errores de paste. |
 | Imagenes | validated | `docs/active-work/image-capture-spike.md` | No agregar fallback Win32 hasta encontrar una fuente concreta que falle. |
+| Open Source / GitHub | public-alpha | `docs/topics/open-source-github.md` | Agregar CONTRIBUTING/SECURITY/templates, screenshots/gifs y preparar siguientes releases Windows. |
 
 ## Specs Activas
 
@@ -47,6 +48,7 @@ Ultima actualizacion manual: 2026-06-08.
 
 ## Decisiones Recientes
 
+- Open Source/GitHub 2026-06-09: repo renombrado y publicado como `https://github.com/jpsala/copicu`, descripcion/topics cargados, licencia MIT agregada, README publico ampliado, contexto agentico documentado en README (`AGENTS.md`, `docs/`, `specs/`), `.agents/`/logs/.env/build outputs ignorados. Release prerelease `v0.1.0-alpha.1` publicado con instalador NSIS Windows x64 `Copicu_0.1.0_x64-setup.exe`, SHA256 `931DE5582DD6912AA0332CF51E751FA5B55D88085114A502CF610A3D74095266`. Commits relevantes: `1628ec0` publish alpha, `755e0c6` release setup docs, `f9ee330` agentic context docs.
 - El primer MVP debe ser un spike funcional, no una UI pulida.
 - Validar primero clipboard watcher event-driven; polling queda como fallback.
 - Despues validar tray, global shortcut, SQLite, picker minimo, copy selected item y paste-to-previous-window.
@@ -166,6 +168,7 @@ Ultima actualizacion manual: 2026-06-08.
 
 En sesion nueva:
 
+0. Si se sigue con open source/GitHub/public README/releases: abrir `docs/topics/open-source-github.md` primero. Estado: repo publico `jpsala/copicu`, release Windows alpha `v0.1.0-alpha.1` publicado. Proximo corte recomendado: `CONTRIBUTING.md`, `SECURITY.md`, issue/PR templates, screenshots/gifs del picker y AI command mode, y quizas GitHub Pages despues de assets. Mantener audit de secretos antes de cada release; no publicar `.env`, logs, DBs, blobs, dumps de clipboard ni `.agents/`.
 0. Proximo paso pedido por JP: seguir probando los scripts filtrados `020`-`024` desde `Documents/Copicu/Scripts`, ahora con el fix de IPC de `picker.open` aplicado. Abrir `docs/active-work/004-actions-scripting.md`, `docs/topics/actions-and-scripting-api.md`, `docs/active-work/012-tags-and-hotkeys.md`, `docs/topics/hotkeys.md` y `docs/topics/tag-management-hotkeys.md`. Invariantes: no pegar automaticamente al abrir por tag/query, no reactivar next-step globals temporales, no emitir pending desde Rust hacia `main`, no persistir payloads reales del clipboard.
 00. Para dogfood de scripts/hotkeys filtrados: partir de `copicu.commands.run("picker.open", { query, rememberPrevious, show, focus })`. No ampliar a comandos internos arbitrarios ni `actions.run` sin caso real. Mantener la validacion nueva: root montado, IPC `record_renderer_diagnostic`, heartbeats, drag por `GetWindowRect`, Hide/X custom y logs `script.picker.open.*`. Para el shortcut global real usar Computer Use o teclado fisico; las inyecciones sinteticas de teclado pueden no disparar `tauri-plugin-global-shortcut`. Antes de dar por cerrado el corte visual, repetir `npm run visual:check`, porque la ultima corrida quedo inconclusa por timeout.
 1. Si se vuelve a tags nativos, revalidar con JP primero: la decision vigente es scripts, no Settings-owned tag hotkeys.
