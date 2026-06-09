@@ -15,6 +15,7 @@ const QUERY_LIMIT: i64 = 100;
 const DEFAULT_HISTORY_PAGE_LIMIT: i64 = 60;
 const MIN_HISTORY_PAGE_LIMIT: i64 = 1;
 const MAX_HISTORY_PAGE_LIMIT: i64 = 100;
+const HISTORY_PREVIEW_CHAR_LIMIT: i64 = 2_000;
 const MILLIS_PER_DAY: i64 = 86_400_000;
 const IMAGE_BLOB_DIR: &str = "blobs/images";
 const THUMBNAIL_BLOB_DIR: &str = "blobs/thumbnails";
@@ -349,6 +350,9 @@ pub struct HistoryItem {
     id: i64,
     content_kind: String,
     text: String,
+    preview_text: String,
+    text_char_count: i64,
+    includes_content: bool,
     normalized_hash: String,
     created_at_unix_ms: i64,
     last_used_at_unix_ms: i64,
@@ -449,6 +453,8 @@ pub struct HistorySearchRequest {
     pub mode: HistorySearchMode,
     #[serde(default)]
     pub include_content: bool,
+    #[serde(default = "default_true")]
+    pub include_counts: bool,
     #[serde(default)]
     pub explain: bool,
     #[serde(default)]
@@ -460,8 +466,8 @@ pub struct HistorySearchRequest {
 pub struct HistoryPage {
     pub items: Vec<HistoryItem>,
     pub next_cursor: Option<HistoryPageCursor>,
-    pub total_count: i64,
-    pub filtered_count: i64,
+    pub total_count: Option<i64>,
+    pub filtered_count: Option<i64>,
     pub interpreted_query: Option<String>,
     pub explanation: Option<String>,
     pub warnings: Vec<String>,
@@ -947,13 +953,13 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         self.query_items(
             &conn,
-            "SELECT id, content_kind, text, normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
-                    COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
-                    mime_primary, blob_path, thumbnail_path, byte_size, width, height,
-                    title, notes, tags, is_marked, marked_at_unix_ms
-             FROM clipboard_items
-             ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
-             LIMIT ?1",
+            &format!(
+                "SELECT {}
+                 FROM clipboard_items
+                 ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                 LIMIT ?1",
+                history_item_select_columns(true)
+            ),
             params![QUERY_LIMIT],
         )
     }
@@ -965,7 +971,8 @@ impl AppStorage {
             limit: request.limit,
             plan: None,
             mode: HistorySearchMode::Structured,
-            include_content: true,
+            include_content: false,
+            include_counts: true,
             explain: false,
             ai_context: None,
         })
@@ -979,7 +986,6 @@ impl AppStorage {
                 "AI search planning is not implemented yet; using structured search".to_string(),
             );
         }
-        let _include_content = request.include_content;
         let conn = self
             .conn
             .lock()
@@ -998,11 +1004,16 @@ impl AppStorage {
             .unwrap_or(DEFAULT_HISTORY_PAGE_LIMIT)
             .clamp(MIN_HISTORY_PAGE_LIMIT, MAX_HISTORY_PAGE_LIMIT);
         let query_limit = effective_limit + 1;
-        let total_count = count_history_items(&conn, "", &[])?;
-        let filtered_count = if where_sql.is_empty() {
-            total_count
+        let (total_count, filtered_count) = if request.include_counts {
+            let total_count = count_history_items(&conn, "", &[])?;
+            let filtered_count = if where_sql.is_empty() {
+                total_count
+            } else {
+                count_history_items(&conn, &where_sql, &query_params)?
+            };
+            (Some(total_count), Some(filtered_count))
         } else {
-            count_history_items(&conn, &where_sql, &query_params)?
+            (None, None)
         };
         if let Some(cursor) = request.cursor {
             query_params.push(Value::Integer(cursor.after_sort_unix_ms));
@@ -1016,7 +1027,11 @@ impl AppStorage {
                 format!("{where_sql} AND {cursor_clause}")
             };
             query_params.push(Value::Integer(query_limit));
-            let sql = history_page_sql(&next_where_sql, &compiled.order_sql);
+            let sql = history_page_sql(
+                &next_where_sql,
+                &compiled.order_sql,
+                request.include_content,
+            );
             let mut items = self.query_items(&conn, &sql, params_from_iter(query_params.iter()))?;
             return finish_history_page(
                 &mut items,
@@ -1030,7 +1045,7 @@ impl AppStorage {
         }
 
         query_params.push(Value::Integer(query_limit));
-        let sql = history_page_sql(&where_sql, &compiled.order_sql);
+        let sql = history_page_sql(&where_sql, &compiled.order_sql, request.include_content);
         let mut items = self.query_items(&conn, &sql, params_from_iter(query_params.iter()))?;
 
         finish_history_page(
@@ -1051,13 +1066,13 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         let mut items = self.query_items(
             &conn,
-            "SELECT id, content_kind, text, normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
-                    COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
-                    mime_primary, blob_path, thumbnail_path, byte_size, width, height,
-                    title, notes, tags, is_marked, marked_at_unix_ms
-             FROM clipboard_items
-             WHERE id = ?1
-             LIMIT 1",
+            &format!(
+                "SELECT {}
+                 FROM clipboard_items
+                 WHERE id = ?1
+                 LIMIT 1",
+                history_item_select_columns(true)
+            ),
             params![id],
         )?;
 
@@ -1303,7 +1318,7 @@ impl AppStorage {
         let where_sql = compiled.where_sql;
         let mut query_params = compiled.params;
         query_params.push(Value::Integer(QUERY_LIMIT));
-        let sql = history_page_sql(&where_sql, &compiled.order_sql);
+        let sql = history_page_sql(&where_sql, &compiled.order_sql, true);
 
         self.query_items(&conn, &sql, params_from_iter(query_params.iter()))
     }
@@ -1679,11 +1694,7 @@ impl AppStorage {
     }
 
     fn thumbnail_data_url(&self, item: &HistoryItem) -> Option<String> {
-        let relative_path = if item.content_kind == "image" {
-            item.blob_path.as_deref()
-        } else {
-            item.thumbnail_path.as_deref()
-        }?;
+        let relative_path = item.thumbnail_path.as_deref()?;
         let path = self.resolve_relative_blob_path(relative_path).ok()?;
         let bytes = std::fs::read(path).ok()?;
         Some(format!(
@@ -1730,23 +1741,26 @@ where
                 id: row.get(0)?,
                 content_kind: row.get(1)?,
                 text: row.get(2)?,
-                normalized_hash: row.get(3)?,
-                created_at_unix_ms: row.get(4)?,
-                last_used_at_unix_ms: row.get(5)?,
-                last_copied_at_unix_ms: row.get(6)?,
-                copy_count: row.get(7)?,
-                mime_primary: row.get(8)?,
-                blob_path: row.get(9)?,
-                thumbnail_path: row.get(10)?,
-                byte_size: row.get(11)?,
-                width: row.get(12)?,
-                height: row.get(13)?,
+                preview_text: row.get(3)?,
+                text_char_count: row.get(4)?,
+                includes_content: row.get(5)?,
+                normalized_hash: row.get(6)?,
+                created_at_unix_ms: row.get(7)?,
+                last_used_at_unix_ms: row.get(8)?,
+                last_copied_at_unix_ms: row.get(9)?,
+                copy_count: row.get(10)?,
+                mime_primary: row.get(11)?,
+                blob_path: row.get(12)?,
+                thumbnail_path: row.get(13)?,
+                byte_size: row.get(14)?,
+                width: row.get(15)?,
+                height: row.get(16)?,
                 thumbnail_data_url: None,
-                title: row.get(14)?,
-                notes: row.get(15)?,
-                tags: row.get(16)?,
-                is_marked: row.get(17)?,
-                marked_at_unix_ms: row.get(18)?,
+                title: row.get(17)?,
+                notes: row.get(18)?,
+                tags: row.get(19)?,
+                is_marked: row.get(20)?,
+                marked_at_unix_ms: row.get(21)?,
             })
         })
         .map_err(|error| format!("failed to query clipboard history: {error}"))?;
@@ -1763,6 +1777,10 @@ fn count_history_items(
     let sql = format!("SELECT COUNT(*) FROM clipboard_items {where_sql}");
     conn.query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
         .map_err(|error| format!("failed to count clipboard history: {error}"))
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn query_tag_summaries(conn: &Connection, tag_id: Option<i64>) -> Result<Vec<TagSummary>, String> {
@@ -2443,16 +2461,31 @@ fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistorySearch, Str
     })
 }
 
-fn history_page_sql(where_sql: &str, order_sql: &str) -> String {
+fn history_item_select_columns(include_content: bool) -> String {
+    let text_expr = if include_content {
+        "text".to_string()
+    } else {
+        format!("SUBSTR(text, 1, {HISTORY_PREVIEW_CHAR_LIMIT})")
+    };
+    let includes_content = if include_content { 1 } else { 0 };
+
     format!(
-        "SELECT id, content_kind, text, normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
-                COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
-                mime_primary, blob_path, thumbnail_path, byte_size, width, height,
-                title, notes, tags, is_marked, marked_at_unix_ms
+        "id, content_kind, {text_expr}, SUBSTR(text, 1, {HISTORY_PREVIEW_CHAR_LIMIT}), LENGTH(text), {includes_content},
+         normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
+         COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
+         mime_primary, blob_path, thumbnail_path, byte_size, width, height,
+         title, notes, tags, is_marked, marked_at_unix_ms"
+    )
+}
+
+fn history_page_sql(where_sql: &str, order_sql: &str, include_content: bool) -> String {
+    format!(
+        "SELECT {}
          FROM clipboard_items
          {where_sql}
          ORDER BY {order_sql}
-         LIMIT ?"
+         LIMIT ?",
+        history_item_select_columns(include_content)
     )
 }
 
@@ -2845,8 +2878,8 @@ fn like_contains_pattern(value: &str) -> String {
 fn finish_history_page(
     items: &mut Vec<HistoryItem>,
     limit: i64,
-    total_count: i64,
-    filtered_count: i64,
+    total_count: Option<i64>,
+    filtered_count: Option<i64>,
     interpreted_query: Option<String>,
     explanation: Option<String>,
     warnings: Vec<String>,
@@ -3431,8 +3464,8 @@ mod tests {
             })
             .expect("first page should load");
         assert_eq!(ids(&first_page.items), vec![5, 4]);
-        assert_eq!(first_page.total_count, 5);
-        assert_eq!(first_page.filtered_count, 5);
+        assert_eq!(first_page.total_count, Some(5));
+        assert_eq!(first_page.filtered_count, Some(5));
         assert_eq!(
             first_page.next_cursor,
             Some(HistoryPageCursor {
@@ -3449,8 +3482,8 @@ mod tests {
             })
             .expect("second page should load");
         assert_eq!(ids(&second_page.items), vec![3, 2]);
-        assert_eq!(second_page.total_count, 5);
-        assert_eq!(second_page.filtered_count, 5);
+        assert_eq!(second_page.total_count, Some(5));
+        assert_eq!(second_page.filtered_count, Some(5));
     }
 
     #[test]
@@ -3466,6 +3499,7 @@ mod tests {
                 plan: None,
                 mode: HistorySearchMode::Ai,
                 include_content: true,
+                include_counts: true,
                 explain: true,
                 ai_context: None,
             })
@@ -3497,8 +3531,8 @@ mod tests {
             })
             .expect("first search page should load");
         assert_eq!(ids(&first_page.items), vec![5, 3]);
-        assert_eq!(first_page.total_count, 5);
-        assert_eq!(first_page.filtered_count, 4);
+        assert_eq!(first_page.total_count, Some(5));
+        assert_eq!(first_page.filtered_count, Some(4));
 
         let second_page = storage
             .list_page(HistoryPageRequest {
@@ -3509,8 +3543,8 @@ mod tests {
             .expect("second search page should load");
         assert_eq!(ids(&second_page.items), vec![2, 1]);
         assert_eq!(second_page.next_cursor, None);
-        assert_eq!(second_page.total_count, 5);
-        assert_eq!(second_page.filtered_count, 4);
+        assert_eq!(second_page.total_count, Some(5));
+        assert_eq!(second_page.filtered_count, Some(4));
     }
 
     #[test]
@@ -3532,10 +3566,140 @@ mod tests {
             .expect("history should load");
 
         assert_eq!(ids(&page.items), vec![1, 2]);
-        assert_eq!(page.total_count, 2);
+        assert_eq!(page.total_count, Some(2));
         assert_eq!(page.items[0].created_at_unix_ms, 10_001);
         assert!(page.items[0].last_copied_at_unix_ms >= page.items[1].last_copied_at_unix_ms);
         assert_eq!(page.items[0].copy_count, 2);
+    }
+
+    #[test]
+    fn history_search_without_content_returns_preview_dto() {
+        let storage = test_storage_with_migrations();
+        let full_text = format!(
+            "COPICU_SYNTH_PREVIEW_START {} COPICU_SYNTH_PREVIEW_END",
+            "synthetic-long-body ".repeat(180)
+        );
+        insert_test_text_item(&storage, 1, 10_001, &full_text);
+
+        let preview_page = storage
+            .history_search(HistorySearchRequest {
+                query: String::new(),
+                cursor: None,
+                limit: Some(10),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: true,
+                explain: false,
+                ai_context: None,
+            })
+            .expect("preview page should load");
+
+        let preview_item = &preview_page.items[0];
+        assert!(!preview_item.includes_content);
+        assert_eq!(preview_item.text(), preview_item.preview_text);
+        assert_eq!(
+            preview_item.text_char_count,
+            full_text.chars().count() as i64
+        );
+        assert!(preview_item.text().chars().count() <= HISTORY_PREVIEW_CHAR_LIMIT as usize);
+        assert!(!preview_item.text().contains("COPICU_SYNTH_PREVIEW_END"));
+
+        let full_page = storage
+            .history_search(HistorySearchRequest {
+                query: String::new(),
+                cursor: None,
+                limit: Some(10),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: true,
+                include_counts: true,
+                explain: false,
+                ai_context: None,
+            })
+            .expect("full page should load");
+
+        assert!(full_page.items[0].includes_content);
+        assert_eq!(full_page.items[0].text(), full_text);
+    }
+
+    #[test]
+    fn image_history_item_uses_thumbnail_data_url_from_thumbnail_path() {
+        let storage = test_storage_with_migrations();
+        let main_relative_path = Path::new(IMAGE_BLOB_DIR).join("synthetic-main.png");
+        let thumbnail_relative_path = Path::new(THUMBNAIL_BLOB_DIR).join("synthetic-thumb.png");
+        let main_path = storage.app_data_dir.join(&main_relative_path);
+        let thumbnail_path = storage.app_data_dir.join(&thumbnail_relative_path);
+        let main_bytes = b"synthetic-main-png-bytes";
+        let thumbnail_bytes = b"synthetic-thumbnail-png-bytes";
+        write_blob(&main_path, main_bytes).expect("main blob should write");
+        write_blob(&thumbnail_path, thumbnail_bytes).expect("thumbnail blob should write");
+        insert_test_image_item(
+            &storage,
+            1,
+            10_001,
+            &path_to_db_string(&main_relative_path),
+            &path_to_db_string(&thumbnail_relative_path),
+        );
+
+        let page = storage
+            .history_search(HistorySearchRequest {
+                query: String::new(),
+                cursor: None,
+                limit: Some(10),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: true,
+                explain: false,
+                ai_context: None,
+            })
+            .expect("image page should load");
+
+        let data_url = page.items[0]
+            .thumbnail_data_url
+            .as_deref()
+            .expect("thumbnail data URL should be present");
+        assert!(data_url.ends_with(&BASE64_STANDARD.encode(thumbnail_bytes)));
+        assert!(!data_url.ends_with(&BASE64_STANDARD.encode(main_bytes)));
+    }
+
+    #[test]
+    fn history_search_can_skip_counts_for_interactive_pages() {
+        let storage = test_storage_with_migrations();
+        for id in 1..=4 {
+            insert_test_text_item(
+                &storage,
+                id,
+                50_000 + id,
+                &format!("synthetic scalable search needle {id}"),
+            );
+        }
+
+        let page = storage
+            .history_search(HistorySearchRequest {
+                query: "needle".to_string(),
+                cursor: None,
+                limit: Some(2),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: false,
+                explain: false,
+                ai_context: None,
+            })
+            .expect("history search without counts should load");
+
+        assert_eq!(ids(&page.items), vec![4, 3]);
+        assert_eq!(
+            page.next_cursor,
+            Some(HistoryPageCursor {
+                after_sort_unix_ms: 50_003,
+                after_id: 3,
+            })
+        );
+        assert_eq!(page.total_count, None);
+        assert_eq!(page.filtered_count, None);
     }
 
     #[test]
@@ -3695,6 +3859,7 @@ mod tests {
                 plan: None,
                 mode: HistorySearchMode::Structured,
                 include_content: true,
+                include_counts: true,
                 explain: false,
                 ai_context: None,
             })
@@ -3963,6 +4128,7 @@ mod tests {
                 }),
                 mode: HistorySearchMode::Structured,
                 include_content: true,
+                include_counts: true,
                 explain: false,
                 ai_context: None,
             })
@@ -4013,6 +4179,47 @@ mod tests {
                 tags: None,
             },
         );
+    }
+
+    fn insert_test_image_item(
+        storage: &AppStorage,
+        id: i64,
+        created_at: i64,
+        blob_path: &str,
+        thumbnail_path: &str,
+    ) {
+        let conn = storage
+            .conn
+            .lock()
+            .expect("test sqlite connection lock should work");
+        conn.execute(
+            "INSERT INTO clipboard_items (
+                id,
+                content_kind,
+                text,
+                normalized_hash,
+                created_at_unix_ms,
+                last_used_at_unix_ms,
+                last_copied_at_unix_ms,
+                copy_count,
+                mime_primary,
+                blob_path,
+                thumbnail_path,
+                byte_size,
+                width,
+                height
+            ) VALUES (?1, 'image', ?2, ?3, ?4, ?4, ?4, 1, 'image/png', ?5, ?6, ?7, 32, 32)",
+            params![
+                id,
+                "[image] 32x32 PNG synthetic bytes",
+                format!("hash-image-{id}"),
+                created_at,
+                blob_path,
+                thumbnail_path,
+                24_i64,
+            ],
+        )
+        .expect("test image item should insert");
     }
 
     struct TestItem<'a> {

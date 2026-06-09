@@ -176,9 +176,14 @@ type HistoryItem = {
   id: number;
   content_kind: "text" | string;
   text: string;
+  preview_text: string;
+  text_char_count: number;
+  includes_content: boolean;
   normalized_hash: string;
   created_at_unix_ms: number;
   last_used_at_unix_ms: number;
+  last_copied_at_unix_ms: number;
+  copy_count: number;
   mime_primary: string | null;
   blob_path: string | null;
   thumbnail_path: string | null;
@@ -207,6 +212,7 @@ type HistoryPageRequest = {
 type HistorySearchRequest = HistoryPageRequest & {
   mode?: "plain" | "structured" | "ai";
   includeContent?: boolean;
+  includeCounts?: boolean;
   explain?: boolean;
   plan?: unknown | null;
   aiContext?: AiScriptContext | null;
@@ -533,6 +539,7 @@ const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
 const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
+const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
 const NOTIFICATION_ROW_HEIGHT = 78;
 const NOTIFICATIONS_WINDOW_CHROME = 10;
@@ -633,6 +640,10 @@ function applyAppearance(appearance: AppSettings["appearance"]) {
 
 function historySearch(request: HistorySearchRequest) {
   return invoke<HistoryPage>("history_search", { request });
+}
+
+function getHistoryItem(id: number) {
+  return invoke<HistoryItem>("get_history_item", { id });
 }
 
 function historySearchInput(
@@ -742,8 +753,41 @@ function positionNotificationsWindow() {
   return invoke("position_notifications_window");
 }
 
-function recordRendererDiagnostic(event: string, detail?: string) {
+type RendererDiagnosticMode = "off" | "errors" | "debug";
+type RendererDiagnosticLevel = "error" | "debug";
+
+function rendererDiagnosticMode(): RendererDiagnosticMode {
+  const rawOverride =
+    new URLSearchParams(window.location.search).get("copicuDiagnostics") ??
+    window.localStorage?.getItem("copicuDiagnostics") ??
+    import.meta.env.VITE_COPICU_RENDERER_DIAGNOSTICS;
+  const override = rawOverride?.trim().toLocaleLowerCase();
+  if (override === "debug" || override === "true" || override === "1") {
+    return "debug";
+  }
+  if (override === "errors" || override === "error") {
+    return "errors";
+  }
+  if (override === "off" || override === "false" || override === "0") {
+    return "off";
+  }
+  return import.meta.env.DEV ? "debug" : "errors";
+}
+
+function rendererDebugDiagnosticsEnabled() {
+  return rendererDiagnosticMode() === "debug";
+}
+
+function recordRendererDiagnostic(
+  event: string,
+  detail?: string,
+  level: RendererDiagnosticLevel = "debug",
+) {
   if (!isTauriRuntime()) {
+    return Promise.resolve();
+  }
+  const mode = rendererDiagnosticMode();
+  if (mode === "off" || (mode === "errors" && level !== "error")) {
     return Promise.resolve();
   }
   return invoke("record_renderer_diagnostic", {
@@ -812,30 +856,33 @@ if (isTauriRuntime()) {
     recordRendererDiagnostic(
       "window-error",
       `${event.message} ${event.filename}:${event.lineno}:${event.colno}`,
+      "error",
     );
   });
   window.addEventListener("unhandledrejection", (event) => {
-    recordRendererDiagnostic("unhandled-rejection", String(event.reason));
+    recordRendererDiagnostic("unhandled-rejection", String(event.reason), "error");
   });
-  window.addEventListener("focus", () => {
-    recordRendererDiagnostic("window-focus", `label=${currentWindowLabel()}`);
-  });
-  window.addEventListener("blur", () => {
-    recordRendererDiagnostic("window-blur", `label=${currentWindowLabel()}`);
-  });
-  document.addEventListener("visibilitychange", () => {
-    recordRendererDiagnostic(
-      "visibility",
-      `label=${currentWindowLabel()} state=${document.visibilityState}`,
-    );
-  });
-  window.setInterval(() => {
-    const active = document.activeElement;
-    recordRendererDiagnostic(
-      "heartbeat",
-      `label=${currentWindowLabel()} visibility=${document.visibilityState} active=${active?.tagName ?? "none"}:${active?.getAttribute("aria-label") ?? active?.getAttribute("placeholder") ?? ""}`,
-    );
-  }, 2000);
+  if (rendererDebugDiagnosticsEnabled()) {
+    window.addEventListener("focus", () => {
+      recordRendererDiagnostic("window-focus", `label=${currentWindowLabel()}`);
+    });
+    window.addEventListener("blur", () => {
+      recordRendererDiagnostic("window-blur", `label=${currentWindowLabel()}`);
+    });
+    document.addEventListener("visibilitychange", () => {
+      recordRendererDiagnostic(
+        "visibility",
+        `label=${currentWindowLabel()} state=${document.visibilityState}`,
+      );
+    });
+    window.setInterval(() => {
+      const active = document.activeElement;
+      recordRendererDiagnostic(
+        "heartbeat",
+        `label=${currentWindowLabel()} visibility=${document.visibilityState} active=${active?.tagName ?? "none"}:${active?.getAttribute("aria-label") ?? active?.getAttribute("placeholder") ?? ""}`,
+      );
+    }, 2000);
+  }
 }
 
 function itemMenuAnchorFromEvent(itemId: number, event: React.MouseEvent): ItemMenuAnchor {
@@ -1140,6 +1187,7 @@ function App() {
     }
 
     let active = true;
+    let unlisten: (() => void) | null = null;
     const syncPending = () => {
       void getCompoundHotkeyPending()
         .then((pending) => {
@@ -1155,13 +1203,25 @@ function App() {
     };
 
     syncPending();
-    const interval = window.setInterval(syncPending, 250);
+    const interval = rendererDebugDiagnosticsEnabled()
+      ? window.setInterval(syncPending, 250)
+      : null;
+    void listen<CompoundHotkeyPendingEvent>(COMPOUND_HOTKEY_PENDING_EVENT, (event) => {
+      if (active) {
+        syncWhichKeyPending(event.payload);
+      }
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
     window.addEventListener("focus", syncPending);
     document.addEventListener("visibilitychange", syncPending);
 
     return () => {
       active = false;
-      window.clearInterval(interval);
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+      unlisten?.();
       window.removeEventListener("focus", syncPending);
       document.removeEventListener("visibilitychange", syncPending);
     };
@@ -1293,6 +1353,7 @@ function App() {
         query: "is:marked",
         cursor,
         limit: MARKED_ACTION_PAGE_LIMIT,
+        includeContent: false,
       });
       items.push(...page.items);
       cursor = page.nextCursor;
@@ -1370,6 +1431,7 @@ function App() {
           cursor: null,
           limit: HISTORY_PAGE_LIMIT,
           mode: searchInput.mode,
+          includeContent: false,
           explain: searchInput.mode === "ai",
           aiContext: searchInput.mode === "ai"
             ? {
@@ -1482,7 +1544,7 @@ function App() {
   );
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isTauriRuntime() || !rendererDebugDiagnosticsEnabled()) {
       return undefined;
     }
 
@@ -1532,6 +1594,8 @@ function App() {
         cursor,
         limit: HISTORY_PAGE_LIMIT,
         mode: "structured",
+        includeContent: false,
+        includeCounts: false,
       });
 
       if (loadSeq !== historyLoadMoreSeqRef.current || trimmed !== queryRef.current.trim()) {
@@ -1546,8 +1610,12 @@ function App() {
         ];
       });
       setHistoryNextCursor(page.nextCursor);
-      setHistoryTotalCount(countOrNull(page.totalCount));
-      setHistoryFilteredCount(countOrNull(page.filteredCount));
+      if (page.totalCount !== undefined) {
+        setHistoryTotalCount(countOrNull(page.totalCount));
+      }
+      if (page.filteredCount !== undefined) {
+        setHistoryFilteredCount(countOrNull(page.filteredCount));
+      }
       setHistoryQuery(searchInput.mode === "ai" ? historyQuery : trimmed);
       setHistoryError(null);
     } catch (error) {
@@ -1746,20 +1814,40 @@ function App() {
     [actionById, runActionDefinition],
   );
 
-  const beginEdit = useCallback((item: HistoryItem, mode: EditMode) => {
-    setEditError(null);
-    setOpenItemMenu(null);
-    setEditDraft({
-      id: item.id,
-      mode,
-      text: item.text,
-      title: item.title ?? "",
-      notes: item.notes ?? "",
-      tags: item.tags ?? "",
-      mimePrimary: item.mime_primary ?? "",
-    });
-    window.setTimeout(() => editTextRef.current?.focus(), 0);
+  const ensureFullHistoryItem = useCallback(async (item: HistoryItem) => {
+    if (item.includes_content) {
+      return item;
+    }
+    const fullItem = await getHistoryItem(item.id);
+    setHistory((current) =>
+      current.map((currentItem) => (currentItem.id === fullItem.id ? fullItem : currentItem)),
+    );
+    return fullItem;
   }, []);
+
+  const beginEdit = useCallback(
+    async (item: HistoryItem, mode: EditMode) => {
+      try {
+        setEditError(null);
+        setOpenItemMenu(null);
+        const fullItem = await ensureFullHistoryItem(item);
+        setEditDraft({
+          id: fullItem.id,
+          mode,
+          text: fullItem.text,
+          title: fullItem.title ?? "",
+          notes: fullItem.notes ?? "",
+          tags: fullItem.tags ?? "",
+          mimePrimary: fullItem.mime_primary ?? "",
+        });
+        window.setTimeout(() => editTextRef.current?.focus(), 0);
+      } catch (error) {
+        setEditError(String(error));
+        focusSearch();
+      }
+    },
+    [ensureFullHistoryItem, focusSearch],
+  );
 
   const deleteItem = useCallback(
     async (item: HistoryItem) => {
@@ -2044,7 +2132,7 @@ function App() {
       if (!selectedItem || hasMultiSelection) {
         return;
       }
-      beginEdit(selectedItem, mode);
+      void beginEdit(selectedItem, mode);
     },
     [beginEdit, hasMultiSelection, selectedItem],
   );
@@ -2094,7 +2182,8 @@ function App() {
 
     try {
       setEditError(null);
-      for (const item of itemsToUpdate) {
+      const fullItemsToUpdate = await Promise.all(itemsToUpdate.map(ensureFullHistoryItem));
+      for (const item of fullItemsToUpdate) {
         const nextNotes = appendMetadata(item.notes, metadataToAdd);
         const request: UpdateHistoryItemRequest = {
           id: item.id,
@@ -2113,7 +2202,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [batchMetadataDraft, focusSearch, history, refreshHistory]);
+  }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, refreshHistory]);
 
   useEffect(() => {
     let active = true;
@@ -2225,7 +2314,7 @@ function App() {
   }, [editDraft?.id]);
 
   useEffect(() => {
-    if (!isTauriRuntime()) {
+    if (!isTauriRuntime() || !rendererDebugDiagnosticsEnabled()) {
       return undefined;
     }
 
@@ -2275,19 +2364,72 @@ function App() {
       });
     }, 120);
 
-    const intervalId = window.setInterval(() => {
-      refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
+    const intervalId = rendererDebugDiagnosticsEnabled()
+      ? window.setInterval(() => {
+          refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
+            if (active) {
+              setHistoryPending(false);
+              setHistoryError(String(error));
+            }
+          });
+        }, 1400)
+      : null;
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [refreshHistory]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen<{ itemId: number; contentKind: "text" | "image" }>(HISTORY_CHANGED_EVENT, () => {
+      if (!active) {
+        return;
+      }
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      void refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
         if (active) {
           setHistoryPending(false);
           setHistoryError(String(error));
         }
       });
-    }, 1400);
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
+    const refreshOnFocus = () => {
+      if (!active) {
+        return;
+      }
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      void refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
+        if (active) {
+          setHistoryPending(false);
+          setHistoryError(String(error));
+        }
+      });
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
 
     return () => {
       active = false;
-      window.clearTimeout(timeoutId);
-      window.clearInterval(intervalId);
+      unlisten?.();
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
     };
   }, [refreshHistory]);
 
@@ -2938,7 +3080,7 @@ function App() {
                             type="button"
                             role="menuitem"
                             className="item-menu-action"
-                            onClick={() => beginEdit(item, "content")}
+                            onClick={() => void beginEdit(item, "content")}
                           >
                             <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit</span>
@@ -2947,7 +3089,7 @@ function App() {
                             type="button"
                             role="menuitem"
                             className="item-menu-action"
-                            onClick={() => beginEdit(item, "metadata")}
+                            onClick={() => void beginEdit(item, "metadata")}
                           >
                             <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit metadata</span>
@@ -3253,8 +3395,23 @@ function WhichKeyWindowApp() {
 
   useEffect(() => {
     syncPending();
-    const interval = window.setInterval(syncPending, 150);
-    return () => window.clearInterval(interval);
+    let unlisten: (() => void) | null = null;
+    const interval = rendererDebugDiagnosticsEnabled()
+      ? window.setInterval(syncPending, 150)
+      : null;
+    void listen<CompoundHotkeyPendingEvent>(COMPOUND_HOTKEY_PENDING_EVENT, () => {
+      syncPending();
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+    window.addEventListener("focus", syncPending);
+    return () => {
+      if (interval !== null) {
+        window.clearInterval(interval);
+      }
+      unlisten?.();
+      window.removeEventListener("focus", syncPending);
+    };
   }, [syncPending]);
 
   useEffect(() => {

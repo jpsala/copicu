@@ -302,12 +302,18 @@ pub fn builtin_actions() -> Vec<ActionDefinition> {
 
 pub fn list_actions(storage: &crate::storage::AppStorage) -> Result<Vec<ActionDefinition>, String> {
     let mut actions = builtin_actions();
+    actions.extend(storage.list_cached_script_actions()?);
+    Ok(actions)
+}
+
+pub fn refresh_script_action_cache(
+    storage: &crate::storage::AppStorage,
+) -> Result<Vec<ActionDefinition>, String> {
     let settings = storage.get_settings()?;
     let mut discovered_scripts = discover_script_actions(&settings.scripts.folder_path)?;
     annotate_global_shortcut_diagnostics(&mut discovered_scripts);
     storage.replace_script_action_cache(&discovered_scripts)?;
-    actions.extend(storage.list_cached_script_actions()?);
-    Ok(actions)
+    Ok(discovered_scripts)
 }
 
 fn discover_script_actions(folder_path: &str) -> Result<Vec<ActionDefinition>, String> {
@@ -1387,10 +1393,10 @@ pub fn run_clipboard_change_actions<R: Runtime>(
         return;
     }
 
-    let actions = match list_actions(storage) {
+    let actions = match storage.list_cached_script_actions() {
         Ok(actions) => actions,
         Err(error) => {
-            eprintln!("clipboardChange script discovery failed: {error}");
+            eprintln!("clipboardChange script cache read failed: {error}");
             return;
         }
     };
@@ -1474,13 +1480,7 @@ fn find_script_action(
     storage: &crate::storage::AppStorage,
     action_id: &str,
 ) -> Result<Option<ActionDefinition>, String> {
-    let mut actions = storage.list_cached_script_actions()?;
-    if !actions.iter().any(|action| action.id == action_id) {
-        actions = list_actions(storage)?
-            .into_iter()
-            .filter(|action| action.source == ActionSource::Script)
-            .collect();
-    }
+    let actions = storage.list_cached_script_actions()?;
     Ok(actions.into_iter().find(|action| action.id == action_id))
 }
 
@@ -1879,6 +1879,7 @@ fn script_history_search(
         plan: None,
         mode: crate::storage::HistorySearchMode::Structured,
         include_content: payload.content.unwrap_or(false),
+        include_counts: true,
         explain: false,
         ai_context: None,
     })?;
@@ -2806,6 +2807,60 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("logging.name")));
+    }
+
+    #[test]
+    fn list_actions_reads_cache_and_refresh_materializes_scripts() {
+        let base_dir = std::env::temp_dir().join(format!(
+            "copicu-action-cache-test-{}-{}",
+            std::process::id(),
+            now_unix_ms()
+        ));
+        let app_data_dir = base_dir.join("app-data");
+        let scripts_dir = base_dir.join("scripts");
+        std::fs::create_dir_all(&scripts_dir).expect("scripts dir should be created");
+        std::fs::write(
+            scripts_dir.join("cached-action.ts"),
+            r#"
+            export default defineAction({
+              id: "examples.cacheOnly",
+              title: "Cache Only",
+              triggers: ["devRun"],
+              input: { source: "none", selection: "none" },
+              capabilities: [],
+              async run() {}
+            });
+            "#,
+        )
+        .expect("synthetic script should write");
+
+        let storage =
+            crate::storage::AppStorage::open(&app_data_dir).expect("test storage should open");
+        let mut settings = storage
+            .get_settings()
+            .expect("settings should load for cache test");
+        settings.scripts.folder_path = scripts_dir.to_string_lossy().into_owned();
+        storage
+            .update_settings(settings)
+            .expect("script folder setting should persist");
+
+        let cached_before_refresh = list_actions(&storage).expect("cached actions should list");
+        assert_eq!(cached_before_refresh.len(), builtin_actions().len());
+        assert!(!cached_before_refresh
+            .iter()
+            .any(|action| action.id == "examples.cacheOnly"));
+
+        let refreshed =
+            refresh_script_action_cache(&storage).expect("script cache should refresh explicitly");
+        assert_eq!(refreshed.len(), 1);
+        assert_eq!(refreshed[0].id, "examples.cacheOnly");
+
+        let cached_after_refresh = list_actions(&storage).expect("cached actions should list");
+        assert!(cached_after_refresh
+            .iter()
+            .any(|action| action.id == "examples.cacheOnly"));
+
+        let _ = std::fs::remove_dir_all(base_dir);
     }
 
     #[test]

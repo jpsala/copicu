@@ -120,11 +120,29 @@ const syntheticPagedHistory = Array.from({ length: 80 }, (_, index) => ({
 async function mockTauriInvoke(
   page: Parameters<typeof test>[0]["page"],
   historyItems = syntheticLongHistory,
+  initialCompoundPending: unknown = null,
 ) {
-  await page.addInitScript((items) => {
+  await page.addInitScript(({ items, pending }) => {
+    const PREVIEW_LIMIT = 2000;
+    const withHistoryPreview = (item: any, includeContent: boolean) => {
+      const fullText = item.text ?? "";
+      const previewText = item.preview_text ?? fullText.slice(0, PREVIEW_LIMIT);
+      return {
+        ...item,
+        text: includeContent ? fullText : previewText,
+        preview_text: previewText,
+        text_char_count: item.text_char_count ?? Array.from(fullText).length,
+        includes_content: includeContent,
+        last_copied_at_unix_ms: item.last_copied_at_unix_ms ?? item.created_at_unix_ms,
+        copy_count: item.copy_count ?? 1,
+      };
+    };
     (window as any).__copicuTestInvocations = [];
     (window as any).__copicuTestHistoryItems = items;
-    (window as any).__copicuTestCompoundPending = null;
+    (window as any).__copicuTestCompoundPending = pending;
+    (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: () => undefined,
+    };
     (window as any).__copicuTestTags = [
       {
         id: 1,
@@ -183,6 +201,10 @@ async function mockTauriInvoke(
           case "plugin:event|listen":
             return 1;
           case "plugin:event|unlisten":
+            return null;
+          case "plugin:event|unregisterListener":
+            return null;
+          case "record_renderer_diagnostic":
             return null;
           case "get_compound_hotkey_pending":
             return (window as any).__copicuTestCompoundPending;
@@ -384,9 +406,11 @@ async function mockTauriInvoke(
             const query = args?.query?.toLocaleLowerCase() ?? "";
             const request = args?.request ?? {};
             const aiMode = request.mode === "ai";
+            const includeCounts = request.includeCounts !== false;
             const interpretedQuery = aiMode ? "long" : request.query ?? "";
             const requestQuery = (aiMode ? interpretedQuery : request.query?.toLocaleLowerCase()) ?? query;
             const limit = request.limit ?? 60;
+            const includeContent = Boolean(request.includeContent);
             const filteredItems = requestQuery
               ? sourceItems.filter((item: any) => {
                   if (requestQuery === "is:marked") {
@@ -414,7 +438,9 @@ async function mockTauriInvoke(
                     item.id === cursor.afterId,
                 ) + 1
               : 0;
-            const pageItems = filteredItems.slice(startIndex, startIndex + limit);
+            const pageItems = filteredItems
+              .slice(startIndex, startIndex + limit)
+              .map((item: any) => withHistoryPreview(item, includeContent));
             const nextItem = filteredItems[startIndex + limit - 1];
             const hasNextPage = startIndex + limit < filteredItems.length;
             return {
@@ -426,8 +452,8 @@ async function mockTauriInvoke(
                       afterId: nextItem.id,
                     }
                   : null,
-              totalCount: sourceItems.length,
-              filteredCount: filteredItems.length,
+              totalCount: includeCounts ? sourceItems.length : undefined,
+              filteredCount: includeCounts ? filteredItems.length : undefined,
               interpretedQuery: request.explain ? interpretedQuery : null,
               explanation: request.explain
                 ? aiMode
@@ -436,6 +462,14 @@ async function mockTauriInvoke(
                 : null,
               warnings: aiMode ? ["Synthetic unsupported source filter ignored."] : [],
             };
+          }
+          case "get_history_item": {
+            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
+            const item = sourceItems.find((candidate: any) => candidate.id === args.id);
+            if (!item) {
+              throw new Error(`Synthetic item not found: ${args.id}`);
+            }
+            return withHistoryPreview(item, true);
           }
           case "list_recent_items":
             return items;
@@ -548,6 +582,7 @@ async function mockTauriInvoke(
       },
       transformCallback: () => 0,
       unregisterCallback: () => undefined,
+      unregisterListener: () => undefined,
       callbacks: {},
       convertFileSrc: (filePath: string) => filePath,
       metadata: {
@@ -555,12 +590,16 @@ async function mockTauriInvoke(
         currentWebview: { label: "main" },
       },
     };
-  }, historyItems);
+  }, { items: historyItems, pending: initialCompoundPending });
+}
+
+function gotoShell(page: Parameters<typeof test>[0]["page"], url = "/") {
+  return page.goto(url, { waitUntil: "domcontentloaded" });
 }
 
 test("shell loads without horizontal overflow", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await expect(page.getByLabel("Search clipboard history")).toBeVisible();
   await expect(page.getByLabel("Clipboard picker")).toBeVisible();
@@ -575,7 +614,7 @@ test("shell loads without horizontal overflow", async ({ page }) => {
 
 test("WhichKey overlay reveals pending compound shortcuts", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/?window=whichkey");
+  await gotoShell(page, "/?window=whichkey");
 
   await page.evaluate(() => {
     (window as any).__copicuTestCompoundPending = {
@@ -614,10 +653,47 @@ test("WhichKey overlay reveals pending compound shortcuts", async ({ page }) => 
   expect(horizontalOverflow).toBe(false);
 });
 
+test("WhichKey steps work with diagnostics off and no polling", async ({ page }) => {
+  await mockTauriInvoke(
+    page,
+    syntheticLongHistory,
+    {
+      prefixLabel: "Ctrl+Alt+C",
+      nextSteps: ["T"],
+      entries: [
+        {
+          key: "T",
+          label: "compound hotkey toast",
+          group: "Scripts",
+          routeId: "jp.compoundHotkeyToast",
+          disabled: false,
+          diagnostic: null,
+        },
+      ],
+      expiresAtUnixMs: Date.now() + 3000,
+    },
+  );
+  await gotoShell(page, "/?window=whichkey&copicuDiagnostics=0");
+
+  await expect(page.getByLabel("WhichKey shortcuts")).toBeVisible();
+  await expect(page.getByText("compound hotkey toast")).toBeVisible();
+  await page.waitForTimeout(300);
+  await page.keyboard.press("T");
+
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.some((call: any) => call.cmd === "handle_compound_hotkey_step");
+  });
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  const count = (cmd: string) => calls.filter((call: any) => call.cmd === cmd).length;
+  expect(count("get_compound_hotkey_pending")).toBeLessThanOrEqual(2);
+  expect(count("handle_compound_hotkey_step")).toBe(1);
+});
+
 test("WhichKey overlay fits narrow picker window", async ({ page }) => {
   await page.setViewportSize({ width: 380, height: 620 });
   await mockTauriInvoke(page);
-  await page.goto("/?window=whichkey");
+  await gotoShell(page, "/?window=whichkey");
 
   await page.evaluate(() => {
     (window as any).__copicuTestCompoundPending = {
@@ -656,7 +732,7 @@ test("WhichKey overlay fits narrow picker window", async ({ page }) => {
 
 test("custom picker hide button hides instead of closing", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByLabel("Hide Copicu").click();
   await page.waitForFunction(() =>
@@ -675,7 +751,7 @@ test("custom picker hide button hides instead of closing", async ({ page }) => {
 
 test("mark menu marks visible and individual items", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByLabel("Mark options").click();
   await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "All visible" }).click();
@@ -710,7 +786,7 @@ test("mark menu marks visible and individual items", async ({ page }) => {
 
 test("mark menu uses Mantine menu actions", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByLabel("Mark options").click();
   const menu = page.getByRole("menu", { name: "Mark options" });
@@ -735,7 +811,7 @@ test("mark menu uses Mantine menu actions", async ({ page }) => {
 
 test("mark menu shows global marked count and checkbox states", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   const markButton = page.getByRole("button", { name: "Mark options" });
   await expect(markButton.locator(".mark-state-icon")).toHaveAttribute("data-state", "unchecked");
@@ -773,7 +849,7 @@ test("mark menu shows global marked count and checkbox states", async ({ page })
 
 test("long synthetic history stays contained", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await expect(
     page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }),
@@ -823,9 +899,59 @@ test("long synthetic history stays contained", async ({ page }) => {
   }
 });
 
+test("history feed uses preview DTO and edit fetches full content on demand", async ({ page }) => {
+  const fullText = `COPICU_SYNTH_FULL_CONTENT_START ${"full-content-token ".repeat(180)}COPICU_SYNTH_FULL_CONTENT_END`;
+  const previewText = fullText.slice(0, 120);
+  await mockTauriInvoke(page, [
+    {
+      ...syntheticLongHistory[1],
+      id: 9100,
+      text: fullText,
+      preview_text: previewText,
+      text_char_count: Array.from(fullText).length,
+      includes_content: false,
+      normalized_hash: "synthetic-preview-dto",
+      title: "Preview DTO item",
+      notes: null,
+      tags: null,
+    },
+  ]);
+  await gotoShell(page);
+
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ })).toBeVisible();
+  await expect(page.getByText("COPICU_SYNTH_FULL_CONTENT_END")).toHaveCount(0);
+
+  const initialSearch = await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.find((call: any) => call.cmd === "history_search");
+  });
+  const initialSearchCall = await initialSearch.jsonValue() as any;
+  expect(initialSearchCall.args.request.includeContent).toBe(false);
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click({
+    button: "right",
+  });
+  await page.getByRole("menuitem", { name: "Edit metadata" }).click();
+  await expect(page.getByRole("dialog", { name: "Edit item metadata" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Metadata" }).fill("#perf metadata note");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  const updateCall = await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.find((call: any) => call.cmd === "update_history_item");
+  });
+  const update = await updateCall.jsonValue() as any;
+  expect(update.args.request.text).toBe(fullText);
+  expect(update.args.request.text).toContain("COPICU_SYNTH_FULL_CONTENT_END");
+  const getCalls = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "get_history_item"),
+  );
+  expect(getCalls).toHaveLength(1);
+});
+
 test("manual scroll is not reset by history refresh", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await expect(page.getByText("COPICU_SYNTH_MULTILINE_01")).toBeVisible();
   await page.waitForFunction(() => {
@@ -844,9 +970,25 @@ test("manual scroll is not reset by history refresh", async ({ page }) => {
   expect(after).toBeGreaterThanOrEqual(before - 2);
 });
 
+test("diagnostics off disables idle diagnostics polling", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?copicuDiagnostics=0");
+
+  await expect(page.getByLabel("Search clipboard history")).toBeVisible();
+  await page.waitForTimeout(2300);
+
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  const count = (cmd: string) => calls.filter((call: any) => call.cmd === cmd).length;
+  expect(count("record_renderer_diagnostic")).toBe(0);
+  expect(count("get_capture_snapshot")).toBe(0);
+  expect(count("get_clipboard_probe")).toBe(0);
+  expect(count("history_search")).toBe(1);
+  expect(count("get_compound_hotkey_pending")).toBeLessThanOrEqual(2);
+});
+
 test("scrolling to the loader fetches the next history page", async ({ page }) => {
   await mockTauriInvoke(page, syntheticPagedHistory);
-  await page.goto("/");
+  await gotoShell(page);
 
   const resultCount = page.locator("[title='Result count']");
   await expect(resultCount).toHaveText("80 total");
@@ -866,7 +1008,7 @@ test("scrolling to the loader fetches the next history page", async ({ page }) =
 
 test("selected item survives history reorder by id", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
   await page.locator(".history-feed-scroll").evaluate((element) => {
@@ -901,7 +1043,7 @@ test("selected item survives history reorder by id", async ({ page }) => {
 
 test("ai search shows interpretation and keeps activation enabled", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByLabel("Search clipboard history").fill("ai: long text from yesterday");
   await expect(page.locator("[title='Result count']")).toHaveText("AI draft");
@@ -928,7 +1070,7 @@ test("ai search shows interpretation and keeps activation enabled", async ({ pag
 
 test("search composer mode toggles with icon button", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
   const toggle = page.getByRole("button", { name: "Search mode, switch to AI mode" });
@@ -959,7 +1101,7 @@ test("search composer mode toggles with icon button", async ({ page }) => {
 
 test("single click selects item without activating it", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.click();
@@ -974,7 +1116,7 @@ test("single click selects item without activating it", async ({ page }) => {
 
 test("double click activates selected item", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
 
@@ -992,7 +1134,7 @@ test("double click activates selected item", async ({ page }) => {
 
 test("right click on item opens item actions menu", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.scrollIntoViewIfNeeded();
@@ -1034,7 +1176,7 @@ test("right click on item opens item actions menu", async ({ page }) => {
 
 test("dots menu uses pointer position too", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   const menuButton = page.locator(".item-menu-button").first();
   const box = await menuButton.boundingBox();
@@ -1063,7 +1205,7 @@ test("dots menu uses pointer position too", async ({ page }) => {
 
 test("multi selection context menu only shows shared actions", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
@@ -1088,7 +1230,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
 
 test("built-in action uses ids only and shows stacked toast", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
@@ -1115,7 +1257,7 @@ test("built-in action uses ids only and shows stacked toast", async ({ page }) =
 
 test("command palette runs ready built-in and script actions", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.keyboard.press("Control+K");
@@ -1146,7 +1288,7 @@ test("command palette runs ready built-in and script actions", async ({ page }) 
 
 test("action filter effect settles history instead of leaving Filtering", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.keyboard.press("Control+K");
@@ -1159,7 +1301,7 @@ test("action filter effect settles history instead of leaving Filtering", async 
 
 test("local shortcut runs matching ready script with shortcut context", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await expect(page.getByLabel("Search clipboard history")).toBeFocused();
@@ -1194,7 +1336,7 @@ test("local shortcut does not run when selected input kind is incompatible", asy
       thumbnail_data_url: null,
     },
   ]);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_IMAGE_ONLY/ }).click();
   await expect(page.getByLabel("Search clipboard history")).toBeFocused();
@@ -1214,7 +1356,7 @@ test("local shortcut does not run when selected input kind is incompatible", asy
 
 test("delete key in search input does not delete selected items", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
@@ -1235,7 +1377,7 @@ test("delete key in search input does not delete selected items", async ({ page 
 
 test("delete key in search input preserves native text editing", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
   await search.fill("COPICU_DELETE_GUARD");
@@ -1257,7 +1399,7 @@ test("delete key in search input preserves native text editing", async ({ page }
 
 test("multi selection menu deletes selected items", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
@@ -1282,7 +1424,7 @@ test("multi selection menu deletes selected items", async ({ page }) => {
 
 test("batch metadata uses textarea and extracts hash tags", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
@@ -1315,7 +1457,7 @@ test("batch metadata uses textarea and extracts hash tags", async ({ page }) => 
 test("dark color scheme uses dark surfaces", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
   await expect(page.getByLabel("Search clipboard history")).toBeVisible();
 
   const colors = await page.evaluate(() => {
@@ -1331,7 +1473,7 @@ test("dark color scheme uses dark surfaces", async ({ page }) => {
 
 test("settings panel is searchable and saves theme", async ({ page }) => {
   await mockTauriInvoke(page);
-  await page.goto("/");
+  await gotoShell(page);
 
   await page.getByRole("button", { name: "Open picker menu" }).click();
   await page.getByRole("menuitem", { name: "Settings" }).click();
@@ -1341,7 +1483,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
     ),
   );
 
-  await page.goto("/?window=settings");
+  await gotoShell(page, "/?window=settings");
   await expect(page.getByLabel("Search settings")).toBeVisible();
   await page.getByLabel("Search settings").fill("scripts");
   await expect(page.getByLabel("Discovered actions summary")).toContainText("3 built-in");
@@ -1391,7 +1533,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
 
 test("ui-host input prompt fits compact window", async ({ page }) => {
   await page.setViewportSize({ width: 380, height: 230 });
-  await page.goto("/?window=ui-host");
+  await gotoShell(page, "/?window=ui-host");
 
   await expect(page.getByText("Tag selected items")).toBeVisible();
   await expect(page.getByLabel("Tag selected items")).toBeFocused();
@@ -1407,7 +1549,7 @@ test("ui-host input prompt fits compact window", async ({ page }) => {
 
 test("ui-host alert prompt uses a single acknowledgement action", async ({ page }) => {
   await page.setViewportSize({ width: 380, height: 170 });
-  await page.goto("/?window=ui-host&prompt=alert");
+  await gotoShell(page, "/?window=ui-host&prompt=alert");
 
   await expect(page.getByText("Clipboard text", { exact: true })).toBeVisible();
   await expect(page.getByText("Current clipboard text length: 42")).toBeVisible();
@@ -1425,7 +1567,7 @@ test("ui-host alert prompt uses a single acknowledgement action", async ({ page 
 test("ui-host prompt remains readable in dark mode", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.setViewportSize({ width: 340, height: 230 });
-  await page.goto("/?window=ui-host");
+  await gotoShell(page, "/?window=ui-host");
 
   await expect(page.getByText("Tag selected items")).toBeVisible();
   const colors = await page.evaluate(() => {
@@ -1443,7 +1585,7 @@ test("ui-host prompt remains readable in dark mode", async ({ page }) => {
 
 test("ai-output renders markdown and actions without overflow", async ({ page }) => {
   await page.setViewportSize({ width: 760, height: 560 });
-  await page.goto("/?window=ai-output");
+  await gotoShell(page, "/?window=ai-output");
 
   await expect(page.locator(".ai-output-title").getByText("Research summary", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Research summary" })).toBeVisible();

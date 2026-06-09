@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "visual:check": "playwright test",
+    "perf:history": "cd src-tauri && cargo run --quiet --bin bench_history_search --",
     "rust:test": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/manual/run-rust-tests.ps1",
     "ai:planner:test": "node --test tests/ai-query-planner.test.mjs",
     "image:sources": "powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File tests/manual/validate-image-sources.ps1",

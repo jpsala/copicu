@@ -10,12 +10,13 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 
 const COALESCE_WINDOW: Duration = Duration::from_millis(150);
 const SELF_WRITE_SUPPRESSION_WINDOW: Duration = Duration::from_millis(1500);
 const MAX_CAPTURE_EVENTS: usize = 80;
 const MAX_TEXT_PREVIEW_CHARS: usize = 700;
+const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
 const CLIPBOARD_RETRY_DELAYS: [Duration; 4] = [
     Duration::from_millis(8),
     Duration::from_millis(16),
@@ -100,6 +101,13 @@ struct TextClipboardHandler<R: Runtime> {
     suppression: SelfWriteSuppression,
     storage: crate::storage::AppStorage,
     previous_window: crate::window_focus::PreviousWindow,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryChangedEvent {
+    item_id: i64,
+    content_kind: &'static str,
 }
 
 impl<R: Runtime> TextClipboardHandler<R> {
@@ -190,6 +198,7 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             CaptureOutcome::CapturedText => {
                 match self.storage.insert_text(&normalized, &hash) {
                     Ok(item_id) => {
+                        self.emit_history_changed(item_id, "text");
                         self.run_clipboard_change_actions(item_id);
                     }
                     Err(error) => eprintln!("clipboard storage insert failed: {error}"),
@@ -240,6 +249,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
             CaptureOutcome::CapturedImage => {
                 match self.storage.insert_image(&image) {
                     Ok(item_id) => {
+                        self.emit_history_changed(item_id, "image");
                         self.run_clipboard_change_actions(item_id);
                     }
                     Err(error) => eprintln!("clipboard image storage insert failed: {error}"),
@@ -272,6 +282,18 @@ impl<R: Runtime> TextClipboardHandler<R> {
         );
         #[cfg(test)]
         let _ = item_id;
+    }
+
+    fn emit_history_changed(&self, item_id: i64, content_kind: &'static str) {
+        if let Err(error) = self.app.emit(
+            HISTORY_CHANGED_EVENT,
+            HistoryChangedEvent {
+                item_id,
+                content_kind,
+            },
+        ) {
+            eprintln!("history changed emit failed: {error}");
+        }
     }
 }
 

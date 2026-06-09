@@ -1,13 +1,13 @@
 #![cfg_attr(test, allow(dead_code))]
 
 mod actions;
-mod ai_planner;
+pub mod ai_planner;
 mod clipboard;
 mod clipboard_probe;
 mod host;
 mod hotkeys;
 mod image_capture;
-mod storage;
+pub mod storage;
 mod ui_host;
 mod window_focus;
 
@@ -29,9 +29,9 @@ use tauri::{
     WindowEvent,
 };
 #[cfg(not(test))]
-use tauri_plugin_clipboard_manager::ClipboardExt;
-#[cfg(not(test))]
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+#[cfg(not(test))]
+use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(not(test))]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -786,6 +786,15 @@ fn delete_history_item(storage: State<'_, storage::AppStorage>, id: i64) -> Resu
 
 #[cfg(not(test))]
 #[tauri::command]
+fn get_history_item(
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+) -> Result<storage::HistoryItem, String> {
+    storage.get_item(id)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn get_settings(storage: State<'_, storage::AppStorage>) -> Result<storage::AppSettings, String> {
     storage.get_settings()
 }
@@ -799,6 +808,7 @@ fn update_settings(
 ) -> Result<storage::AppSettings, String> {
     apply_autostart_setting(&app, settings.general.launch_on_startup)?;
     let next_settings = storage.update_settings(settings)?;
+    actions::refresh_script_action_cache(&storage)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
     Ok(next_settings)
 }
@@ -874,6 +884,19 @@ fn list_actions(
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
 ) -> Result<Vec<actions::ActionDefinition>, String> {
+    let actions = actions::list_actions(&storage)?;
+    let settings = storage.get_settings()?;
+    refresh_global_shortcuts(&app, &actions, &settings);
+    Ok(actions)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn refresh_script_action_cache(
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+) -> Result<Vec<actions::ActionDefinition>, String> {
+    actions::refresh_script_action_cache(&storage)?;
     let actions = actions::list_actions(&storage)?;
     let settings = storage.get_settings()?;
     refresh_global_shortcuts(&app, &actions, &settings);
@@ -1174,6 +1197,7 @@ pub fn run() {
             count_marked_history_items,
             update_history_item,
             delete_history_item,
+            get_history_item,
             get_settings,
             update_settings,
             list_tags,
@@ -1184,6 +1208,7 @@ pub fn run() {
             set_item_tags,
             list_builtin_actions,
             list_actions,
+            refresh_script_action_cache,
             list_script_action_diagnostics,
             run_action,
             handle_compound_hotkey_step,
@@ -1242,8 +1267,11 @@ pub fn run() {
                 }
                 Err(error) => eprintln!("clipboard watcher failed to start: {error}"),
             }
+            if let Err(error) = actions::refresh_script_action_cache(&storage) {
+                eprintln!("script action startup refresh failed: {error}");
+            }
             if let Err(error) = refresh_global_shortcuts_from_storage(app.handle(), &storage) {
-                eprintln!("global shortcut discovery failed: {error}");
+                eprintln!("global shortcut registration failed: {error}");
             }
             spawn_script_action_refresh(app.handle().clone(), storage);
             Ok(())
@@ -1680,6 +1708,7 @@ fn should_hide_on_focus_lost<R: tauri::Runtime>(window: &tauri::Window<R>) -> bo
         .unwrap_or(true)
 }
 
+#[cfg(not(test))]
 fn apply_autostart_setting<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     enabled: bool,
@@ -1694,6 +1723,14 @@ fn apply_autostart_setting<R: tauri::Runtime>(
             .disable()
             .map_err(|error| format!("failed to disable launch on startup: {error}"))?;
     }
+    Ok(())
+}
+
+#[cfg(test)]
+fn apply_autostart_setting<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+    _enabled: bool,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -2431,8 +2468,8 @@ fn spawn_script_action_refresh<R: tauri::Runtime>(
                 }
                 last_signature = signature;
 
-                match actions::list_actions(&storage) {
-                    Ok(_actions) => {
+                match actions::refresh_script_action_cache(&storage) {
+                    Ok(_) => {
                         let app_for_main_thread = app.clone();
                         let storage_for_main_thread = storage.clone();
                         if let Err(error) = app.run_on_main_thread(move || {
