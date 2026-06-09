@@ -18,10 +18,12 @@ Copicu currently ships as a Windows alpha prerelease.
 
 Current alpha release:
 
-- [v0.1.0-alpha.1](https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.1)
+- [v0.1.0-alpha.2](https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.2)
 - Asset: `Copicu_0.1.0_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `931DE5582DD6912AA0332CF51E751FA5B55D88085114A502CF610A3D74095266`
+- SHA256: `020859310D0FFF55199FC2D13D5B6BBBA882360AAC9AC824A677641EC655BB95`
+
+`v0.1.0-alpha.2` fixes the Windows installer layout for `WebView2Loader.dll` and builds the app as a GUI application so launching Copicu does not open a console window.
 
 This is early software. Do not test with sensitive clipboard content until you are comfortable with the alpha limitations and local data model.
 
