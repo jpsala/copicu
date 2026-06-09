@@ -234,6 +234,38 @@ Mejoras futuras:
 - agregar quickstart para usuarios no-dev cuando haya instalador;
 - agregar FAQ.
 
+### Agentic Development Context
+
+Decision 2026-06-09: explicar en el README publico como usar el sistema de contexto agentico del repo.
+
+Se publica como parte del repo:
+
+- `AGENTS.md`;
+- `docs/README.md`;
+- `docs/WORKING_MEMORY.md`;
+- `docs/PROJECT.md`;
+- `docs/ASSISTANT_RULES.md`;
+- `docs/DEVELOPMENT.md`;
+- `docs/TOPICS.md`;
+- `docs/topics/`;
+- `docs/active-work/`;
+- `specs/`.
+
+No se publica:
+
+- `.agents/`, porque es cache/local tooling y no contexto portable del proyecto;
+- logs temporales;
+- `.env`;
+- bases locales o dumps de clipboard.
+
+No existe `CLOG.md` en el repo actual. La funcion equivalente queda cubierta por `docs/WORKING_MEMORY.md` y `docs/active-work/`.
+
+Beneficio publico:
+
+- un contributor puede clonar el repo y pedirle a un agente que lea `AGENTS.md`;
+- el agente hereda reglas de privacidad, stack, producto, decisiones y trabajos vivos;
+- se reduce onboarding y se evita reconstruir contexto en cada sesion.
+
 ## Releases
 
 ### v0.1.0-alpha.1

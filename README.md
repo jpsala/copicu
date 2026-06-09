@@ -265,6 +265,36 @@ Build the desktop app:
 npm run tauri:build
 ```
 
+## Working With Coding Agents
+
+Copicu is intentionally documented for agent-assisted development.
+
+The repository includes an [AGENTS.md](AGENTS.md) file and a layered documentation system under [docs/](docs/). This means a contributor can clone the repo, open it with a coding agent, and give the agent enough project context without replaying the whole history of the project.
+
+Recommended agent bootstrap:
+
+```text
+Read AGENTS.md first.
+Then read docs/README.md, docs/WORKING_MEMORY.md, docs/PROJECT.md,
+docs/ASSISTANT_RULES.md and docs/DEVELOPMENT.md.
+For specific work, use docs/TOPICS.md as the router and open only the relevant topic.
+```
+
+The goal is to make agents useful without turning every session into archaeology. Durable decisions live in stable docs, live work lives in `docs/active-work/`, feature plans live in `specs/`, and topic-specific context lives in `docs/topics/`.
+
+This helps with:
+
+- preserving product direction across sessions;
+- avoiding accidental CopyQ parity creep;
+- keeping privacy rules visible;
+- giving agents the native-risk map for clipboard, focus, shortcuts, tray, paste, and storage;
+- making larger changes start from specs instead of ad hoc edits;
+- letting external contributors understand why the app is shaped this way.
+
+There is no separate `CLOG.md` in the current repo. The equivalent "current log" is [docs/WORKING_MEMORY.md](docs/WORKING_MEMORY.md), supported by [docs/active-work/](docs/active-work/) and [docs/TOPICS.md](docs/TOPICS.md).
+
+Local tool caches such as `.agents/` are intentionally not committed. The portable project context is the Markdown documentation that ships with the repo.
+
 ## Documentation
 
 User-facing docs:
