@@ -6,8 +6,6 @@ Copicu started as a CopyQ-inspired clipboard manager, but the goal is not to clo
 
 The clipboard is usually treated as a passive list of things you copied. Copicu treats it as working memory: searchable, previewable, editable, taggable, scriptable, and reusable.
 
-![Synthetic Copicu picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
-
 ## Install Windows Alpha
 
 Copicu currently ships as a Windows alpha prerelease.
