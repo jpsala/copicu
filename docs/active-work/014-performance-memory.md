@@ -346,6 +346,43 @@ Aceptacion:
 
 - Scroll sigue fluido y no hay regresiones visuales.
 
+### Task 10: Idle Warm Picker Memory Policy
+
+Prioridad: P1.
+
+Hipotesis: el baseline idle de produccion esta dominado por WebView2, no por el core Rust. Mantener el picker caliente puede ser el tradeoff correcto si garantiza apertura inmediata, foco confiable y cero flash visual.
+
+Medicion base 2026-06-09, build instalado:
+
+- `copicu.exe` + 6 procesos `msedgewebview2.exe`;
+- private memory total aprox 260 MB;
+- working set total aprox 493 MB;
+- `copicu.exe` host nativo aprox 8.8 MB private;
+- WebView2 GPU/renderer/browser explican casi todo el resto.
+
+Decision de producto/UX:
+
+- No implementar lazy WebView ni destruir el picker por idle como default.
+- Aceptar el costo de mantener el picker caliente si evita latencia, flicker, ventana fea o problemas de foco.
+- Considerar modo "low memory" solo futuro/opt-in si aparece demanda concreta.
+
+Checklist:
+
+- [ ] Confirmar en build de produccion que idle crea solo `main`/picker y no precrea Settings, AI output, ui-host, notifications o WhichKey.
+- [ ] Medir memoria privada/working set tras abrir y cerrar Settings.
+- [ ] Medir memoria privada/working set tras abrir y cerrar AI output.
+- [ ] Medir memoria privada/working set con 10k/50k items sinteticos.
+- [ ] Medir caso con imagenes sinteticas grandes + thumbnails.
+- [ ] Revisar que diagnostics/polling/logs normales sigan apagados en produccion.
+- [ ] Documentar si alguna superficie secundaria debe quedar precreada por UX y por que.
+
+Aceptacion:
+
+- La politica queda documentada con numeros y tradeoff explicito.
+- Produccion mantiene picker caliente y no introduce primer-open lento.
+- No quedan procesos/superficies extra en idle salvo decision justificada.
+- Cualquier optimizacion propuesta preserva apertura inmediata del picker y foco confiable.
+
 ## Medicion Inicial Pendiente
 
 Crear un harness sintetico antes o durante Task 1:

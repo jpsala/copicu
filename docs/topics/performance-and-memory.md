@@ -46,6 +46,34 @@ Modo produccion debe evitar trabajo permanente que no aporte al usuario:
 - logs sin payload y sin spam constante;
 - scripts y AI con resumen redacted, no source/content real en logs normales.
 
+## Politica De Memoria Idle Y Picker Caliente
+
+Decision vigente: Copicu prioriza un picker inmediato, confiable y visualmente estable por encima de minimizar agresivamente memoria idle.
+
+Medicion local 2026-06-09 sobre build instalado de produccion, con la ventana principal oculta y el picker/WebView caliente:
+
+- procesos: `copicu.exe` + 6 procesos `msedgewebview2.exe`;
+- working set total aproximado: 493 MB;
+- private memory total aproximada: 260 MB;
+- host Rust `copicu.exe`: aprox 8.8 MB private;
+- el costo dominante es WebView2, especialmente browser/renderer/GPU.
+
+Interpretacion:
+
+- el core nativo esta barato;
+- el costo WebView2 es alto pero esperable en una app Tauri con picker precargado;
+- no conviene cambiar a lazy WebView por defecto si eso introduce primer-open lento, flash visual, foco menos confiable o fallos en el flujo central;
+- crear el picker lazy o destruirlo tras idle puede evaluarse como modo futuro opt-in de bajo consumo, no como default.
+
+Criterios acordados:
+
+- Mantener caliente lo necesario para que `Ctrl+Shift+,` se sienta inmediato.
+- En idle produccion, evitar superficies extra: solo la WebView principal persistente salvo que Settings/AI output/ui-host esten en uso real.
+- No mantener ventanas secundarias precreadas si solo ahorran un flash menor, excepto cuando haya evidencia de que el costo UX de crearlas bajo demanda es peor que su memoria.
+- Eliminar logs, polling y diagnosticos normales de produccion.
+- No perseguir micro-optimizaciones del bundle/render si ponen en riesgo el picker.
+- Medir crecimiento con historiales grandes e imagenes para detectar leaks o previews pesados; eso no implica cambiar la decision de mantener picker caliente.
+
 ## Prioridad De Trabajo
 
 ### P0: Reducir Payload Del Feed
