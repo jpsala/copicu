@@ -14,7 +14,7 @@ primary_refs:
   - docs/topics/ui-rethink.md
   - docs/topics/mantine-ui-system.md
   - docs/topics/picker-interaction.md
-  - docs/active-work/001-settings-design.md
+  - docs/tracks/001-settings-design.md
 ---
 
 # UI Design And Impeccable
@@ -35,7 +35,7 @@ Antes de tocar UI, abrir `docs/topics/ui-surface-architecture.md`. Ese topic def
    - replanteo visual/superficies/temas: `docs/topics/ui-rethink.md`;
    - controles Mantine/tema: `docs/topics/mantine-ui-system.md`;
    - interaccion del picker: `docs/topics/picker-interaction.md`;
-   - prompts/toasts/scripts: `docs/active-work/009-ui-host-custom-surface.md`.
+   - prompts/toasts/scripts: `docs/tracks/009-ui-host-custom-surface.md`.
 3. Decidir si el cambio es Mantine-first o custom:
    - Settings y superficies de configuracion: Mantine-first.
    - Picker/feed/virtual list/previews: custom por defecto.

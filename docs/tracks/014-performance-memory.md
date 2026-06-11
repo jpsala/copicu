@@ -1,7 +1,7 @@
 ---
 id: performance-memory
 status: active
-updated: 2026-06-09
+updated: 2026-06-11
 ---
 
 # Performance And Memory
@@ -24,6 +24,41 @@ Topic estable: `docs/topics/performance-and-memory.md`.
 ## Estado Actual
 
 Auditoria estatica inicial realizada 2026-06-09.
+
+Corte medicion memoria 2026-06-11:
+
+- Se creo dataset UI sintetico de 10k items en `.codex-run/perf-memory-20260611/app-data-10k`, con textos `COPICU_SYNTH_PERF` y sin payload real del clipboard.
+- `src-tauri/examples/bench_history_search.rs` ahora acepta `COPICU_PERF_APP_DATA_DIR` y `COPICU_PERF_KEEP_APP_DATA=1` para dejar una app-data sintetica reutilizable; en esta maquina el example compila pero no se puede ejecutar por el loader conocido `STATUS_ENTRYPOINT_NOT_FOUND`, asi que la DB de medicion se sembro con SQLite directo y `PRAGMA user_version=10`.
+- Corrida built-dev contra `dist`, `COPICU_APP_DATA_DIR` aislado y WebView2 CDP solo para automatizar medicion:
+  - idle oculto con 10k: `copicu.exe` + 6 `msedgewebview2.exe`, private aprox 340 MB, working set aprox 515 MB.
+  - abrir Settings: sube a 7 WebView2; cerrar Settings usa `hide()` y mantiene la WebView viva.
+  - despues de cerrar Settings: sigue `copicu.exe` + 7 WebView2, private aprox 408 MB, working set aprox 628 MB.
+  - intento de AI Output por `open_markdown_output` desde CDP dejo un target `about:blank` y renderer extra sin montar `.ai-output-window`; no contar como medicion valida, pero queda como repro de automatizacion/superficie a revisar.
+  - intento de WhichKey con `Ctrl+Alt+C` no abrio ventana secundaria; disparo flujo de hotkey compuesto/picker y no agrego WebView2.
+  - intento de UI Host por `run_action` desde CDP no abrio `.ui-host-window`; no concluyente para memoria.
+- Idle/logs: en 15s quietos no aparecieron lineas nuevas en `app2.err.log`; no se observaron heartbeats continuos en esta corrida.
+- Artefactos locales: `.codex-run/perf-memory-20260611/memory-snapshots.csv`, `app2.err.log`, `seed-10k.sql`.
+- Hallazgo accionable: Settings queda cacheada tras cerrar por `window.hide()`. Esto mejora reapertura pero contradice la expectativa de "no superficies extra en idle" despues de uso. Decidir si Settings debe destruirse al cerrar o quedar cacheada explicitamente como tradeoff.
+
+Corte lifecycle ventanas 2026-06-11:
+
+- Decision provisional: no cambiar `hide()`/cache por `destroy()` solo para bajar memoria. Las superficies secundarias pueden quedar cacheadas si eso evita carga visible, flicker, composicion negra, perdida de foco o primer-open feo. El picker sigue caliente siempre.
+- Agregado harness `npm run perf:windows -- [-AppDataDir <path>] [-SkipBuild]` (`scripts/dev/measure-window-lifecycle.ps1`). Levanta built-dev contra `dist`, usa WebView2 CDP solo para automatizar, mide memoria por fase y guarda artefactos en `.codex-run/window-lifecycle/<stamp>/`. El harness ahora crea scripts sinteticos por corrida y puede intentar AI Output/UI Host por ruta de producto `clipboardChange -> script action`, sin abrir `open_markdown_output` por URL/CDP ni usar payload real.
+- Medicion con app-data sintetica 10k (`.codex-run/window-lifecycle/20260610-225523`):
+  - idle oculto: 7 procesos (`copicu.exe` + 6 WebView2), private 374.0 MB, working set 565.8 MB.
+  - primera apertura Settings: 630 ms, 8 procesos (`+1` WebView2), private 448.1 MB, working set 677.3 MB.
+  - cerrar Settings: `settingsPageStillInCdp=true`; queda cacheada, private 449.4 MB, working set 682.1 MB.
+  - reapertura Settings cacheada: 185 ms, private 451.8 MB, working set 689.7 MB.
+- Interpretacion: Settings cacheada cuesta aprox una WebView extra y ~75 MB private en esta corrida, pero reduce reapertura de ~630 ms a ~185 ms y evita recrear/componer la ventana. Mantener como comportamiento vigente hasta medir una alternativa `destroy()` sin flicker/foco roto.
+- Medicion extendida con app-data sintetica 10k (`.codex-run/window-lifecycle/20260610-233113`):
+  - idle oculto: 7 procesos (`copicu.exe` + 6 WebView2), private 258.5 MB, working set 459.2 MB.
+  - primera apertura Settings: 618 ms, 8 procesos, private 332.2 MB, working set 564.6 MB.
+  - cerrar Settings: `settingsPageStillInCdp=true`; queda cacheada, private 335.4 MB, working set 570.4 MB.
+  - reapertura Settings cacheada: 138 ms, private 330.9 MB, working set 566.1 MB.
+  - primera apertura AI Output por `clipboardChange` sintetico + script `ui.markdownOutput`: 2345 ms, 9 procesos (`+1` WebView2 sobre Settings cacheada), private 516.7 MB, working set 787.2 MB. El primer disparo puede crear la ventana antes de que React escuche el evento; el harness dispara un segundo marcador sintetico tras detectar la ventana para entregar el payload.
+  - cerrar AI Output con el control normal destruye el target CDP (`aiOutputPageStillInCdp=false`) y baja a 8 procesos, private 466.6 MB, working set 708.4 MB. Reabrir AI Output despues de ese close fallo: el script `ui.markdownOutput` completa, pero no aparece una nueva pagina AI Output. No contar como medicion cacheada valida; queda como hallazgo de lifecycle/reopen.
+  - UI Host por ruta `clipboardChange` sintetica + script `ui.input` sigue inconcluso: tras cambiar el registry a la carpeta UI, el harness detecta/retiene un target `ui-host` pero no llega `.ui-host-panel`; el evento queda registrado como failed. No hay medicion valida de memoria UI Host todavia.
+- Interpretacion extendida: AI Output no esta cacheada como Settings; cerrar por window chrome destruye el target. El fallo de reapertura despues de close sugiere que el lifecycle de AI Output necesita correccion o una politica explicita de hide/cache antes de medir tradeoff. UI Host todavia necesita una ruta de automatizacion mas confiable o un fix de entrega de request inicial.
 
 Checks de referencia:
 
@@ -74,6 +109,15 @@ Cierre dev restart/menu 2026-06-09:
 - Implicacion aceptada: el modo dev diario de Copicu prioriza confiabilidad nativa sobre HMR. Para dogfood real, tray, shortcuts, paste, WebView y Rust, usar built-dev. Para iteracion UI pura se puede crear mas adelante un modo preview/frontend separado, pero no usar Vite dev WebView2 como señal primaria de salud.
 - Corrida valida de `npm run dev:restart` built-dev: `.codex-run/dev-restart/logs/restart-20260609-163810.log`; frontend build +9.5s, shortcuts +20.8s, `renderer: module-load` +20.8s, heartbeat `active=INPUT:Search clipboard history` +22.8s. Proceso vivo: `src-tauri\target\debug\copicu.exe`, sin Vite escuchando en 1420.
 - Checks despues del cierre: `npm run build` pasa; `cd src-tauri; cargo check` pasa.
+
+Corte visual harness 2026-06-10:
+
+- Reproduccion del bloqueo: `npm run visual:check` con Vite dev no termino en 3 minutos. Vite quedo escuchando en `127.0.0.1:1420`, pero `/` y `/src/main.tsx` no respondian en 5s y el socket acumulaba conexiones `CloseWait`.
+- Aislamiento: servir el `dist` con `vite preview` respondio rapido y elimino los errores de `page.goto`; por lo tanto el blocker era el webServer Vite dev del harness, no una assertion visual del producto.
+- Hallazgo de equivalencia: una build normal servida por preview no reproduce los helpers dev del suite visual: `?window=whichkey/settings/ui-host/ai-output` queda deshabilitado fuera de `import.meta.env.DEV`, y los tests que dependen del polling debug cambian de comportamiento.
+- Fix aplicado: `playwright.config.ts` ahora levanta un build visual-test propio en `127.0.0.1:1421` con `VITE_COPICU_VISUAL_TEST=1` y `VITE_COPICU_RENDERER_DIAGNOSTICS=debug`, lo sirve con `vite preview`, no reutiliza servidores existentes y usa timeout de webServer 90s.
+- `currentWindowLabel()` en `src/main.tsx` y `src/windows/secondaryWindows.tsx` acepta `?window=` solo en dev o en build visual-test. Produccion normal no acepta ese override.
+- Verificacion: `npm run build` pasa. `npm run visual:check` pasa 74/74 en 35.0s.
 
 Primer corte ya implementado antes de la pausa:
 
@@ -368,13 +412,13 @@ Decision de producto/UX:
 
 Checklist:
 
-- [ ] Confirmar en build de produccion que idle crea solo `main`/picker y no precrea Settings, AI output, ui-host, notifications o WhichKey.
-- [ ] Medir memoria privada/working set tras abrir y cerrar Settings.
-- [ ] Medir memoria privada/working set tras abrir y cerrar AI output.
-- [ ] Medir memoria privada/working set con 10k/50k items sinteticos.
+- [x] Confirmar en build de produccion que idle crea solo `main`/picker y no precrea Settings, AI output, ui-host, notifications o WhichKey.
+- [x] Medir memoria privada/working set tras abrir y cerrar Settings.
+- [x] Medir memoria privada/working set tras abrir y cerrar AI output. Primera apertura/cierre medidos por script `clipboardChange`; reapertura despues de close falla y queda como hallazgo.
+- [x] Medir memoria privada/working set con 10k/50k items sinteticos. 10k medido; 50k pendiente si aparece evidencia de crecimiento no lineal.
 - [ ] Medir caso con imagenes sinteticas grandes + thumbnails.
-- [ ] Revisar que diagnostics/polling/logs normales sigan apagados en produccion.
-- [ ] Documentar si alguna superficie secundaria debe quedar precreada por UX y por que.
+- [x] Revisar que diagnostics/polling/logs normales sigan apagados en produccion.
+- [x] Documentar si alguna superficie secundaria debe quedar precreada por UX y por que. Settings queda cacheada provisionalmente porque reduce reapertura y evita recrear ventana; no cambiar sin prueba visual/foco.
 
 Aceptacion:
 
@@ -400,19 +444,21 @@ Task 1/2/3/4/5 y primer corte de Task 6 ya quedaron implementados.
 
 Orden sugerido:
 
-1. Aislar el problema Vite/Playwright de navegacion inicial para recuperar `npm run visual:check` completo.
-2. Medir busqueda/conteos con dataset sintetico de 50k antes de decidir FTS5.
-3. Medir idle/IPC con build de produccion y datos sinteticos.
+1. Medir idle/IPC con build de produccion y datos sinteticos.
+2. Medir memoria privada/working set tras abrir/cerrar Settings, AI Output, UI Host y WhichKey.
+3. Medir 10k/50k items sinteticos con imagenes grandes + thumbnails si se toca feed/render.
 4. Medir runner Node solo si scripts frecuentes o `clipboardChange` se sienten lentos.
+
+Nota: el bloqueo de `npm run visual:check` por navegacion inicial Vite/Playwright quedo resuelto con build visual-test + `vite preview`. La decision FTS5 ya fue diferida por Architecture Hardening tras benchmark 50k sintetico; repetir medicion solo si aparece evidencia nueva de latencia por keypress, ranking requerido o datasets mayores.
 
 ## Prompt Para Siguiente Sesion
 
 ```text
-Estamos en C:\dev\chat\copyq-tauri. Lee primero docs/README.md, docs/WORKING_MEMORY.md, docs/topics/performance-and-memory.md y docs/active-work/014-performance-memory.md.
+Estamos en C:\dev\chat\copyq-tauri. Lee primero docs/README.md, docs/WORKING_MEMORY.md, docs/topics/performance-and-memory.md y docs/tracks/014-performance-memory.md.
 
-Estamos en C:\dev\chat\copyq-tauri. Lee primero docs/README.md, docs/WORKING_MEMORY.md, docs/topics/performance-and-memory.md y docs/active-work/014-performance-memory.md.
+Estamos en C:\dev\chat\copyq-tauri. Lee primero docs/README.md, docs/WORKING_MEMORY.md, docs/topics/performance-and-memory.md y docs/tracks/014-performance-memory.md.
 
 Performance/memoria ya cerro Task 1/2/3/4/5 y primer corte de Task 6. `history_search` soporta `includeCounts=false`; paginas incrementales ya no recalculan conteos. Harness: `npm run perf:history -- <items>`.
 
-Objetivo recomendado: aislar primero el bloqueo de `npm run visual:check` por navegacion inicial Vite/Playwright en `127.0.0.1:1420`. Luego medir 50k items sinteticos antes de decidir FTS5. No usar payload real del clipboard. Correr `npm run build` y `cd src-tauri; cargo check`; si se toca UI/test harness, reintentar `npm run visual:check` y documentar error exacto.
+Objetivo recomendado: medir idle/IPC y memoria con build de produccion y datos sinteticos. `npm run visual:check` ya usa build visual-test + `vite preview` en `127.0.0.1:1421` y debe pasar completo. No usar payload real del clipboard. Correr `npm run build`, `npm run visual:check` si se toca UI/harness, y `cd src-tauri; cargo check` si se toca Rust.
 ```

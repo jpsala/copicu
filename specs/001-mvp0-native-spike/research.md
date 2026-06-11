@@ -17,7 +17,7 @@ npx ctx7 docs /websites/v2_tauri_app "clipboard manager permissions read text wr
 npx ctx7 docs /websites/v2_tauri_app "SQL plugin sqlite setup Tauri 2"
 ```
 
-Observed notes from active work:
+Observed notes from track:
 
 - `clipboard-manager` needs explicit permissions such as `clipboard-manager:allow-read-text` and `clipboard-manager:allow-write-text`.
 - SQL plugin with SQLite uses `cargo add tauri-plugin-sql --features sqlite`.

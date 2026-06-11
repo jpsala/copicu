@@ -1,16 +1,19 @@
 use serde::{Deserialize, Serialize};
+#[cfg(not(test))]
 use serde_json::json;
 use std::{
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
+    process::{Child, ExitStatus},
+    thread,
+    time::{Duration, Instant},
 };
 
 #[cfg(not(test))]
 use std::{
     io::{BufRead, BufReader, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
-    thread,
+    sync::mpsc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(not(test))]
@@ -20,6 +23,36 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(not(test))]
 use tauri_plugin_notification::NotificationExt;
 
+#[path = "actions/capabilities.rs"]
+mod capabilities;
+#[path = "actions/discovery.rs"]
+mod discovery;
+#[cfg(not(test))]
+#[path = "actions/host_api.rs"]
+mod host_api;
+#[cfg(not(test))]
+#[path = "actions/input.rs"]
+mod input;
+#[path = "actions/logging.rs"]
+mod logging;
+#[path = "actions/shortcuts.rs"]
+mod shortcuts;
+#[path = "actions/url.rs"]
+mod url;
+
+use self::capabilities::{
+    unsupported_script_capabilities, validate_script_command_capabilities,
+    validate_script_host_capabilities,
+};
+use self::discovery::discover_script_actions;
+#[cfg(not(test))]
+use self::host_api::dispatch_script_host_call;
+#[cfg(not(test))]
+use self::input::validate_action_input;
+use self::logging::now_unix_ms;
+#[cfg(not(test))]
+use self::logging::{input_summary_json, redact_error};
+pub use self::shortcuts::normalize_shortcut_string;
 const PASTE_PLAIN_ID: &str = "builtin.pastePlain";
 const JOIN_SELECTED_ID: &str = "builtin.joinSelected";
 const OPEN_URL_ID: &str = "builtin.openUrl";
@@ -27,6 +60,9 @@ const MAIN_WINDOW_LABEL: &str = "main";
 const NOTIFICATIONS_WINDOW_LABEL: &str = "notifications";
 const NOTIFICATION_TOAST_EVENT: &str = "copicu://toast";
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
+#[cfg(not(test))]
+const SCRIPT_RUNNER_TIMEOUT: Duration = Duration::from_secs(15);
+const SCRIPT_RUNNER_TIMEOUT_ERROR_PREFIX: &str = "script runner timed out after";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -316,155 +352,6 @@ pub fn refresh_script_action_cache(
     Ok(discovered_scripts)
 }
 
-fn discover_script_actions(folder_path: &str) -> Result<Vec<ActionDefinition>, String> {
-    let folder = Path::new(folder_path);
-    if !folder.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut entries = std::fs::read_dir(folder)
-        .map_err(|error| {
-            format!(
-                "failed to read scripts folder {}: {error}",
-                folder.display()
-            )
-        })?
-        .filter_map(Result::ok)
-        .filter(|entry| is_script_file(&entry.path()))
-        .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.path());
-
-    let mut actions = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let path = entry.path();
-        actions.push(discover_script_action(&path));
-    }
-    Ok(actions)
-}
-
-fn discover_script_action(path: &Path) -> ActionDefinition {
-    let file_name = path
-        .file_name()
-        .map(|value| value.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "unknown".to_string());
-    let fallback_id = fallback_script_id(path);
-    let mut diagnostics = Vec::new();
-
-    let source = match std::fs::read_to_string(path) {
-        Ok(source) => source,
-        Err(error) => {
-            return script_action_with_diagnostics(
-                fallback_id,
-                file_name,
-                path,
-                "",
-                vec![ActionDiagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    message: format!("failed to read script: {error}"),
-                }],
-            );
-        }
-    };
-
-    let action_block = match extract_define_action_block(&source) {
-        Some(block) => block,
-        None => {
-            return script_action_with_diagnostics(
-                fallback_id,
-                file_name,
-                path,
-                &source,
-                vec![ActionDiagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    message: "missing defineAction({...}) export".to_string(),
-                }],
-            );
-        }
-    };
-
-    let id = extract_string_property(action_block, "id").unwrap_or_else(|| {
-        diagnostics.push(ActionDiagnostic {
-            severity: DiagnosticSeverity::Error,
-            message: "missing action id".to_string(),
-        });
-        fallback_id
-    });
-    let title = extract_string_property(action_block, "title").unwrap_or_else(|| {
-        diagnostics.push(ActionDiagnostic {
-            severity: DiagnosticSeverity::Error,
-            message: "missing action title".to_string(),
-        });
-        file_name.clone()
-    });
-    let description = extract_string_property(action_block, "description").unwrap_or_default();
-    let shortcut = extract_string_property(action_block, "shortcut")
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let triggers = parse_trigger_array(action_block, "triggers", &mut diagnostics);
-    let capabilities =
-        extract_string_array_property(action_block, "capabilities").unwrap_or_else(|| {
-            diagnostics.push(ActionDiagnostic {
-                severity: DiagnosticSeverity::Warning,
-                message: "missing capabilities".to_string(),
-            });
-            Vec::new()
-        });
-    let input = parse_action_input(action_block, &mut diagnostics);
-    let logging = parse_action_logging(action_block, &mut diagnostics);
-
-    ActionDefinition {
-        id,
-        title,
-        description,
-        shortcut,
-        triggers,
-        input,
-        capabilities,
-        builtin: false,
-        source: ActionSource::Script,
-        script: Some(ScriptActionMetadata {
-            path: path.to_string_lossy().into_owned(),
-            file_name,
-            source_hash: crate::storage::hash_text(&source),
-        }),
-        diagnostics,
-        logging,
-    }
-}
-
-fn script_action_with_diagnostics(
-    id: String,
-    file_name: String,
-    path: &Path,
-    source: &str,
-    diagnostics: Vec<ActionDiagnostic>,
-) -> ActionDefinition {
-    ActionDefinition {
-        id,
-        title: file_name.clone(),
-        description: String::new(),
-        shortcut: None,
-        triggers: Vec::new(),
-        input: ActionInput {
-            source: ActionInputSource::None,
-            selection: SelectionRequirement::None,
-            kinds: None,
-            mime: None,
-            query: None,
-        },
-        capabilities: Vec::new(),
-        builtin: false,
-        source: ActionSource::Script,
-        script: Some(ScriptActionMetadata {
-            path: path.to_string_lossy().into_owned(),
-            file_name,
-            source_hash: crate::storage::hash_text(source),
-        }),
-        diagnostics,
-        logging: None,
-    }
-}
-
 fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for action in actions.iter() {
@@ -530,163 +417,6 @@ fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
     }
 }
 
-fn unsupported_script_capabilities(action: &ActionDefinition) -> Vec<String> {
-    action
-        .capabilities
-        .iter()
-        .filter(|capability| !supported_script_capability(capability))
-        .cloned()
-        .collect()
-}
-
-fn supported_script_capability(capability: &str) -> bool {
-    matches!(
-        capability,
-        "history:read-content"
-            | "history:search"
-            | "history:write-metadata"
-            | "history:delete"
-            | "clipboard:read"
-            | "clipboard:write"
-            | "ui:toast"
-            | "ui:notify"
-            | "ui:alert"
-            | "ui:confirm"
-            | "ui:input"
-            | "ui:markdown-output"
-            | "ai:summarize"
-            | "log:write"
-            | "commands:run"
-            | "picker:open"
-            | "picker:filter"
-            | "picker:activate"
-            | "picker:show"
-            | "picker:hide"
-            | "window:remember-previous"
-            | "window:focus-previous"
-            | "input:paste"
-    )
-}
-
-pub fn normalize_shortcut_string(shortcut: Option<&str>) -> Option<String> {
-    let shortcut = shortcut?;
-    if shortcut_contains_sequence_delimiter(shortcut) {
-        let sequence = crate::hotkeys::HotkeySequence::parse(shortcut).ok()?;
-        if sequence.first_step()?.to_string().contains('+') {
-            return Some(sequence.to_string());
-        }
-        return None;
-    }
-
-    normalize_simple_shortcut_string(shortcut)
-}
-
-fn normalize_simple_shortcut_string(shortcut: &str) -> Option<String> {
-    let parts = shortcut
-        .split('+')
-        .map(str::trim)
-        .filter(|part| !part.is_empty());
-    let mut modifiers = std::collections::BTreeSet::<&'static str>::new();
-    let mut key: Option<String> = None;
-
-    for part in parts {
-        let normalized = part.to_ascii_lowercase().replace(char::is_whitespace, "");
-        match normalized.as_str() {
-            "ctrl" | "control" | "cmdorctrl" => {
-                modifiers.insert("Ctrl");
-            }
-            "alt" | "option" => {
-                modifiers.insert("Alt");
-            }
-            "shift" => {
-                modifiers.insert("Shift");
-            }
-            "meta" | "cmd" | "command" | "win" | "super" => {
-                modifiers.insert("Meta");
-            }
-            _ => {
-                key = normalize_shortcut_key(part);
-            }
-        }
-    }
-
-    let key = key?;
-    if modifiers.is_empty() && is_printable_shortcut_key(&key) {
-        return None;
-    }
-
-    let mut ordered = Vec::new();
-    for modifier in ["Ctrl", "Alt", "Shift", "Meta"] {
-        if modifiers.contains(modifier) {
-            ordered.push(modifier.to_string());
-        }
-    }
-    ordered.push(key);
-    Some(ordered.join("+"))
-}
-
-fn shortcut_contains_sequence_delimiter(shortcut: &str) -> bool {
-    shortcut.char_indices().any(|(index, character)| {
-        character == ',' && shortcut[index + 1..].starts_with(char::is_whitespace)
-    })
-}
-
-fn normalize_shortcut_key(key: &str) -> Option<String> {
-    let trimmed = key.trim();
-    if trimmed.chars().count() == 1 {
-        return Some(if trimmed == " " {
-            "Space".to_string()
-        } else {
-            trimmed.to_ascii_uppercase()
-        });
-    }
-
-    let compact = trimmed
-        .to_ascii_lowercase()
-        .replace(char::is_whitespace, "");
-    if let Some(number) = compact.strip_prefix('f') {
-        if let Ok(number) = number.parse::<u8>() {
-            if (1..=12).contains(&number) {
-                return Some(format!("F{number}"));
-            }
-        }
-    }
-
-    match compact.as_str() {
-        "arrowdown" => Some("ArrowDown".to_string()),
-        "arrowleft" => Some("ArrowLeft".to_string()),
-        "arrowright" => Some("ArrowRight".to_string()),
-        "arrowup" => Some("ArrowUp".to_string()),
-        "backspace" => Some("Backspace".to_string()),
-        "delete" | "del" => Some("Delete".to_string()),
-        "end" => Some("End".to_string()),
-        "enter" | "return" => Some("Enter".to_string()),
-        "escape" | "esc" => Some("Escape".to_string()),
-        "home" => Some("Home".to_string()),
-        "insert" | "ins" => Some("Insert".to_string()),
-        "pagedown" => Some("PageDown".to_string()),
-        "pageup" => Some("PageUp".to_string()),
-        "space" | "spacebar" => Some("Space".to_string()),
-        "tab" => Some("Tab".to_string()),
-        "," | "comma" => Some(",".to_string()),
-        "." | "period" => Some(".".to_string()),
-        "/" | "slash" => Some("/".to_string()),
-        ";" | "semicolon" => Some(";".to_string()),
-        "'" | "quote" => Some("'".to_string()),
-        "[" | "bracketleft" => Some("[".to_string()),
-        "]" | "bracketright" => Some("]".to_string()),
-        "\\" | "backslash" => Some("\\".to_string()),
-        "-" | "minus" => Some("-".to_string()),
-        "=" | "equal" => Some("=".to_string()),
-        "`" | "backquote" => Some("`".to_string()),
-        _ => None,
-    }
-}
-
-fn is_printable_shortcut_key(key: &str) -> bool {
-    key.chars().count() == 1 || key == "Space"
-}
-
 #[cfg(not(test))]
 pub fn run_action<R: Runtime + 'static>(
     app: &AppHandle<R>,
@@ -712,11 +442,13 @@ pub fn run_action<R: Runtime + 'static>(
                 effects: Vec::new(),
             })
         }
-        OPEN_URL_ID => open_selected_url(storage, &request).map(|message| ScriptOrBuiltinRun {
-            message,
-            toasts: Vec::new(),
-            effects: Vec::new(),
-        }),
+        OPEN_URL_ID => {
+            url::open_selected_url(storage, &request).map(|message| ScriptOrBuiltinRun {
+                message,
+                toasts: Vec::new(),
+                effects: Vec::new(),
+            })
+        }
         _ => run_script_action(app, window, storage, suppression, previous_window, &request),
     };
     let finished_at = now_unix_ms();
@@ -830,22 +562,6 @@ fn join_selected<R: Runtime>(
     })?;
 
     Ok(format!("Joined {} items", parts.len()))
-}
-
-#[cfg(not(test))]
-fn open_selected_url(
-    storage: &crate::storage::AppStorage,
-    request: &RunActionRequest,
-) -> Result<String, String> {
-    let item_id = require_one_selected(&request.context)?;
-    let item = storage.get_item(item_id)?;
-    if item.content_kind() != "text" {
-        return Err("open URL requires a text item".to_string());
-    }
-    let url = first_url(item.text()).ok_or_else(|| "selected item has no URL".to_string())?;
-    open_url(&url)?;
-    storage.mark_used(item_id)?;
-    Ok("Opened URL".to_string())
 }
 
 #[cfg(not(test))]
@@ -1711,23 +1427,9 @@ fn handle_script_host_call<R: Runtime>(
     action: &ActionDefinition,
     call: &ScriptHostCall,
 ) -> String {
-    let result = match call.method.as_str() {
-        "history.search" => script_history_search(storage, call.payload.clone()),
-        "history.get" => script_history_get(storage, call.payload.clone()),
-        "history.update" => script_history_update(storage, call.payload.clone()),
-        "history.remove" => script_history_remove(storage, call.payload.clone()),
-        "clipboard.read" => script_clipboard_read(app),
-        "ui.alert" => script_ui_alert(app, call.payload.clone()),
-        "ui.confirm" => script_ui_confirm(app, call.payload.clone()),
-        "ui.input" => script_ui_input(app, call.payload.clone()),
-        "ai.respondMarkdown" | "ai.summarizeMarkdown" => {
-            script_ai_respond_markdown(storage, call.method.as_str(), call.payload.clone())
-        }
-        "commands.run" => {
-            script_commands_run(window, previous_window, action, call.payload.clone())
-        }
-        _ => Err(format!("unsupported script host method: {}", call.method)),
-    };
+    let result = validate_script_host_capabilities(action, call.method.as_str()).and_then(|()| {
+        dispatch_script_host_call(app, window, storage, previous_window, action, call)
+    });
 
     match result {
         Ok(result) => json!({
@@ -1754,15 +1456,10 @@ fn script_commands_run<R: Runtime + 'static>(
 ) -> Result<serde_json::Value, String> {
     let payload: ScriptCommandsRunPayload = serde_json::from_value(payload)
         .map_err(|error| format!("invalid commands.run payload: {error}"))?;
-    if !script_has_capability(action, "commands:run") {
-        return Err("commands.run requires commands:run capability".to_string());
-    }
+    validate_script_command_capabilities(action, payload.command_id.as_str())?;
 
     match payload.command_id.as_str() {
         "picker.open" => {
-            if !script_has_capability(action, "picker:open") {
-                return Err("picker.open command requires picker:open capability".to_string());
-            }
             let options: ScriptPickerOpenOptions = serde_json::from_value(payload.params)
                 .map_err(|error| format!("invalid picker.open command params: {error}"))?;
             let window =
@@ -1772,14 +1469,6 @@ fn script_commands_run<R: Runtime + 'static>(
         }
         _ => Err(format!("unsupported host command: {}", payload.command_id)),
     }
-}
-
-#[cfg(not(test))]
-fn script_has_capability(action: &ActionDefinition, capability: &str) -> bool {
-    action
-        .capabilities
-        .iter()
-        .any(|candidate| candidate == capability)
 }
 
 #[cfg(not(test))]
@@ -2023,89 +1712,6 @@ fn parse_script_item_id(value: &str) -> Result<i64, String> {
 }
 
 #[cfg(not(test))]
-fn validate_action_input(
-    storage: &crate::storage::AppStorage,
-    action: &ActionDefinition,
-    context: &ActionContext,
-) -> Result<(), String> {
-    let selected_count = context.selected_item_ids.len();
-    let selection_ok = match action.input.selection {
-        SelectionRequirement::None => selected_count == 0,
-        SelectionRequirement::Optional => true,
-        SelectionRequirement::One => selected_count == 1,
-        SelectionRequirement::OneOrMore => selected_count >= 1,
-        SelectionRequirement::Many => selected_count >= 2,
-    };
-    if !selection_ok {
-        return Err(format!(
-            "action input requires {:?} selection",
-            action.input.selection
-        ));
-    }
-
-    let input_item_ids = if action.input.source == ActionInputSource::Clipboard {
-        context.current_item_id.into_iter().collect::<Vec<_>>()
-    } else {
-        context.selected_item_ids.clone()
-    };
-
-    if input_item_ids.is_empty() {
-        return Ok(());
-    }
-
-    if let Some(kinds) = &action.input.kinds {
-        for item_id in &input_item_ids {
-            let item = storage.get_item(*item_id)?;
-            let item_kind = clip_kind_from_content_kind(item.content_kind());
-            if !kinds.contains(&item_kind) {
-                return Err(format!(
-                    "action does not accept {} items",
-                    item.content_kind()
-                ));
-            }
-        }
-    }
-
-    if let Some(mime_patterns) = &action.input.mime {
-        for item_id in &input_item_ids {
-            let item = storage.get_item(*item_id)?;
-            let value = serde_json::to_value(&item)
-                .map_err(|error| format!("failed to encode selected item: {error}"))?;
-            let mime = value["mime_primary"].as_str().unwrap_or("");
-            if !mime_patterns
-                .iter()
-                .any(|pattern| mime_matches(pattern, mime))
-            {
-                return Err(format!("action does not accept MIME {mime}"));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(not(test))]
-fn clip_kind_from_content_kind(value: &str) -> ClipKind {
-    match value {
-        "text" => ClipKind::Text,
-        "html" => ClipKind::Html,
-        "image" => ClipKind::Image,
-        "fileList" => ClipKind::FileList,
-        _ => ClipKind::Unknown,
-    }
-}
-
-#[cfg(not(test))]
-fn mime_matches(pattern: &str, mime: &str) -> bool {
-    if pattern == "*" || pattern == mime {
-        return true;
-    }
-    pattern
-        .strip_suffix("/*")
-        .is_some_and(|prefix| mime.starts_with(&format!("{prefix}/")))
-}
-
-#[cfg(not(test))]
 fn run_node_script_runner<R: Runtime>(
     app: &AppHandle<R>,
     window: Option<&WebviewWindow<R>>,
@@ -2144,15 +1750,56 @@ fn run_node_script_runner<R: Runtime>(
         let _ = stderr.read_to_string(&mut text);
         text
     });
+    let (stdout_tx, stdout_rx) = mpsc::channel::<Result<String, String>>();
+    let stdout_reader = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let message =
+                line.map_err(|error| format!("failed to read script runner output: {error}"));
+            let should_stop = message.is_err();
+            if stdout_tx.send(message).is_err() || should_stop {
+                break;
+            }
+        }
+    });
 
     let payload = serde_json::to_string(request)
         .map_err(|error| format!("failed to encode script runner request: {error}"))?;
     writeln!(stdin, "{payload}")
         .map_err(|error| format!("failed to write script runner request: {error}"))?;
 
-    let mut result = None;
-    for line in BufReader::new(stdout).lines() {
-        let line = line.map_err(|error| format!("failed to read script runner output: {error}"))?;
+    let mut result: Option<ScriptRunnerResult> = None;
+    let started_at = Instant::now();
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("failed to poll script runner: {error}"))?
+        {
+            if !status.success() && result.as_ref().is_none_or(|value| value.status != "failed") {
+                break;
+            }
+        }
+
+        let elapsed = started_at.elapsed();
+        if elapsed >= SCRIPT_RUNNER_TIMEOUT {
+            let error = kill_timed_out_script_runner(&mut child);
+            drop(stdin);
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(error);
+        }
+
+        let wait_for = SCRIPT_RUNNER_TIMEOUT.saturating_sub(elapsed);
+        let line = match stdout_rx.recv_timeout(wait_for) {
+            Ok(line) => line?,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let error = kill_timed_out_script_runner(&mut child);
+                drop(stdin);
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(error);
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -2186,9 +1833,8 @@ fn run_node_script_runner<R: Runtime>(
     }
 
     drop(stdin);
-    let status = child
-        .wait()
-        .map_err(|error| format!("failed to wait for script runner: {error}"))?;
+    let status = wait_for_script_runner_exit(&mut child, started_at)?;
+    let _ = stdout_reader.join();
     let stderr = stderr_reader.join().unwrap_or_default();
     let result = result.ok_or_else(|| {
         format!(
@@ -2207,6 +1853,49 @@ fn run_node_script_runner<R: Runtime>(
         ));
     }
     Ok(result)
+}
+
+#[cfg(not(test))]
+fn wait_for_script_runner_exit(
+    child: &mut Child,
+    started_at: Instant,
+) -> Result<ExitStatus, String> {
+    wait_for_child_exit_with_timeout(child, started_at, SCRIPT_RUNNER_TIMEOUT)
+}
+
+fn wait_for_child_exit_with_timeout(
+    child: &mut Child,
+    started_at: Instant,
+    timeout: Duration,
+) -> Result<ExitStatus, String> {
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("failed to poll script runner: {error}"))?
+        {
+            return Ok(status);
+        }
+        let elapsed = started_at.elapsed();
+        if elapsed >= timeout {
+            return Err(kill_timed_out_child(child, timeout));
+        }
+        thread::sleep(Duration::from_millis(25).min(timeout - elapsed));
+    }
+}
+
+#[cfg(not(test))]
+fn kill_timed_out_script_runner(child: &mut Child) -> String {
+    kill_timed_out_child(child, SCRIPT_RUNNER_TIMEOUT)
+}
+
+fn kill_timed_out_child(child: &mut Child, timeout: Duration) -> String {
+    let _ = child.kill();
+    let _ = child.wait();
+    format!(
+        "{} {}ms",
+        SCRIPT_RUNNER_TIMEOUT_ERROR_PREFIX,
+        timeout.as_millis()
+    )
 }
 
 #[cfg(not(test))]
@@ -2239,459 +1928,6 @@ fn find_script_runner_path() -> Result<PathBuf, String> {
     }
 
     Err("scripts/copicu-script-runner.mjs not found".to_string())
-}
-
-fn input_summary_json(storage: &crate::storage::AppStorage, context: &ActionContext) -> String {
-    let item_ids = context
-        .selected_item_ids
-        .iter()
-        .copied()
-        .chain(context.current_item_id)
-        .collect::<Vec<_>>();
-    let kinds = item_ids
-        .iter()
-        .filter_map(|item_id| storage.get_item(*item_id).ok())
-        .fold(
-            std::collections::BTreeMap::<String, usize>::new(),
-            |mut acc, item| {
-                *acc.entry(item.content_kind().to_string()).or_default() += 1;
-                acc
-            },
-        );
-
-    json!({
-        "selectedCount": context.selected_item_ids.len(),
-        "hasCurrentItem": context.current_item_id.is_some(),
-        "trigger": context.trigger.as_log_value(),
-        "kinds": kinds,
-        "view": context.view.as_ref().map(|view| json!({
-            "queryLength": view.query.chars().count(),
-            "visibleCount": view.visible_item_ids.len(),
-            "hasCurrentIndex": view.current_index.is_some()
-        }))
-    })
-    .to_string()
-}
-
-fn is_script_file(path: &Path) -> bool {
-    if path
-        .file_name()
-        .is_some_and(|name| name.to_string_lossy().ends_with(".d.ts"))
-    {
-        return false;
-    }
-
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension, "ts" | "js" | "mjs"))
-}
-
-fn fallback_script_id(path: &Path) -> String {
-    let stem = path
-        .file_stem()
-        .map(|value| value.to_string_lossy())
-        .unwrap_or_else(|| "script".into());
-    let normalized = stem
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '.'
-            }
-        })
-        .collect::<String>()
-        .split('.')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join(".");
-
-    format!(
-        "script.{}",
-        if normalized.is_empty() {
-            "unnamed"
-        } else {
-            &normalized
-        }
-    )
-}
-
-fn extract_define_action_block(source: &str) -> Option<&str> {
-    let define_index = source.find("defineAction")?;
-    let after_define = &source[define_index..];
-    let open_paren = after_define.find('(')? + define_index;
-    let after_paren = &source[open_paren..];
-    let open_brace = after_paren.find('{')? + open_paren;
-    let close_brace = find_matching(source, open_brace, '{', '}')?;
-    Some(&source[open_brace + 1..close_brace])
-}
-
-fn parse_action_input(block: &str, diagnostics: &mut Vec<ActionDiagnostic>) -> ActionInput {
-    let input_block = extract_object_property(block, "input");
-    let Some(input_block) = input_block else {
-        diagnostics.push(ActionDiagnostic {
-            severity: DiagnosticSeverity::Error,
-            message: "missing input contract".to_string(),
-        });
-        return ActionInput {
-            source: ActionInputSource::None,
-            selection: SelectionRequirement::None,
-            kinds: None,
-            mime: None,
-            query: None,
-        };
-    };
-
-    let source = extract_string_property(input_block, "source")
-        .and_then(|value| parse_input_source(&value))
-        .unwrap_or_else(|| {
-            diagnostics.push(ActionDiagnostic {
-                severity: DiagnosticSeverity::Error,
-                message: "missing or invalid input.source".to_string(),
-            });
-            ActionInputSource::None
-        });
-    let selection = extract_string_property(input_block, "selection")
-        .and_then(|value| parse_selection_requirement(&value))
-        .unwrap_or_else(|| {
-            diagnostics.push(ActionDiagnostic {
-                severity: DiagnosticSeverity::Error,
-                message: "missing or invalid input.selection".to_string(),
-            });
-            SelectionRequirement::None
-        });
-    let kinds = extract_string_array_property(input_block, "kinds").map(|values| {
-        values
-            .into_iter()
-            .filter_map(|value| parse_clip_kind(&value))
-            .collect()
-    });
-    let mime = extract_string_array_property(input_block, "mime");
-    let query = extract_string_property(input_block, "query");
-
-    ActionInput {
-        source,
-        selection,
-        kinds,
-        mime,
-        query,
-    }
-}
-
-fn parse_action_logging(
-    block: &str,
-    diagnostics: &mut Vec<ActionDiagnostic>,
-) -> Option<ActionLogging> {
-    let logging_block = extract_object_property(block, "logging")?;
-    let name = extract_string_property(logging_block, "name");
-    if let Some(name) = name.as_deref() {
-        if name.contains('/') || name.contains('\\') || name.contains("..") {
-            diagnostics.push(ActionDiagnostic {
-                severity: DiagnosticSeverity::Error,
-                message: "logging.name must be a file name, not a path".to_string(),
-            });
-        }
-    }
-    let redact = extract_bool_property(logging_block, "redact").unwrap_or(true);
-
-    Some(ActionLogging { name, redact })
-}
-
-fn parse_trigger_array(
-    block: &str,
-    property: &str,
-    diagnostics: &mut Vec<ActionDiagnostic>,
-) -> Vec<Trigger> {
-    let values = extract_string_array_property(block, property).unwrap_or_else(|| {
-        diagnostics.push(ActionDiagnostic {
-            severity: DiagnosticSeverity::Error,
-            message: "missing triggers".to_string(),
-        });
-        Vec::new()
-    });
-    values
-        .into_iter()
-        .filter_map(|value| {
-            let trigger = parse_trigger(&value);
-            if trigger.is_none() {
-                diagnostics.push(ActionDiagnostic {
-                    severity: DiagnosticSeverity::Warning,
-                    message: format!("unknown trigger: {value}"),
-                });
-            }
-            trigger
-        })
-        .collect()
-}
-
-fn extract_string_property(block: &str, property: &str) -> Option<String> {
-    let index = find_property_index(block, property)?;
-    let after_property = &block[index..];
-    let colon = after_property.find(':')?;
-    let after_colon = after_property[colon + 1..].trim_start();
-    read_quoted_string(after_colon).map(|(value, _)| value)
-}
-
-fn extract_bool_property(block: &str, property: &str) -> Option<bool> {
-    let index = find_property_index(block, property)?;
-    let after_property = &block[index..];
-    let colon = after_property.find(':')?;
-    let after_colon = after_property[colon + 1..].trim_start();
-    if after_colon.starts_with("true") {
-        Some(true)
-    } else if after_colon.starts_with("false") {
-        Some(false)
-    } else {
-        None
-    }
-}
-
-fn extract_string_array_property(block: &str, property: &str) -> Option<Vec<String>> {
-    let index = find_property_index(block, property)?;
-    let after_property = &block[index..];
-    let open = after_property.find('[')? + index;
-    let close = find_matching(block, open, '[', ']')?;
-    Some(read_quoted_strings(&block[open + 1..close]))
-}
-
-fn extract_object_property<'a>(block: &'a str, property: &str) -> Option<&'a str> {
-    let index = find_property_index(block, property)?;
-    let after_property = &block[index..];
-    let open = after_property.find('{')? + index;
-    let close = find_matching(block, open, '{', '}')?;
-    Some(&block[open + 1..close])
-}
-
-fn find_property_index(block: &str, property: &str) -> Option<usize> {
-    for (index, _) in block.match_indices(property) {
-        let before = block[..index].chars().next_back();
-        let after = block[index + property.len()..].chars().next();
-        let valid_before = before.is_none_or(|character| !is_identifier_char(character));
-        let valid_after = after.is_some_and(|character| {
-            !is_identifier_char(character) || matches!(character, ':' | '?' | '"')
-        });
-        if valid_before && valid_after {
-            let rest = block[index + property.len()..].trim_start();
-            if rest.starts_with(':') {
-                return Some(index);
-            }
-        }
-    }
-    None
-}
-
-fn find_matching(source: &str, open_index: usize, open: char, close: char) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut in_string: Option<char> = None;
-    let mut escaped = false;
-
-    for (offset, character) in source[open_index..].char_indices() {
-        let index = open_index + offset;
-        if let Some(quote) = in_string {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            if character == '\\' {
-                escaped = true;
-                continue;
-            }
-            if character == quote {
-                in_string = None;
-            }
-            continue;
-        }
-
-        if matches!(character, '"' | '\'' | '`') {
-            in_string = Some(character);
-            continue;
-        }
-        if character == open {
-            depth += 1;
-        } else if character == close {
-            depth = depth.checked_sub(1)?;
-            if depth == 0 {
-                return Some(index);
-            }
-        }
-    }
-    None
-}
-
-fn read_quoted_strings(source: &str) -> Vec<String> {
-    let mut values = Vec::new();
-    let mut rest = source;
-    while let Some(index) = rest.find(|character| matches!(character, '"' | '\'')) {
-        if let Some((value, consumed)) = read_quoted_string(&rest[index..]) {
-            values.push(value);
-            rest = &rest[index + consumed..];
-        } else {
-            break;
-        }
-    }
-    values
-}
-
-fn read_quoted_string(source: &str) -> Option<(String, usize)> {
-    let mut chars = source.char_indices();
-    let (_, quote) = chars.next()?;
-    if !matches!(quote, '"' | '\'') {
-        return None;
-    }
-    let mut value = String::new();
-    let mut escaped = false;
-    for (index, character) in chars {
-        if escaped {
-            value.push(character);
-            escaped = false;
-            continue;
-        }
-        if character == '\\' {
-            escaped = true;
-            continue;
-        }
-        if character == quote {
-            return Some((value, index + character.len_utf8()));
-        }
-        value.push(character);
-    }
-    None
-}
-
-fn is_identifier_char(character: char) -> bool {
-    character == '_' || character == '$' || character.is_ascii_alphanumeric()
-}
-
-fn parse_trigger(value: &str) -> Option<Trigger> {
-    match value {
-        "itemMenu" => Some(Trigger::ItemMenu),
-        "commandPalette" => Some(Trigger::CommandPalette),
-        "localShortcut" => Some(Trigger::LocalShortcut),
-        "globalShortcut" => Some(Trigger::GlobalShortcut),
-        "clipboardChange" => Some(Trigger::ClipboardChange),
-        "tray" => Some(Trigger::Tray),
-        "cli" => Some(Trigger::Cli),
-        "devRun" => Some(Trigger::DevRun),
-        _ => None,
-    }
-}
-
-fn parse_input_source(value: &str) -> Option<ActionInputSource> {
-    match value {
-        "pickerSelection" => Some(ActionInputSource::PickerSelection),
-        "clipboard" => Some(ActionInputSource::Clipboard),
-        "historySearch" => Some(ActionInputSource::HistorySearch),
-        "none" => Some(ActionInputSource::None),
-        _ => None,
-    }
-}
-
-fn parse_selection_requirement(value: &str) -> Option<SelectionRequirement> {
-    match value {
-        "none" => Some(SelectionRequirement::None),
-        "optional" => Some(SelectionRequirement::Optional),
-        "one" => Some(SelectionRequirement::One),
-        "oneOrMore" => Some(SelectionRequirement::OneOrMore),
-        "many" => Some(SelectionRequirement::Many),
-        _ => None,
-    }
-}
-
-fn parse_clip_kind(value: &str) -> Option<ClipKind> {
-    match value {
-        "text" => Some(ClipKind::Text),
-        "html" => Some(ClipKind::Html),
-        "image" => Some(ClipKind::Image),
-        "fileList" => Some(ClipKind::FileList),
-        "unknown" => Some(ClipKind::Unknown),
-        _ => None,
-    }
-}
-
-fn first_url(text: &str) -> Option<String> {
-    text.split_whitespace()
-        .map(|part| {
-            part.trim_matches(|character: char| {
-                matches!(
-                    character,
-                    '"' | '\'' | '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';'
-                )
-            })
-        })
-        .find(|part| part.starts_with("https://") || part.starts_with("http://"))
-        .map(|part| {
-            part.trim_end_matches(|character: char| {
-                matches!(
-                    character,
-                    '.' | '!' | '?' | ')' | ']' | '}' | '>' | ',' | ';'
-                )
-            })
-            .to_string()
-        })
-}
-
-#[cfg(all(not(test), target_os = "windows"))]
-fn open_url(url: &str) -> Result<(), String> {
-    use windows::{
-        core::HSTRING,
-        Win32::{
-            Foundation::HWND,
-            UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
-        },
-    };
-
-    let operation = HSTRING::from("open");
-    let file = HSTRING::from(url);
-    let result = unsafe {
-        ShellExecuteW(
-            Some(HWND::default()),
-            &operation,
-            &file,
-            None,
-            None,
-            SW_SHOWNORMAL,
-        )
-    };
-    if result.0 as isize <= 32 {
-        Err(format!(
-            "failed to open URL, shell code {}",
-            result.0 as isize
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(all(not(test), not(target_os = "windows")))]
-fn open_url(url: &str) -> Result<(), String> {
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(opener)
-        .arg(url)
-        .spawn()
-        .map_err(|error| format!("failed to open URL: {error}"))?;
-    Ok(())
-}
-
-fn redact_error(error: &str) -> String {
-    let mut redacted = error.to_string();
-    for url in error
-        .split_whitespace()
-        .filter(|part| part.starts_with("http://") || part.starts_with("https://"))
-    {
-        redacted = redacted.replace(url, "[url]");
-    }
-    redacted
-}
-
-fn now_unix_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -2730,7 +1966,7 @@ mod tests {
     #[test]
     fn first_url_trims_common_punctuation() {
         assert_eq!(
-            first_url("open (https://example.test/path).").as_deref(),
+            url::first_url("open (https://example.test/path).").as_deref(),
             Some("https://example.test/path")
         );
     }
@@ -2759,7 +1995,7 @@ mod tests {
             "#,
         );
 
-        let action = discover_script_action(&path);
+        let action = super::discovery::discover_script_action(&path);
 
         assert_eq!(action.id, "examples.valid");
         assert_eq!(action.title, "Valid Example");
@@ -2800,7 +2036,7 @@ mod tests {
             "#,
         );
 
-        let action = discover_script_action(&path);
+        let action = super::discovery::discover_script_action(&path);
 
         assert_eq!(action.id, "examples.badLog");
         assert!(action
@@ -2925,6 +2161,84 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("unsupported capabilities")));
+    }
+
+    #[test]
+    fn script_host_gateway_denies_history_remove_without_delete_capability() {
+        let action =
+            test_script_action("examples.delete", "Ctrl+Alt+D", SelectionRequirement::None);
+
+        let error = validate_script_host_capabilities(&action, "history.remove")
+            .expect_err("history.remove should require history:delete");
+
+        assert!(error.contains("history.remove requires history:delete capability"));
+    }
+
+    #[test]
+    fn script_host_gateway_denies_clipboard_read_without_read_capability() {
+        let action = test_script_action(
+            "examples.clipboard",
+            "Ctrl+Alt+C",
+            SelectionRequirement::None,
+        );
+
+        let error = validate_script_host_capabilities(&action, "clipboard.read")
+            .expect_err("clipboard.read should require clipboard:read");
+
+        assert!(error.contains("clipboard.read requires clipboard:read capability"));
+    }
+
+    #[test]
+    fn script_host_gateway_allows_declared_host_capability() {
+        let mut action =
+            test_script_action("examples.search", "Ctrl+Alt+S", SelectionRequirement::None);
+        action.capabilities = vec!["history:search".to_string()];
+
+        validate_script_host_capabilities(&action, "history.search")
+            .expect("history.search should allow history:search");
+    }
+
+    #[test]
+    fn commands_run_picker_open_requires_command_specific_capability() {
+        let mut action =
+            test_script_action("examples.picker", "Ctrl+Alt+P", SelectionRequirement::None);
+        action.capabilities = vec!["commands:run".to_string()];
+
+        let error = validate_script_command_capabilities(&action, "picker.open")
+            .expect_err("picker.open should require picker:open");
+
+        assert!(error.contains("picker.open command requires picker:open capability"));
+    }
+
+    #[test]
+    fn commands_run_picker_open_allows_declared_capabilities() {
+        let mut action =
+            test_script_action("examples.picker", "Ctrl+Alt+P", SelectionRequirement::None);
+        action.capabilities = vec!["commands:run".to_string(), "picker:open".to_string()];
+
+        validate_script_command_capabilities(&action, "picker.open")
+            .expect("picker.open should allow commands:run plus picker:open");
+    }
+
+    #[test]
+    fn script_runner_wait_timeout_kills_synthetic_child() {
+        let mut child = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Start-Sleep -Seconds 5"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("synthetic child should start");
+
+        let error =
+            wait_for_child_exit_with_timeout(&mut child, Instant::now(), Duration::from_millis(50))
+                .expect_err("synthetic child should time out");
+
+        assert!(error.contains(SCRIPT_RUNNER_TIMEOUT_ERROR_PREFIX));
+        assert!(child
+            .try_wait()
+            .expect("child status should be readable")
+            .is_some());
     }
 
     fn test_script_action(

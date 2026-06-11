@@ -1,5 +1,6 @@
 param(
   [switch] $IsolatedAppData,
+  [switch] $DefaultAppData,
   [switch] $RemoteDebug,
   [switch] $ViteDev,
   [int] $RemoteDebugPort = 9222,
@@ -87,13 +88,29 @@ foreach ($owner in $portOwners) {
 
 Start-Sleep -Milliseconds 700
 
-if ($IsolatedAppData) {
-  $isolatedData = Join-Path $runDir "app-data"
+if (-not $DefaultAppData) {
+  $isolatedRoot = Join-Path $repoRoot ".codex-run\dev-isolated"
+  $isolatedData = Join-Path $isolatedRoot "app-data"
+  $isolatedScripts = Join-Path $isolatedRoot "scripts"
   New-Item -ItemType Directory -Force -Path $isolatedData | Out-Null
+  New-Item -ItemType Directory -Force -Path $isolatedScripts | Out-Null
   $env:COPICU_APP_DATA_DIR = $isolatedData
-  Write-Step "using isolated app data: $isolatedData" $startedAt
+  $env:COPICU_SCRIPTS_DIR = $isolatedScripts
+  if (-not $env:COPICU_GLOBAL_SHORTCUT) {
+    $env:COPICU_GLOBAL_SHORTCUT = "Ctrl+Shift+."
+  }
+  if (-not $env:COPICU_DISABLE_CLIPBOARD_WATCHER) {
+    $env:COPICU_DISABLE_CLIPBOARD_WATCHER = "1"
+  }
+  Write-Step "using dev app data: $isolatedData" $startedAt
+  Write-Step "using dev scripts dir: $isolatedScripts" $startedAt
+  Write-Step "using dev default hotkey: $env:COPICU_GLOBAL_SHORTCUT" $startedAt
+  Write-Step "dev clipboard watcher disabled" $startedAt
 } else {
   Remove-Item Env:\COPICU_APP_DATA_DIR -ErrorAction SilentlyContinue
+  Remove-Item Env:\COPICU_SCRIPTS_DIR -ErrorAction SilentlyContinue
+  Remove-Item Env:\COPICU_GLOBAL_SHORTCUT -ErrorAction SilentlyContinue
+  Remove-Item Env:\COPICU_DISABLE_CLIPBOARD_WATCHER -ErrorAction SilentlyContinue
   Write-Step "using default app data" $startedAt
 }
 

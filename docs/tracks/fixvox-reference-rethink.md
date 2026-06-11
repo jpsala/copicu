@@ -1,3 +1,9 @@
+---
+status: paused
+updated: 2026-06-05
+topic: docs/topics/product-ambition.md
+---
+
 # Fixvox Reference Rethink
 
 Estado: paused
@@ -46,7 +52,7 @@ El codigo activo vive principalmente en:
 - `C:\dev\electro-bun-1\src\app\backend`
 - `C:\dev\electro-bun-1\src\app\views`
 - `C:\dev\electro-bun-1\.specify\specs`
-- `C:\dev\electro-bun-1\docs\active-work`
+- `C:\dev\electro-bun-1\docs\tracks`
 
 Los roots viejos `src\bun` y `src\views` existen como referencia/legacy, pero el mapa activo apunta a `src\app`.
 

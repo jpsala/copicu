@@ -213,9 +213,9 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                 }
                 dev_log(format_args!("clipboard text captured"));
             }
-            CaptureOutcome::IgnoredDuplicateOrCoalesced => {
-                dev_log(format_args!("clipboard text ignored: duplicate_or_coalesced"))
-            }
+            CaptureOutcome::IgnoredDuplicateOrCoalesced => dev_log(format_args!(
+                "clipboard text ignored: duplicate_or_coalesced"
+            )),
             CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::CapturedImage
             | CaptureOutcome::SelfWriteSuppressed
@@ -269,9 +269,9 @@ impl<R: Runtime> TextClipboardHandler<R> {
                     image.png_bytes.len()
                 ));
             }
-            CaptureOutcome::IgnoredDuplicateOrCoalesced => {
-                dev_log(format_args!("clipboard image ignored: duplicate_or_coalesced"))
-            }
+            CaptureOutcome::IgnoredDuplicateOrCoalesced => dev_log(format_args!(
+                "clipboard image ignored: duplicate_or_coalesced"
+            )),
             CaptureOutcome::CapturedText
             | CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::SelfWriteSuppressed

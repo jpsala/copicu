@@ -12,8 +12,8 @@ triggers:
   - filters
   - actions
 primary_refs:
-  - ../active-work/006-ai-vague-search.md
-  - ../active-work/004-actions-scripting.md
+  - ../tracks/006-ai-vague-search.md
+  - ../tracks/004-actions-scripting.md
   - search-plan-engine.md
   - filtering-and-query-syntax.md
   - product-ambition.md

@@ -222,10 +222,10 @@ No implementado todavía:
 ```text
 Estamos en c:\dev\chat\copyq-tauri. Leer AGENTS.md y docs iniciales.
 
-Continuar Actions/Scripting UI auxiliar con el active work:
+Continuar Actions/Scripting UI auxiliar con el track:
 
-docs/active-work/009-ui-host-custom-surface.md
-docs/active-work/004-actions-scripting.md
+docs/tracks/009-ui-host-custom-surface.md
+docs/tracks/004-actions-scripting.md
 docs/topics/actions-and-scripting-api.md
 specs/004-actions-scripting-api/spec.md
 docs/WORKING_MEMORY.md

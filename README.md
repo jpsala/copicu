@@ -340,7 +340,7 @@ docs/ASSISTANT_RULES.md and docs/DEVELOPMENT.md.
 For specific work, use docs/TOPICS.md as the router and open only the relevant topic.
 ```
 
-The goal is to make agents useful without turning every session into archaeology. Durable decisions live in stable docs, live work lives in `docs/active-work/`, feature plans live in `specs/`, and topic-specific context lives in `docs/topics/`.
+The goal is to make agents useful without turning every session into archaeology. Durable decisions live in stable docs, live work lives in `docs/tracks/`, feature plans live in `specs/`, and topic-specific context lives in `docs/topics/`.
 
 This helps with:
 
@@ -351,7 +351,7 @@ This helps with:
 - making larger changes start from specs instead of ad hoc edits;
 - letting external contributors understand why the app is shaped this way.
 
-There is no separate `CLOG.md` in the current repo. The equivalent "current log" is [docs/WORKING_MEMORY.md](docs/WORKING_MEMORY.md), supported by [docs/active-work/](docs/active-work/) and [docs/TOPICS.md](docs/TOPICS.md).
+There is no separate `CLOG.md` in the current repo. The equivalent "current log" is [docs/WORKING_MEMORY.md](docs/WORKING_MEMORY.md), supported by [docs/tracks/](docs/tracks/) and [docs/TOPICS.md](docs/TOPICS.md).
 
 Local tool caches such as `.agents/` are intentionally not committed. The portable project context is the Markdown documentation that ships with the repo.
 

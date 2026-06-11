@@ -32,7 +32,7 @@ Contexto local leido:
 - `docs/DEVELOPMENT.md`
 - `docs/TOPICS.md`
 - `docs/topics/ui-design-and-impeccable.md`
-- `docs/active-work/009-ui-host-custom-surface.md`
+- `docs/tracks/009-ui-host-custom-surface.md`
 - `src/styles.css`
 - `src/main.tsx`
 
@@ -64,7 +64,7 @@ Tercer corte aplicado:
 Estudio Mantine 2026-06-06:
 
 - agregado audit en `docs/topics/mantine-ui-system.md`;
-- agregado task detallado en `docs/active-work/011-mantine-component-migration.md`;
+- agregado task detallado en `docs/tracks/011-mantine-component-migration.md`;
 - conclusion: seguir Mantine-first para controles, overlays, menus, prompts, settings y tema;
 - mantener custom el feed virtualizado, previews rich, medicion de filas y frame del picker;
 - proximo corte tecnico recomendado: extraer wrappers Mantine y mover defaults/variantes a `src/mantineTheme.ts`, antes de migrar mas UI visible.
@@ -303,7 +303,7 @@ Proximo corte UI recomendado:
 2. Validar con JP: hide, focus-lost, shortcut, tray, paste-to-previous-window, DPI/monitor y comportamiento fixed-size.
 3. Decidir si `main` queda fixed-size frameless solido, vuelve a nativo, o se disena otro corte especifico de resize.
 4. Mantener Settings nativa hasta terminar esa validacion.
-5. Si se pausa custom windows, seguir `docs/active-work/011-mantine-component-migration.md` con theme polish/toasts.
+5. Si se pausa custom windows, seguir `docs/tracks/011-mantine-component-migration.md` con theme polish/toasts.
 
 Auditoria visual concreta pendiente:
 

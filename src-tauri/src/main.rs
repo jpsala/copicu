@@ -1,4 +1,4 @@
-#![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 #[cfg(not(test))]
 fn main() {

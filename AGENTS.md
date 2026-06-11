@@ -4,17 +4,17 @@ Este proyecto es un clipboard manager inspirado en CopyQ, construido desde cero 
 
 ## Lectura Inicial
 
-Antes de trabajar en este proyecto, leer:
+Antes de trabajar en este proyecto, usar una ruta liviana:
 
-1. `docs/README.md`
-2. `docs/WORKING_MEMORY.md`
-3. `docs/PROJECT.md`
-4. `docs/ASSISTANT_RULES.md`
-5. `docs/DEVELOPMENT.md`
+1. `docs/.generated/context-index.md` si existe.
+2. `docs/WORKING_MEMORY.md`.
+3. `docs/README.md` solo si hace falta mapa documental.
+4. `docs/TOPICS.md` o busqueda por triggers para elegir topic.
+5. Topic, track, spec o codigo puntual segun el pedido.
 
-Para temas puntuales, usar `docs/TOPICS.md` como router y abrir solo los topics necesarios.
+No abrir por defecto docs largos como `docs/PROJECT.md`, `docs/ASSISTANT_RULES.md`, `docs/DEVELOPMENT.md`, specs completas ni referencias profundas. Abrirlos solo cuando el pedido o el topic lo requiera.
 
-La discusion inicial del proyecto fue integrada en `docs/`. Si aparecen archivos preexistentes nuevos, no dejarlos sueltos: integrarlos, moverlos a una ubicacion documentada o preguntar antes de borrarlos.
+La discusion inicial del proyecto fue integrada en `docs/`. Si aparecen archivos preexistentes nuevos, no dejarlos sueltos: integrarlos, moverlos a una ubicacion documentada, archivarlos con estado claro o preguntar antes de borrarlos.
 
 ## Reglas Generales
 
@@ -25,8 +25,20 @@ La discusion inicial del proyecto fue integrada en `docs/`. Si aparecen archivos
 - No persistir contenido real del clipboard en ejemplos, tests o logs salvo que sea contenido sintetico.
 - No revertir cambios de usuario sin pedido explicito.
 - No dejar archivos de contexto preexistentes sin indexar ni sin destino claro.
-- Mantener documentacion liviana: decisiones durables a docs estables; trabajos vivos en `docs/active-work/`.
+- Mantener documentacion liviana: decisiones durables a docs estables; trabajos vivos en `docs/tracks/`.
 - Para features grandes, crear o actualizar una spec en `specs/` antes de implementar.
+- Despues de hacer cambios de codigo, configuracion, assets o frontend/backend, asegurarse de que la app que ve el usuario quede actualizada con los ultimos cambios: reiniciar o recargar la instancia dev segun corresponda, y no dejar una app vieja corriendo.
+- No dejar que la capa agentica se convierta en transcript, backlog historico o lectura obligatoria amplia. Si crece, compactar, archivar o mover a referencia profunda.
+
+## Comandos De Sistema
+
+- Si JP dice `realinear os` o pide auditar/reparar el sistema agentico, abrir `docs/topics/agentic-os-operations.md`. Limitar cambios a la capa agentica salvo pedido explicito.
+- Si JP pide `goal`/`gol`, iniciar Goal corto alineado a track/spec; sin presupuesto salvo pedido. Completar tras verificar y actualizar docs si corresponde.
+- Si JP dice `continuar con goal`, hacer checkpoint liviano y seguir en esta sesion con un Goal.
+- Si JP dice `actualizar instalada`, `promover dev a instalada`, `crear instalador e instalar`, `instalar current` o pide que la app instalada quede igual a lo que le gusto en dev, ejecutar `npm run install:current`. Esto debe buildar Tauri, crear el instalador NSIS, cerrar instancias `copicu.exe`, instalar silencioso y relanzar `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. Mantener separacion vigente: instalada usa `%APPDATA%\dev.jpsala.copicu`; dev usa `.codex-run\dev-isolated`.
+- Si JP dice `cerrar sesion`, persistir el valor de la sesion en docs vivos antes de responder: tracks, topics, decisiones, working memory y specs si aplica. No crear transcript ni archivo historico por defecto.
+- Si JP dice `continuar sesion`, hacer primero el mismo cierre de valor que `cerrar sesion` y despues abrir un thread nuevo con handoff compacto si la herramienta esta disponible; si no, devolver un prompt pegable. La memoria principal son los docs actualizados, no el prompt.
+- Si JP dice `continuar sesion con goal` o `continuar sesion con go`, hacer `continuar sesion` y pedir Goal inicial.
 
 ## Persistencia
 

@@ -2,7 +2,7 @@
 id: 002-rich-image-capture
 status: validated
 updated: 2026-06-05
-source: docs/active-work/image-capture-spike.md
+source: docs/tracks/image-capture-spike.md
 ---
 
 # Rich Image Capture

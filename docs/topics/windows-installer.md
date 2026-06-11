@@ -86,15 +86,21 @@ Patron vigente:
 - el hook post-install copia `resources/WebView2Loader.dll` a `$INSTDIR/WebView2Loader.dll`;
 - el hook tambien borra `bench_history_search.exe` si quedo de una build alpha anterior.
 
-## Produccion Sin Consola
+## Binario Sin Consola
 
-El binario de release debe compilar como Windows GUI app, no consola. Mantener en `src-tauri/src/main.rs`:
+El binario Windows debe compilar como Windows GUI app, no consola. Mantener en `src-tauri/src/main.rs`:
 
 ```rust
-#![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
+#![cfg_attr(windows, windows_subsystem = "windows")]
 ```
 
-Los logs informativos de startup, clipboard watcher, foco anterior y shortcuts deben quedar detras de `debug_assertions` o un diagnostico explicito. El instalador publico no debe abrir terminal ni imprimir diagnosticos normales.
+Motivo:
+
+- el instalado publico no debe abrir terminal ni imprimir diagnosticos normales;
+- el binario dev tambien debe ser GUI, porque el picker se activa con global hotkey y un binario console puede exponer momentaneamente la consola al cambiar foco;
+- `npm run dev:restart` ya redirige stdout/stderr a `.codex-run/dev-restart/logs/`, asi que no se necesita una consola visible para diagnostico diario.
+
+Los logs informativos de startup, clipboard watcher, foco anterior y shortcuts deben quedar detras de `debug_assertions` o un diagnostico explicito cuando se trate de release publica.
 
 ## Binarios Dev
 
@@ -135,6 +141,41 @@ Salida esperada:
 ```text
 src-tauri/target/release/bundle/nsis/*-setup.exe
 ```
+
+Promover el estado actual del repo a la app instalada:
+
+```powershell
+npm run install:current
+```
+
+Uso conversacional esperado: si JP dice `actualizar instalada`, `promover dev a instalada`, `crear instalador e instalar` o equivalente, ejecutar ese comando. El script builda, genera el NSIS, cierra `copicu.exe`, instala silencioso y relanza el ejecutable instalado.
+
+## Datos Runtime
+
+La app instalada debe usar el perfil normal de Tauri para `dev.jpsala.copicu`, hoy bajo:
+
+```text
+%APPDATA%\dev.jpsala.copicu\copicu.sqlite3
+```
+
+Los comandos dev no deben usar esa DB por defecto. `npm run tauri:dev`, `npm run dev:isolated`, `npm run dev:built` y `npm run dev:restart` apuntan a:
+
+```text
+.codex-run\dev-isolated\app-data
+.codex-run\dev-isolated\scripts
+```
+
+El hotkey default del perfil dev aislado es `Ctrl+Shift+.` para no competir con la instalada. Si alguna investigacion necesita reproducir contra el perfil real, debe ser opt-in explicito, no default.
+
+Dev aislado tambien setea `COPICU_DISABLE_CLIPBOARD_WATCHER=1` para evitar doble captura mientras la instalada es la herramienta diaria. Pendiente tecnico: los comandos de diagnostico de captura deben devolver snapshot vacio cuando el watcher esta deshabilitado, en vez de requerir state manejado.
+
+El tray de dev debe distinguirse de la instalada:
+
+- tooltip `Copicu Dev`;
+- menu `Toggle Copicu Dev`;
+- icono `src-tauri/icons/tray-dev.png` con badge `D`.
+
+La instalada conserva tooltip/icono normal `Copicu`.
 
 ## Fuentes
 

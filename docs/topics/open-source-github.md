@@ -14,7 +14,7 @@ triggers:
 primary_refs:
   - ../../README.md
   - ../../.env.example
-  - ../active-work/013-open-source-growth.md
+  - ../tracks/013-open-source-growth.md
   - ../PROJECT.md
   - ../topics/product-register.md
   - ../topics/ai-search-and-actions.md
@@ -242,7 +242,7 @@ Mejoras futuras:
 
 ## Growth / Promocion
 
-Plan vivo: `docs/active-work/013-open-source-growth.md`.
+Plan vivo: `docs/tracks/013-open-source-growth.md`.
 
 Direccion:
 
@@ -309,7 +309,7 @@ Se publica como parte del repo:
 - `docs/DEVELOPMENT.md`;
 - `docs/TOPICS.md`;
 - `docs/topics/`;
-- `docs/active-work/`;
+- `docs/tracks/`;
 - `specs/`.
 
 No se publica:
@@ -319,7 +319,7 @@ No se publica:
 - `.env`;
 - bases locales o dumps de clipboard.
 
-No existe `CLOG.md` en el repo actual. La funcion equivalente queda cubierta por `docs/WORKING_MEMORY.md` y `docs/active-work/`.
+No existe `CLOG.md` en el repo actual. La funcion equivalente queda cubierta por `docs/WORKING_MEMORY.md` y `docs/tracks/`.
 
 Beneficio publico:
 

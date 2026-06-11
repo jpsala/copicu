@@ -34,6 +34,7 @@ import {
   forwardRef,
   type CSSProperties,
   type FormEventHandler,
+  type KeyboardEventHandler,
   type MouseEventHandler,
   type ReactNode,
 } from "react";
@@ -45,6 +46,7 @@ export const UiButton = forwardRef<
   ButtonProps & {
     type?: ButtonElementType;
     onClick?: MouseEventHandler<HTMLButtonElement>;
+    onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
     onMouseDown?: MouseEventHandler<HTMLButtonElement>;
     onContextMenu?: MouseEventHandler<HTMLButtonElement>;
   }

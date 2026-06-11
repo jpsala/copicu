@@ -13,7 +13,7 @@ primary_refs:
   - global-shortcut-and-tray.md
   - ui-surface-architecture.md
   - ../../specs/006-tags-and-hotkeys/spec.md
-  - ../active-work/012-tags-and-hotkeys.md
+  - ../tracks/012-tags-and-hotkeys.md
 ---
 
 # Tag Management And Hotkeys

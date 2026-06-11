@@ -15,6 +15,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import Keyboard from "lucide-react/dist/esm/icons/keyboard.mjs";
 import Pin from "lucide-react/dist/esm/icons/pin.mjs";
 import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
@@ -276,6 +277,12 @@ type AppSettings = {
   };
 };
 
+type HotkeyNormalizationResult = {
+  normalized: string | null;
+  valid: boolean;
+  error: string | null;
+};
+
 type UpdateHistoryItemRequest = {
   id: number;
   text: string;
@@ -329,6 +336,7 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "ui:confirm",
   "ui:input",
   "ui:markdown-output",
+  "ai:summarize",
   "log:write",
   "commands:run",
   "picker:open",
@@ -430,6 +438,10 @@ function handleCompoundHotkeyStep(shortcut: string) {
     executed: boolean;
     diagnostic: string | null;
   }>("handle_compound_hotkey_step", { request: { shortcut } });
+}
+
+function normalizeHotkeySequence(input: string) {
+  return invoke<HotkeyNormalizationResult>("normalize_hotkey_sequence", { input });
 }
 
 function clearCompoundHotkeyPending() {
@@ -541,7 +553,10 @@ function isTauriRuntime() {
 
 function currentWindowLabel() {
   const devWindowLabel = new URLSearchParams(window.location.search).get("window");
-  if (import.meta.env.DEV && devWindowLabel) {
+  if (
+    (import.meta.env.DEV || import.meta.env.VITE_COPICU_VISUAL_TEST === "1") &&
+    devWindowLabel
+  ) {
     return devWindowLabel;
   }
 
@@ -1564,15 +1579,16 @@ function SettingsPanel({
               <SettingsSection title="General" description="Core app behavior and entry points.">
                 {visible("general", "Open picker", "Global shortcut to open the picker from anywhere") ? (
                   <SettingRow label="Open picker" description="Global shortcut registered by the native shortcut backend.">
-                    <UiTextInput
-                      aria-label="Open picker shortcut"
+                    <HotkeyField
+                      label="Open picker shortcut"
                       value={draft.general.globalShortcut}
-                      onChange={(event) =>
+                      allowSequences={false}
+                      onChange={(globalShortcut) =>
                         onDraftChange({
                           ...draft,
                           general: {
                             ...draft.general,
-                            globalShortcut: event.currentTarget.value,
+                            globalShortcut,
                           },
                         })
                       }
@@ -1879,6 +1895,244 @@ function SettingsSection({
       <div className="settings-section-rows">{children}</div>
     </section>
   );
+}
+
+type HotkeyFieldProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  allowSequences?: boolean;
+};
+
+function HotkeyField({ label, value, onChange, allowSequences = true }: HotkeyFieldProps) {
+  const [isRecording, setIsRecording] = useState(false);
+  const [draftSteps, setDraftSteps] = useState<string[]>([]);
+  const [manualValue, setManualValue] = useState(value);
+  const [validation, setValidation] = useState<HotkeyNormalizationResult>({
+    normalized: value,
+    valid: true,
+    error: null,
+  });
+
+  useEffect(() => {
+    setManualValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      setValidation({
+        normalized: null,
+        valid: false,
+        error: "Shortcut is required.",
+      });
+      return;
+    }
+
+    void normalizeHotkeySequence(trimmed)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        if (!allowSequences && shortcutContainsSequenceDelimiter(result.normalized ?? trimmed)) {
+          setValidation({
+            normalized: result.normalized,
+            valid: false,
+            error: "Use one shortcut for the picker.",
+          });
+          return;
+        }
+        setValidation(result);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setValidation({
+          normalized: null,
+          valid: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allowSequences, value]);
+
+  const normalizedSteps = useMemo(
+    () =>
+      (validation.normalized ?? value)
+        .split(/,\s+/)
+        .map((step) => step.trim())
+        .filter(Boolean),
+    [validation.normalized, value],
+  );
+
+  const commitShortcut = useCallback(
+    (steps: string[]) => {
+      const next = steps.join(", ");
+      const normalized = normalizeShortcutString(next) ?? next;
+      onChange(normalized);
+      setDraftSteps([]);
+      setIsRecording(false);
+    },
+    [onChange],
+  );
+
+  const normalizeAndCommitManualValue = useCallback(() => {
+    const trimmed = manualValue.trim();
+    if (!trimmed) {
+      onChange("");
+      return;
+    }
+
+    void normalizeHotkeySequence(trimmed)
+      .then((result) => {
+        if (!result.valid || !result.normalized) {
+          setValidation(result);
+          return;
+        }
+        if (!allowSequences && shortcutContainsSequenceDelimiter(result.normalized)) {
+          setValidation({
+            normalized: result.normalized,
+            valid: false,
+            error: "Use one shortcut for the picker.",
+          });
+          return;
+        }
+        onChange(result.normalized);
+        setManualValue(result.normalized);
+      })
+      .catch((error: unknown) => {
+        setValidation({
+          normalized: null,
+          valid: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }, [allowSequences, manualValue, onChange]);
+
+  const handleRecordKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      if (!isRecording) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsRecording(false);
+        setDraftSteps([]);
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (draftSteps.length > 0) {
+          commitShortcut(draftSteps);
+        } else {
+          setIsRecording(false);
+        }
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        setDraftSteps((steps) => steps.slice(0, -1));
+        return;
+      }
+
+      const shortcut = allowSequences
+        ? compoundShortcutFromKeyboardEvent(event)
+        : shortcutFromKeyboardEvent(event);
+      if (!shortcut || event.repeat) {
+        return;
+      }
+
+      event.preventDefault();
+      const nextSteps = allowSequences ? [...draftSteps, shortcut] : [shortcut];
+      setDraftSteps(nextSteps);
+      if (!allowSequences) {
+        commitShortcut(nextSteps);
+      }
+    },
+    [allowSequences, commitShortcut, draftSteps, isRecording],
+  );
+
+  const displaySteps = isRecording && draftSteps.length > 0 ? draftSteps : normalizedSteps;
+  const hasError = !validation.valid;
+
+  return (
+    <div className="hotkey-field">
+      <div
+        className={[
+          "hotkey-field-display",
+          isRecording ? "is-recording" : "",
+          hasError ? "has-error" : "",
+        ].filter(Boolean).join(" ")}
+        aria-label={label}
+      >
+        {displaySteps.length > 0 ? (
+          displaySteps.map((step, index) => (
+            <span className="hotkey-step" key={`${step}-${index}`}>
+              {step.split("+").map((part) => (
+                <UiKbd key={part}>{displayShortcutPart(part)}</UiKbd>
+              ))}
+            </span>
+          ))
+        ) : (
+          <span className="hotkey-placeholder">Press a shortcut</span>
+        )}
+      </div>
+      <div className="hotkey-field-actions">
+        <UiButton
+          type="button"
+          variant={isRecording ? "filled" : "default"}
+          size="xs"
+          leftSection={<Keyboard size={14} aria-hidden="true" />}
+          onClick={() => {
+            setDraftSteps([]);
+            setIsRecording((recording) => !recording);
+          }}
+          onKeyDown={handleRecordKeyDown}
+        >
+          {isRecording ? (allowSequences ? "Press keys" : "Listening") : "Record"}
+        </UiButton>
+        {allowSequences && isRecording && draftSteps.length > 0 ? (
+          <UiButton type="button" variant="default" size="xs" onClick={() => commitShortcut(draftSteps)}>
+            Done
+          </UiButton>
+        ) : null}
+      </div>
+      <UiTextInput
+        aria-label={`${label} manual value`}
+        value={manualValue}
+        size="xs"
+        placeholder={allowSequences ? "Ctrl+Alt+C, J" : "Win+Alt+C"}
+        onChange={(event) => setManualValue(event.currentTarget.value)}
+        onBlur={normalizeAndCommitManualValue}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            normalizeAndCommitManualValue();
+          }
+        }}
+      />
+      <div className={hasError ? "hotkey-field-status has-error" : "hotkey-field-status"}>
+        {hasError
+          ? validation.error
+          : allowSequences
+            ? "Supports sequences like Ctrl+Alt+C, J."
+            : "Single global shortcut. Script actions can use sequences."}
+      </div>
+    </div>
+  );
+}
+
+function displayShortcutPart(part: string) {
+  return part === "Meta" ? "Win" : part;
 }
 
 function SettingRow({

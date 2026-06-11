@@ -2,7 +2,7 @@
 id: 001-mvp0-native-spike
 status: draft
 updated: 2026-06-05
-source: docs/active-work/mvp0-definition.md
+source: docs/tracks/mvp0-definition.md
 ---
 
 # MVP 0 Native Spike

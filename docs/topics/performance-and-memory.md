@@ -11,7 +11,7 @@ triggers:
   - large history
   - benchmarks
 primary_refs:
-  - docs/active-work/014-performance-memory.md
+  - docs/tracks/014-performance-memory.md
   - docs/topics/sqlite-storage.md
   - docs/topics/filtering-and-query-syntax.md
   - docs/topics/picker-interaction.md

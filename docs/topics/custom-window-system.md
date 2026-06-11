@@ -16,7 +16,7 @@ primary_refs:
   - docs/topics/ui-surface-architecture.md
   - docs/topics/ui-rethink.md
   - docs/topics/mantine-ui-system.md
-  - docs/active-work/010-ui-rethink.md
+  - docs/tracks/010-ui-rethink.md
   - src-tauri/tauri.conf.json
   - src-tauri/src/lib.rs
   - src-tauri/capabilities/default.json

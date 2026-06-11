@@ -11,7 +11,7 @@ triggers:
 primary_refs:
   - hotkeys.md
   - ui-surface-architecture.md
-  - ../active-work/012-tags-and-hotkeys.md
+  - ../tracks/012-tags-and-hotkeys.md
   - ../../specs/006-tags-and-hotkeys/spec.md
 ---
 

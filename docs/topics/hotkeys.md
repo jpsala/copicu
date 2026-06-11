@@ -14,7 +14,7 @@ primary_refs:
   - global-shortcut-and-tray.md
   - whichkey.md
   - tag-management-hotkeys.md
-  - ../active-work/012-tags-and-hotkeys.md
+  - ../tracks/012-tags-and-hotkeys.md
   - ../../specs/006-tags-and-hotkeys/spec.md
 ---
 
@@ -137,6 +137,10 @@ Esta arquitectura depende de enfocar Copicu para capturar pasos posteriores, per
 - Intento de mitigacion agregado despues del reporte de hang: backend auto-expira pending sin depender del frontend, comando `get_compound_hotkey_pending`, sync frontend en focus/visibility, root React persistente en dev y foco nativo Windows parcial para la ventana principal.
 - Dogfood actual: `examples.toastHello` en `scripts/examples/001-toast-hello.ts` / `Documents/Copicu/Scripts/001-toast-hello.ts` usa `Ctrl+Alt+C, H`.
 - UI WhichKey no esta implementada; solo hay toast informativo de pending con los siguientes pasos validos.
+- Workaround Windows/Codex 2026-06-10: `Ctrl+Shift+,` usa ruta no-activate para el picker. Primero sincroniza estado Tauri con `window.show()`/`unminimize()` y despues lo trae al frente con `ShowWindow(SW_SHOWNOACTIVATE)` + `SetWindowPos(... SWP_NOACTIVATE ...)`; si ya esta foreground/focused, lo oculta. Tradeoff aceptado por ahora: al abrir desde otra app, escribir puede seguir yendo al input anterior hasta que el usuario haga click en Copicu. El tray conserva la ruta normal con foco.
+- Experimento descartado 2026-06-10: usar solo `HWND_TOP` con `SWP_NOACTIVATE` no alcanza para traer Copicu delante de Codex; los logs muestran el hotkey entrando y la ventana visible, pero queda detras. Se vuelve al flip `HWND_TOPMOST` -> `HWND_NOTOPMOST` porque es la variante que efectivamente aparece adelante sin activar.
+- Hallazgo del incidente Codex 2026-06-10: desde Codex, cualquier intento probado de foco programatico posterior al hotkey (`window.set_focus`, foco diferido y click sintetico sobre search) vuelve a producir la transparencia parcial de Codex. Cambiar el hotkey a `Ctrl+Alt+Shift+F12` no lo corrigio y ademas choco con automatizaciones AHK existentes. La ruta no-activate fue la unica variante que evito la transparencia durante el dogfood.
+- Estado aceptado 2026-06-10: el bug visual de transparencia de Codex queda conocido y no bloqueante por ahora. Observacion util de JP: si el bug aparece por hotkey y la ventana queda oculta, el primer click posterior en tray puede reproducir/limpiar el estado visual; desde el segundo click de tray vuelve a verse normal. No seguir iterando este bug salvo que vuelva a molestar o aparezca una hipotesis nueva.
 - Decision vigente: mantener `ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS = false`. El prefijo compuesto sigue siendo global permanente, pero los siguientes pasos se capturan desde el WebView enfocado. El renderer sincroniza pending por polling liviano (`get_compound_hotkey_pending`) para evitar emits backend durante el callback global.
 - Implementacion actual: `Ctrl+Alt+C, T` ejecuta `jp.compoundHotkeyToast` con `log + ui.notify`; despues del script siguen heartbeats, drag mueve por `GetWindowRect` y X custom oculta.
 - Nota de runtime: no llamar `global_shortcut().register()`/`unregister()` sincronicamente dentro del callback de global shortcut. En Windows/Tauri eso dejo Copicu `Responding=False` despues del prefijo. Registrar/desregistrar temporales desde un thread separado para que el callback retorne rapido.
@@ -148,6 +152,10 @@ Esta arquitectura depende de enfocar Copicu para capturar pasos posteriores, per
 - Diagnosticos vigentes: logs `[diag] window.show.*`, `window.event`, `renderer heartbeat/focus/blur/visibility/error` y `drag-start-*` deben quedar habilitados mientras el dogfood de hotkeys/ventana principal siga inestable. Si la app parece colgada, primero verificar si los heartbeats continuan y si el drag genera `drag-start-request`.
 - Diagnostico WebView2: si la ventana parece blanca, verificar por CDP antes de clasificarlo como hang. En el incidente 2026-06-08, CDP confirmo que el renderer principal estaba vivo y renderizando; el rectangulo blanco visible era un item de imagen del historial ocupando el preview.
 - Leccion B2 2026-06-08: no usar `app.emit`/`emit_to` hacia el WebView principal como parte del camino de entrada/salida de un global shortcut compuesto. En el bug post-compuesto, el renderer seguia vivo por CDP pero `invoke(record_renderer_diagnostic)` quedaba colgado, heartbeats se detenian y custom chrome no recibia eventos. La ruta estable fue invertir la direccion: renderer pregunta estado pending; Rust no empuja eventos al WebView durante el prefijo.
+- Dogfood 2026-06-11: el picker hotkey es configurable desde Settings. Para Windows key usar label manual `Win+Alt+C`; backend normaliza a `Alt+Meta+C` y Tauri/global-hotkey lo mapea a `MOD_WIN | MOD_ALT | C`.
+- Conflicto 2026-06-11: `Win+Alt+C` fallaba aunque CopyQ estuviera cerrado porque AutoHotkey principal (`C:\dev\main\copy-q.ahk`) tenia `#!c`. Se removio ese binding; queda `#+c` para CopyQ.
+- Instalada/dev simultaneas: dev aislado usa `Ctrl+Shift+.` por defecto. Si la produccion usa `Win+Alt+C`, no usar la misma combinacion en dev.
+- Fix 2026-06-11: la ruta `toggle_main_window_without_focus` debe ocultar si `window.is_visible()` es true, no solo si esta foreground. Esto restablece el comportamiento de segunda pulsacion = ocultar.
 
 ## Incidente Cerrado 2026-06-08
 

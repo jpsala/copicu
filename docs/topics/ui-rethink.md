@@ -14,7 +14,7 @@ primary_refs:
   - docs/topics/ui-design-and-impeccable.md
   - docs/topics/mantine-ui-system.md
   - docs/topics/picker-interaction.md
-  - docs/active-work/010-ui-rethink.md
+  - docs/tracks/010-ui-rethink.md
   - src/styles.css
   - src/themeCatalog.ts
   - src/mantineTheme.ts

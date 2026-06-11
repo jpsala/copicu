@@ -307,5 +307,5 @@ Implementar:
 ## Reentry Prompt
 
 ```text
-Seguir con SearchPlan Engine. Abrir docs/topics/search-plan-engine.md, specs/005-search-plan-engine/spec.md y docs/active-work/008-filtering-search-foundation.md. Proximo corte recomendado: SearchPlanV1 + compiler Rust a SQL parametrizado, manteniendo compatibilidad con query syntax.
+Seguir con SearchPlan Engine. Abrir docs/topics/search-plan-engine.md, specs/005-search-plan-engine/spec.md y docs/tracks/008-filtering-search-foundation.md. Proximo corte recomendado: SearchPlanV1 + compiler Rust a SQL parametrizado, manteniendo compatibilidad con query syntax.
 ```

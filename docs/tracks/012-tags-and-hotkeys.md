@@ -1,3 +1,13 @@
+---
+status: active
+updated: 2026-06-10
+topic: docs/topics/tag-management-hotkeys.md
+related:
+  - docs/topics/hotkeys.md
+  - docs/topics/whichkey.md
+  - docs/topics/compound-hotkeys-and-whichkey.md
+---
+
 # 012 Hotkeys, WhichKey And Tags
 
 Estado: native-tag-hotkeys-removed-use-scripts.
@@ -171,6 +181,8 @@ Proximo dogfood:
 - Resultado Desktop Use 2026-06-08 con instrumentacion: antes del compuesto, X custom funciona completo (`window-control-hide-click` -> `hide-picker-command-start` -> `hide-picker-command-ok`) y el renderer sigue emitiendo heartbeats. Despues de `Ctrl+Alt+C, T`, Rust registra `global script shortcut run: jp.compoundHotkeyToast ... Completed` y `Ctrl+Shift+,` muestra la ventana (`window.show.done`, visible/focused), pero desde ese punto no vuelven a aparecer heartbeats ni `drag-start-*` ni `window-control-hide-*`. El proceso sigue `Responding=True`, WebView2/CDP y Vite siguen vivos, y `Alt+F4` si llega al backend como `window.event: main close requested`. Clasificacion actual: no es un freeze total de proceso ni un fallo de `window.show`; es un estado post-script donde la UI queda pintada/visible pero el renderer deja de despachar diagnosticos/IPC hacia Tauri, por eso X custom y drag custom no son confiables. La prueba por click en X con Desktop Use esta ademas contaminada por el overlay "Codex is using your computer" sobre la esquina superior derecha; no usar coordenadas de esa esquina como evidencia unica. Para drag, medir con `GetWindowRect`: en la pasada post-script el rectangulo quedo `(78,78)-(898,698)` antes y despues de arrastrar, asi que no hubo movimiento real.
 - Click afuera 2026-06-08: la ventana esta `always-on-top`/pinned por inicializacion, y `should_hide_on_focus_lost` desactiva hide-on-focus-lost cuando esta pinned. Por eso el click afuera en estado pinned no debe contarse como fallo. Para validar hide-on-focus-lost hay que despinear primero; despues del estado post-compuesto no se pudo hacer de forma confiable via renderer porque los controles custom dejaron de emitir diagnosticos/IPC.
 - Fix B2 2026-06-08: el blocker se aislo como ruptura de IPC renderer->Tauri causada por efectos backend hacia el WebView durante el runtime compuesto, no por el body del script. Variantes: `Ctrl+Alt+C,T` no-op rompia; hotkey simple no-op equivalente pasaba; quitar temporales globales pero mantener `app.emit(COMPOUND_HOTKEY_PENDING_EVENT)` seguia rompiendo justo despues del prefijo; quitar tambien ese emit y dejar que el renderer consulte `get_compound_hotkey_pending` por polling liviano estabilizo el flujo. Cambio aplicado: `ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS = false`, prefijo compuesto muestra/focaliza main por main thread, no registra bare next-step globals y no emite pending desde Rust; frontend sincroniza pending cada 250 ms y captura el siguiente paso con `keydown`. Timeout compuesto subio a 3000 ms para cubrir show/focus + polling. Validacion con `jp.compoundHotkeyToast` real (`log + ui.notify`): `global script shortcut run ... Completed`, heartbeats continuan, drag post mueve por `GetWindowRect`, y X custom post-compuesto loguea `window-control-hide-click -> hide-picker-command-start -> window-control-hide-dispatched -> hide-picker-command-ok`.
+- Cierre provisorio Codex/transparencia 2026-06-10: JP confirmo que la transparencia aparece solo cuando el hotkey se dispara desde Codex; con Copicu fuera de memoria el hotkey no hace nada, asi que el disparador es nuestro camino de global shortcut interactuando con Codex/WebView. Se probaron: cambio de hotkey a `Ctrl+Alt+Shift+F12`, ruta igual al tray, `window.set_focus` diferido y click sintetico sobre search. Todas las variantes que activan/focalizan Copicu reintroducen la transparencia; el hotkey alternativo ademas choca con AHK (`C:\dev\main\mouse-gestures-conditions.ahk`). Decision para cerrar el corte: dejar `Ctrl+Shift+,` como toggle no-activate. Si Copicu esta oculto o visible detras, se muestra/trae al frente sin activar (`ShowWindow(SW_SHOWNOACTIVATE)` + `SetWindowPos` con `SWP_NOACTIVATE`); si ya esta foreground, se oculta. El tray conserva foco normal. Tradeoff conocido: al abrir con hotkey desde otra app, el teclado sigue en la app previa hasta click manual en Copicu.
+- Estado de sesion 2026-06-10: bug visual de transparencia de Codex queda documentado como conocido y no bloqueante. Observacion adicional: si el bug fue provocado por hotkey y luego se usa tray, el primer click en tray puede mostrar/limpiar el mismo estado visual; despues de eso tray vuelve a verse normal. Mantener la implementacion actual usable y no seguir iterando el fix en este corte.
 
 ## WhichKey Window Investigation 2026-06-08
 
@@ -473,9 +485,9 @@ Objetivo unico: dogfoodear los scripts `020`-`024` que abren el picker filtrado 
 Leer primero:
 - AGENTS.md
 - docs/WORKING_MEMORY.md
-- docs/active-work/004-actions-scripting.md
+- docs/tracks/004-actions-scripting.md
 - docs/topics/actions-and-scripting-api.md
-- docs/active-work/012-tags-and-hotkeys.md
+- docs/tracks/012-tags-and-hotkeys.md
 - docs/topics/hotkeys.md
 - docs/topics/tag-management-hotkeys.md
 - docs/topics/ui-surface-architecture.md

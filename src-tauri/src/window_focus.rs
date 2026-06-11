@@ -141,6 +141,25 @@ pub fn focus_tauri_window<R: tauri::Runtime>(
     platform::focus_window_without_paste_delay(window_id)
 }
 
+#[cfg(target_os = "windows")]
+#[cfg(not(test))]
+pub fn show_tauri_window_no_activate<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    let Some(window_id) = own_window_id(window) else {
+        return Err("window native handle unavailable".to_string());
+    };
+    platform::show_window_no_activate(window_id)
+}
+
+#[cfg(target_os = "windows")]
+#[cfg(not(test))]
+pub fn is_tauri_window_foreground<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> bool {
+    own_window_id(window)
+        .map(platform::is_foreground_window)
+        .unwrap_or(false)
+}
+
 #[cfg(not(target_os = "windows"))]
 #[cfg(not(test))]
 pub fn focus_tauri_window<R: tauri::Runtime>(
@@ -149,6 +168,22 @@ pub fn focus_tauri_window<R: tauri::Runtime>(
     window
         .set_focus()
         .map_err(|error| format!("window focus failed: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+#[cfg(not(test))]
+pub fn show_tauri_window_no_activate<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    window
+        .show()
+        .map_err(|error| format!("window show failed: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+#[cfg(not(test))]
+pub fn is_tauri_window_foreground<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> bool {
+    window.is_focused().unwrap_or(false)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -180,7 +215,9 @@ mod platform {
             },
             WindowsAndMessaging::{
                 BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsWindow,
-                IsWindowVisible, SetForegroundWindow,
+                IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
+                HWND_TOPMOST, SHOW_WINDOW_CMD, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+                SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
             },
         },
     };
@@ -201,7 +238,9 @@ mod platform {
         }
 
         if let Some(process_id) = window_process_id(window_id) {
-            dev_log(format_args!("previous window focus target: pid={process_id}"));
+            dev_log(format_args!(
+                "previous window focus target: pid={process_id}"
+            ));
         }
         let accepted = unsafe { SetForegroundWindow(hwnd) }.as_bool();
         if !accepted {
@@ -226,6 +265,33 @@ mod platform {
 
         let _ = unsafe { BringWindowToTop(hwnd) };
         wait_until_foreground(hwnd)
+    }
+
+    pub fn show_window_no_activate(window_id: NativeWindowId) -> Result<(), String> {
+        let hwnd = hwnd_from_id(window_id);
+        if !live_window(hwnd) {
+            return Err("window is no longer valid".to_string());
+        }
+
+        let shown = unsafe { ShowWindow(hwnd, SHOW_WINDOW_CMD(SW_SHOWNOACTIVATE.0)) }.as_bool();
+        if !shown {
+            dev_log(format_args!("show no-activate returned false"));
+        }
+
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
+        unsafe {
+            SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags)
+                .map_err(|error| format!("SetWindowPos topmost no-activate failed: {error}"))?;
+            SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags)
+                .map_err(|error| format!("SetWindowPos notopmost no-activate failed: {error}"))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn is_foreground_window(window_id: NativeWindowId) -> bool {
+        let hwnd = hwnd_from_id(window_id);
+        valid_window(hwnd) && unsafe { GetForegroundWindow() } == hwnd
     }
 
     pub fn window_process_id(window_id: NativeWindowId) -> Option<u32> {
@@ -372,9 +438,11 @@ mod platform {
     }
 
     fn valid_window(hwnd: HWND) -> bool {
-        !hwnd.is_invalid()
-            && unsafe { IsWindow(Some(hwnd)) }.as_bool()
-            && unsafe { IsWindowVisible(hwnd) }.as_bool()
+        live_window(hwnd) && unsafe { IsWindowVisible(hwnd) }.as_bool()
+    }
+
+    fn live_window(hwnd: HWND) -> bool {
+        !hwnd.is_invalid() && unsafe { IsWindow(Some(hwnd)) }.as_bool()
     }
 
     fn hwnd_from_id(window_id: NativeWindowId) -> HWND {

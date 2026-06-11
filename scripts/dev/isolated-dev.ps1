@@ -1,0 +1,38 @@
+param(
+  [switch] $Built
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
+$profileRoot = Join-Path $repoRoot ".codex-run\dev-isolated"
+
+$env:COPICU_APP_DATA_DIR = Join-Path $profileRoot "app-data"
+$env:COPICU_SCRIPTS_DIR = Join-Path $profileRoot "scripts"
+if (-not $env:COPICU_GLOBAL_SHORTCUT) {
+  $env:COPICU_GLOBAL_SHORTCUT = "Ctrl+Shift+."
+}
+if (-not $env:COPICU_DISABLE_CLIPBOARD_WATCHER) {
+  $env:COPICU_DISABLE_CLIPBOARD_WATCHER = "1"
+}
+
+New-Item -ItemType Directory -Force -Path $env:COPICU_APP_DATA_DIR, $env:COPICU_SCRIPTS_DIR | Out-Null
+
+Write-Host "Copicu dev isolated profile:"
+Write-Host "  app data: $env:COPICU_APP_DATA_DIR"
+Write-Host "  scripts : $env:COPICU_SCRIPTS_DIR"
+Write-Host "  hotkey  : $env:COPICU_GLOBAL_SHORTCUT"
+Write-Host "  watcher : disabled"
+
+Push-Location $repoRoot
+try {
+  if ($Built) {
+    $env:VITE_COPICU_RENDERER_DIAGNOSTICS = "debug"
+    npx.cmd tauri dev --no-watch --config src-tauri/tauri.built-dev.conf.json
+  } else {
+    npx.cmd tauri dev
+  }
+} finally {
+  Pop-Location
+}

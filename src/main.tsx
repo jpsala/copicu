@@ -543,6 +543,7 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "ui:confirm",
   "ui:input",
   "ui:markdown-output",
+  "ai:summarize",
   "log:write",
   "commands:run",
   "picker:open",
@@ -815,7 +816,10 @@ function isTauriRuntime() {
 
 function currentWindowLabel() {
   const devWindowLabel = new URLSearchParams(window.location.search).get("window");
-  if (import.meta.env.DEV && devWindowLabel) {
+  if (
+    (import.meta.env.DEV || import.meta.env.VITE_COPICU_VISUAL_TEST === "1") &&
+    devWindowLabel
+  ) {
     return devWindowLabel;
   }
 
@@ -1546,7 +1550,7 @@ function App() {
   );
 
   useEffect(() => {
-    if (!isTauriRuntime() || !rendererDebugDiagnosticsEnabled()) {
+    if (!isTauriRuntime()) {
       return undefined;
     }
 

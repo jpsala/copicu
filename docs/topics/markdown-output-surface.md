@@ -13,7 +13,7 @@ triggers:
 primary_refs:
   - actions-and-scripting-api.md
   - ../user/scripts.md
-  - ../active-work/004-actions-scripting.md
+  - ../tracks/004-actions-scripting.md
 ---
 
 # Markdown Output Surface

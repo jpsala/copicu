@@ -10,7 +10,7 @@
 - [x] Aplicar `hideOnFocusLost` en evento de ventana.
 - [x] Aplicar `theme` y `enterAction` en frontend.
 - [x] Agregar UI searchable de settings.
-- [x] Actualizar active-work y working memory.
+- [x] Actualizar tracks y working memory.
 - [x] Correr verificacion.
 
 ## Siguiente Corte

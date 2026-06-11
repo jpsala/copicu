@@ -1,5 +1,55 @@
 # Decisiones
 
+## Decisiones Agenticas
+
+### 2026-06-11 - Usar Goal para tareas concretas
+
+Estado: accepted
+
+Decision: cuando JP pida `goal`, `gol`, `usar Goal` o entregue una tarea concreta y terminable, Codex debe crear un Goal con objetivo corto alineado a la track/spec activa. No se asigna presupuesto salvo pedido explicito. El Goal se completa solo despues de implementar, verificar y persistir conocimiento durable si corresponde. El comando `continuar con goal` hace primero un cierre de valor liviano y despues crea un Goal en la misma sesion para ejecutar el proximo paso acordado. El comando `continuar sesion con goal` hace cierre de valor, crea nueva sesion con handoff compacto y pide que la nueva sesion arranque un Goal para el proximo lote.
+
+Motivo: Goal sirve para dar cierre operativo a tareas dentro de una sesion, mientras el sistema agentico sigue usando docs, tracks y specs como memoria durable. `continuar sesion con goal` reduce riesgo de contexto inflado cuando el plan ya esta acordado y conviene ejecutar el siguiente lote desde una sesion limpia.
+
+Proximo paso: aplicar Goal en tareas cerrables, usar `continuar con goal` cuando alcance el contexto actual, usar `continuar sesion con goal` para lotes que conviene ejecutar limpios, y evitarlo en preguntas rapidas, exploracion abierta o decisiones que requieran aclaracion previa.
+
+### 2026-06-10 - Prevenir contaminacion de contexto
+
+Estado: accepted
+
+Decision: La ruta inicial de Copicu debe permanecer liviana. `AGENTS.md`, `WORKING_MEMORY.md`, `TOPICS.md` y tracks activos no deben convertirse en lectura obligatoria amplia, mini-historiales ni transcripts.
+
+Motivo: `WORKING_MEMORY.md` habia acumulado una bitacora muy extensa y `AGENTS.md` forzaba lectura inicial amplia, contradiciendo el objetivo del sistema agentico: leer poco, elegir el topic correcto y abrir referencias profundas solo bajo demanda.
+
+Proximo paso: mantener el archivo historico en `docs/reference/working-memory-archive-2026-06-10.md`, usar `docs/.generated/context-index.md` como entrada rapida y dejar que el audit avise si vuelve a crecer la ruta caliente.
+
+### 2026-06-10 - Crear comando `realinear os`
+
+Estado: accepted
+
+Decision: `AGENTS.md` mantiene una instruccion corta para `realinear os` y el playbook completo vive en `docs/topics/agentic-os-operations.md`.
+
+Motivo: Permite reparar drift sin cargar un procedimiento largo en la ruta caliente.
+
+Proximo paso: usarlo para mantener la capa agentica alineada con OS Lite y las convenciones locales de Copicu.
+
+### 2026-06-10 - Mantener guia humana como puerta de entrada
+
+Estado: accepted
+
+Decision: `docs/USER_GUIDE.md` es una guia humana breve, no una fuente de verdad operativa. Si hay conflicto, mandan `AGENTS.md`, topics, working memory, decisions y `GLOSSARY.md`.
+
+Motivo: Una guia ayuda a entender el sistema, pero duplicar playbooks largos la volveria stale.
+
+### 2026-06-11 - `continuar sesion` como handoff transaccional
+
+Estado: accepted
+
+Decision: `cerrar sesion` y `continuar sesion` comparten un cierre de valor obligatorio: extraer lo durable, rutearlo a docs vivos, regenerar indice y verificar drift cuando aplica. `continuar sesion` agrega la creacion de un thread nuevo con handoff compacto si la herramienta esta disponible; si no, devuelve un prompt pegable.
+
+Motivo: La memoria durable del proyecto debe vivir en Markdown versionable del repo, no en cadenas de prompts ni en transcripts de chat. Esto reduce drift, mantiene la ruta caliente liviana y permite que una sesion nueva lea poco y continue trabajo real.
+
+Proximo paso: mantener `docs/ASSISTANT_RULES.md`, `docs/topics/docs-knowledge-system.md` y `docs/USER_GUIDE.md` alineados si cambia el flujo de Codex Desktop para crear threads.
+
 ## Decididas Inicialmente
 
 | Decision | Estado | Motivo | Fuente |
@@ -39,7 +89,7 @@
 | Instalador Windows de produccion sin consola y con DLL nativa | accepted | En release, `copicu.exe` debe compilar como Windows GUI app y el instalador NSIS debe dejar `WebView2Loader.dll` junto al exe. Los diagnosticos normales quedan fuera de release; herramientas dev/benchmarks no deben empaquetarse. | Incidente installer 2026-06-09 + `docs/topics/windows-installer.md` |
 | Publicar Copicu como open source con MIT | accepted | El repo se publico como `jpsala/copicu`, con README publico, licencia MIT, contexto agentico portable y primer release Windows alpha. MIT reduce friccion para usuarios/contribuidores. | Conversacion 2026-06-09 + `docs/topics/open-source-github.md` |
 | Usar README/repo como web inicial del proyecto | accepted | Menor friccion para primer corte publico; GitHub Pages queda para cuando haya screenshots/gifs y una release mas madura. | Conversacion 2026-06-09 + `docs/topics/open-source-github.md` |
-| Publicar contexto agentico portable en Markdown | accepted | `AGENTS.md`, `docs/`, `docs/topics/`, `docs/active-work/` y `specs/` permiten que un contributor clone el repo y use agentes con contexto. `.agents/` queda ignorado por ser cache/local tooling. | Conversacion 2026-06-09 + README |
+| Publicar contexto agentico portable en Markdown | accepted | `AGENTS.md`, `docs/`, `docs/topics/`, `docs/tracks/` y `specs/` permiten que un contributor clone el repo y use agentes con contexto. `.agents/` queda ignorado por ser cache/local tooling. | Conversacion 2026-06-09 + README |
 
 ## Pendientes
 
@@ -50,7 +100,7 @@
 | Settings de picker y search modes | partially accepted | Primer slice implemento `hideOnFocusLost`, `enterAction`, `theme` y `retentionCount`; quedan densidad de preview, regex/fuzzy y comportamiento fino de Escape. |
 | Debounce y retry policy final de clipboard watch | pending | El spike tiene coalesce/retry corto funcionando; decidir si esos valores quedan como defaults o pasan a config despues de mas datos. |
 | Paste/write-back de imagenes | pending | En el primer corte de imagenes, decidir si alcanza capturar + previsualizar + copiar como PNG al clipboard, o si tambien debe pegar directo con paste-to-previous-window. |
-| FTS5 y ranking de busqueda | pending | La query syntax ya existe con `LIKE`; proximo paso tecnico es evaluar FTS5 para texto/title/notes/tags, manteniendo el mismo contrato externo. |
+| FTS5 y ranking de busqueda | deferred | Benchmark sintetico 50k de Architecture Hardening: recent 130 ms, target 69 ms, target con counts 139 ms. Diferir FTS5 hasta tener evidencia de latencia por keypress, ranking requerido o datasets mayores; `SearchPlanV1` sigue como contrato externo. |
 | Source filters para busqueda | pending | `app:`/`window:` quedan pendientes hasta capturar source process/window de forma confiable y decidir privacidad de window titles. |
 | Instalar GitHub MCP | deferred | Reabrir solo si la investigacion sobre issues/repos de Tauri se vuelve repetida. |
 | GitHub Pages / web propia | deferred | El repo/README cumple como web inicial; reabrir cuando existan screenshots/gifs, assets publicos y un release menos alpha. |

@@ -12,7 +12,7 @@ triggers:
   - CopyQ commands
   - command context
 primary_refs:
-  - ../active-work/004-actions-scripting.md
+  - ../tracks/004-actions-scripting.md
   - ./copyq-technical-baseline.md
   - ./filtering-and-query-syntax.md
 ---

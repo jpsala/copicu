@@ -87,6 +87,14 @@ Decision inicial para MVP 0:
 - No usar API frontend de global shortcut/tray para MVP 0 salvo necesidad concreta.
 - Shortcut inicial validado: `Ctrl+Shift+,`, configurable como constante de backend.
 
+## Estado Dogfood 2026-06-11
+
+- Settings permite cambiar el hotkey del picker desde UI. El control acepta grabacion y entrada manual; `Win+Alt+C` se normaliza internamente como `Alt+Meta+C` / `MOD_WIN|MOD_ALT|C`.
+- Si `RegisterHotKey` devuelve `ERROR_HOTKEY_ALREADY_REGISTERED` (1409), el conflicto puede venir de automatizaciones externas aunque CopyQ este cerrado. Caso real: `C:\dev\main\copy-q.ahk` tenia `#!c` (`Win+Alt+C`) y fue removido para liberar esa combinacion.
+- Con instalada y dev corriendo a la vez, cada instancia debe tener hotkey propio: instalada configurable, dev aislado default `Ctrl+Shift+.`.
+- El toggle por global shortcut debe ocultar si la ventana principal esta visible, aunque no este foreground/focused. El criterio anterior en ruta no-focus solo ocultaba si estaba foreground; eso hacia que una segunda pulsacion no ocultara cuando habia dos instancias o foco raro.
+- Dev tray se diferencia con tooltip `Copicu Dev`, menu `Toggle Copicu Dev` y badge `D`.
+
 ## Preguntas Abiertas
 
 - Hace falta detectar y reportar conflicto de shortcut en MVP 0?

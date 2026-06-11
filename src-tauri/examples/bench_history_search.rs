@@ -11,7 +11,9 @@ fn main() -> Result<(), String> {
         .nth(1)
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(10_000);
-    let app_data_dir = temp_app_data_dir(item_count)?;
+    let app_data_dir = env::var_os("COPICU_PERF_APP_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or(temp_app_data_dir(item_count)?);
     let storage = AppStorage::open(&app_data_dir)?;
 
     let seed_started = Instant::now();
@@ -60,7 +62,9 @@ fn main() -> Result<(), String> {
         );
     }
 
-    let _ = std::fs::remove_dir_all(&app_data_dir);
+    if env::var_os("COPICU_PERF_KEEP_APP_DATA").is_none() {
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
     Ok(())
 }
 

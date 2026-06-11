@@ -16,7 +16,7 @@ primary_refs:
   - search-plan-engine.md
   - picker-interaction.md
   - ai-search-and-actions.md
-  - ../active-work/008-filtering-search-foundation.md
+  - ../tracks/008-filtering-search-foundation.md
 ---
 
 # Filtering And Query Syntax

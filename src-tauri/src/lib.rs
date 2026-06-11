@@ -194,10 +194,10 @@ fn dev_log(_args: std::fmt::Arguments<'_>) {}
 fn diag_log(_event: &str, _detail: impl AsRef<str>) {
     #[cfg(debug_assertions)]
     {
-    let unix_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or_default();
+        let unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default();
         eprintln!("[diag {unix_ms}] {_event}: {}", _detail.as_ref());
     }
 }
@@ -897,13 +897,29 @@ fn get_settings(storage: State<'_, storage::AppStorage>) -> Result<storage::AppS
 fn update_settings(
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
-    settings: storage::AppSettings,
+    mut settings: storage::AppSettings,
 ) -> Result<storage::AppSettings, String> {
+    settings.general.global_shortcut =
+        normalize_picker_global_shortcut(&settings.general.global_shortcut)?;
     apply_autostart_setting(&app, settings.general.launch_on_startup)?;
     let next_settings = storage.update_settings(settings)?;
     actions::refresh_script_action_cache(&storage)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
     Ok(next_settings)
+}
+
+#[cfg(not(test))]
+fn normalize_picker_global_shortcut(input: &str) -> Result<String, String> {
+    let sequence = hotkeys::HotkeySequence::parse(input)
+        .map_err(|error| format!("invalid picker shortcut: {error}"))?;
+    if !sequence.is_simple() {
+        return Err("picker shortcut must be a single shortcut, not a sequence".to_string());
+    }
+    let normalized = sequence.to_string();
+    if shortcut_from_label(&normalized).is_none() {
+        return Err(format!("unsupported picker shortcut: {normalized}"));
+    }
+    Ok(normalized)
 }
 
 #[cfg(not(test))]
@@ -1358,7 +1374,10 @@ pub fn run() {
                 })?;
             let storage = storage::AppStorage::open(&app_data_dir)
                 .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?;
-            dev_log(format_args!("sqlite storage ready: {}", storage.db_path().display()));
+            dev_log(format_args!(
+                "sqlite storage ready: {}",
+                storage.db_path().display()
+            ));
             let window_registry = window_state::WindowStateRegistry::open(app_data_dir.clone());
 
             app.manage(PickerFocusPolicy::default());
@@ -1391,16 +1410,20 @@ pub fn run() {
             }
             previous_window.spawn_foreground_tracker();
             app.manage(previous_window.clone());
-            match clipboard::spawn_text_watcher(
-                app.handle().clone(),
-                storage.clone(),
-                suppression,
-                previous_window,
-            ) {
-                Ok(capture) => {
-                    app.manage(capture);
+            if std::env::var_os("COPICU_DISABLE_CLIPBOARD_WATCHER").is_some() {
+                eprintln!("clipboard watcher disabled by COPICU_DISABLE_CLIPBOARD_WATCHER");
+            } else {
+                match clipboard::spawn_text_watcher(
+                    app.handle().clone(),
+                    storage.clone(),
+                    suppression,
+                    previous_window,
+                ) {
+                    Ok(capture) => {
+                        app.manage(capture);
+                    }
+                    Err(error) => eprintln!("clipboard watcher failed to start: {error}"),
                 }
-                Err(error) => eprintln!("clipboard watcher failed to start: {error}"),
             }
             if let Err(error) = actions::refresh_script_action_cache(&storage) {
                 eprintln!("script action startup refresh failed: {error}");
@@ -1702,18 +1725,32 @@ fn position_whichkey_window_for_monitor<R: tauri::Runtime>(
 
 #[cfg(not(test))]
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
-    let toggle = MenuItem::with_id(app, TRAY_TOGGLE_ID, "Toggle Copicu", true, None::<&str>)?;
+    let is_dev_profile = std::env::var_os("COPICU_APP_DATA_DIR").is_some();
+    let app_label = if is_dev_profile {
+        "Copicu Dev"
+    } else {
+        "Copicu"
+    };
+    let toggle_label = if is_dev_profile {
+        "Toggle Copicu Dev"
+    } else {
+        "Toggle Copicu"
+    };
+
+    let toggle = MenuItem::with_id(app, TRAY_TOGGLE_ID, toggle_label, true, None::<&str>)?;
     let settings = MenuItem::with_id(app, TRAY_SETTINGS_ID, "Settings", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
     let primary_separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&toggle, &settings, &primary_separator, &quit])?;
 
     let mut tray_builder = TrayIconBuilder::with_id("main")
-        .tooltip("Copicu")
+        .tooltip(app_label)
         .menu(&menu)
         .show_menu_on_left_click(false);
 
-    if let Some(icon) = app.default_window_icon() {
+    if is_dev_profile {
+        tray_builder = tray_builder.icon(tauri::include_image!("icons/tray-dev.png").clone());
+    } else if let Some(icon) = app.default_window_icon() {
         tray_builder = tray_builder.icon(icon.clone());
     }
 
@@ -1726,10 +1763,19 @@ fn show_main_window<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     remember_previous: bool,
 ) -> Result<(), String> {
+    show_main_window_with_focus(app, remember_previous, true)
+}
+
+#[cfg(not(test))]
+fn show_main_window_with_focus<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    remember_previous: bool,
+    focus_window: bool,
+) -> Result<(), String> {
     let started = Instant::now();
     diag_log(
         "window.show.start",
-        format!("remember_previous={remember_previous}"),
+        format!("remember_previous={remember_previous} focus={focus_window}"),
     );
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return Err("main window not found".to_string());
@@ -1759,30 +1805,39 @@ fn show_main_window<R: tauri::Runtime>(
         return Err(format!("window unminimize failed: {error}"));
     }
     diag_log("window.show.step", "unminimize ok");
-    if let Err(error) = window.set_focus() {
-        return Err(format!("window focus failed: {error}"));
-    }
-    diag_log("window.show.step", "set_focus requested");
-    if !window.is_focused().unwrap_or(false) {
-        if let Err(error) = window_focus::focus_tauri_window(&window) {
-            eprintln!("window native focus failed: {error}");
-        } else {
-            diag_log("window.show.step", "native focus ok");
-        }
-    }
-    if !window.is_focused().unwrap_or(false) {
-        thread::sleep(Duration::from_millis(60));
+
+    if focus_window {
         if let Err(error) = window.set_focus() {
-            eprintln!("window delayed focus failed: {error}");
-        } else {
-            diag_log("window.show.step", "delayed set_focus requested");
+            return Err(format!("window focus failed: {error}"));
         }
+        diag_log("window.show.step", "set_focus requested");
         if !window.is_focused().unwrap_or(false) {
             if let Err(error) = window_focus::focus_tauri_window(&window) {
-                eprintln!("window delayed native focus failed: {error}");
+                eprintln!("window native focus failed: {error}");
             } else {
-                diag_log("window.show.step", "delayed native focus ok");
+                diag_log("window.show.step", "native focus ok");
             }
+        }
+        if !window.is_focused().unwrap_or(false) {
+            thread::sleep(Duration::from_millis(60));
+            if let Err(error) = window.set_focus() {
+                eprintln!("window delayed focus failed: {error}");
+            } else {
+                diag_log("window.show.step", "delayed set_focus requested");
+            }
+            if !window.is_focused().unwrap_or(false) {
+                if let Err(error) = window_focus::focus_tauri_window(&window) {
+                    eprintln!("window delayed native focus failed: {error}");
+                } else {
+                    diag_log("window.show.step", "delayed native focus ok");
+                }
+            }
+        }
+    } else {
+        if let Err(error) = window_focus::show_tauri_window_no_activate(&window) {
+            eprintln!("window no-activate show failed: {error}");
+        } else {
+            diag_log("window.show.step", "show no-activate ok");
         }
     }
 
@@ -1920,21 +1975,31 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<()
 }
 
 #[cfg(not(test))]
-fn spawn_show_main_window<R: tauri::Runtime + 'static>(
-    app: tauri::AppHandle<R>,
-    remember_previous: bool,
-) {
-    thread::spawn(move || {
-        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
-        let app_for_main_thread = app.clone();
-        if let Err(error) = app.run_on_main_thread(move || {
-            if let Err(error) = show_main_window(&app_for_main_thread, remember_previous) {
-                eprintln!("{error}");
-            }
-        }) {
-            eprintln!("main window show dispatch failed: {error}");
-        }
-    });
+fn toggle_main_window_without_focus<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return Err("main window not found".to_string());
+    };
+    let visible = window.is_visible().unwrap_or(false);
+    let focused = window.is_focused().unwrap_or(false);
+    let foreground = visible && (focused || window_focus::is_tauri_window_foreground(&window));
+
+    diag_log(
+        "window.toggle.no_focus",
+        format!("visible={visible} focused={focused} foreground={foreground}"),
+    );
+    if visible {
+        host::hide_picker(&window)?;
+        eprintln!("main window no-focus toggle ok: hidden");
+        diag_log(
+            "window.toggle.no_focus",
+            format!("hidden focused={focused} foreground={foreground}"),
+        );
+        return Ok(());
+    }
+
+    show_main_window_with_focus(app, true, false)
 }
 
 #[cfg(not(test))]
@@ -1968,6 +2033,21 @@ fn spawn_toggle_main_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R
 }
 
 #[cfg(not(test))]
+fn spawn_toggle_main_window_without_focus<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = toggle_main_window_without_focus(&app_for_main_thread) {
+                eprintln!("{error}");
+            }
+        }) {
+            eprintln!("main window no-focus toggle dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
 fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     app: &tauri::AppHandle<R>,
     shortcut: &Shortcut,
@@ -1995,7 +2075,7 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         .unwrap_or_else(picker_shortcut);
     if *shortcut == picker_shortcut {
         eprintln!("global shortcut pressed: {shortcut:?}");
-        spawn_show_main_window(app.clone(), true);
+        spawn_toggle_main_window_without_focus(app.clone());
         return;
     }
 
@@ -2928,7 +3008,7 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
 ) {
     match route {
         hotkeys::ShortcutRoute::PickerOpen => {
-            spawn_show_main_window(app, true);
+            spawn_toggle_main_window_without_focus(app);
         }
         hotkeys::ShortcutRoute::ScriptRun { action_id } => {
             thread::spawn(move || {
@@ -3058,7 +3138,9 @@ fn code_from_shortcut_key(key: &str) -> Option<Code> {
 #[cfg(not(test))]
 fn log_shortcut_registration<R: tauri::Runtime, M: Manager<R>>(app: &M) {
     if app.global_shortcut().is_registered(picker_shortcut()) {
-        dev_log(format_args!("global shortcut registered: {PICKER_SHORTCUT_LABEL}"));
+        dev_log(format_args!(
+            "global shortcut registered: {PICKER_SHORTCUT_LABEL}"
+        ));
     } else {
         eprintln!("global shortcut not registered: {PICKER_SHORTCUT_LABEL}");
     }

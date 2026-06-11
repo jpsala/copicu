@@ -91,5 +91,4 @@ For clipboard, paste, shortcut, tray, or focus changes, describe the Windows app
 
 Before starting a large feature, open an issue or discussion first. Features that affect product direction, native behavior, storage, scripts/actions, AI, privacy, or compatibility expectations should be planned before implementation.
 
-For work with coding agents, start from `AGENTS.md` and the docs listed there. Durable decisions live in `docs/`; active work lives in `docs/active-work/`; larger feature plans live in `specs/`.
-
+For work with coding agents, start from `AGENTS.md` and the docs listed there. Durable decisions live in `docs/`; current tracks live in `docs/tracks/`; larger feature plans live in `specs/`.

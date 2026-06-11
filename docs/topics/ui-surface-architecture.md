@@ -17,7 +17,7 @@ primary_refs:
   - docs/topics/custom-window-system.md
   - docs/topics/mantine-ui-system.md
   - docs/topics/ui-design-and-impeccable.md
-  - docs/active-work/010-ui-rethink.md
+  - docs/tracks/010-ui-rethink.md
   - src/main.tsx
   - src/styles.css
   - src/mantineTheme.ts
@@ -37,13 +37,13 @@ Antes de cambiar UI, abrir:
 2. `docs/topics/ui-rethink.md`
 3. `docs/topics/mantine-ui-system.md`
 4. `docs/topics/ui-design-and-impeccable.md`
-5. `docs/active-work/010-ui-rethink.md`
+5. `docs/tracks/010-ui-rethink.md`
 
 Si el cambio toca picker o seleccion, abrir tambien `docs/topics/picker-interaction.md`.
 
 Si el cambio toca `decorations`, `transparent`, frameless/custom titlebar, drag regions o window chrome, abrir tambien `docs/topics/custom-window-system.md`.
 
-Si el cambio toca scripts/prompts/toasts, abrir tambien `docs/active-work/009-ui-host-custom-surface.md`.
+Si el cambio toca scripts/prompts/toasts, abrir tambien `docs/tracks/009-ui-host-custom-surface.md`.
 
 ## Modelo De Superficies
 
@@ -167,7 +167,7 @@ Si la ventana principal queda vacia en dev tras instalar/cambiar deps:
 
 Cuando se toca UI:
 
-- `docs/active-work/010-ui-rethink.md` para estado vivo del corte.
+- `docs/tracks/010-ui-rethink.md` para estado vivo del corte.
 - `docs/topics/ui-rethink.md` si cambia el modelo de superficies, temas o direccion visual.
 - `docs/topics/mantine-ui-system.md` si cambia uso de Mantine/wrappers/theme.
 - `docs/topics/ui-design-and-impeccable.md` si cambia el workflow de QA/polish.

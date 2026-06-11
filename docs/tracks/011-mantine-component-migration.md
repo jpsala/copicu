@@ -15,7 +15,7 @@ Fuentes obligatorias para retomar:
 - `docs/topics/ui-surface-architecture.md`
 - `docs/topics/mantine-ui-system.md`
 - `docs/topics/ui-design-and-impeccable.md`
-- `docs/active-work/010-ui-rethink.md`
+- `docs/tracks/010-ui-rethink.md`
 - `src/main.tsx`
 - `src/styles.css`
 - `src/mantineTheme.ts`
