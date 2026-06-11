@@ -191,6 +191,26 @@ Topics recomendados:
 
 Estado 2026-06-09: descripcion y topics aplicados al repo `jpsala/copicu`.
 
+## Release Process
+
+Regla vigente: si despues de un release ya publicado hay cambios nuevos en
+`main`, crear un tag/release nuevo. No mover tags publicados ni reutilizar el
+mismo `vX.Y.Z-rc.N` para que GitHub "parezca" actualizado.
+
+Para release candidates:
+
+1. Verificar worktree limpio o commitear primero.
+2. Buildar el instalador desde el commit que se va a publicar.
+3. Crear el siguiente tag incremental, por ejemplo `v0.2.0-rc.2`.
+4. Crear el release GitHub apuntando a ese tag y subir el instalador nuevo.
+5. Actualizar `README.md` para que "Current release candidate" apunte al nuevo
+   tag, asset y SHA256.
+
+Motivo: GitHub muestra la fecha de publicacion original del release. Editar las
+notas de un release viejo no cambia que fue publicado dias antes, y deja el tag
+apuntando al commit viejo. Un RC nuevo mantiene historia estable y hace visible
+que hay un corte nuevo.
+
 ## Archivos Publicos Agregados
 
 Agregados 2026-06-09:

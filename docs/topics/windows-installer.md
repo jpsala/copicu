@@ -142,6 +142,18 @@ Salida esperada:
 src-tauri/target/release/bundle/nsis/*-setup.exe
 ```
 
+Release candidate publico:
+
+```powershell
+npm run tauri:build
+Get-FileHash src-tauri/target/release/bundle/nsis/Copicu_0.2.0_x64-setup.exe -Algorithm SHA256
+gh release create v0.2.0-rc.N src-tauri/target/release/bundle/nsis/Copicu_0.2.0_x64-setup.exe --target main --title "Copicu 0.2.0 RC N" --prerelease --notes-file <notes.md>
+```
+
+Usar siempre un tag nuevo para un corte nuevo (`rc.N+1`). No mover ni
+republicar un tag ya publicado salvo decision explicita, porque el tag debe
+seguir representando el binario que se publico originalmente.
+
 Promover el estado actual del repo a la app instalada:
 
 ```powershell
