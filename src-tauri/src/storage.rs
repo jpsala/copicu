@@ -87,6 +87,10 @@ pub struct HistoryItem {
 }
 
 impl HistoryItem {
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+
     pub fn content_kind(&self) -> &str {
         &self.content_kind
     }
@@ -254,6 +258,11 @@ pub struct SetItemTagsRequest {
     pub tags: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryMovePosition {
+    Top,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -263,7 +272,11 @@ pub struct AppSettings {
     pub history: HistorySettings,
     pub appearance: AppearanceSettings,
     #[serde(default)]
+    pub tray: TraySettings,
+    #[serde(default)]
     pub scripts: ScriptsSettings,
+    #[serde(default)]
+    pub enrichment: crate::enrichment::EnrichmentSettings,
     #[serde(default)]
     pub ai: AiSettings,
 }
@@ -281,6 +294,8 @@ pub struct GeneralSettings {
 pub struct PickerSettings {
     pub hide_on_focus_lost: bool,
     pub enter_action: EnterAction,
+    #[serde(default = "default_promote_active_on_copy")]
+    pub promote_active_on_copy: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -306,8 +321,17 @@ pub struct AppearanceSettings {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct TraySettings {
+    #[serde(default)]
+    pub vscode_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ScriptsSettings {
     pub folder_path: String,
+    #[serde(default)]
+    pub vscode_path: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -332,6 +356,15 @@ impl Default for ScriptsSettings {
     fn default() -> Self {
         Self {
             folder_path: default_scripts_folder_path(),
+            vscode_path: String::new(),
+        }
+    }
+}
+
+impl Default for TraySettings {
+    fn default() -> Self {
+        Self {
+            vscode_path: String::new(),
         }
     }
 }
@@ -369,6 +402,7 @@ impl Default for AppSettings {
             picker: PickerSettings {
                 hide_on_focus_lost: true,
                 enter_action: EnterAction::Copy,
+                promote_active_on_copy: default_promote_active_on_copy(),
             },
             history: HistorySettings {
                 retention_count: UNLIMITED_HISTORY_LIMIT,
@@ -377,10 +411,16 @@ impl Default for AppSettings {
                 theme: ThemeSetting::System,
                 theme_id: ThemeId::Default,
             },
+            tray: TraySettings::default(),
             scripts: ScriptsSettings::default(),
+            enrichment: crate::enrichment::EnrichmentSettings::default(),
             ai: AiSettings::default(),
         }
     }
+}
+
+fn default_promote_active_on_copy() -> bool {
+    true
 }
 
 fn default_global_shortcut() -> String {
@@ -690,6 +730,41 @@ impl AppStorage {
         } else {
             Ok(())
         }
+    }
+
+    pub fn move_to_position(&self, id: i64, position: HistoryMovePosition) -> Result<(), String> {
+        let now = now_unix_ms();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let sort_timestamp = match position {
+            HistoryMovePosition::Top => now,
+        };
+
+        let updated = conn
+            .execute(
+                "UPDATE clipboard_items
+                 SET last_copied_at_unix_ms = ?1,
+                     copy_count = COALESCE(copy_count, 1) + 1
+                 WHERE id = ?2",
+                params![sort_timestamp, id],
+            )
+            .map_err(|error| format!("failed to update clipboard item copy usage: {error}"))?;
+
+        if updated == 0 {
+            Err(format!("clipboard item not found: {id}"))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn promote_to_top(&self, id: i64) -> Result<(), String> {
+        self.move_to_position(id, HistoryMovePosition::Top)
+    }
+
+    pub fn mark_copied(&self, id: i64) -> Result<(), String> {
+        self.promote_to_top(id)
     }
 
     pub fn set_items_marked(&self, request: SetHistoryItemsMarkedRequest) -> Result<(), String> {
@@ -1093,6 +1168,66 @@ impl AppStorage {
         ensure_item_exists(&conn, request.item_id)?;
         set_item_tags_from_values(&conn, request.item_id, &request.tags)?;
         Ok(())
+    }
+
+    pub fn apply_builtin_enrichment(
+        &self,
+        item_id: i64,
+        tags: &[crate::enrichment::BuiltinEnrichmentMatch],
+    ) -> Result<Vec<String>, String> {
+        if tags.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_item_exists(&conn, item_id)?;
+
+        let mut applied = Vec::new();
+        for tag in tags {
+            let slug = tag.tag.slug();
+            let label = tag.tag.label();
+            if add_item_tag_relation(
+                &conn,
+                item_id,
+                slug,
+                label,
+                "rule",
+                Some(tag.confidence.into()),
+            )? {
+                applied.push(slug.to_string());
+            }
+        }
+        if !applied.is_empty() {
+            sync_legacy_tags_for_item(&conn, item_id)?;
+        }
+        Ok(applied)
+    }
+
+    pub fn list_item_rule_tag_slugs(&self, item_id: i64) -> Result<Vec<String>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_item_exists(&conn, item_id)?;
+
+        let mut statement = conn
+            .prepare(
+                "SELECT tags.slug
+                 FROM clipboard_item_tags
+                 JOIN tags ON tags.id = clipboard_item_tags.tag_id
+                 WHERE clipboard_item_tags.item_id = ?1
+                   AND clipboard_item_tags.source = 'rule'
+                 ORDER BY tags.slug ASC",
+            )
+            .map_err(|error| format!("failed to prepare rule tag query: {error}"))?;
+        let rows = statement
+            .query_map(params![item_id], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("failed to query rule tags: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to read rule tag row: {error}"))
     }
 
     pub fn insert_action_run(&self, run: NewActionRun) -> Result<i64, String> {
@@ -1534,6 +1669,37 @@ fn tag_id_by_slug(conn: &Connection, slug: &str) -> Result<i64, String> {
     .map_err(|error| format!("failed to load tag id for {slug}: {error}"))
 }
 
+fn add_item_tag_relation(
+    conn: &Connection,
+    item_id: i64,
+    slug: &str,
+    label: &str,
+    source: &str,
+    confidence: Option<f64>,
+) -> Result<bool, String> {
+    let now = now_unix_ms();
+    conn.execute(
+        "INSERT OR IGNORE INTO tags (slug, label, created_at_unix_ms, updated_at_unix_ms)
+         VALUES (?1, ?2, ?3, ?3)",
+        params![slug, label, now],
+    )
+    .map_err(|error| format!("failed to upsert tag: {error}"))?;
+    let tag_id = tag_id_by_slug(conn, slug)?;
+    let inserted = conn
+        .execute(
+            "INSERT OR IGNORE INTO clipboard_item_tags (
+                item_id,
+                tag_id,
+                created_at_unix_ms,
+                source,
+                confidence
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![item_id, tag_id, now, source, confidence],
+        )
+        .map_err(|error| format!("failed to link item tag: {error}"))?;
+    Ok(inserted > 0)
+}
+
 fn set_item_tags_from_values(
     conn: &Connection,
     item_id: i64,
@@ -1579,6 +1745,29 @@ fn set_item_tags_from_values(
     Ok(())
 }
 
+fn sync_legacy_tags_for_item(conn: &Connection, item_id: i64) -> Result<(), String> {
+    let mut labels_statement = conn
+        .prepare(
+            "SELECT tags.label
+             FROM clipboard_item_tags
+             JOIN tags ON tags.id = clipboard_item_tags.tag_id
+             WHERE clipboard_item_tags.item_id = ?1
+             ORDER BY tags.label COLLATE NOCASE ASC",
+        )
+        .map_err(|error| format!("failed to prepare legacy tag labels: {error}"))?;
+    let labels = labels_statement
+        .query_map(params![item_id], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("failed to query legacy tag labels: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read legacy tag label row: {error}"))?;
+    conn.execute(
+        "UPDATE clipboard_items SET tags = ?1 WHERE id = ?2",
+        params![legacy_tag_string_from_labels(&labels), item_id],
+    )
+    .map_err(|error| format!("failed to update legacy tags after item sync: {error}"))?;
+    Ok(())
+}
+
 fn sync_item_tags_from_legacy_string(
     conn: &Connection,
     item_id: i64,
@@ -1597,25 +1786,7 @@ fn sync_legacy_tags_for_tag(conn: &Connection, tag_id: i64) -> Result<(), String
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to read tag item sync row: {error}"))?;
     for item_id in item_ids {
-        let mut labels_statement = conn
-            .prepare(
-                "SELECT tags.label
-                 FROM clipboard_item_tags
-                 JOIN tags ON tags.id = clipboard_item_tags.tag_id
-                 WHERE clipboard_item_tags.item_id = ?1
-                 ORDER BY tags.label COLLATE NOCASE ASC",
-            )
-            .map_err(|error| format!("failed to prepare legacy tag labels: {error}"))?;
-        let labels = labels_statement
-            .query_map(params![item_id], |row| row.get::<_, String>(0))
-            .map_err(|error| format!("failed to query legacy tag labels: {error}"))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("failed to read legacy tag label row: {error}"))?;
-        conn.execute(
-            "UPDATE clipboard_items SET tags = ?1 WHERE id = ?2",
-            params![legacy_tag_string_from_labels(&labels), item_id],
-        )
-        .map_err(|error| format!("failed to update legacy tags after tag change: {error}"))?;
+        sync_legacy_tags_for_item(conn, item_id)?;
     }
     Ok(())
 }
@@ -1747,6 +1918,15 @@ fn settings_from_conn(conn: &Connection) -> Result<AppSettings, String> {
 }
 
 fn normalize_loaded_settings(settings: &mut AppSettings) {
+    let legacy_vscode_path = settings.tray.vscode_path.trim();
+    let scripts_vscode_path = settings.scripts.vscode_path.trim();
+    if scripts_vscode_path.is_empty() && !legacy_vscode_path.is_empty() {
+        settings.scripts.vscode_path = legacy_vscode_path.to_string();
+    } else {
+        settings.scripts.vscode_path = scripts_vscode_path.to_string();
+    }
+    settings.tray.vscode_path.clear();
+    settings.scripts.folder_path = settings.scripts.folder_path.trim().to_string();
     let endpoint = settings.ai.endpoint.trim().trim_end_matches('/');
     let model = settings.ai.model.trim();
     if endpoint.is_empty() {
@@ -1958,10 +2138,38 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(json).expect("old settings should deserialize");
 
+        assert_eq!(settings.tray, TraySettings::default());
         assert_eq!(settings.scripts, ScriptsSettings::default());
+        assert_eq!(
+            settings.enrichment,
+            crate::enrichment::EnrichmentSettings::default()
+        );
         assert_eq!(settings.ai, AiSettings::default());
         assert_eq!(settings.appearance.theme_id, ThemeId::Default);
+        assert!(settings.picker.promote_active_on_copy);
         validate_settings(&settings).expect("old settings with script defaults should validate");
+    }
+
+    #[test]
+    fn settings_normalize_migrates_legacy_tray_vscode_path_into_scripts() {
+        let json = r#"{
+            "schemaVersion": 1,
+            "general": { "globalShortcut": "Ctrl+Shift+," },
+            "picker": { "hideOnFocusLost": true, "enterAction": "copy" },
+            "history": { "retentionCount": 0 },
+            "appearance": { "theme": "system" },
+            "tray": { "vscodePath": " C:\\Tools\\VS Code\\Code.exe " },
+            "scripts": { "folderPath": " C:\\Scripts " }
+        }"#;
+
+        let mut settings: AppSettings =
+            serde_json::from_str(json).expect("legacy settings should deserialize");
+
+        normalize_loaded_settings(&mut settings);
+
+        assert_eq!(settings.scripts.folder_path, r"C:\Scripts");
+        assert_eq!(settings.scripts.vscode_path, r"C:\Tools\VS Code\Code.exe");
+        assert_eq!(settings.tray.vscode_path, "");
     }
 
     #[test]
@@ -2211,6 +2419,29 @@ mod tests {
         assert_eq!(page.items[0].created_at_unix_ms, 10_001);
         assert!(page.items[0].last_copied_at_unix_ms >= page.items[1].last_copied_at_unix_ms);
         assert_eq!(page.items[0].copy_count, 2);
+    }
+
+    #[test]
+    fn mark_copied_promotes_existing_item_to_recent_top() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "older");
+        insert_test_text_item(&storage, 2, 10_002, "newer");
+
+        storage
+            .mark_copied(1)
+            .expect("old item should be marked copied");
+
+        let page = storage
+            .list_page(HistoryPageRequest {
+                query: String::new(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("history should load");
+
+        assert_eq!(ids(&page.items), vec![1, 2]);
+        assert_eq!(page.items[0].copy_count, 2);
+        assert!(page.items[0].last_copied_at_unix_ms >= page.items[1].last_copied_at_unix_ms);
     }
 
     #[test]
@@ -2562,6 +2793,85 @@ mod tests {
             })
             .expect("tag search should load");
         assert_eq!(ids(&page.items), vec![1]);
+    }
+
+    #[test]
+    fn apply_builtin_enrichment_adds_rule_tag_without_replacing_existing_tags() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, r"C:\dev\chat\copyq-tauri\src\main.tsx");
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: 1,
+                tags: vec!["Work".to_string()],
+            })
+            .expect("manual tags should save");
+
+        let applied = storage
+            .apply_builtin_enrichment(
+                1,
+                &[crate::enrichment::BuiltinEnrichmentMatch {
+                    detector: crate::enrichment::BuiltinDetector::Path,
+                    tag: crate::enrichment::BuiltinTag::Path,
+                    confidence: 1.0,
+                }],
+            )
+            .expect("builtin enrichment should apply");
+
+        assert_eq!(applied, vec!["path"]);
+        let item = storage.get_item(1).expect("item should load");
+        assert_eq!(item.tags.as_deref(), Some("#Path #Work"));
+
+        let tags = storage.list_tags().expect("tags should list");
+        assert!(tags
+            .iter()
+            .any(|tag| tag.slug == "path" && tag.item_count == 1));
+        assert!(tags
+            .iter()
+            .any(|tag| tag.slug == "work" && tag.item_count == 1));
+    }
+
+    #[test]
+    fn apply_builtin_enrichment_is_idempotent_for_existing_rule_tag() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "/usr/local/bin/copicu");
+
+        let first = storage
+            .apply_builtin_enrichment(
+                1,
+                &[crate::enrichment::BuiltinEnrichmentMatch {
+                    detector: crate::enrichment::BuiltinDetector::Path,
+                    tag: crate::enrichment::BuiltinTag::Path,
+                    confidence: 1.0,
+                }],
+            )
+            .expect("first enrichment should apply");
+        let second = storage
+            .apply_builtin_enrichment(
+                1,
+                &[crate::enrichment::BuiltinEnrichmentMatch {
+                    detector: crate::enrichment::BuiltinDetector::Path,
+                    tag: crate::enrichment::BuiltinTag::Path,
+                    confidence: 1.0,
+                }],
+            )
+            .expect("second enrichment should not duplicate");
+
+        assert_eq!(first, vec!["path"]);
+        assert!(second.is_empty());
+        assert_eq!(
+            storage
+                .get_item(1)
+                .expect("item should load")
+                .tags
+                .as_deref(),
+            Some("#Path")
+        );
+        assert_eq!(
+            storage
+                .list_item_rule_tag_slugs(1)
+                .expect("rule tags should list"),
+            vec!["path".to_string()]
+        );
     }
 
     #[test]

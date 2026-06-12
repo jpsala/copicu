@@ -9,7 +9,7 @@ type Trigger =
   | "devRun";
 
 type ClipKind = "text" | "html" | "image" | "fileList" | "unknown";
-type SelectionRequirement = "none" | "optional" | "one" | "oneOrMore" | "many";
+type SelectionRequirement = "none" | "optional" | "active" | "one" | "oneOrMore" | "many";
 
 type ActionInput = {
   source: "pickerSelection" | "clipboard" | "historySearch" | "none";
@@ -45,6 +45,8 @@ type ActionDefinition = {
 type ActionContext = {
   trigger: Trigger;
   shortcut?: string;
+  activeItemId?: string;
+  /** @deprecated Prefer activeItemId for CopyQ-style current/active item scripts. */
   currentItemId?: string;
   selectedItemIds: string[];
   view?: {
@@ -63,6 +65,17 @@ type HistoryItem = {
   tags?: string[];
   marked?: boolean;
   mimePrimary?: string;
+};
+
+type TagSummary = {
+  id: number;
+  slug: string;
+  label: string;
+  color?: string | null;
+  pinned: boolean;
+  sortOrder?: number | null;
+  itemCount: number;
+  autoApplyEnabled: boolean;
 };
 
 type ToastOptions = {
@@ -107,12 +120,22 @@ type MarkdownOutputOptions = {
   suggestedFileName?: string;
 };
 
+type ActivationOptions = {
+  copy?: boolean;
+  markUsed?: boolean;
+  hidePicker?: boolean;
+  focusPrevious?: boolean;
+  paste?: boolean;
+  pasteShortcut?: "default" | "shiftInsert" | "ctrlV";
+};
+
 type AiMarkdownResponseItem = Pick<HistoryItem, "id" | "kind" | "title" | "text" | "notes" | "tags">;
 
 type AiMarkdownResponseContext = {
   title?: string;
   source?: string;
   currentQuery?: string;
+  activeItemId?: string;
   currentItemId?: string;
   selectedItemIds?: string[];
   visibleItemIds?: string[];
@@ -130,6 +153,26 @@ type AiSummarizeMarkdownOptions = {
   items: AiMarkdownResponseItem[];
 };
 
+type EnrichmentDetector = "path" | "url" | "json" | "code" | "secret-risk";
+type EnrichmentApplyMode = "autoApply" | "suggestOnly";
+
+type EnrichmentTagResult = {
+  detector: EnrichmentDetector;
+  detectorLabel: string;
+  tag: string;
+  confidence: number;
+  applied: boolean;
+};
+
+type EnrichmentResult = {
+  itemId: number;
+  contentKind: string;
+  enabled: boolean;
+  applyMode: EnrichmentApplyMode;
+  eligible: boolean;
+  tags: EnrichmentTagResult[];
+};
+
 type HostCommandId = "picker.open";
 
 type HostCommandParams = {
@@ -144,8 +187,17 @@ type HostCommandParams = {
 declare function defineAction(definition: ActionDefinition): ActionDefinition;
 
 declare const copicu: {
+  activeItem: {
+    id(): Promise<string | null>;
+    get(options?: { content?: boolean }): Promise<HistoryItem | null>;
+    updateMetadata(patch: Partial<Pick<HistoryItem, "title" | "notes" | "tags" | "marked">>): Promise<void>;
+    copy(): Promise<void>;
+    paste(options?: Partial<ActivationOptions>): Promise<void>;
+    promote(): Promise<void>;
+  };
   selection: {
     ids(): Promise<string[]>;
+    /** @deprecated Prefer copicu.activeItem.get(). */
     current(options?: { content?: boolean }): Promise<HistoryItem | null>;
     items(options?: { content?: boolean }): Promise<HistoryItem[]>;
     set(ids: string[]): Promise<void>;
@@ -153,8 +205,14 @@ declare const copicu: {
   history: {
     search(query: string, options?: { limit?: number; content?: boolean }): Promise<HistoryItem[]>;
     get(id: string, options?: { content?: boolean }): Promise<HistoryItem>;
-    update(id: string, patch: Partial<Pick<HistoryItem, "title" | "notes" | "tags" | "text">>): Promise<void>;
+    update(id: string, patch: Partial<Pick<HistoryItem, "title" | "notes" | "tags" | "text" | "marked">>): Promise<void>;
     remove(id: string): Promise<void>;
+    promote(id: string): Promise<void>;
+    move(id: string, options: { position: "top" }): Promise<void>;
+  };
+  metadata: {
+    listTags(): Promise<TagSummary[]>;
+    editActive(): Promise<void>;
   };
   clipboard: {
     read(): Promise<{ text?: string }>;
@@ -165,6 +223,10 @@ declare const copicu: {
     respondMarkdown(options: AiRespondMarkdownOptions): Promise<string>;
     /** @deprecated Use respondMarkdown({ instruction, items, context }) instead. */
     summarizeMarkdown(options: AiSummarizeMarkdownOptions): Promise<string>;
+  };
+  enrichment: {
+    runForItem(id: string, options?: { apply?: boolean }): Promise<EnrichmentResult>;
+    getResult(id: string): Promise<EnrichmentResult>;
   };
   picker: {
     open(options?: {

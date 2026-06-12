@@ -49,4 +49,20 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 - `TOPICS.md` y `topics/`: conocimiento recuperable.
 - `WORKING_MEMORY.md`: memoria operativa actual.
 - `tracks/`: trabajos vivos retomables.
+- `skills/`: skills locales portables; fuente canonica.
+- `.agents/skills`: compatibilidad tecnica por junction hacia `docs/skills/`.
 - `.generated/context-index.md`: cache generado; no editar a mano.
+
+## Skills Locales
+
+- `docs/skills/` es la fuente canonica de skills locales portables.
+- `.agents/skills` es una junction de compatibilidad para descubrimiento de Codex.
+- Si la junction falta o apunta mal, recrearla con `powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1`.
+
+## Audit De Contexto
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
+bun run context:index
+bun run context:audit
+```

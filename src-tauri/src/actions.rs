@@ -7,6 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(all(not(test), windows))]
+use std::os::windows::process::CommandExt;
 #[cfg(not(test))]
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -23,6 +25,8 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(not(test))]
 use tauri_plugin_notification::NotificationExt;
 
+#[path = "actions/builtin.rs"]
+mod builtin;
 #[path = "actions/capabilities.rs"]
 mod capabilities;
 #[path = "actions/discovery.rs"]
@@ -40,6 +44,7 @@ mod shortcuts;
 #[path = "actions/url.rs"]
 mod url;
 
+use self::builtin::{JOIN_SELECTED_ID, OPEN_URL_ID, PASTE_PLAIN_ID};
 use self::capabilities::{
     unsupported_script_capabilities, validate_script_command_capabilities,
     validate_script_host_capabilities,
@@ -53,9 +58,6 @@ use self::logging::now_unix_ms;
 #[cfg(not(test))]
 use self::logging::{input_summary_json, redact_error};
 pub use self::shortcuts::normalize_shortcut_string;
-const PASTE_PLAIN_ID: &str = "builtin.pastePlain";
-const JOIN_SELECTED_ID: &str = "builtin.joinSelected";
-const OPEN_URL_ID: &str = "builtin.openUrl";
 const MAIN_WINDOW_LABEL: &str = "main";
 const NOTIFICATIONS_WINDOW_LABEL: &str = "notifications";
 const NOTIFICATION_TOAST_EVENT: &str = "copicu://toast";
@@ -151,6 +153,7 @@ impl Trigger {
 pub enum SelectionRequirement {
     None,
     Optional,
+    Active,
     One,
     OneOrMore,
     Many,
@@ -261,79 +264,7 @@ pub enum ActionEffect {
 }
 
 pub fn builtin_actions() -> Vec<ActionDefinition> {
-    vec![
-        ActionDefinition {
-            id: PASTE_PLAIN_ID.to_string(),
-            title: "Paste plain".to_string(),
-            description: "Paste the selected text item as plain text.".to_string(),
-            shortcut: None,
-            triggers: vec![Trigger::ItemMenu, Trigger::CommandPalette],
-            input: ActionInput {
-                source: ActionInputSource::PickerSelection,
-                selection: SelectionRequirement::One,
-                kinds: Some(vec![ClipKind::Text]),
-                mime: Some(vec!["text/plain".to_string()]),
-                query: None,
-            },
-            capabilities: vec![
-                "history:read-content".to_string(),
-                "clipboard:write".to_string(),
-                "window:focus-previous".to_string(),
-                "input:paste".to_string(),
-            ],
-            builtin: true,
-            source: ActionSource::Builtin,
-            script: None,
-            diagnostics: Vec::new(),
-            logging: None,
-        },
-        ActionDefinition {
-            id: JOIN_SELECTED_ID.to_string(),
-            title: "Join selected".to_string(),
-            description: "Join selected text items and copy the result.".to_string(),
-            shortcut: None,
-            triggers: vec![Trigger::ItemMenu, Trigger::CommandPalette],
-            input: ActionInput {
-                source: ActionInputSource::PickerSelection,
-                selection: SelectionRequirement::OneOrMore,
-                kinds: Some(vec![ClipKind::Text]),
-                mime: Some(vec!["text/plain".to_string()]),
-                query: None,
-            },
-            capabilities: vec![
-                "history:read-content".to_string(),
-                "clipboard:write".to_string(),
-            ],
-            builtin: true,
-            source: ActionSource::Builtin,
-            script: None,
-            diagnostics: Vec::new(),
-            logging: None,
-        },
-        ActionDefinition {
-            id: OPEN_URL_ID.to_string(),
-            title: "Open URL".to_string(),
-            description: "Open the first URL found in the selected item.".to_string(),
-            shortcut: None,
-            triggers: vec![Trigger::ItemMenu, Trigger::CommandPalette],
-            input: ActionInput {
-                source: ActionInputSource::PickerSelection,
-                selection: SelectionRequirement::One,
-                kinds: Some(vec![ClipKind::Text]),
-                mime: None,
-                query: None,
-            },
-            capabilities: vec![
-                "history:read-content".to_string(),
-                "shell:open-url".to_string(),
-            ],
-            builtin: true,
-            source: ActionSource::Builtin,
-            script: None,
-            diagnostics: Vec::new(),
-            logging: None,
-        },
-    ]
+    builtin::builtin_actions()
 }
 
 pub fn list_actions(storage: &crate::storage::AppStorage) -> Result<Vec<ActionDefinition>, String> {
@@ -395,11 +326,13 @@ fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
 
         if !matches!(
             action.input.selection,
-            SelectionRequirement::None | SelectionRequirement::Optional
+            SelectionRequirement::None
+                | SelectionRequirement::Optional
+                | SelectionRequirement::Active
         ) {
             action.diagnostics.push(ActionDiagnostic {
                 severity: DiagnosticSeverity::Error,
-                message: "globalShortcut actions must accept an empty selection context"
+                message: "globalShortcut actions must accept an empty or active selection context"
                     .to_string(),
             });
         }
@@ -427,19 +360,32 @@ pub fn run_action<R: Runtime + 'static>(
     request: RunActionRequest,
 ) -> ActionRunResult {
     let started_at = now_unix_ms();
+    crate::diag_log(
+        "script.action.start",
+        format!(
+            "action_id={} trigger={}",
+            request.action_id,
+            request.context.trigger.as_log_value()
+        ),
+    );
     let input_summary_json = input_summary_json(storage, &request.context);
     let result = match request.action_id.as_str() {
-        PASTE_PLAIN_ID => paste_plain(app, window, storage, suppression, previous_window, &request)
-            .map(|message| ScriptOrBuiltinRun {
-                message,
-                toasts: Vec::new(),
-                effects: Vec::new(),
-            }),
+        PASTE_PLAIN_ID => {
+            builtin::paste_plain(app, window, storage, suppression, previous_window, &request).map(
+                |message| ScriptOrBuiltinRun {
+                    message,
+                    toasts: Vec::new(),
+                    effects: Vec::new(),
+                },
+            )
+        }
         JOIN_SELECTED_ID => {
-            join_selected(app, storage, suppression, &request).map(|message| ScriptOrBuiltinRun {
-                message,
-                toasts: Vec::new(),
-                effects: Vec::new(),
+            builtin::join_selected(app, storage, suppression, &request).map(|message| {
+                ScriptOrBuiltinRun {
+                    message,
+                    toasts: Vec::new(),
+                    effects: Vec::new(),
+                }
             })
         }
         OPEN_URL_ID => {
@@ -489,6 +435,19 @@ pub fn run_action<R: Runtime + 'static>(
         eprintln!("action run logging failed: {error}");
     }
 
+    crate::diag_log(
+        "script.action.done",
+        format!(
+            "action_id={} status={} duration_ms={}",
+            request.action_id,
+            match status {
+                ActionRunStatus::Completed => "completed",
+                ActionRunStatus::Failed => "failed",
+            },
+            finished_at.saturating_sub(started_at)
+        ),
+    );
+
     ActionRunResult {
         action_id: request.action_id,
         status,
@@ -506,82 +465,7 @@ struct ScriptOrBuiltinRun {
 }
 
 #[cfg(not(test))]
-fn paste_plain<R: Runtime>(
-    app: &AppHandle<R>,
-    window: Option<&WebviewWindow<R>>,
-    storage: &crate::storage::AppStorage,
-    suppression: &crate::clipboard::SelfWriteSuppression,
-    previous_window: &crate::window_focus::PreviousWindow,
-    request: &RunActionRequest,
-) -> Result<String, String> {
-    let item_id = require_one_selected(&request.context)?;
-    let item = storage.get_item(item_id)?;
-    if item.content_kind() != "text" {
-        return Err("paste plain requires a text item".to_string());
-    }
-
-    suppression.suppress_hash(item.normalized_hash().to_string());
-    app.clipboard().write_text(item.text()).map_err(|error| {
-        suppression.clear_if_hash(item.normalized_hash());
-        format!("failed to write plain text to clipboard: {error}")
-    })?;
-    storage.mark_used(item_id)?;
-    if let Some(window) = window {
-        crate::host::hide_picker(window)?;
-    }
-    previous_window.focus_previous()?;
-    previous_window.send_paste_shortcut(&crate::host::PasteShortcut::Default)?;
-
-    Ok("Pasted plain text".to_string())
-}
-
-#[cfg(not(test))]
-fn join_selected<R: Runtime>(
-    app: &AppHandle<R>,
-    storage: &crate::storage::AppStorage,
-    suppression: &crate::clipboard::SelfWriteSuppression,
-    request: &RunActionRequest,
-) -> Result<String, String> {
-    let item_ids = require_one_or_more_selected(&request.context)?;
-    let mut parts = Vec::with_capacity(item_ids.len());
-    for item_id in item_ids {
-        let item = storage.get_item(*item_id)?;
-        if item.content_kind() != "text" {
-            return Err("join selected requires text items".to_string());
-        }
-        parts.push(item.text().to_string());
-        storage.mark_used(*item_id)?;
-    }
-
-    let joined = parts.join("\n\n");
-    let hash = crate::storage::hash_text(&joined);
-    suppression.suppress_hash(hash.clone());
-    app.clipboard().write_text(joined).map_err(|error| {
-        suppression.clear_if_hash(&hash);
-        format!("failed to write joined text to clipboard: {error}")
-    })?;
-
-    Ok(format!("Joined {} items", parts.len()))
-}
-
-#[cfg(not(test))]
-fn require_one_selected(context: &ActionContext) -> Result<i64, String> {
-    if context.selected_item_ids.len() != 1 {
-        return Err("action requires exactly one selected item".to_string());
-    }
-    Ok(context.selected_item_ids[0])
-}
-
-#[cfg(not(test))]
-fn require_one_or_more_selected(context: &ActionContext) -> Result<&[i64], String> {
-    if context.selected_item_ids.is_empty() {
-        return Err("action requires selected items".to_string());
-    }
-    Ok(&context.selected_item_ids)
-}
-
-#[cfg(not(test))]
-fn run_script_action<R: Runtime>(
+fn run_script_action<R: Runtime + 'static>(
     app: &AppHandle<R>,
     window: Option<&WebviewWindow<R>>,
     storage: &crate::storage::AppStorage,
@@ -742,7 +626,8 @@ fn run_script_action_definition<R: Runtime + 'static>(
 
     let settings = storage.get_settings()?;
     let logs_folder = Path::new(&settings.scripts.folder_path).join(".logs");
-    let selection_items = script_selection_items(storage, &context.selected_item_ids)?;
+    let selection_items =
+        script_selection_items(storage, &context.selected_item_ids, context.current_item_id)?;
     let runner_request = ScriptRunnerRequest {
         action_file: action_file.to_string_lossy().into_owned(),
         logs_folder: logs_folder.to_string_lossy().into_owned(),
@@ -922,6 +807,23 @@ fn open_ai_output_window_on_main_thread<R: Runtime + 'static>(
             }
         })
         .map_err(|error| format!("markdown output dispatch failed: {error}"))
+}
+
+#[cfg(not(test))]
+fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    item: crate::storage::HistoryItem,
+) -> Result<(), String> {
+    let app = app.clone();
+    app.clone()
+        .run_on_main_thread(move || {
+            if let Err(error) =
+                crate::open_metadata_editor_window(&app, crate::MetadataEditorPayload { item })
+            {
+                eprintln!("script metadata editor failed: {error}");
+            }
+        })
+        .map_err(|error| format!("metadata editor dispatch failed: {error}"))
 }
 
 #[cfg(not(test))]
@@ -1370,6 +1272,44 @@ struct HistoryRemovePayload {
 #[cfg(not(test))]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct HistoryMovePayload {
+    id: String,
+    position: HistoryMovePositionPayload,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataEditActivePayload {
+    id: String,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnrichmentItemPayload {
+    item_id: String,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnrichmentRunForItemPayload {
+    item_id: String,
+    #[serde(default)]
+    options: Option<crate::enrichment::RunForItemOptions>,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum HistoryMovePositionPayload {
+    Top,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ScriptHistoryPatch {
     text: Option<Option<String>>,
     title: Option<Option<String>>,
@@ -1382,8 +1322,19 @@ struct ScriptHistoryPatch {
 fn script_selection_items(
     storage: &crate::storage::AppStorage,
     item_ids: &[i64],
+    current_item_id: Option<i64>,
 ) -> Result<Vec<ScriptSelectionItem>, String> {
-    item_ids
+    let mut input_item_ids = Vec::new();
+    if let Some(item_id) = current_item_id {
+        input_item_ids.push(item_id);
+    }
+    for item_id in item_ids {
+        if !input_item_ids.contains(item_id) {
+            input_item_ids.push(*item_id);
+        }
+    }
+
+    input_item_ids
         .iter()
         .map(|item_id| {
             let item = storage.get_item(*item_id)?;
@@ -1419,7 +1370,7 @@ fn parse_script_tags(value: &str) -> Vec<String> {
 }
 
 #[cfg(not(test))]
-fn handle_script_host_call<R: Runtime>(
+fn handle_script_host_call<R: Runtime + 'static>(
     app: &AppHandle<R>,
     window: Option<&WebviewWindow<R>>,
     storage: &crate::storage::AppStorage,
@@ -1499,6 +1450,19 @@ fn script_ui_input<R: Runtime>(
     let options: crate::ui_host::UiInputOptions = serde_json::from_value(payload)
         .map_err(|error| format!("invalid ui.input payload: {error}"))?;
     crate::ui_host::request_input(app, options).map(|value| json!(value))
+}
+
+#[cfg(not(test))]
+fn script_metadata_edit_active<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: MetadataEditActivePayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid metadata.editActive payload: {error}"))?;
+    let item = storage.get_item(parse_script_item_id(&payload.id)?)?;
+    open_metadata_editor_window_on_main_thread(app, item)?;
+    Ok(json!(null))
 }
 
 #[cfg(not(test))]
@@ -1609,6 +1573,34 @@ fn script_history_remove(
 }
 
 #[cfg(not(test))]
+fn script_history_promote(
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: HistoryRemovePayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid history.promote payload: {error}"))?;
+    storage.move_to_position(
+        parse_script_item_id(&payload.id)?,
+        crate::storage::HistoryMovePosition::Top,
+    )?;
+    Ok(json!(null))
+}
+
+#[cfg(not(test))]
+fn script_history_move(
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: HistoryMovePayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid history.move payload: {error}"))?;
+    let position = match payload.position {
+        HistoryMovePositionPayload::Top => crate::storage::HistoryMovePosition::Top,
+    };
+    storage.move_to_position(parse_script_item_id(&payload.id)?, position)?;
+    Ok(json!(null))
+}
+
+#[cfg(not(test))]
 fn script_history_update(
     storage: &crate::storage::AppStorage,
     payload: serde_json::Value,
@@ -1661,6 +1653,110 @@ fn script_history_update(
     };
     storage.update_item(request)?;
     Ok(json!(null))
+}
+
+#[cfg(not(test))]
+fn script_metadata_list_tags(
+    storage: &crate::storage::AppStorage,
+) -> Result<serde_json::Value, String> {
+    let tags = storage.list_tags()?;
+    serde_json::to_value(tags).map_err(|error| format!("failed to encode metadata tags: {error}"))
+}
+
+#[cfg(not(test))]
+fn script_enrichment_get_result(
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: EnrichmentItemPayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid enrichment.getResult payload: {error}"))?;
+    let result = builtin_enrichment_result_for_item(
+        storage,
+        parse_script_item_id(&payload.item_id)?,
+        None,
+        false,
+    )?;
+    serde_json::to_value(result)
+        .map_err(|error| format!("failed to encode enrichment result: {error}"))
+}
+
+#[cfg(not(test))]
+fn script_enrichment_run_for_item(
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: EnrichmentRunForItemPayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid enrichment.runForItem payload: {error}"))?;
+    let result = builtin_enrichment_result_for_item(
+        storage,
+        parse_script_item_id(&payload.item_id)?,
+        payload.options,
+        true,
+    )?;
+    serde_json::to_value(result)
+        .map_err(|error| format!("failed to encode enrichment run result: {error}"))
+}
+
+#[cfg(not(test))]
+fn builtin_enrichment_result_for_item(
+    storage: &crate::storage::AppStorage,
+    item_id: i64,
+    options: Option<crate::enrichment::RunForItemOptions>,
+    allow_apply: bool,
+) -> Result<crate::enrichment::BuiltinEnrichmentResult, String> {
+    let settings = storage.get_settings()?.enrichment;
+    let item = storage.get_item(item_id)?;
+    let content_kind = item.content_kind().to_string();
+
+    if item.content_kind() != "text" {
+        return Ok(crate::enrichment::BuiltinEnrichmentResult {
+            item_id,
+            content_kind,
+            enabled: settings.enabled,
+            apply_mode: settings.apply_mode,
+            eligible: false,
+            tags: Vec::new(),
+        });
+    }
+
+    let detected = crate::enrichment::detect_text_builtin_tags(item.text(), &settings);
+    let applied_rule_tags = storage.list_item_rule_tag_slugs(item_id)?;
+    let should_apply = allow_apply
+        && options
+            .as_ref()
+            .and_then(|options| options.apply)
+            .unwrap_or(settings.apply_mode == crate::enrichment::EnrichmentApplyMode::AutoApply);
+
+    let newly_applied = if should_apply && !detected.is_empty() {
+        storage.apply_builtin_enrichment(item_id, &detected)?
+    } else {
+        Vec::new()
+    };
+
+    let mut applied_tags = applied_rule_tags;
+    for tag in newly_applied {
+        if !applied_tags.contains(&tag) {
+            applied_tags.push(tag);
+        }
+    }
+
+    Ok(crate::enrichment::BuiltinEnrichmentResult {
+        item_id,
+        content_kind,
+        enabled: settings.enabled,
+        apply_mode: settings.apply_mode,
+        eligible: true,
+        tags: detected
+            .into_iter()
+            .map(|detected| crate::enrichment::BuiltinEnrichmentTagResult {
+                detector: detected.detector,
+                detector_label: detected.detector.label().to_string(),
+                tag: detected.tag.slug().to_string(),
+                confidence: detected.confidence,
+                applied: applied_tags.iter().any(|tag| tag == detected.tag.slug()),
+            })
+            .collect(),
+    })
 }
 
 #[cfg(not(test))]
@@ -1724,12 +1820,16 @@ fn run_node_script_runner<R: Runtime>(
         .parent()
         .and_then(Path::parent)
         .ok_or_else(|| format!("invalid script runner path: {}", runner_path.display()))?;
-    let mut child = Command::new("node")
+    let mut command = Command::new("node");
+    command
         .arg(&runner_path)
         .current_dir(project_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(0x08000000);
+    let mut child = command
         .spawn()
         .map_err(|error| format!("failed to start Node script runner: {error}"))?;
 
@@ -1984,7 +2084,7 @@ mod tests {
               triggers: ["itemMenu", "commandPalette", "localShortcut"],
               input: {
                 source: "pickerSelection",
-                selection: "oneOrMore",
+                selection: "active",
                 kinds: ["text"],
                 mime: ["text/plain"]
               },
@@ -2010,7 +2110,7 @@ mod tests {
                 Trigger::LocalShortcut
             ]
         );
-        assert_eq!(action.input.selection, SelectionRequirement::OneOrMore);
+        assert_eq!(action.input.selection, SelectionRequirement::Active);
         assert_eq!(action.input.kinds, Some(vec![ClipKind::Text]));
         assert_eq!(
             action.logging.expect("logging").name.as_deref(),
@@ -2128,6 +2228,11 @@ mod tests {
                 "Ctrl+Alt+K",
                 SelectionRequirement::One,
             ),
+            test_script_action(
+                "examples.active",
+                "Ctrl+Alt+A",
+                SelectionRequirement::Active,
+            ),
             {
                 let mut action = test_script_action(
                     "examples.unsupported",
@@ -2156,8 +2261,9 @@ mod tests {
         assert!(actions[3]
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.message.contains("empty selection")));
-        assert!(actions[4]
+            .any(|diagnostic| diagnostic.message.contains("empty or active")));
+        assert!(actions[4].diagnostics.is_empty());
+        assert!(actions[5]
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("unsupported capabilities")));

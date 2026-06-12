@@ -58,7 +58,7 @@ El asistente puede modificar documentacion, codigo, configuracion, scripts, test
 
 ## Cierre De Sesion
 
-Cuando el usuario pida "cerrar sesion", "guardar sesion", "compactar", "continuar sesion", "seguir en una sesion nueva", "continuar con goal", "continuar sesion con goal" o equivalente, ejecutar un cierre de valor. No crear un archivo historico de sesion por defecto.
+Cuando el usuario pida "cerrar sesion", "guardar sesion", "compactar", "continuar sesion", "seguir en una sesion nueva", "continuar sesion con gol", "continuar con gol", "siguiente" o equivalente, ejecutar un cierre de valor. No crear un archivo historico de sesion por defecto.
 
 No usar un skill externo de session saver para este proyecto. El cierre se maneja con documentacion viva del repo: `tracks`, topics, decisiones y memoria corta.
 
@@ -107,9 +107,9 @@ El objetivo no es archivar la conversacion: es dejar el proyecto retomable con l
 
 El prompt de continuacion nunca es la memoria principal. La memoria principal son los docs actualizados.
 
-`continuar con goal` significa ejecutar el Protocolo Comun y despues crear un Goal en la misma sesion para el proximo paso acordado.
+`continuar sesion con gol` significa ejecutar el Protocolo Comun, crear un thread nuevo con handoff compacto y pedir que la nueva sesion arranque con `gol` para el proximo lote acordado.
 
-`continuar sesion con goal` significa ejecutar el Protocolo Comun, crear un thread nuevo con handoff compacto y pedir que la nueva sesion cree un Goal para el proximo lote acordado. Usarlo cuando el plan ya esta acordado y conviene reducir context bloat.
+`continuar con gol` y `siguiente` son aliases de `continuar sesion con gol`. No hay variante para seguir en la misma sesion con `gol`.
 
 ### Destinos De Memoria
 

@@ -9,6 +9,7 @@ pub(super) fn validate_action_input(
     let selection_ok = match action.input.selection {
         SelectionRequirement::None => selected_count == 0,
         SelectionRequirement::Optional => true,
+        SelectionRequirement::Active => context.current_item_id.is_some(),
         SelectionRequirement::One => selected_count == 1,
         SelectionRequirement::OneOrMore => selected_count >= 1,
         SelectionRequirement::Many => selected_count >= 2,
@@ -20,7 +21,9 @@ pub(super) fn validate_action_input(
         ));
     }
 
-    let input_item_ids = if action.input.source == ActionInputSource::Clipboard {
+    let input_item_ids = if action.input.selection == SelectionRequirement::Active {
+        context.current_item_id.into_iter().collect::<Vec<_>>()
+    } else if action.input.source == ActionInputSource::Clipboard {
         context.current_item_id.into_iter().collect::<Vec<_>>()
     } else {
         context.selected_item_ids.clone()

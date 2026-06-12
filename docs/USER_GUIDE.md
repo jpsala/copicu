@@ -11,11 +11,12 @@ Podes pedir tareas normales sobre Copicu. El agente deberia leer primero `AGENTS
 Tambien podes usar comandos conversacionales:
 
 - `realinear os`: audita y repara drift de la capa agentica.
+- `sigamos`: continua el trabajo activo en la misma sesion, sin cierre ni handoff.
 - `cerrar sesion`: persiste lo valioso de la sesion en docs vivos y deja el proyecto retomable.
 - `continuar sesion`: hace el mismo cierre de valor y despues abre una sesion nueva con handoff compacto si la herramienta esta disponible; si no, deja un prompt pegable.
-- `goal` / `gol`: encierra una tarea concreta en un Goal de Codex hasta completarla o dejar un bloqueo claro.
-- `continuar con goal`: guarda el acuerdo durable como checkpoint liviano y despues sigue en la misma sesion con un Goal para ejecutar el proximo paso.
-- `continuar sesion con goal`: guarda el acuerdo durable, abre una sesion nueva y arranca el proximo lote bajo Goal en esa nueva sesion.
+- `continuar sesion con gol`: hace `continuar sesion` y ademas pide que el thread nuevo arranque con `gol` para el proximo lote acordado.
+- `continuar con gol`: alias de `continuar sesion con gol`; no sigue en la misma sesion.
+- `siguiente`: alias corto de `continuar sesion con gol`.
 - `crear spec`: usa `specs/` para una feature grande antes de implementar.
 
 ## Modelo Mental
@@ -27,6 +28,7 @@ Tambien podes usar comandos conversacionales:
 - `docs/GLOSSARY.md`: aliases y nombres cortos.
 - `docs/topics/`: conocimiento reusable.
 - `docs/tracks/`: trabajos vivos retomables.
+- `docs/skills/`: skills locales portables.
 - `docs/DECISIONS.md`: decisiones durables.
 - `specs/`: especificaciones de features grandes.
 - `scripts/agent-context-audit.ts`: auditor automatico de la capa agentica.
@@ -56,11 +58,12 @@ La memoria principal queda en los docs del repo. El prompt de continuacion es so
 
 `cerrar sesion` termina despues de actualizar docs y responder con sintesis. `continuar sesion` ademas crea un nuevo thread cuando Codex Desktop expone la herramienta correspondiente.
 
-`continuar con goal` sigue en esta misma sesion bajo Goal. `continuar sesion con goal` crea una sesion limpia y le pasa el proximo lote como Goal inicial para reducir context bloat.
+`continuar sesion con gol` crea una sesion limpia y pide arrancar con `gol` para el proximo lote. `continuar con gol` y `siguiente` significan lo mismo; no hay variante para seguir en la misma sesion.
 
 ## Verificacion
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
 bun run context:index
 bun run context:audit
 ```

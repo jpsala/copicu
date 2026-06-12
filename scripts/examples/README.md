@@ -20,6 +20,7 @@ Copicu can execute ready scripts manually from Settings with the `Run` button wh
 - `copicu.selection.*`;
 - `copicu.clipboard.writeText/writeItem`;
 - `copicu.history.search/get/update`;
+- `copicu.enrichment.getResult/runForItem`;
 - `copicu.picker.open/filter/activate/show/hide`;
 - `copicu.commands.run("picker.open", params)`;
 - `copicu.window.rememberPrevious/focusPrevious`;
@@ -54,6 +55,8 @@ Recommended test order:
 16. `022-open-context-text-filtered.ts`: filtered shortcut for `tag:context kind:text`.
 17. `023-open-marked-context-filtered.ts`: filtered shortcut for `is:marked tag:context`.
 18. `024-open-prompt-filtered.ts`: free-form query wrapper for `#prompt`.
+19. `026-inspect-enrichment-active.ts`: inspect deterministic enrichment results for the active text item and optionally apply missing rule tags.
+20. `027-toast-path-clipboard-change.ts`: `clipboardChange` script that toasts when the captured text item matches deterministic enrichment detectors, making `autoApply` vs `suggestOnly` visible during dogfood.
 
 Logging contract:
 

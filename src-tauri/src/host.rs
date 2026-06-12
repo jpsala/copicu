@@ -69,13 +69,19 @@ pub fn write_item<R: Runtime>(
         crate::image_capture::write_png_to_clipboard(&png_bytes).map_err(|error| {
             suppression.clear_if_hash(item.normalized_hash());
             error
-        })
+        })?;
     } else {
         app.clipboard().write_text(item.text()).map_err(|error| {
             suppression.clear_if_hash(item.normalized_hash());
             format!("failed to write selected item to clipboard: {error}")
-        })
+        })?;
     }
+
+    if storage.get_settings()?.picker.promote_active_on_copy {
+        storage.mark_copied(item_id)?;
+    }
+
+    Ok(())
 }
 
 pub fn mark_used(storage: &crate::storage::AppStorage, item_id: i64) -> Result<(), String> {

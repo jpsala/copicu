@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "surface-ui-host",
+  "description": "Permissions for small request/response prompt surface.",
+  "windows": ["ui-host"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show"
+  ]
+}

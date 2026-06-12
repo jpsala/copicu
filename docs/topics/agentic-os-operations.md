@@ -15,7 +15,9 @@ primary_refs:
   - docs/WORKING_MEMORY.md
   - docs/TOPICS.md
   - docs/.generated/context-index.md
+  - docs/skills/
   - docs/tracks/
+  - scripts/ensure-skills-link.ps1
   - scripts/agent-context-audit.ts
 ---
 
@@ -34,8 +36,9 @@ Objetivo: volver a alinear la capa agentica con el proposito real del proyecto s
 3. `docs/WORKING_MEMORY.md`.
 4. `docs/TOPICS.md`.
 5. Track relevante en `docs/tracks/`.
-6. Este topic.
-7. `scripts/agent-context-audit.ts` y `scripts/context-index.ts` si hay que corregir validacion o generacion.
+6. `docs/topics/local-codex-skills.md` si el drift involucra skills o slash commands.
+7. Este topic.
+8. `scripts/agent-context-audit.ts` y `scripts/context-index.ts` si hay que corregir validacion o generacion.
 
 No abrir docs largos, specs completas, rationale, archivos archivados ni referencias profundas salvo que una inconsistencia concreta lo requiera.
 
@@ -44,6 +47,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Ruta caliente: `AGENTS.md`, indice generado, `WORKING_MEMORY.md`, `TOPICS.md` y tracks activos siguen chicos y no son transcript.
 - Routing: topics relevantes existen, tienen triggers utiles y estan linkeados desde `docs/TOPICS.md`.
 - Continuidad: track activo tiene estado, next step y refs que existen.
+- Skills: `docs/skills/` existe, `.agents/skills` apunta ahi por junction y no hay duplicacion real.
 - Decisiones: lo durable esta en `docs/DECISIONS.md` o topic estable, no enterrado en tracks.
 - Specs: specs activas estan indexadas, no tienen prefijos duplicados y tienen `spec.md`.
 - Drift: docs raiz no contradicen la ruta inicial, los comandos reales ni el estado actual del repo.
@@ -84,10 +88,11 @@ bun run context:audit
 ## Actualizar Desde Upstream
 
 1. Leer primero el sistema local.
-2. Comparar solo la capa agentica: `AGENTS.md`, docs de contexto, topics, tracks, scripts, `.specify/` y skills si aplica.
+2. Comparar solo la capa agentica: `AGENTS.md`, docs de contexto, topics, tracks, scripts, `.specify/` y `docs/skills/` si aplica.
 3. Preservar convenciones locales como `docs/tracks/`, reglas de producto, Windows-first, Tauri, clipboard privacy y release.
 4. No copiar contexto generico del upstream que no aplique a Copicu.
 5. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
+6. Preservar `docs/skills/` como fuente canonica y regenerar `.agents/skills` con `scripts/ensure-skills-link.ps1`.
 
 ## Criterio De Exito
 

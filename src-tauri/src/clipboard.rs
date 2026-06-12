@@ -206,6 +206,7 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             CaptureOutcome::CapturedText => {
                 match self.storage.insert_text(&normalized, &hash) {
                     Ok(item_id) => {
+                        self.apply_builtin_enrichment(item_id, &normalized);
                         self.emit_history_changed(item_id, "text");
                         self.run_clipboard_change_actions(item_id);
                     }
@@ -290,6 +291,37 @@ impl<R: Runtime> TextClipboardHandler<R> {
         );
         #[cfg(test)]
         let _ = item_id;
+    }
+
+    fn apply_builtin_enrichment(&self, item_id: i64, text: &str) {
+        let settings = match self.storage.get_settings() {
+            Ok(settings) => settings.enrichment,
+            Err(error) => {
+                eprintln!("clipboard builtin enrichment settings load failed: {error}");
+                return;
+            }
+        };
+        if !settings.enabled
+            || settings.apply_mode != crate::enrichment::EnrichmentApplyMode::AutoApply
+        {
+            return;
+        }
+
+        let tags = crate::enrichment::detect_text_builtin_tags(text, &settings);
+        if tags.is_empty() {
+            return;
+        }
+
+        match self.storage.apply_builtin_enrichment(item_id, &tags) {
+            Ok(applied) if !applied.is_empty() => {
+                dev_log(format_args!(
+                    "clipboard builtin enrichment applied: item_id={item_id} tags={}",
+                    applied.join(",")
+                ));
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("clipboard builtin enrichment failed: {error}"),
+        }
     }
 
     fn emit_history_changed(&self, item_id: i64, content_kind: &'static str) {

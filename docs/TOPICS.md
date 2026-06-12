@@ -43,15 +43,16 @@ primary_refs:
 | Markdown output, salida Markdown, informes, summaries, reportes generados, export Markdown | [Markdown Output Surface](topics/markdown-output-surface.md) | Explica la ventana `ai-output`, como se usa desde scripts/AI, acciones disponibles y diferencia con el historial. |
 | UI auxiliar propia, ui-host, notificaciones custom, prompts de scripts, confirm, input | [UI Host Custom Surface](tracks/009-ui-host-custom-surface.md) | Plan para ventana auxiliar controlada por Copicu con placement, formato, elementos y request/response IDs. |
 | Guia de usuario, explicacion publica del proyecto, scripts para usuarios, ejemplos de automatizacion | [User Guide](user/README.md), [Scripts Guide](user/scripts.md) | Documentacion de usuario final sobre que es Copicu y como usar scripts. |
-| Sistema agentico, OS Lite, documentacion liviana, context index, tracks, cerrar sesion, continuar sesion, goal, gol, continuar con goal, continuar sesion con goal, handoff | [Sistema De Conocimiento Agentico](topics/docs-knowledge-system.md) | Explica la capa agentica local, como mantenerla liviana y como cerrar/continuar sesiones sin perder valor. |
+| Sistema agentico, OS Lite, documentacion liviana, context index, tracks, cerrar sesion, continuar sesion, gol, continuar con gol, continuar sesion con gol, siguiente, handoff | [Sistema De Conocimiento Agentico](topics/docs-knowledge-system.md) | Explica la capa agentica local, como mantenerla liviana y como cerrar/continuar sesiones sin perder valor. |
 | Realinear os, auditar sistema agentico, reparar sistema agentico, drift de contexto | [Operaciones Del Sistema Agentico](topics/agentic-os-operations.md) | Playbook para auditar y reparar la capa agentica sin tocar producto. |
+| Skills locales, slash commands, `.agents/skills`, `docs/skills`, metadata, costo de discovery | [Skills Locales De Codex](topics/local-codex-skills.md) | Referencia bajo demanda para decidir que convertir en skill y como mantener discovery barato. |
 | AI, OpenAI/OpenRouter, busqueda en lenguaje natural, filtros inteligentes, comandos AI | [AI Search And Actions](topics/ai-search-and-actions.md) | Define provider inicial, query planner, relacion con actions y privacy gates. |
 | Librerias, dependencias, investigacion tecnica, Context7, web research | [Proceso de research tecnico](topics/technical-research-process.md) | Define como investigar antes de elegir librerias. |
 | Clipboard, portapapeles, captura, formatos de clipboard | [Clipboard](topics/clipboard.md) | Research, patterns y decisiones sobre clipboard. |
 | Picker, buscador, filtro, preview, regex, fuzzy, navegacion por teclado/mouse, tabs de UI | [Picker Interaction](topics/picker-interaction.md) | Modelo de interaccion del picker y research de otros clipboard managers. |
 | UI, visual polish, responsive, overflow, impeccable | [UI Design And Impeccable](topics/ui-design-and-impeccable.md) | Workflow visual y regla de uso de `pbakaus/impeccable` cuando valga la pena. |
 | Arquitectura UI, superficies, ventanas Tauri, que usar al tocar UI | [UI Surface Architecture](topics/ui-surface-architecture.md) | Contrato operativo para surfaces, Mantine/custom UI, ventanas y checks antes de tocar UI. |
-| Ventanas custom, frameless, undecorated, transparent, titlebar custom, drag regions, window chrome | [Custom Window System](topics/custom-window-system.md) | Plan y limites para compartir chrome custom entre ventanas sin repetir problemas conocidos de WebView2/Tauri. |
+| Ventanas standalone, custom, frameless, undecorated, transparent, titlebar custom, drag regions, window chrome, capabilities por ventana, ui-host | [Custom Window System](topics/custom-window-system.md) | Registro canonico de fuentes, patterns y limites para ventanas Tauri en Copicu, incluyendo labels, capabilities, chrome custom y problemas conocidos de WebView2/Tauri. |
 | Persistencia de ventanas, resize, posicion/tamano, multiples monitores, monitor desconectado | [Window State And Monitor Policy](topics/window-state-and-monitor-policy.md) | Politica compartida para resize, guardar/restaurar bounds y fallback multi-monitor. |
 | Replanteo UI, feo, temas, ventanas dentro de ventanas, superficie visual, componentes | [UI Rethink](topics/ui-rethink.md) | Topic durable para redisenar superficies, temas y componentes de Copicu. |
 | Mantine, MUI, libreria UI, componentes, design system, themes | [Mantine UI System](topics/mantine-ui-system.md), [Mantine Component Migration](tracks/011-mantine-component-migration.md) | Decision, reglas y checklist de migracion para adoptar Mantine como base de componentes/temas. |
@@ -81,6 +82,7 @@ primary_refs:
 | `WORKING_MEMORY.md` | Estado vivo y siguiente paso probable. |
 | `tracks/` | Trabajos vivos retomables. |
 | `.generated/context-index.md` | Cache generado de topics, tracks, specs y aliases. |
+| `skills/` | Skills locales portables; fuente canonica para slash commands. |
 
 ## Regla Sobre Archivos Preexistentes
 

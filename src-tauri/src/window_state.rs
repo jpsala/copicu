@@ -12,6 +12,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{Monitor, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, Window};
 
+use crate::surface_registry;
+
 const STATE_FILE_NAME: &str = "window-state.json";
 const STATE_SCHEMA_VERSION: u32 = 1;
 const WRITE_DEBOUNCE: Duration = Duration::from_millis(250);
@@ -75,69 +77,6 @@ struct MonitorSnapshot {
     work_height: u32,
 }
 
-pub const WINDOW_BEHAVIORS: &[WindowBehavior] = &[
-    WindowBehavior {
-        label: "main",
-        resizable: true,
-        persist_bounds: true,
-        persist_by_monitor: true,
-        default_width: 820,
-        default_height: 620,
-        min_width: 360,
-        min_height: 320,
-    },
-    WindowBehavior {
-        label: "settings",
-        resizable: true,
-        persist_bounds: true,
-        persist_by_monitor: true,
-        default_width: 820,
-        default_height: 620,
-        min_width: 680,
-        min_height: 460,
-    },
-    WindowBehavior {
-        label: "ai-output",
-        resizable: true,
-        persist_bounds: true,
-        persist_by_monitor: true,
-        default_width: 940,
-        default_height: 680,
-        min_width: 680,
-        min_height: 460,
-    },
-    WindowBehavior {
-        label: "ui-host",
-        resizable: false,
-        persist_bounds: false,
-        persist_by_monitor: false,
-        default_width: 420,
-        default_height: 240,
-        min_width: 320,
-        min_height: 170,
-    },
-    WindowBehavior {
-        label: "notifications",
-        resizable: false,
-        persist_bounds: false,
-        persist_by_monitor: false,
-        default_width: 340,
-        default_height: 430,
-        min_width: 340,
-        min_height: 430,
-    },
-    WindowBehavior {
-        label: "whichkey",
-        resizable: false,
-        persist_bounds: false,
-        persist_by_monitor: false,
-        default_width: 440,
-        default_height: 260,
-        min_width: 320,
-        min_height: 160,
-    },
-];
-
 impl WindowStateRegistry {
     pub fn open(app_data_dir: PathBuf) -> Self {
         let path = app_data_dir.join(STATE_FILE_NAME);
@@ -157,15 +96,20 @@ impl WindowStateRegistry {
         }
     }
 
-    pub fn behavior(label: &str) -> Option<&'static WindowBehavior> {
-        WINDOW_BEHAVIORS
-            .iter()
-            .find(|behavior| behavior.label == label)
+    pub fn behavior(label: &str) -> Option<WindowBehavior> {
+        surface_registry::get(label).map(|surface| WindowBehavior {
+            label: surface.label,
+            resizable: surface.resizable,
+            persist_bounds: surface.persist_bounds,
+            persist_by_monitor: surface.persist_by_monitor,
+            default_width: surface.width,
+            default_height: surface.height,
+            min_width: surface.min_width,
+            min_height: surface.min_height,
+        })
     }
 
-    pub fn behavior_for_window<R: Runtime>(
-        window: &WebviewWindow<R>,
-    ) -> Option<&'static WindowBehavior> {
+    pub fn behavior_for_window<R: Runtime>(window: &WebviewWindow<R>) -> Option<WindowBehavior> {
         Self::behavior(window.label())
     }
 
@@ -235,7 +179,7 @@ impl WindowStateRegistry {
                     (
                         saved
                             .last_bounds
-                            .unwrap_or_else(|| default_bounds(behavior, &target_monitor)),
+                            .unwrap_or_else(|| default_bounds(&behavior, &target_monitor)),
                         target_monitor.clone(),
                     )
                 }
@@ -243,15 +187,15 @@ impl WindowStateRegistry {
             Some(saved) => (
                 saved
                     .last_bounds
-                    .unwrap_or_else(|| default_bounds(behavior, &target_monitor)),
+                    .unwrap_or_else(|| default_bounds(&behavior, &target_monitor)),
                 target_monitor.clone(),
             ),
             None => (
-                default_bounds(behavior, &target_monitor),
+                default_bounds(&behavior, &target_monitor),
                 target_monitor.clone(),
             ),
         };
-        let normalized = normalize_bounds(bounds, behavior, &restore_monitor);
+        let normalized = normalize_bounds(bounds, &behavior, &restore_monitor);
         window
             .set_size(PhysicalSize::new(normalized.width, normalized.height))
             .map_err(|error| format!("window {} restore size failed: {error}", behavior.label))?;

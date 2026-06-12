@@ -14,7 +14,7 @@ const mockItems = [
   {
     id: "mock-1",
     kind: "text",
-    text: "https://example.test COPICU_SYNTH_ACTION_SCRIPT_1",
+    text: "https://example.test/path?source=synthetic",
     title: "Synthetic URL clip",
     notes: "",
     tags: ["#synthetic"],
@@ -41,6 +41,39 @@ globalThis.defineAction = (definition) => {
 };
 
 globalThis.copicu = {
+  activeItem: {
+    async id() {
+      return mockItems[0]?.id ?? null;
+    },
+    async get({ content = false } = {}) {
+      return content ? mockItems[0] ?? null : mockItems[0] ? withoutContent(mockItems[0]) : null;
+    },
+    async updateMetadata(patch) {
+      if (!mockItems[0]) {
+        throw new Error("active item is not available");
+      }
+      Object.assign(mockItems[0], patch);
+    },
+    async copy() {
+      if (!mockItems[0]) {
+        throw new Error("active item is not available");
+      }
+      clipboardText = mockItems[0].text ?? "";
+      console.log(`[activeItem.copy] ${mockItems[0].id}`);
+    },
+    async paste(options = {}) {
+      if (!mockItems[0]) {
+        throw new Error("active item is not available");
+      }
+      console.log(`[activeItem.paste] ${mockItems[0].id} ${JSON.stringify(options)}`);
+    },
+    async promote() {
+      if (!mockItems[0]) {
+        throw new Error("active item is not available");
+      }
+      await copicu.history.promote(mockItems[0].id);
+    },
+  },
   selection: {
     async ids() {
       return selectedIds;
@@ -79,6 +112,69 @@ globalThis.copicu = {
       if (index >= 0) {
         mockItems.splice(index, 1);
       }
+    },
+    async promote(id) {
+      await this.move(id, { position: "top" });
+    },
+    async move(id, { position = "top" } = {}) {
+      if (position !== "top") {
+        throw new Error(`unsupported history move position: ${position}`);
+      }
+      const index = mockItems.findIndex((candidate) => candidate.id === id);
+      if (index >= 0) {
+        const [item] = mockItems.splice(index, 1);
+        mockItems.unshift(item);
+      }
+      console.log(`[history.move] ${id} ${position}`);
+    },
+  },
+  metadata: {
+    async listTags() {
+      return [
+        {
+          id: 1,
+          slug: "synthetic",
+          label: "Synthetic",
+          color: null,
+          pinned: true,
+          sortOrder: null,
+          itemCount: 1,
+          autoApplyEnabled: false,
+        },
+      ];
+    },
+    async editActive() {
+      if (!mockItems[0]) {
+        throw new Error("active item is not available");
+      }
+      console.log(`[metadata.editActive] ${mockItems[0].id}`);
+    },
+  },
+  enrichment: {
+    async getResult(id) {
+      const item = mockItems.find((candidate) => candidate.id === id);
+      if (!item) {
+        throw new Error(`mock item not found: ${id}`);
+      }
+      return mockEnrichmentResult(item, false);
+    },
+    async runForItem(id, options = {}) {
+      const item = mockItems.find((candidate) => candidate.id === id);
+      if (!item) {
+        throw new Error(`mock item not found: ${id}`);
+      }
+      const apply = options.apply !== false;
+      const result = mockEnrichmentResult(item, apply);
+      if (apply) {
+        item.tags = Array.from(
+          new Set([
+            ...(item.tags ?? []),
+            ...result.tags.filter((tag) => tag.applied).map((tag) => `#${tag.tag}`),
+          ]),
+        );
+      }
+      console.log(`[enrichment.runForItem] ${id} apply=${apply}`);
+      return result;
     },
   },
   clipboard: {
@@ -155,6 +251,12 @@ globalThis.copicu = {
       console.log(`[input:auto] ${options.title}: ${value}`);
       return value;
     },
+    async markdownOutput(options) {
+      const output = typeof options === "string" ? { markdown: options } : options;
+      console.log(
+        `[markdownOutput] ${output.title ?? "Copicu output"} (${String(output.markdown ?? "").length} chars)`,
+      );
+    },
   },
   log: {
     debug: writeLog("debug"),
@@ -195,6 +297,7 @@ try {
   console.log(`[run] ${action.id} from ${actionFile}`);
   await action.run({
     trigger: "devRun",
+    activeItemId: mockItems[0]?.id,
     currentItemId: mockItems[0]?.id,
     selectedItemIds: selectedIds,
     view: {
@@ -275,4 +378,25 @@ function redactString(value) {
   return value
     .replace(/\bhttps?:\/\/\S+/gi, "[url]")
     .replace(/[A-Za-z0-9_=-]{32,}/g, "[long-token]");
+}
+
+function mockEnrichmentResult(item, apply) {
+  const tags = [];
+  if (typeof item.text === "string" && /^https?:\/\//i.test(item.text.trim())) {
+    tags.push({
+      detector: "url",
+      detectorLabel: "URL",
+      tag: "url",
+      confidence: 1,
+      applied: apply,
+    });
+  }
+  return {
+    itemId: Number.parseInt(String(item.id).replace(/\D+/g, ""), 10) || 1,
+    contentKind: item.kind,
+    enabled: true,
+    applyMode: "autoApply",
+    eligible: item.kind === "text",
+    tags,
+  };
 }

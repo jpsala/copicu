@@ -14,18 +14,20 @@ use tauri::{
     WebviewWindowBuilder,
 };
 
-pub const UI_HOST_WINDOW_LABEL: &str = "ui-host";
+use crate::surface_registry;
+
+pub const UI_HOST_WINDOW_LABEL: &str = surface_registry::UI_HOST;
 const UI_HOST_REQUEST_EVENT: &str = "copicu://ui-host/request";
-const UI_HOST_WIDTH: u32 = 380;
-const UI_HOST_ALERT_HEIGHT: u32 = 170;
-const UI_HOST_CONFIRM_HEIGHT: u32 = 190;
-const UI_HOST_INPUT_HEIGHT: u32 = 230;
+const UI_HOST_ALERT_HEIGHT: u32 = 154;
+const UI_HOST_CONFIRM_HEIGHT: u32 = 174;
+const UI_HOST_INPUT_HEIGHT: u32 = 212;
 const UI_HOST_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Default)]
 pub struct UiHostState {
     next_id: Arc<AtomicU64>,
     pending: Arc<Mutex<HashMap<String, mpsc::Sender<serde_json::Value>>>>,
+    active_request: Arc<Mutex<Option<serde_json::Value>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,10 +108,38 @@ impl UiHostState {
         Ok(())
     }
 
+    fn set_active_request(&self, request: &UiHostRequest) -> Result<(), String> {
+        let value = serde_json::to_value(request)
+            .map_err(|error| format!("failed to encode ui-host request: {error}"))?;
+        let mut active_request = self
+            .active_request
+            .lock()
+            .map_err(|_| "ui-host active request lock poisoned".to_string())?;
+        *active_request = Some(value);
+        Ok(())
+    }
+
     fn remove_pending(&self, request_id: &str) {
         if let Ok(mut pending) = self.pending.lock() {
             pending.remove(request_id);
         }
+        if let Ok(mut active_request) = self.active_request.lock() {
+            if active_request
+                .as_ref()
+                .and_then(|value| value.get("id"))
+                .and_then(serde_json::Value::as_str)
+                == Some(request_id)
+            {
+                *active_request = None;
+            }
+        }
+    }
+
+    pub fn active_request(&self) -> Result<Option<serde_json::Value>, String> {
+        self.active_request
+            .lock()
+            .map_err(|_| "ui-host active request lock poisoned".to_string())
+            .map(|value| value.clone())
     }
 
     pub fn resolve(&self, request: UiHostResolveRequest) -> Result<(), String> {
@@ -119,6 +149,16 @@ impl UiHostState {
             .map_err(|_| "ui-host pending requests lock poisoned".to_string())?
             .remove(&request.id)
             .ok_or_else(|| format!("unknown ui-host request: {}", request.id))?;
+        if let Ok(mut active_request) = self.active_request.lock() {
+            if active_request
+                .as_ref()
+                .and_then(|value| value.get("id"))
+                .and_then(serde_json::Value::as_str)
+                == Some(request.id.as_str())
+            {
+                *active_request = None;
+            }
+        }
         sender
             .send(request.value)
             .map_err(|_| format!("ui-host request receiver closed: {}", request.id))
@@ -194,6 +234,7 @@ fn dispatch_request<R: Runtime>(
     let request_id = request.id.clone();
     let (sender, receiver) = mpsc::channel();
     state.insert_pending(request_id.clone(), sender)?;
+    state.set_active_request(&request)?;
 
     let (dispatch_sender, dispatch_receiver) = mpsc::channel();
     let app_for_main_thread = app.clone();
@@ -245,29 +286,32 @@ fn dispatch_request<R: Runtime>(
 }
 
 fn show_ui_host_window<R: Runtime>(app: &AppHandle<R>, height: u32) -> Result<(), String> {
+    let surface = surface_registry::require(UI_HOST_WINDOW_LABEL)?;
     let window = match app.get_webview_window(UI_HOST_WINDOW_LABEL) {
         Some(window) => window,
-        None => WebviewWindowBuilder::new(
-            app,
-            UI_HOST_WINDOW_LABEL,
-            WebviewUrl::App("index.html".into()),
-        )
-        .title("Copicu")
-        .inner_size(UI_HOST_WIDTH as f64, height as f64)
-        .min_inner_size(320.0, 170.0)
-        .max_inner_size(460.0, 280.0)
-        .decorations(false)
-        .transparent(true)
-        .resizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .focused(true)
-        .visible(false)
-        .build()
-        .map_err(|error| format!("ui-host window build failed: {error}"))?,
+        None => {
+            WebviewWindowBuilder::new(app, surface.label, WebviewUrl::App(surface.route.into()))
+                .title(surface.title)
+                .inner_size(surface.width as f64, height as f64)
+                .min_inner_size(surface.min_width as f64, surface.min_height as f64)
+                .max_inner_size(
+                    surface.max_width.unwrap_or(surface.width) as f64,
+                    surface.max_height.unwrap_or(height) as f64,
+                )
+                .decorations(surface.decorations)
+                .transparent(surface.transparent)
+                .resizable(surface.resizable)
+                .shadow(surface.shadow)
+                .skip_taskbar(surface.skip_taskbar)
+                .always_on_top(surface.always_on_top)
+                .focused(true)
+                .visible(false)
+                .build()
+                .map_err(|error| format!("ui-host window build failed: {error}"))?
+        }
     };
     window
-        .set_size(PhysicalSize::new(UI_HOST_WIDTH, height))
+        .set_size(PhysicalSize::new(surface.width, height))
         .map_err(|error| format!("ui-host size failed: {error}"))?;
     if let Some(monitor) = window
         .current_monitor()
@@ -277,7 +321,7 @@ fn show_ui_host_window<R: Runtime>(app: &AppHandle<R>, height: u32) -> Result<()
     {
         let position = monitor.position();
         let size = monitor.size();
-        let x = position.x + ((size.width.saturating_sub(UI_HOST_WIDTH)) / 2) as i32;
+        let x = position.x + ((size.width.saturating_sub(surface.width)) / 2) as i32;
         let y = position.y + ((size.height.saturating_sub(height)) / 2) as i32;
         window
             .set_position(PhysicalPosition::new(x, y))

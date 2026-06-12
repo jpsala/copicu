@@ -31,9 +31,9 @@ Al cerrar o continuar una sesion, usar `tracks` como fuente principal de continu
 
 `continuar sesion` hace el mismo cierre de valor y despues abre una sesion nueva con handoff compacto si la herramienta esta disponible. Si no lo esta, devolver un prompt pegable. El handoff debe apuntar a docs actualizados; no debe reemplazarlos ni repetirlos.
 
-`continuar con goal` hace checkpoint de valor y sigue en la misma sesion bajo Goal.
+`continuar sesion con gol` hace el mismo cierre de valor, abre una sesion nueva y pide arrancar con `gol` para el proximo lote acordado.
 
-`continuar sesion con goal` hace checkpoint de valor, abre una sesion nueva y pide arrancar el proximo lote bajo Goal en esa sesion limpia.
+`continuar con gol` y `siguiente` son aliases de `continuar sesion con gol`; no hay variante para seguir en la misma sesion.
 
 ## Inventario
 

@@ -97,6 +97,30 @@ if (specs.length) {
 }
 lines.push("");
 
+lines.push("## Skills");
+lines.push("");
+const skillDirs = exists("docs/skills")
+  ? readdirSync(join(root, "docs", "skills"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+  : [];
+if (skillDirs.length) {
+  const operationalSkills = [
+    "sigamos",
+    "cerrar-sesion",
+    "continuar-sesion",
+    "continuar-sesion-con-gol",
+    "realinear-os",
+  ].filter((skill) => skillDirs.includes(skill));
+  lines.push("- Canon: [docs/skills/](../skills/)");
+  if (operationalSkills.length) lines.push(`- Operational commands: ${operationalSkills.join(", ")}`);
+  lines.push("- Guidance: [local-codex-skills](../topics/local-codex-skills.md)");
+} else {
+  lines.push("- Missing docs/skills/");
+}
+lines.push("");
+
 lines.push("## Aliases");
 lines.push("");
 if (exists("docs/GLOSSARY.md")) {

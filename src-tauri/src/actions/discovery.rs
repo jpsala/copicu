@@ -472,6 +472,7 @@ fn parse_selection_requirement(value: &str) -> Option<SelectionRequirement> {
     match value {
         "none" => Some(SelectionRequirement::None),
         "optional" => Some(SelectionRequirement::Optional),
+        "active" => Some(SelectionRequirement::Active),
         "one" => Some(SelectionRequirement::One),
         "oneOrMore" => Some(SelectionRequirement::OneOrMore),
         "many" => Some(SelectionRequirement::Many),

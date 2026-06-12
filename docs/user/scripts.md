@@ -194,7 +194,7 @@ input: {
 },
 ```
 
-When a global shortcut fires, `ctx.selectedItemIds` is `[]`, `ctx.currentItemId` is `null`, and `ctx.view` is absent. Use `history.search()`, `clipboard.writeText()`, `picker.open()`, or other explicit host APIs if the script needs data or UI. `Ctrl+Shift+,` is reserved for opening Copicu, and duplicate script global shortcuts are reported as diagnostics instead of being registered. Script edits are picked up by a lightweight background refresh loop; opening Settings/listing actions also forces a refresh.
+When a global shortcut fires, `ctx.selectedItemIds` is `[]` and `ctx.view` is absent. If the action declares `input.selection: "active"`, Copicu resolves `ctx.activeItemId`/`ctx.currentItemId` from the first recent history item; otherwise they are `null`. Use `history.search()`, `clipboard.writeText()`, `picker.open()`, or other explicit host APIs if the script needs data or UI. `Ctrl+Shift+,` is reserved for opening Copicu, and duplicate script global shortcuts are reported as diagnostics instead of being registered. Script edits are picked up by a lightweight background refresh loop; opening Settings/listing actions also forces a refresh.
 
 Clipboard-change scripts run after Copicu accepts and persists a clipboard capture:
 
@@ -207,7 +207,7 @@ input: {
 },
 ```
 
-When `clipboardChange` fires, `ctx.currentItemId` is the captured history item, `ctx.selectedItemIds` is `[]`, and `ctx.view` is absent. Use `history.get(ctx.currentItemId, { content: true })` when the script needs content. Clipboard writes made through Copicu host APIs use self-write suppression, so they do not recursively create new history items or re-trigger clipboard-change scripts for that same write.
+When `clipboardChange` fires, `ctx.activeItemId`/`ctx.currentItemId` are the captured history item, `ctx.selectedItemIds` is `[]`, and `ctx.view` is absent. Use `history.get(ctx.activeItemId ?? ctx.currentItemId, { content: true })` when the script needs content. Clipboard writes made through Copicu host APIs use self-write suppression, so they do not recursively create new history items or re-trigger clipboard-change scripts for that same write.
 
 ### `input`
 
@@ -226,7 +226,7 @@ Shape:
 ```ts
 type ActionInput = {
   source: "pickerSelection" | "clipboard" | "historySearch" | "none";
-  selection: "none" | "optional" | "one" | "oneOrMore" | "many";
+  selection: "none" | "optional" | "active" | "one" | "oneOrMore" | "many";
   kinds?: Array<"text" | "html" | "image" | "fileList" | "unknown">;
   mime?: string[];
   query?: string;
@@ -237,6 +237,7 @@ Selection requirements:
 
 - `none`: action requires no selected items.
 - `optional`: action works with or without selection.
+- `active`: action requires the active/current picker item, equivalent to CopyQ's current item.
 - `one`: action requires exactly one selected item.
 - `oneOrMore`: action requires at least one selected item.
 - `many`: action requires at least two selected items.
@@ -273,6 +274,9 @@ capabilities: [
   "history:read-content",
   "history:search",
   "history:write-metadata",
+  "history:promote",
+  "metadata:read-tags",
+  "metadata:edit-active",
   "history:delete",
   "clipboard:read",
   "clipboard:write",
@@ -359,6 +363,7 @@ The `run(ctx)` function receives:
 type ActionContext = {
   trigger: Trigger;
   shortcut?: string;
+  activeItemId?: string;
   currentItemId?: string;
   selectedItemIds: string[];
   view?: {
@@ -369,10 +374,10 @@ type ActionContext = {
 };
 ```
 
-Use stable IDs:
+Use stable IDs. Prefer `activeItemId` for CopyQ-style current/active item scripts; `currentItemId` is kept as a compatibility alias:
 
 ```ts
-const itemId = ctx.currentItemId ?? ctx.selectedItemIds[0];
+const itemId = ctx.activeItemId ?? ctx.currentItemId ?? ctx.selectedItemIds[0];
 ```
 
 Avoid relying on visible row indexes for durable logic. `view.currentIndex` is only a UI convenience.
@@ -384,11 +389,20 @@ Scripts call the host through the global `copicu` object.
 ### Selection
 
 ```ts
+await copicu.activeItem.id();
+await copicu.activeItem.get({ content: true });
+await copicu.activeItem.updateMetadata({ notes: "Reviewed" });
+await copicu.activeItem.copy();
+await copicu.activeItem.paste();
+await copicu.activeItem.promote();
+
 await copicu.selection.ids();
 await copicu.selection.current({ content: true });
 await copicu.selection.items({ content: true });
 await copicu.selection.set(["123", "124"]);
 ```
+
+`activeItem` is the CopyQ-style current item API. `selection.current()` remains as a compatibility alias.
 
 Use `{ content: true }` only when the script needs text content. This helps keep requests smaller and privacy boundaries clearer.
 
@@ -412,9 +426,13 @@ await copicu.history.update("123", {
 });
 
 await copicu.history.remove("123");
+await copicu.history.promote("123");
+await copicu.history.move("123", { position: "top" });
 ```
 
 `history.search()` reuses the picker query syntax. It does not change the visible picker query.
+
+`history.promote(id)` is shorthand for `history.move(id, { position: "top" })`.
 
 `history.update()` can update:
 
@@ -620,7 +638,7 @@ export default defineAction({
     name: "tag-selected-todo.jsonl",
   },
   async run(ctx) {
-    const itemId = ctx.currentItemId ?? ctx.selectedItemIds[0];
+    const itemId = ctx.activeItemId ?? ctx.currentItemId ?? ctx.selectedItemIds[0];
     const item = await copicu.history.get(itemId, { content: true });
     const tags = uniqueTags(item.tags ?? [], "#todo");
 
@@ -722,7 +740,7 @@ export default defineAction({
   },
   capabilities: ["picker:activate", "ui:toast", "log:write"],
   async run(ctx) {
-    const itemId = ctx.currentItemId ?? ctx.selectedItemIds[0];
+    const itemId = ctx.activeItemId ?? ctx.currentItemId ?? ctx.selectedItemIds[0];
 
     await copicu.picker.activate(itemId, {
       copy: true,

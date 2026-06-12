@@ -50,6 +50,10 @@ function openMarkdownOutput(payload: MarkdownOutputPayload) {
   return invoke("open_markdown_output", { payload });
 }
 
+function pendingAiOutput() {
+  return invoke<MarkdownOutputPayload | null>("pending_ai_output");
+}
+
 function copyMarkdownOutput(markdown: string) {
   return invoke("copy_markdown_output", { markdown });
 }
@@ -142,6 +146,18 @@ export function AiOutputWindowApp() {
       setError(null);
     }).then((value) => {
       unlisten = value;
+      void pendingAiOutput()
+        .then((payload) => {
+          if (!active || !payload) {
+            return;
+          }
+          setOutput(payload);
+          setStatus(null);
+          setError(null);
+        })
+        .catch((pendingError) => {
+          console.warn("ai-output pending payload failed", pendingError);
+        });
     });
 
     return () => {

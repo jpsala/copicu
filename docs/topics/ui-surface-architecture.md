@@ -41,7 +41,7 @@ Antes de cambiar UI, abrir:
 
 Si el cambio toca picker o seleccion, abrir tambien `docs/topics/picker-interaction.md`.
 
-Si el cambio toca `decorations`, `transparent`, frameless/custom titlebar, drag regions o window chrome, abrir tambien `docs/topics/custom-window-system.md`.
+Si el cambio toca ventanas standalone, labels/routing/capabilities por ventana, `decorations`, `transparent`, frameless/custom titlebar, drag regions o window chrome, abrir tambien `docs/topics/custom-window-system.md`.
 
 Si el cambio toca scripts/prompts/toasts, abrir tambien `docs/tracks/009-ui-host-custom-surface.md`.
 
@@ -52,8 +52,9 @@ Si el cambio toca scripts/prompts/toasts, abrir tambien `docs/tracks/009-ui-host
 | Picker rapido | Buscar, preview, copiar/pegar | Mantener custom, compacto, keyboard-first y virtualizado. No convertirlo en app shell. |
 | Settings | Configuracion durable | Ventana Tauri standalone label `settings`, Mantine-first. No overlay dentro del picker. |
 | Command mode | Ejecutar acciones rapidas | Puede vivir como modo del picker, pero no como modal pesado ni ventana simulada dentro de otra. |
-| Item editor | Editar contenido/metadata | Pendiente de decision: inline limitado o inspector/window standalone. No agrandar el picker por defecto. |
-| UI host | Toast, confirm, input de scripts | Ventana auxiliar `ui-host` con request/response IDs. |
+| Item editor / metadata | Editar contenido/metadata | `metadata` ya existe como ventana standalone para edicion single-item en Tauri. Inline queda como fallback web/test y para edicion chica donde aplique. No agrandar el picker por defecto. |
+| Scripts workbench | Editar/revisar scripts y diagnostics | Futuro `scripts` standalone via surface registry. No alojar en `ui-host`. |
+| UI host | Toast, confirm, input chico de scripts | Ventana auxiliar `ui-host` con request/response IDs. No usar como superficie rica ni como host generico para ventanas de producto; `Assign metadata` usa la surface `metadata` via `copicu.metadata.editActive()`. |
 | Notifications | Toasts no bloqueantes | Ventana auxiliar liviana; no usar para prompts ricos. |
 | History manager futuro | Revision larga, colecciones, bulk | Ventana task-oriented separada del quick picker. |
 
@@ -113,9 +114,13 @@ Reglas:
 
 - Cada superficie standalone debe tener label estable.
 - Crear/mostrar/cerrar ventanas desde comandos Rust cuando la accion sea propia de la app.
-- Agregar el label a `src-tauri/capabilities/default.json` si la ventana necesita permisos frontend.
-- En frontend, rutear por `getCurrentWindow().label`; en dev se permite `?window=<label>` para visual checks.
+- Usar el surface registry definido en `docs/topics/custom-window-system.md` para declarar `label`, `route`, `kind`, `capability`, lifecycle, bounds, chrome y comandos permitidos.
+- No ampliar un unico `src-tauri/capabilities/default.json` para todas las ventanas; crear capabilities por superficie/categoria.
+- En frontend, rutear por `getCurrentWindow().label`; en dev/visual checks se permite `?window=<label>`.
 - No usar overlays internos para representar ventanas durables.
+- Un solo `index.html` + routing por ventana es el default React/Vite. Multiples HTML entrypoints se justifican solo si una superficie crece mucho.
+- Comandos Rust sensibles deben validar `window.label()` ademas de capabilities.
+- Ventanas que reciben payload al abrir deben tener pending state o handshake de readiness; no depender de que el listener React ya exista.
 
 Labels actuales:
 
@@ -123,8 +128,16 @@ Labels actuales:
 - `settings`: Settings standalone.
 - `ui-host`: prompts de scripts.
 - `notifications`: toast stack auxiliar.
+- `ai-output`: ventana document para Markdown/output.
+- `metadata`: editor standalone single-item de metadata/contenido asociado.
+- `whichkey`: utility temporal para atajos compuestos.
 
-Para ventanas custom, seguir `docs/topics/custom-window-system.md`: custom chrome compartido por composicion, `main` y `settings` ya usan superficies solidas frameless, y se evita `transparent: true` como default de dogfood.
+Labels futuros preferidos:
+
+- `scripts`: workbench de scripts, diagnostics y acciones.
+- `history-manager`: revision larga/bulk.
+
+Para ventanas standalone/custom, seguir `docs/topics/custom-window-system.md`: label estable, capability por ventana, custom chrome compartido por composicion, `main` y `settings` ya usan superficies solidas frameless, y se evita `transparent: true` como default de dogfood en Windows.
 Para resize y persistencia de posicion/tamano, seguir `docs/topics/window-state-and-monitor-policy.md`: la politica nativa vive en `src-tauri/src/window_state.rs`, y los handles visuales de resize viven en `CustomWindowFrame`.
 
 Contrato vigente de chrome custom:

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 
 const restartMode = process.env.COPICU_VITE_RESTART_MODE === "1";
 const probeMode = process.env.COPICU_VITE_PROBE_MODE === "1";
+const tauriDevMode = process.env.COPICU_TAURI_DEV === "1" || restartMode;
 
 function devRequestTimingPlugin() {
   return {
@@ -10,7 +11,7 @@ function devRequestTimingPlugin() {
     transformIndexHtml: {
       order: "post",
       handler(html) {
-        if (!restartMode) {
+        if (!tauriDevMode) {
           return html;
         }
         return html.replace(
@@ -23,13 +24,13 @@ function devRequestTimingPlugin() {
       server.middlewares.use((req, res, next) => {
         const startedAt = performance.now();
         const url = req.url ?? "";
-        if (restartMode) {
+        if (tauriDevMode) {
           delete req.headers["if-none-match"];
           delete req.headers["if-modified-since"];
           res.setHeader("Cache-Control", "no-store, max-age=0");
         }
         if (
-          restartMode ||
+          tauriDevMode ||
           url === "/" ||
           url.includes("/src/boot") ||
           url.includes("/src/main") ||
@@ -52,52 +53,33 @@ function devRequestTimingPlugin() {
 }
 
 export default defineConfig({
-  plugins: [devRequestTimingPlugin(), ...(restartMode ? [] : react())],
+  plugins: [devRequestTimingPlugin(), react()],
   clearScreen: false,
-  optimizeDeps: restartMode
-    ? {
-        include: [
-          "@mantine/core",
-          "@mantine/hooks",
-          "@tanstack/react-virtual",
-          "@tauri-apps/api/core",
-          "@tauri-apps/api/dpi",
-          "@tauri-apps/api/event",
-          "@tauri-apps/api/window",
-          "react",
-          "react-dom",
-          "react-dom/client",
-          "react/jsx-dev-runtime",
-          "react/jsx-runtime",
-        ],
-        noDiscovery: true,
-        holdUntilCrawlEnd: false,
-      }
-    : {
-        include: [
-          "@mantine/core",
-          "@mantine/hooks",
-          "@tanstack/react-virtual",
-          "@tauri-apps/api/core",
-          "@tauri-apps/api/dpi",
-          "@tauri-apps/api/event",
-          "@tauri-apps/api/window",
-          "lucide-react",
-          "react",
-          "react-dom",
-          "react-dom/client",
-          "react-markdown",
-          "rehype-highlight",
-          "remark-gfm",
-        ],
-        holdUntilCrawlEnd: false,
-      },
+  optimizeDeps: {
+    include: [
+      "@mantine/core",
+      "@mantine/hooks",
+      "@tanstack/react-virtual",
+      "@tauri-apps/api/core",
+      "@tauri-apps/api/dpi",
+      "@tauri-apps/api/event",
+      "@tauri-apps/api/window",
+      "lucide-react",
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react-markdown",
+      "rehype-highlight",
+      "remark-gfm",
+    ],
+    holdUntilCrawlEnd: false,
+  },
   server: {
     host: "127.0.0.1",
     port: 1420,
     strictPort: true,
-    hmr: restartMode ? false : undefined,
-    warmup: restartMode || probeMode
+    hmr: tauriDevMode ? false : undefined,
+    warmup: tauriDevMode || probeMode
       ? undefined
       : {
           clientFiles: ["./src/main.tsx"],
