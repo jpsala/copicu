@@ -1,7 +1,7 @@
 ---
 id: 010-ui-rethink
 status: active
-updated: 2026-06-06
+updated: 2026-06-12
 ---
 
 # 010 UI Rethink
@@ -192,6 +192,82 @@ Validacion posterior:
 - `npm run visual:check` y un subset focalizado (`shell loads`, `settings panel`) fallaron por el incidente conocido de Vite/WebView: `root still empty`, `@vite/client` lento y `page.goto` timeout/abort. No hubo assertion especifica de overflow/resize del cambio.
 - `npm run dev:restart` dejo la app viva en `src-tauri\target\debug\copicu.exe`, con `renderer: module-load`, heartbeat y shortcuts registrados.
 
+Decimocuarto corte documental:
+
+- `docs/topics/custom-window-system.md` quedo como registro canonico de research de ventanas Tauri.
+- Fuentes canonicas prioritarias:
+  - https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/
+  - https://v2.tauri.app/learn/window-customization/
+- Regla fijada: si issues, blogs, recuerdos locales o StackOverflow contradicen esas guias oficiales actuales de Tauri v2, ganan las guias oficiales; antes de fijar decisiones durables, verificar version actual de Tauri.
+- Research complementario guardado: Window API, WebviewWindowBuilder docs.rs, Electron BrowserWindow/modal como comparativa, y issues Tauri sobre transparencia/undecorated en Windows.
+- Direccion acordada: la mayoria de funcionalidad vivira fuera del picker; las superficies ricas deben ser ventanas standalone de producto con label/capability propios, no pseudo-modales dentro de `ui-host` transparente.
+- `ui-host` queda cuestionado para prompts ricos; mantenerlo solo para inputs chicos o migrarlo gradualmente.
+- Proxima sesion: auditar ventanas existentes contra el topic canonico antes de implementar nueva ventana `metadata` o migrar scripts.
+
+Decimoquinto corte de auditoria/research:
+
+- Auditadas ventanas existentes contra Tauri v2.11.2 y fuentes canonicas actuales.
+- Fuentes nuevas agregadas al topic: Capabilities Overview, Capability Reference, Window State Plugin y maintainer discussion #11643.
+- Segunda opinion de agente confirmo el rumbo: superficies ricas como ventanas standalone, pero a traves de un surface registry host-owned y con un solo `index.html` + routing por label como default React/Vite.
+- Decision durable registrada en `docs/DECISIONS.md`: `2026-06-12 - Ventanas de producto con surface registry`.
+- Pattern final documentado:
+  - ventanas de producto con label estable;
+  - registry Rust para route/kind/lifecycle/bounds/chrome/capability;
+  - capabilities separadas por superficie/categoria, no `default.json` gigante;
+  - guards backend por `window.label()` para comandos sensibles;
+  - pending state/handshake para payloads al abrir ventanas nuevas;
+  - `ui-host` solo para alert/confirm/input chico.
+- Fix chico aplicado en codigo durante la auditoria: `ai-output` ahora tiene `pending_ai_output` para no perder el primer payload si el listener React aun no monto.
+- Checks: `npm run build` paso; `cargo check` paso; `npm run visual:check` paso 76/78 y fallo solo en Settings por esperar `6 scripts` cuando el workspace ya tiene `7 scripts`.
+- Proxima sesion: implementar primer corte de surface registry y split de capabilities antes de crear `metadata` o `scripts`.
+
+Decimosexto corte aplicado:
+
+- `scripts/examples/025-assign-metadata-to-active.ts` dejo de usar `copicu.ui.input()` y ahora abre la surface standalone `metadata` via `copicu.metadata.editActive()`.
+- Agregado host API/capability acotado `metadata:edit-active` para scripts, con dispatch Rust hacia el editor `metadata` existente y pending payload host-owned.
+- Actualizadas listas de capabilities en runner, types, frontend, planner y guia de scripts.
+- `visual:check` actualizado a 7 scripts y vuelve a pasar completo.
+- Checks: `cargo check`, `npm run build`, `npm run visual:check`.
+- Proximo dogfood: abrir `Assign metadata` desde item menu/shortcut sobre datos sinteticos y validar foco, cierre y persistencia de bounds de `metadata`.
+
+Decimoseptimo corte aplicado:
+
+- Copias activas del script `025-assign-metadata-to-active.ts` fueron actualizadas en `Documents\Copicu\Scripts` y `.codex-run\dev-isolated\scripts`; el bug visible era que la app ejecutaba copias viejas con `copicu.ui.input()`.
+- `MetadataWindowApp` ahora enfoca el primer input (`Title`) al abrir, igual que el picker enfoca search.
+- Los atajos del editor (`Escape`, `F2`, `Ctrl+Enter`) pasaron al formulario completo para funcionar desde `Title` y `Notes and tags`.
+- Agregado test visual `metadata window focuses title input on open`; checks pasaron: `npm run build`, `npm run visual:check` 80/80.
+- Research rapido externo: Microsoft documenta que WebView2 cold start al crear/navegar un control puede tener demora notable y que cada control suma procesos/memoria. Tauri es liviano en Rust/binario, pero una ventana nueva sigue pagando WebView2 + carga de frontend.
+- Proximo corte recomendado: medir cold vs warm de `metadata` con timestamps desde script action hasta input focused; si warm es rapido, implementar prewarm/cache; si warm tambien es lento, investigar bundle/IPC/renderer.
+
+Decimoctavo corte aplicado:
+
+- Agregada instrumentacion de apertura `metadata`: accion script, host call, fetch de item, pending payload, build/show/focus/emit backend, mount/pending/loadPayload/focus renderer.
+- Agregado harness `scripts/dev/measure-metadata-window.ps1` con app data aislado, item sintetico y medicion direct + script cold/warm.
+- Hallazgo: la ruta directa anterior podia quedarse en `surface.build.start` al crear WebView desde comando sync; `open_metadata_window` ahora despacha como Settings via thread + `run_on_main_thread`.
+- Medicion final aislada `20260612-092632`: cold direct visible 681 ms / Title focused 745 ms; warm direct visible 425 ms / focused 428 ms; warm script visible 414 ms / focused 418 ms.
+- Backend final: cold build 136 ms y total backend hasta emit 201 ms; warm backend direct 86 ms; warm backend por script host call 67 ms, action completo 479 ms.
+- Memoria aislada: cold `metadata` suma una WebView extra, 10 -> 11 procesos WebView, private MB aprox. 342 -> 398; hidden mantiene la WebView cacheada.
+- Foco cold requirio retry renderer corto del input `Title`; visual check `metadata window focuses title input on open` sigue pasando.
+- Recomendacion con datos: mantener `CachedHidden`; si JP quiere que la primera apertura se sienta instantanea, preferir prewarm idle/intencion de la surface `metadata`. Bundle split o skeleton no son primer candidato: warm ya esta dominado por show/focus/renderer visible, no por fetch/IPC.
+
+Decimonoveno corte aplicado:
+
+- Decision de producto: JP prioriza velocidad percibida agresivamente por defecto; aceptar coste razonable extra de memoria/procesos si no es extremo.
+- `metadata` ahora se prewarm-ea oculta 350 ms despues de setup, usando el surface registry, restauracion de bounds y diagnosticos `metadata.prewarm.*`.
+- Medicion aislada `20260612-094624`: prewarm oculto build 126 ms / done 128 ms; primera apertura directa cacheada visible 207 ms / `Title` focused 210 ms; warm direct visible 137 ms / focused 139 ms; warm script visible 130 ms / focused 131 ms.
+- Backend medido despues de prewarm: primera apertura cacheada hasta emit 64 ms; warm direct 36 ms; warm script host call 25 ms y action completo 348 ms.
+- Tradeoff observado en harness aislado: queda una WebView oculta en idle; procesos WebView2 aprox. 10 -> 13 y private MB aprox. 342 -> 405. Por ahora se considera aceptable para dogfood por el salto de latencia.
+- Recomendacion vigente: mantener `CachedHidden` + prewarm default para `metadata`; si dogfood siente el idle demasiado caro, probar prewarm por intencion antes que bundle split. Bundle split y skeleton visible quedan como segunda linea porque la mayor mejora vino de quitar el cold create/navigate.
+
+Auditoria de ventanas existentes:
+
+- `main`: ok como picker solido frameless; pendiente split de capability y guards de comandos.
+- `settings`: ok como document window solida; inconsistencia pendiente entre docs de close real y codigo cacheado con `hide()`.
+- `ui-host`: mantener solo como prompt chico; transparencia sigue como riesgo a revisar en corte separado.
+- `notifications`: ok como toast window fixed-position; pendiente capability minima separada.
+- `whichkey`: ok como utility temporal destroy/recreate y opt-out de bounds; pendiente capability minima separada.
+- `ai-output`: ok como document window; corregido readiness con pending payload; pendiente capability minima separada.
+
 ## Diagnostico Inicial
 
 El picker ya tiene valor funcional, pero la composicion visual sigue arrastrando decisiones de MVP:
@@ -299,11 +375,12 @@ Primeras soluciones a evaluar:
 
 Proximo corte UI recomendado:
 
-1. Si JP decide avanzar con ventanas custom, abrir `docs/topics/custom-window-system.md` y retomar la validacion manual del primer corte ya implementado parcialmente.
-2. Validar con JP: hide, focus-lost, shortcut, tray, paste-to-previous-window, DPI/monitor y comportamiento fixed-size.
-3. Decidir si `main` queda fixed-size frameless solido, vuelve a nativo, o se disena otro corte especifico de resize.
-4. Mantener Settings nativa hasta terminar esa validacion.
-5. Si se pausa custom windows, seguir `docs/tracks/011-mantine-component-migration.md` con theme polish/toasts.
+1. Abrir `docs/topics/custom-window-system.md` y usar el contrato `Surface Registry Host-Owned`.
+2. Crear/extraer registry Rust de superficies actuales sin cambiar comportamiento visible.
+3. Separar capabilities por superficie/categoria y dejar de ampliar `default.json` como permiso comun.
+4. Agregar guards backend por `window.label()` para comandos sensibles.
+5. Normalizar lifecycle de `settings`: `cached` con `hide()` o close real con `destroy()`.
+6. Recién despues crear la primera ventana nueva (`metadata` o `scripts`) usando el registry.
 
 Auditoria visual concreta pendiente:
 

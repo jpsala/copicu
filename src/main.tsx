@@ -272,7 +272,7 @@ type ActionTrigger =
   | "cli"
   | "devRun";
 
-type SelectionRequirement = "none" | "optional" | "one" | "oneOrMore" | "many";
+type SelectionRequirement = "none" | "optional" | "active" | "one" | "oneOrMore" | "many";
 type ActionInputSource = "pickerSelection" | "clipboard" | "historySearch" | "none";
 type ClipKind = "text" | "html" | "image" | "fileList" | "unknown";
 
@@ -312,6 +312,7 @@ type ActionDefinition = {
 type ActionContext = {
   trigger: ActionTrigger;
   shortcut: string | null;
+  activeItemId: number | null;
   currentItemId: number | null;
   selectedItemIds: number[];
   view: {
@@ -324,6 +325,7 @@ type ActionContext = {
 type AiScriptContext = {
   currentQuery: string;
   visibleItemIds: number[];
+  activeItemId: number | null;
   currentItemId: number | null;
   selectedItemIds: number[];
 };
@@ -406,6 +408,19 @@ type MarkdownOutputPayload = {
 type ActivationOptions = Omit<ActivateItemRequest, "itemId">;
 type EditMode = "content" | "metadata";
 type EnterAction = "copy" | "paste";
+type EnrichmentApplyMode = "autoApply" | "suggestOnly";
+
+type EnrichmentSettings = {
+  enabled: boolean;
+  applyMode: EnrichmentApplyMode;
+  detectors: {
+    path: boolean;
+    url: boolean;
+    json: boolean;
+    code: boolean;
+    secretRisk: boolean;
+  };
+};
 
 type AppSettings = {
   schemaVersion: 1;
@@ -416,6 +431,7 @@ type AppSettings = {
   picker: {
     hideOnFocusLost: boolean;
     enterAction: EnterAction;
+    promoteActiveOnCopy: boolean;
   };
   history: {
     retentionCount: number;
@@ -427,6 +443,7 @@ type AppSettings = {
   scripts: {
     folderPath: string;
   };
+  enrichment: EnrichmentSettings;
   ai: {
     enabled: boolean;
     endpoint: string;
@@ -518,6 +535,7 @@ const NOTIFICATIONS_WINDOW_LABEL = "notifications";
 const UI_HOST_WINDOW_LABEL = "ui-host";
 const SETTINGS_WINDOW_LABEL = "settings";
 const AI_OUTPUT_WINDOW_LABEL = "ai-output";
+const METADATA_WINDOW_LABEL = "metadata";
 const WHICHKEY_WINDOW_LABEL = "whichkey";
 const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
@@ -534,6 +552,9 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
   "history:write-metadata",
+  "history:promote",
+  "metadata:read-tags",
+  "metadata:edit-active",
   "history:delete",
   "clipboard:read",
   "clipboard:write",
@@ -545,6 +566,8 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "ui:markdown-output",
   "ai:summarize",
   "log:write",
+  "enrichment:run",
+  "enrichment:read",
   "commands:run",
   "picker:open",
   "picker:filter",
@@ -589,6 +612,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   picker: {
     hideOnFocusLost: true,
     enterAction: "copy",
+    promoteActiveOnCopy: true,
   },
   history: {
     retentionCount: 0,
@@ -599,6 +623,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   scripts: {
     folderPath: "Documents\\Copicu\\Scripts",
+  },
+  enrichment: {
+    enabled: true,
+    applyMode: "autoApply",
+    detectors: {
+      path: true,
+      url: true,
+      json: true,
+      code: true,
+      secretRisk: true,
+    },
   },
   ai: {
     enabled: false,
@@ -724,6 +759,10 @@ function openSettingsWindow() {
   return invoke("open_settings_window");
 }
 
+function openMetadataWindow(itemId: number) {
+  return invoke<boolean>("open_metadata_window", { request: { itemId } });
+}
+
 function showPicker() {
   return invoke("show_picker");
 }
@@ -838,6 +877,7 @@ const IS_NOTIFICATIONS_WINDOW = currentWindowLabel() === NOTIFICATIONS_WINDOW_LA
 const IS_UI_HOST_WINDOW = currentWindowLabel() === UI_HOST_WINDOW_LABEL;
 const IS_SETTINGS_WINDOW = currentWindowLabel() === SETTINGS_WINDOW_LABEL;
 const IS_AI_OUTPUT_WINDOW = currentWindowLabel() === AI_OUTPUT_WINDOW_LABEL;
+const IS_METADATA_WINDOW = currentWindowLabel() === METADATA_WINDOW_LABEL;
 const IS_WHICHKEY_WINDOW = currentWindowLabel() === WHICHKEY_WINDOW_LABEL;
 
 const LazyUiHostApp = lazy(() =>
@@ -854,6 +894,9 @@ const LazyWhichKeyWindowApp = lazy(() =>
 );
 const LazyAiOutputWindowApp = lazy(() =>
   import("./windows/AiOutputWindowApp").then((module) => ({ default: module.AiOutputWindowApp })),
+);
+const LazyMetadataWindowApp = lazy(() =>
+  import("./windows/secondaryWindows").then((module) => ({ default: module.MetadataWindowApp })),
 );
 
 if (isTauriRuntime()) {
@@ -960,6 +1003,7 @@ function App() {
   const compoundHotkeyPendingRef = useRef(false);
   const compoundHotkeyArmedAtRef = useRef(0);
   const whichKeyRevealTimerRef = useRef<number | null>(null);
+  const pickerWasHiddenRef = useRef(false);
 
   const selectedIndex = useMemo(
     () => history.findIndex((item) => item.id === selectedItemId),
@@ -1093,6 +1137,21 @@ function App() {
     setEditError(null);
   }, []);
 
+  const resetPickerSession = useCallback(() => {
+    closeTransientEditors();
+    setCommandPalette(null);
+    setOpenMarkMenu(null);
+    setActionError(null);
+    setAiComposerMode(false);
+    setSearchInterpretation(null);
+    setNewClipsAvailable(false);
+    setQuery("");
+    setSelectedItemId(null);
+    setSelectedIds(new Set());
+    selectionAnchorItemIdRef.current = null;
+    historyScrollRef.current?.scrollTo({ top: 0 });
+  }, [closeTransientEditors]);
+
   const openSettingsPanel = useCallback(() => {
     setSettingsError(null);
     setCommandPalette(null);
@@ -1105,6 +1164,8 @@ function App() {
   }, [closeTransientEditors]);
 
   const hidePickerWindow = useCallback(() => {
+    pickerWasHiddenRef.current = true;
+    resetPickerSession();
     void recordWindowChromeEvent("hide-picker-command-start");
     void invoke("hide_picker")
       .then(() => recordWindowChromeEvent("hide-picker-command-ok"))
@@ -1112,7 +1173,7 @@ function App() {
         void recordWindowChromeEvent("hide-picker-command-error", String(error));
         console.warn("hide picker failed", error);
       });
-  }, []);
+  }, [resetPickerSession]);
 
   const clearWhichKeyRevealTimer = useCallback(() => {
     if (whichKeyRevealTimerRef.current !== null) {
@@ -1301,7 +1362,7 @@ function App() {
   const commandPaletteActions = useMemo(
     () =>
       actionDefinitions.filter((action) =>
-        actionRunnableForTrigger(action, "commandPalette", itemsForActionContext(action, effectiveSelection)),
+        actionRunnableForTrigger(action, "commandPalette", itemsForActionContext(action, effectiveSelection, selectedItem)),
       ),
     [actionDefinitions, effectiveSelection],
   );
@@ -1311,11 +1372,13 @@ function App() {
       items: HistoryItem[],
       trigger: ActionTrigger = "itemMenu",
       shortcut: string | null = null,
+      selectedContextItems: HistoryItem[] = items,
     ): ActionContext => ({
       trigger,
       shortcut,
+      activeItemId: items[0]?.id ?? selectedItem?.id ?? null,
       currentItemId: items[0]?.id ?? selectedItem?.id ?? null,
-      selectedItemIds: items.map((item) => item.id),
+      selectedItemIds: selectedContextItems.map((item) => item.id),
       view: {
         query,
         visibleItemIds: history.map((item) => item.id),
@@ -1443,6 +1506,7 @@ function App() {
             ? {
                 currentQuery: historyQuery,
                 visibleItemIds: historyRef.current.map((item) => item.id),
+                activeItemId: selectedItemIdRef.current,
                 currentItemId: selectedItemIdRef.current,
                 selectedItemIds: Array.from(selectedIdsRef.current),
               }
@@ -1713,12 +1777,16 @@ function App() {
           itemId: item.id,
           ...activation,
         });
+        if (activation.hidePicker) {
+          pickerWasHiddenRef.current = true;
+          resetPickerSession();
+        }
       } catch (error) {
         setActionError(String(error));
         focusSearch();
       }
     },
-    [focusSearch],
+    [focusSearch, resetPickerSession],
   );
 
   const runActionDefinition = useCallback(
@@ -1728,7 +1796,9 @@ function App() {
       trigger: ActionTrigger,
       shortcut: string | null = null,
     ) => {
-      const contextItems = itemsForActionContext(action, items);
+      const contextItems = itemsForActionContext(action, items, items.length === 1 ? items[0] : selectedItem);
+      const selectedContextItems =
+        action.input.selection === "active" && action.input.source !== "none" ? items : contextItems;
       if (!actionRunnableForTrigger(action, trigger, contextItems)) {
         return;
       }
@@ -1740,7 +1810,7 @@ function App() {
         setCommandPalette(null);
         const result = await runHostAction({
           actionId: action.id,
-          context: actionContext(contextItems, trigger, shortcut),
+          context: actionContext(contextItems, trigger, shortcut, selectedContextItems),
         });
 
         const resultToasts = result.toasts ?? [];
@@ -1795,7 +1865,7 @@ function App() {
         return actionRunnableForTrigger(
           candidate,
           "localShortcut",
-          itemsForActionContext(candidate, effectiveSelection),
+          itemsForActionContext(candidate, effectiveSelection, selectedItem),
         );
       });
       if (!action) {
@@ -1836,6 +1906,19 @@ function App() {
       try {
         setEditError(null);
         setOpenItemMenu(null);
+        if (mode === "metadata" && isTauriRuntime()) {
+          try {
+            const openedStandalone = await openMetadataWindow(item.id);
+            if (openedStandalone) {
+              focusSearch();
+              return;
+            }
+          } catch (openError) {
+            if (import.meta.env.VITE_COPICU_VISUAL_TEST !== "1") {
+              throw openError;
+            }
+          }
+        }
         const fullItem = await ensureFullHistoryItem(item);
         setEditDraft({
           id: fullItem.id,
@@ -2048,7 +2131,9 @@ function App() {
     }) => {
       const hasItems = items.length > 0;
       const countLabel = formatCount(count);
-      const scriptActions = hasItems ? itemMenuScriptActions(actionDefinitions, items) : [];
+      const scriptActions = hasItems
+        ? itemMenuScriptActions(actionDefinitions, items, items.length === 1 ? items[0] : selectedItem)
+        : [];
 
       return (
         <>
@@ -2130,6 +2215,7 @@ function App() {
       deleteItems,
       runActionDefinition,
       runBuiltinAction,
+      selectedItem,
     ],
   );
 
@@ -2402,6 +2488,7 @@ function App() {
         return;
       }
       if (document.visibilityState === "hidden") {
+        pickerWasHiddenRef.current = true;
         return;
       }
       void refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
@@ -2419,9 +2506,20 @@ function App() {
         return;
       }
       if (document.visibilityState === "hidden") {
+        pickerWasHiddenRef.current = true;
         return;
       }
-      void refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
+      const resetAfterHidden = pickerWasHiddenRef.current;
+      pickerWasHiddenRef.current = false;
+      if (resetAfterHidden) {
+        resetPickerSession();
+      }
+      void refreshHistory({
+        resetScroll: resetAfterHidden,
+        respectManualScroll: !resetAfterHidden,
+        showPending: false,
+        allowAi: false,
+      }).catch((error) => {
         if (active) {
           setHistoryPending(false);
           setHistoryError(String(error));
@@ -2437,7 +2535,7 @@ function App() {
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [refreshHistory]);
+  }, [refreshHistory, resetPickerSession]);
 
   useEffect(() => {
     const [lastVirtualRow] = [...virtualRows].reverse();
@@ -3069,7 +3167,7 @@ function App() {
                               <span>Open URL</span>
                             </UiUnstyledButton>
                           ) : null}
-                          {itemMenuScriptActions(actionDefinitions, [item]).map((action) => (
+                          {itemMenuScriptActions(actionDefinitions, [item], item).map((action) => (
                             <UiUnstyledButton
                               key={action.id}
                               type="button"
@@ -3544,17 +3642,28 @@ function actionRunnableForTrigger(
   );
 }
 
-function itemMenuScriptActions(actions: ActionDefinition[], items: HistoryItem[]) {
+function itemMenuScriptActions(
+  actions: ActionDefinition[],
+  items: HistoryItem[],
+  activeItem: HistoryItem | null,
+) {
   return actions.filter(
     (action) =>
       action.source === "script" &&
-      actionRunnableForTrigger(action, "itemMenu", itemsForActionContext(action, items)),
+      actionRunnableForTrigger(action, "itemMenu", itemsForActionContext(action, items, activeItem)),
   );
 }
 
-function itemsForActionContext(action: ActionDefinition, items: HistoryItem[]) {
+function itemsForActionContext(
+  action: ActionDefinition,
+  items: HistoryItem[],
+  activeItem: HistoryItem | null,
+) {
   if (action.input.selection === "none" || action.input.source === "none") {
     return [];
+  }
+  if (action.input.selection === "active") {
+    return activeItem ? [activeItem] : items.slice(0, 1);
   }
   return items;
 }
@@ -3576,6 +3685,8 @@ function actionMatchesSelection(action: ActionDefinition, items: HistoryItem[]) 
       return items.length === 0;
     case "optional":
       return true;
+    case "active":
+      return items.length === 1;
     case "one":
       return items.length === 1;
     case "oneOrMore":
@@ -4033,7 +4144,7 @@ root.render(
       deduplicateInlineStyles
     >
       <RenderCrashBoundary>
-        {IS_UI_HOST_WINDOW || IS_NOTIFICATIONS_WINDOW || IS_SETTINGS_WINDOW || IS_AI_OUTPUT_WINDOW || IS_WHICHKEY_WINDOW ? (
+        {IS_UI_HOST_WINDOW || IS_NOTIFICATIONS_WINDOW || IS_SETTINGS_WINDOW || IS_AI_OUTPUT_WINDOW || IS_METADATA_WINDOW || IS_WHICHKEY_WINDOW ? (
           <Suspense fallback={<LoadingSpinner />}>
             {IS_UI_HOST_WINDOW ? (
               <LazyUiHostApp />
@@ -4043,6 +4154,8 @@ root.render(
               <LazySettingsWindowApp />
             ) : IS_AI_OUTPUT_WINDOW ? (
               <LazyAiOutputWindowApp />
+            ) : IS_METADATA_WINDOW ? (
+              <LazyMetadataWindowApp />
             ) : (
               <LazyWhichKeyWindowApp />
             )}

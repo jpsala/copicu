@@ -144,6 +144,98 @@ function Focus-Window {
   return $process
 }
 
+function Invoke-CopicuPickerHotkey {
+  [System.Windows.Forms.SendKeys]::SendWait("^+.")
+  Start-Sleep -Milliseconds 600
+}
+
+function Get-CopicuRendererState {
+  $env:COPICU_CDP_PORT = [string]$CopicuCdpPort
+
+  Push-Location $root
+  try {
+    $json = @'
+const { chromium } = require("playwright");
+
+(async () => {
+  const port = process.env.COPICU_CDP_PORT;
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+  const context = browser.contexts()[0];
+  const pages = context.pages();
+  const page = pages[0];
+  const state = {
+    pageCount: pages.length,
+    url: page?.url() ?? null,
+    title: null,
+    readyState: null,
+    hasDev: false,
+    searchInput: false,
+    rootChildren: null,
+    active: null,
+  };
+
+  if (page) {
+    state.title = await page.title().catch(() => null);
+    Object.assign(state, await page.evaluate(() => ({
+      readyState: document.readyState,
+      hasDev: !!window.__copicuDev,
+      searchInput: !!document.querySelector('input[aria-label="Search clipboard history"]'),
+      rootChildren: document.getElementById("root")?.childElementCount ?? null,
+      active:
+        document.activeElement?.getAttribute?.("aria-label") ??
+        document.activeElement?.getAttribute?.("placeholder") ??
+        document.activeElement?.tagName ??
+        null,
+    })));
+  }
+
+  console.log(JSON.stringify(state));
+  await browser.close();
+})();
+'@ | node -
+
+    return $json | ConvertFrom-Json
+  } finally {
+    Pop-Location
+    Remove-Item Env:\COPICU_CDP_PORT -ErrorAction SilentlyContinue
+  }
+}
+
+function Wait-CopicuRendererReady {
+  param([int]$TimeoutSeconds = 60)
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $lastState = $null
+  $attempt = 0
+
+  while ((Get-Date) -lt $deadline) {
+    $attempt += 1
+    if ($attempt -eq 1 -or $attempt % 5 -eq 0) {
+      Invoke-CopicuPickerHotkey
+    }
+
+    try {
+      $lastState = Get-CopicuRendererState
+      if ($lastState.hasDev -and $lastState.searchInput) {
+        return $lastState
+      }
+    } catch {
+      $lastState = [pscustomobject]@{
+        error = $_.Exception.Message
+      }
+    }
+
+    Start-Sleep -Milliseconds 1000
+  }
+
+  $details = if ($lastState) {
+    $lastState | ConvertTo-Json -Compress
+  } else {
+    "null"
+  }
+  throw "Timed out waiting for Copicu renderer readiness. Last state: $details"
+}
+
 function Invoke-CopicuPaste {
   param(
     [string]$Query,
@@ -166,6 +258,7 @@ const { chromium } = require("playwright");
   const pasteShortcut = process.env.COPICU_PASTE_SHORTCUT;
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const page = browser.contexts()[0].pages()[0];
+  await page.waitForFunction(() => !!window.__copicuDev, { timeout: 15000 });
 
   if (pasteShortcut === "ctrlV") {
     const itemId = await page.evaluate(async (needle) => {
@@ -194,7 +287,7 @@ const { chromium } = require("playwright");
     return;
   }
 
-  await page.evaluate(() => window.__copicuDev.invoke("show_picker"));
+  await page.locator('input[aria-label="Search clipboard history"]').waitFor({ state: "visible", timeout: 15000 });
   await page.locator('input[aria-label="Search clipboard history"]').fill(query);
   await page.waitForFunction(
     (needle) => {
@@ -204,15 +297,15 @@ const { chromium } = require("playwright");
     query,
     { timeout: 5000 },
   );
-  await page.waitForFunction(() => {
-    const status = document.querySelector(".search-row span")?.textContent ?? "";
-    return status.includes("matches");
-  }, { timeout: 5000 });
-  await page.keyboard.press("Shift+Enter");
-  await page.waitForTimeout(900);
   await browser.close();
 })();
 '@ | node -
+
+    $wshell = New-Object -ComObject WScript.Shell
+    $wshell.AppActivate("Copicu") | Out-Null
+    Start-Sleep -Milliseconds 250
+    [System.Windows.Forms.SendKeys]::SendWait("+{ENTER}")
+    Start-Sleep -Milliseconds 900
   } finally {
     Pop-Location
     Remove-Item Env:\COPICU_QUERY -ErrorAction SilentlyContinue
@@ -240,8 +333,7 @@ const { chromium } = require("playwright");
   const queries = process.env.COPICU_QUERIES.split("|");
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const page = browser.contexts()[0].pages()[0];
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1200);
+  await page.waitForFunction(() => !!window.__copicuDev, { timeout: 15000 });
 
   const results = await page.evaluate(async (needles) => {
     const api = window.__copicuDev;
@@ -272,6 +364,7 @@ function Test-NotepadPaste {
   $notepad = Start-Process notepad.exe -ArgumentList "`"$file`"" -PassThru
   try {
     Focus-Window -ProcessName "notepad" -TitleContains "notepad-target" | Out-Null
+    Invoke-CopicuPickerHotkey
     Invoke-CopicuPaste -Query $tokens.notepad
     Start-Sleep -Milliseconds 500
     Focus-Window -ProcessName "notepad" -TitleContains "notepad-target" | Out-Null
@@ -353,6 +446,7 @@ const { chromium } = require("playwright");
     }
 
     Focus-Window -ProcessName (Split-Path -Leaf $chrome).Replace(".exe", "") -TitleContains "Copicu Browser Target" | Out-Null
+    Invoke-CopicuPickerHotkey
     Invoke-CopicuPaste -Query $tokens.browser
 
     Focus-Window -ProcessName (Split-Path -Leaf $chrome).Replace(".exe", "") -TitleContains "Copicu Browser Target" | Out-Null
@@ -408,6 +502,7 @@ Add-Type -AssemblyName System.Windows.Forms
 
   try {
     Focus-Window -ProcessName "powershell" -TitleContains "Copicu Editor Target" | Out-Null
+    Invoke-CopicuPickerHotkey
     Invoke-CopicuPaste -Query $tokens.editor
 
     Wait-Until -Reason "editor target pasted content" -TimeoutSeconds 10 -Condition {
@@ -422,6 +517,7 @@ Add-Type -AssemblyName System.Windows.Forms
 }
 
 Assert-CdpReady -Port $CopicuCdpPort
+Wait-CopicuRendererReady | Out-Null
 Seed-CopicuHistory
 
 $results = @()

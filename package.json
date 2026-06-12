@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420",
     "dev:isolated": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1",
     "dev:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1",
+    "dev:restart:watcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1 -EnableClipboardWatcher",
     "dev:built": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -Built",
     "dev:built:fresh": "npm run build && npm run dev:built",
     "install:current": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/install-current.ps1",
@@ -24,6 +25,7 @@
     "scripts:run-example": "node scripts/run-example-action.mjs",
     "tauri": "tauri",
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1",
+    "tauri:dev:watcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -EnableClipboardWatcher",
     "tauri:build": "tauri build"
   },
   "dependencies": {
@@ -32,6 +34,7 @@
     "@mantine/hooks": "^9.3.0",
     "@tanstack/react-virtual": "^3.14.2",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.3.3",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "ai": "^6.0.197",
     "lucide-react": "^1.17.0",

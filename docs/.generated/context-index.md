@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-11T12:22:18.169Z
+Generated: 2026-06-12T16:30:36.389Z
 
 ## Topics
 
@@ -12,11 +12,12 @@ Generated: 2026-06-11T12:22:18.169Z
 - active: [clipboard](../topics/clipboard.md) - clipboard, portapapeles, clipboard manager, capture, text capture, HTML clipboard
 - active: [compound-hotkeys-and-whichkey](../topics/compound-hotkeys-and-whichkey.md) - hotkeys compuestos, hotkey sequence, key sequence, chord, whichkey, which key
 - active: [copyq-technical-baseline](../topics/copyq-technical-baseline.md) - CopyQ, copyq, copy-q, copycube, baseline, paridad, como lo hace CopyQ, enter item
-- draft: [custom-window-system](../topics/custom-window-system.md) - custom windows, frameless, undecorated, transparent window, titlebar custom, drag region, window chrome, ventanas custom
+- draft: [custom-window-system](../topics/custom-window-system.md) - custom windows, multiwindow, multiple windows, ventanas standalone, ventana metadata, ui-host, frameless, undecorated
 - active: [docs-knowledge-system](../topics/docs-knowledge-system.md) - sistema agentico, os lite, documentacion liviana, context index, working memory, track, cerrar sesion, continuar sesion
 - active: [filtering-and-query-syntax](../topics/filtering-and-query-syntax.md) - filtering, filtros, search, busqueda, query syntax, FTS, tags, AI search
 - active: [global-shortcut-and-tray](../topics/global-shortcut-and-tray.md) - global shortcut, shortcut global, hotkey, tray, system tray, background app
 - active: [hotkeys](../topics/hotkeys.md) - hotkey, hotkeys, shortcut, global shortcut, hotkey compuesto, key sequence, chord
+- reference: [local-codex-skills](../topics/local-codex-skills.md) - skills locales, local skills, slash commands, docs/skills, .agents/skills, sigamos, cerrar sesion, continuar sesion
 - reference: [macos-portability-research-unindexed](../topics/macos-portability-research-unindexed.md) - macOS port, Mac port, clipboard manager mac, paste previous window macOS
 - active: [mantine-ui-system](../topics/mantine-ui-system.md) - Mantine, MUI, UI library, component library, themes, design system
 - active: [markdown-output-surface](../topics/markdown-output-surface.md) - markdown output, salida markdown, ai-output, informes, summaries, reportes, export markdown
@@ -73,6 +74,13 @@ Generated: 2026-06-11T12:22:18.169Z
 - [005-search-plan-engine](../../specs/005-search-plan-engine/)
 - [006-tags-and-hotkeys](../../specs/006-tags-and-hotkeys/)
 - [007-architecture-hardening](../../specs/007-architecture-hardening/)
+- [008-clipboard-enrichment](../../specs/008-clipboard-enrichment/)
+
+## Skills
+
+- Canon: [docs/skills/](../skills/)
+- Operational commands: sigamos, cerrar-sesion, continuar-sesion, continuar-sesion-con-gol, realinear-os
+- Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
 ## Aliases
 
@@ -82,8 +90,12 @@ Generated: 2026-06-11T12:22:18.169Z
 | CC | copycu | Alias corto pedido para el producto/proyecto. El resto de docs todavia usa `Copicu`; reconciliar el nombre cuando se formalice la marca. |
 | Context Bloat | Contaminacion de contexto: cuando reglas, working memory, topics o tracks crecen hasta volverse lectura obligatoria amplia. |
 | Context Index | `docs/.generated/context-index.md`, cache generado de topics, tracks, specs y aliases. |
+| Local Skill | Skill local portable versionada dentro del repo. |
+| Skills Canonicas | Carpeta `docs/skills/`, fuente de verdad de las skills locales. |
+| Skills Compat | Carpeta `.agents/skills`, junction de compatibilidad hacia `docs/skills/`. |
 | Realinear OS | Comando para auditar y reparar drift de la capa agentica siguiendo `docs/topics/agentic-os-operations.md`. |
-| Goal / Gol | Unidad Codex para una tarea concreta; objetivo corto, sin presupuesto salvo pedido. |
-| Continuar Con Goal | Checkpoint y Goal en la misma sesion. |
-| Continuar Sesion Con Goal | Checkpoint, sesion nueva y Goal inicial. |
+| Sigamos | Seguir trabajando en la sesion actual sin cierre de valor, sin handoff y sin thread nuevo. |
+| Continuar Sesion Con Gol | Alias de `continuar sesion` que ademas instruye al thread nuevo a arrancar con `gol` para el proximo lote acordado. |
+| Continuar Con Gol | Alias de `continuar sesion con gol`; no existe una variante que siga en la misma sesion. |
+| Siguiente | Alias de `continuar sesion con gol`. |
 

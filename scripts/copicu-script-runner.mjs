@@ -16,6 +16,8 @@ input.context ??= {};
 input.context.selectedItemIds = Array.isArray(input.context.selectedItemIds)
   ? input.context.selectedItemIds
   : [];
+input.context.activeItemId ??= input.context.currentItemId ?? null;
+input.context.currentItemId ??= input.context.activeItemId ?? null;
 input.context.visibleItemIds = Array.isArray(input.context.visibleItemIds)
   ? input.context.visibleItemIds
   : [];
@@ -41,12 +43,67 @@ globalThis.console = {
 };
 
 globalThis.copicu = {
+  activeItem: {
+    async id() {
+      return input.context.activeItemId?.toString() ?? null;
+    },
+    async get({ content = false } = {}) {
+      const activeId = input.context.activeItemId?.toString();
+      const item =
+        input.selectionItems.find((candidate) => candidate.id === activeId) ??
+        input.selectionItems[0] ??
+        null;
+      return item ? withContentOption(item, content) : null;
+    },
+    async updateMetadata(patch) {
+      const activeId = input.context.activeItemId?.toString();
+      if (!activeId) {
+        throw new Error("active item is not available");
+      }
+      await hostCall("history.update", {
+        id: activeId,
+        patch: normalizeHistoryPatch(patch),
+      });
+    },
+    async copy() {
+      const activeId = input.context.activeItemId?.toString();
+      if (!activeId) {
+        throw new Error("active item is not available");
+      }
+      operations.push({ type: "clipboard.writeItem", itemId: activeId });
+    },
+    async paste(options = {}) {
+      const activeId = input.context.activeItemId?.toString();
+      if (!activeId) {
+        throw new Error("active item is not available");
+      }
+      operations.push({
+        type: "picker.activate",
+        itemId: activeId,
+        options: normalizeActivationOptions({
+          copy: true,
+          markUsed: true,
+          hidePicker: true,
+          focusPrevious: true,
+          paste: true,
+          ...options,
+        }),
+      });
+    },
+    async promote() {
+      const activeId = input.context.activeItemId?.toString();
+      if (!activeId) {
+        throw new Error("active item is not available");
+      }
+      await copicu.history.promote(activeId);
+    },
+  },
   selection: {
     async ids() {
       return selectedIds;
     },
     async current({ content = false } = {}) {
-      const currentId = input.context.currentItemId?.toString();
+      const currentId = input.context.activeItemId?.toString() ?? input.context.currentItemId?.toString();
       const item =
         input.selectionItems.find((candidate) => candidate.id === currentId) ??
         input.selectionItems[0] ??
@@ -85,6 +142,27 @@ globalThis.copicu = {
         id: normalizeItemId(id),
       });
     },
+    async promote(id) {
+      await this.move(id, { position: "top" });
+    },
+    async move(id, { position = "top" } = {}) {
+      await hostCall("history.move", {
+        id: normalizeItemId(id),
+        position: normalizeMovePosition(position),
+      });
+    },
+  },
+  metadata: {
+    async listTags() {
+      return hostCall("metadata.listTags", {});
+    },
+    async editActive() {
+      const activeId = input.context.activeItemId?.toString();
+      if (!activeId) {
+        throw new Error("active item is not available");
+      }
+      await hostCall("metadata.editActive", { id: activeId });
+    },
   },
   clipboard: {
     async read() {
@@ -111,6 +189,21 @@ globalThis.copicu = {
         instruction,
         items,
         context: title ? { title } : undefined,
+      });
+    },
+  },
+  enrichment: {
+    async runForItem(id, options = {}) {
+      return hostCall("enrichment.runForItem", {
+        itemId: normalizeItemId(id),
+        options: {
+          apply: "apply" in options ? Boolean(options.apply) : undefined,
+        },
+      });
+    },
+    async getResult(id) {
+      return hostCall("enrichment.getResult", {
+        itemId: normalizeItemId(id),
       });
     },
   },
@@ -274,6 +367,7 @@ try {
 
     await action.run({
       ...input.context,
+      activeItemId: input.context.activeItemId?.toString(),
       currentItemId: input.context.currentItemId?.toString(),
       selectedItemIds: selectedIds,
       view: input.context.view
@@ -456,7 +550,7 @@ function normalizeAiResponseContext(context) {
     return {};
   }
   const normalized = {};
-  for (const key of ["title", "source", "currentQuery", "currentItemId"]) {
+  for (const key of ["title", "source", "currentQuery", "activeItemId", "currentItemId"]) {
     if (typeof context[key] === "string") {
       normalized[key] = context[key];
     }
@@ -478,6 +572,13 @@ function normalizeActivationOptions(options) {
     paste: options.paste === true,
     pasteShortcut: normalizePasteShortcut(options.pasteShortcut),
   };
+}
+
+function normalizeMovePosition(position) {
+  if (position !== "top") {
+    throw new Error(`unsupported history move position: ${position}`);
+  }
+  return "top";
 }
 
 function normalizePickerOpenOptions(options) {

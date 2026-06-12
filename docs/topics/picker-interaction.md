@@ -70,6 +70,7 @@ Implementacion actual 2026-06-05:
 - `write_item` pasa por self-write suppression para que escrituras iniciadas por Copicu no se recapturen como historial nuevo.
 - `focusPrevious` y `paste` ya estan implementados Windows-first con `PreviousWindow`, `SetForegroundWindow` y `SendInput`.
 - `Enter` mantiene copy+hide; `Shift+Enter` ejecuta copy+hide+focusPrevious+paste como ruta secundaria de validacion.
+- Al ocultar el picker, Copicu debe seguir el baseline CopyQ: limpiar filtro, seleccion transitoria y scroll; en la siguiente apertura/focus, el current/selected vuelve al primer item visible. Esto tambien aplica si el hide vino de `Enter` o doble click sobre un item. `marked` no se toca porque es estado durable propio de Copicu.
 - Layout con texto largo sintetico validado 2026-06-05 en smoke visual desktop/narrow con snippets multilinea y token sin espacios.
 
 ## Estado UI Actual 2026-06-05
@@ -193,6 +194,7 @@ Estado actual 2026-06-05:
 - la UI respeta `prefers-color-scheme` con tema inicial light/dark;
 - hide-on-focus-lost no debe ocultar inmediatamente en `Focused(false)`;
 - politica actual: `Focused(false)` agenda ocultar tras 320 ms; `Focused(true)`, `Moved` o `Resized` cancelan la accion pendiente para no romper mover/redimensionar;
+- al ocultar, el estado transitorio del picker se resetea como CopyQ: query vacia, seleccion vacia, anchor vacio y scroll arriba; al refrescar/reabrir se selecciona el primer item visible;
 - el scroll manual del feed no se debe resetear por refresh automatico del historial. `scrollIntoView` corre solo cuando cambia `selectedIndex`, no cuando cambia `history`.
 
 Settings a prever:

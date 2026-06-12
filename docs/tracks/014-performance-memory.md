@@ -110,6 +110,39 @@ Cierre dev restart/menu 2026-06-09:
 - Corrida valida de `npm run dev:restart` built-dev: `.codex-run/dev-restart/logs/restart-20260609-163810.log`; frontend build +9.5s, shortcuts +20.8s, `renderer: module-load` +20.8s, heartbeat `active=INPUT:Search clipboard history` +22.8s. Proceso vivo: `src-tauri\target\debug\copicu.exe`, sin Vite escuchando en 1420.
 - Checks despues del cierre: `npm run build` pasa; `cd src-tauri; cargo check` pasa.
 
+Cierre dev runtime 2026-06-12:
+
+- Reproduccion inicial: `tauri dev` con Vite montaba WebView en `http://127.0.0.1:1420/`, pero `#root` quedaba vacio; CDP mostraba `ready=interactive`, sin input y sin `window.__copicuDev`.
+- Hallazgos:
+  - el bootstrap inline de `index.html` generaba `index.html?html-proxy&index=0.js` y podia quedar colgado;
+  - `src/boot.tsx` como entry externo tambien quedaba retenido en WebView2 aunque Vite normal respondia;
+  - cargar `src/main.tsx` directo evita esos dos puntos, pero la primera transformacion puede tardar ~20s;
+  - la inyeccion de `/@vite/client` en WebView2 podia demorar mucho y no aporta para esta ruta de dogfood;
+  - prewarm temprano de `metadata` crea una segunda WebView que compite por transform inicial en Vite dev.
+- Cambios aplicados:
+  - `index.html` carga `src/main.tsx` directo;
+  - `vite.config.ts` mantiene plugin React y `optimizeDeps` normal, agrega `COPICU_TAURI_DEV=1`, desactiva HMR/inyeccion de `/@vite/client` solo en Tauri dev, y fuerza `Cache-Control: no-store` para WebView2;
+  - `scripts/dev/isolated-dev.ps1` setea `COPICU_TAURI_DEV=1` en `tauri dev` normal y lo limpia en `-Built`;
+  - `src-tauri/src/lib.rs` saltea `metadata` prewarm cuando `COPICU_TAURI_DEV` esta activo;
+  - `tests/manual/validate-paste-targets.ps1` dejo de esperar el texto de status viejo `matches`.
+- Validacion:
+  - `npm run build` pasa, con warning de chunk grande >500 kB por cargar `src/main.tsx` directo;
+  - `npm run visual:check` pasa 80/80;
+  - `npm run capabilities:drift:test` pasa;
+  - `npm run ai:planner:test` pasa;
+  - `restart-dev.ps1 -EnableClipboardWatcher -RemoteDebug -ViteDev` monta picker en CDP con input enfocado y `window.__copicuDev=true`;
+  - paste por API dev (`__copicuDev.invoke("activate_item", ...)`) contra Notepad pasa.
+- Pendiente:
+  - decidir si aceptar el warning de chunk grande o recuperar code split con un entry que no active `html-proxy` ni se cuelgue como `src/boot.tsx`;
+  - `built-dev` sigue siendo la ruta mas estable para dogfood si Vite dev vuelve a mostrar variabilidad.
+
+Cierre harness nativo 2026-06-12:
+
+- `tests/manual/validate-paste-targets.ps1` ahora espera readiness real por CDP (`__copicuDev` + search input), abre picker con hotkey real y usa CDP solo para preparar query/estado.
+- La falla reproducida no era backend ni regresion confirmada del producto: el punto fragil era `page.keyboard.press(...)` sobre CDP/Playwright. La accion final de teclado quedo migrada a `SendKeys` real.
+- Validacion actual en `tauri dev`: `notepad=pass`, `browser=pass`, `editor=pass`.
+- Comprobacion adicional: `Enter` copy tambien pasa cuando la query se prepara por CDP y la tecla final es real.
+
 Corte visual harness 2026-06-10:
 
 - Reproduccion del bloqueo: `npm run visual:check` con Vite dev no termino en 3 minutos. Vite quedo escuchando en `127.0.0.1:1420`, pero `/` y `/src/main.tsx` no respondian en 5s y el socket acumulaba conexiones `CloseWait`.

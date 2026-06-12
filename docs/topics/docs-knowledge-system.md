@@ -11,18 +11,24 @@ triggers:
   - track
   - cerrar sesion
   - continuar sesion
-  - goal
+  - siguiente
   - gol
-  - continuar con goal
-  - continuar sesion con goal
+  - continuar con gol
+  - continuar sesion con gol
+  - nueva sesion con gol
   - nueva sesion
   - handoff
+  - skills locales
+  - slash commands
+  - docs/skills
+  - .agents/skills
 primary_refs:
   - AGENTS.md
   - docs/README.md
   - docs/WORKING_MEMORY.md
   - docs/TOPICS.md
   - docs/GLOSSARY.md
+  - docs/skills/
   - docs/topics/agentic-os-operations.md
   - scripts/context-index.ts
   - scripts/agent-context-audit.ts
@@ -47,6 +53,7 @@ AGENTS.md -> docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/
 - `docs/TOPICS.md` indexa puntos de entrada reales; no debe duplicar todo el contenido.
 - `docs/GLOSSARY.md` guarda aliases recurrentes.
 - `docs/.generated/context-index.md` es cache generado por `bun run context:index`.
+- `docs/skills/` es la fuente canonica de skills locales portables; `.agents/skills` es solo compatibilidad tecnica.
 - `scripts/agent-context-audit.ts` debe avisar sobre drift barato de detectar.
 
 ## Cuando Se Descubre Algo
@@ -58,19 +65,23 @@ AGENTS.md -> docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/
 5. Trabajo retomable: actualizar `docs/tracks/`.
 6. Contexto historico grande: mover a `docs/reference/`.
 
-## Goal Y Memoria
+## Gol Y Memoria
 
-Goal de Codex es control de ejecucion de la sesion, no memoria durable.
+`gol` no es memoria durable del sistema agentico. En estos flujos solo aparece como instruccion para que una sesion nueva arranque el proximo lote con control de ejecucion.
 
-Usarlo para encerrar una tarea concreta hasta terminarla. Si durante el Goal aparece conocimiento durable, promoverlo al destino correcto: decision, topic, working memory, track o spec. No crear docs solo porque existio un Goal.
+Si durante ese lote aparece conocimiento durable, promoverlo al destino correcto: decision, topic, working memory, track o spec.
 
-`continuar con goal` combina checkpoint y ejecucion: primero persiste el acuerdo durable como un cierre de valor liviano; despues inicia un Goal en la misma sesion para ejecutar el proximo paso.
+`continuar sesion con gol` hace `continuar sesion` y ademas pide que el thread nuevo arranque con `gol` para el proximo lote acordado.
 
-`continuar sesion con goal` combina continuidad limpia y ejecucion enfocada: persiste el acuerdo durable, abre una sesion nueva con handoff compacto y pide que esa sesion cree un Goal para el proximo lote.
+`continuar con gol` es alias de `continuar sesion con gol`; no existe una variante que siga en la misma sesion.
+
+`siguiente` es alias de `continuar sesion con gol`.
+
+`sigamos` continua el trabajo activo en la misma sesion. No hace cierre de valor ni prepara handoff.
 
 ## Cierre Y Continuacion De Sesion
 
-`cerrar sesion` y `continuar sesion` comparten un mismo cierre de valor:
+`cerrar sesion`, `continuar sesion`, `continuar sesion con gol`, `continuar con gol` y `siguiente` comparten un mismo cierre de valor:
 
 1. extraer decisiones, cambios, checks, bloqueos, riesgos y proximo paso;
 2. descartar transcript, intentos triviales, razonamiento intermedio y logs largos;
@@ -82,9 +93,10 @@ Usarlo para encerrar una tarea concreta hasta terminarla. Si durante el Goal apa
 La diferencia:
 
 - `cerrar sesion`: solo persiste valor y cierra.
-- `continuar sesion`: persiste valor y abre una sesion nueva con handoff compacto cuando la herramienta existe; si no existe, devuelve un prompt pegable.
-- `continuar con goal`: persiste valor y sigue en la misma sesion bajo un Goal de Codex.
-- `continuar sesion con goal`: persiste valor, abre una sesion nueva y arranca el proximo lote bajo Goal en esa nueva sesion.
+- `continuar sesion`: persiste valor y abre una sesion visible nueva con handoff compacto cuando la herramienta de la plataforma existe; si no existe, devuelve un prompt pegable.
+- `continuar sesion con gol`: persiste valor, abre una sesion visible nueva y pide arrancar con `gol` para el proximo lote acordado.
+- `continuar con gol`: alias de `continuar sesion con gol`.
+- `siguiente`: alias de `continuar sesion con gol`.
 
 Regla clave: el handoff no es fuente de verdad. Debe apuntar a los docs actualizados y contener solo lo necesario para arrancar.
 

@@ -17,6 +17,7 @@ Cortes aplicados:
 - extraidos helpers de URL/open-url a `src-tauri/src/actions/url.rs`;
 - extraidos helpers de logging de runs, input summary, redaccion de errores y timestamp a `src-tauri/src/actions/logging.rs`;
 - extraida validacion de input de acciones a `src-tauri/src/actions/input.rs`;
+- extraidos IDs/definiciones built-in y helpers `paste_plain`/`join_selected` a `src-tauri/src/actions/builtin.rs`;
 - `actions.rs` conserva la fachada publica de acciones y cache;
 - `actions::normalize_shortcut_string` sigue siendo la API publica usada por `lib.rs`;
 - tests de discovery siguen cubiertos desde el modulo `actions`;
@@ -50,11 +51,19 @@ Cortes aplicados:
 - `npm run rust:test` paso: 72 tests verdes, 1 ignored.
 - `npm run build` paso.
 
+2026-06-11, corte built-ins:
+
+- JP confirmo hotkeys filtrados `020`-`024` funcionando en uso real; se registro en Actions/Scripting y Working Memory.
+- `cd src-tauri; cargo fmt` paso.
+- `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo test actions` paso: 14 tests verdes.
+- `npm run build` paso.
+- `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check` paso.
+
 ## Proximos Cortes Posibles
 
 Mantener cortes mecanicos y verificables:
 
-1. Extraer helpers builtin de seleccion/paste/join solo si queda una frontera simple.
+1. Revisar si queda otra extraccion mecanica chica sin tocar runtime del Node runner.
 2. No mover runtime del Node runner hasta tener un test enfocado que cubra timeout, stdout y errores redacted.
 
 ## Reglas

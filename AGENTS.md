@@ -33,12 +33,11 @@ La discusion inicial del proyecto fue integrada en `docs/`. Si aparecen archivos
 ## Comandos De Sistema
 
 - Si JP dice `realinear os` o pide auditar/reparar el sistema agentico, abrir `docs/topics/agentic-os-operations.md`. Limitar cambios a la capa agentica salvo pedido explicito.
-- Si JP pide `goal`/`gol`, iniciar Goal corto alineado a track/spec; sin presupuesto salvo pedido. Completar tras verificar y actualizar docs si corresponde.
-- Si JP dice `continuar con goal`, hacer checkpoint liviano y seguir en esta sesion con un Goal.
 - Si JP dice `actualizar instalada`, `promover dev a instalada`, `crear instalador e instalar`, `instalar current` o pide que la app instalada quede igual a lo que le gusto en dev, ejecutar `npm run install:current`. Esto debe buildar Tauri, crear el instalador NSIS, cerrar instancias `copicu.exe`, instalar silencioso y relanzar `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. Mantener separacion vigente: instalada usa `%APPDATA%\dev.jpsala.copicu`; dev usa `.codex-run\dev-isolated`.
+- Si JP dice `sigamos`, continuar el trabajo activo en la misma sesion. No hacer cierre, handoff, thread nuevo ni pedir `gol` salvo que el usuario cambie de objetivo.
 - Si JP dice `cerrar sesion`, persistir el valor de la sesion en docs vivos antes de responder: tracks, topics, decisiones, working memory y specs si aplica. No crear transcript ni archivo historico por defecto.
-- Si JP dice `continuar sesion`, hacer primero el mismo cierre de valor que `cerrar sesion` y despues abrir un thread nuevo con handoff compacto si la herramienta esta disponible; si no, devolver un prompt pegable. La memoria principal son los docs actualizados, no el prompt.
-- Si JP dice `continuar sesion con goal` o `continuar sesion con go`, hacer `continuar sesion` y pedir Goal inicial.
+- Si JP dice `continuar sesion`, hacer primero el mismo cierre de valor que `cerrar sesion` y despues abrir un thread visible nuevo con handoff compacto si la herramienta de la plataforma esta disponible; si no, devolver un prompt pegable. La memoria principal son los docs actualizados, no el prompt.
+- Si JP dice `continuar sesion con gol`, `continuar con gol`, `siguiente`, `nueva sesion con gol` o equivalente, hacer el cierre de valor de `continuar sesion`, abrir un thread visible nuevo con handoff compacto y pedir que la nueva sesion arranque con el comando `gol` para el proximo lote acordado. No hay variante para seguir en la misma sesion con `gol`.
 
 ## Persistencia
 
@@ -62,3 +61,5 @@ La UI debe ser una herramienta local rapida, discreta y keyboard-first. Prioriza
 - controles de privacidad claros.
 
 Evitar una landing page o UI promocional. La primera pantalla debe ser el producto util.
+
+Las skills locales portables viven en `docs/skills/`; `.agents/skills` es solo compatibilidad tecnica. `impeccable` vive en `docs/skills/impeccable` para trabajos de interfaz.

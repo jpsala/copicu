@@ -123,7 +123,7 @@ type Trigger =
 Input requirements:
 
 ```ts
-type SelectionRequirement = "none" | "optional" | "one" | "oneOrMore" | "many";
+type SelectionRequirement = "none" | "optional" | "active" | "one" | "oneOrMore" | "many";
 
 type ActionInput = {
   source: "pickerSelection" | "clipboard" | "historySearch" | "none";
@@ -140,6 +140,7 @@ Runtime context:
 type ActionContext = {
   trigger: Trigger;
   shortcut?: string;
+  activeItemId?: string;
   currentItemId?: string;
   selectedItemIds: string[];
   view?: {
@@ -150,14 +151,18 @@ type ActionContext = {
 };
 ```
 
-Unlike CopyQ rows, scripts should use stable item IDs as the primary references. View indexes are convenience only.
+Unlike CopyQ rows, scripts should use stable item IDs as the primary references. `activeItemId` is the CopyQ-style current/active item; `currentItemId` is a compatibility alias. View indexes are convenience only.
 
 ## API Shape
 
 First useful namespaces:
 
 ```ts
-copicu.selection.current()
+copicu.activeItem.get()
+copicu.activeItem.updateMetadata()
+copicu.activeItem.copy()
+copicu.activeItem.paste()
+copicu.selection.current() // compatibility alias
 copicu.selection.items()
 copicu.selection.ids()
 copicu.selection.set(ids)
@@ -169,7 +174,8 @@ copicu.history.next(ref?)
 copicu.history.previous(ref?)
 copicu.history.update(id, patch) // text/title/notes/tags/marked
 copicu.history.remove(id)
-copicu.history.move(ids, target)
+copicu.history.promote(id)
+copicu.history.move(id, { position: "top" })
 
 copicu.clipboard.read()
 copicu.clipboard.writeText(text)
@@ -541,3 +547,10 @@ Decision 2026-06-08:
 - Logs must stay redacted: item ids, kind, length, suggested/applied tag slugs, confidence; never payload.
 - It should support allowlisted tags and suggest-only mode before broad auto-apply.
 - Do not register/intercept `Ctrl+C` as a global Copicu shortcut. If an enhanced copy command is needed, it should use a separate opt-in hotkey/sequence and compose normal capture + enrichment.
+
+Implemented first enrichment slice 2026-06-12:
+
+- internal post-capture enrichment runs before `clipboardChange` scripts;
+- first deterministic detector is `path` for local text paths;
+- it applies normalized tag `path` with `source = rule` and syncs legacy `clipboard_items.tags`;
+- no AI, no settings UI, and no public `enrichment.*` script API yet.

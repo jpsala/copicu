@@ -177,6 +177,7 @@ async function mockTauriInvoke(
       picker: {
         hideOnFocusLost: true,
         enterAction: "copy",
+        promoteActiveOnCopy: true,
       },
       history: {
         retentionCount: 1000,
@@ -309,11 +310,12 @@ async function mockTauriInvoke(
                   "004-url-open-or-filter.ts",
                   "005-triage-clipboard-batch.ts",
                   "006-global-reserved.ts",
+                  "007-active-item-metadata.ts",
                 ].map((fileName, index) => ({
                   id: `examples.mock${index + 1}`,
                   title: fileName.replace(/^\d+-/, "").replace(/\.ts$/, ""),
                   description: "Discovered test script",
-                  shortcut: index === 2 ? "Ctrl+Alt+J" : index === 5 ? "Ctrl+Shift+," : null,
+                  shortcut: index === 2 ? "Ctrl+Alt+J" : index === 5 ? "Ctrl+Shift+," : index === 6 ? "Ctrl+Alt+M" : null,
                   triggers:
                     index === 0
                       ? ["commandPalette", "devRun"]
@@ -321,10 +323,12 @@ async function mockTauriInvoke(
                         ? ["itemMenu", "commandPalette", "localShortcut", "devRun"]
                         : index === 5
                           ? ["globalShortcut", "devRun"]
-                        : ["itemMenu", "commandPalette", "devRun"],
+                          : index === 6
+                            ? ["itemMenu", "commandPalette", "localShortcut", "devRun"]
+                            : ["itemMenu", "commandPalette", "devRun"],
                   input: {
                     source: index === 0 || index === 5 ? "none" : "pickerSelection",
-                    selection: index === 0 || index === 5 ? "none" : index === 2 ? "oneOrMore" : "one",
+                    selection: index === 0 || index === 5 ? "none" : index === 2 ? "oneOrMore" : index === 6 ? "active" : "one",
                     kinds: index === 0 || index === 5 ? null : ["text"],
                     mime: null,
                     query: null,
@@ -475,6 +479,10 @@ async function mockTauriInvoke(
             return items;
           case "list_tags":
             return (window as any).__copicuTestTags;
+          case "pending_metadata_editor":
+            return {
+              item: withHistoryPreview(((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0], true),
+            };
           case "create_tag": {
             const label = args.request.label.trim();
             const nextTag = {
@@ -518,6 +526,7 @@ async function mockTauriInvoke(
           case "hide_whichkey_window":
           case "open_settings_window":
           case "close_settings_window":
+          case "close_metadata_window":
           case "activate_item":
           case "update_history_item":
           case "delete_history_item":
@@ -1348,6 +1357,62 @@ test("local shortcut runs matching ready script with shortcut context", async ({
   expect(JSON.stringify(request)).not.toContain("COPICU_SYNTH");
 });
 
+test("hiding picker resets transient selection to first item on next focus", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await page.keyboard.press("Escape");
+
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.filter((call: any) => call.cmd === "history_search").length >= 2;
+  });
+
+  await page.keyboard.press("Control+Alt+J");
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.some((call: any) => call.cmd === "run_action" && call.args.request.actionId === "examples.mock3");
+  });
+
+  const request = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "run_action")
+      .at(-1)
+      .args.request,
+  );
+  expect(request.context.trigger).toBe("localShortcut");
+  expect(request.context.selectedItemIds).toEqual([100]);
+});
+
+test("active item action uses current item even with multi selection", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
+    modifiers: ["Control"],
+  });
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await page.keyboard.press("Control+Alt+M");
+
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.some((call: any) => call.cmd === "run_action" && call.args.request.actionId === "examples.mock7");
+  });
+  const request = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "run_action")
+      .at(-1)
+      .args.request,
+  );
+  expect(request.context.activeItemId).toBe(102);
+  expect(request.context.currentItemId).toBe(102);
+  expect(request.context.selectedItemIds).toEqual([101, 102]);
+});
+
 test("local shortcut does not run when selected input kind is incompatible", async ({ page }) => {
   await mockTauriInvoke(page, [
     {
@@ -1511,7 +1576,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByLabel("Search settings")).toBeVisible();
   await page.getByLabel("Search settings").fill("scripts");
   await expect(page.getByLabel("Discovered actions summary")).toContainText("3 built-in");
-  await expect(page.getByLabel("Discovered actions summary")).toContainText("6 scripts");
+  await expect(page.getByLabel("Discovered actions summary")).toContainText("7 scripts");
   await expect(page.getByLabel("Discovered actions summary")).toContainText("2 diagnostics");
   await expect(page.getByLabel("Script registry")).toContainText("003-join-selected-with-log-name.ts");
   await expect(page.getByLabel("Script registry")).toContainText("synthetic warning for registry debug");
@@ -1624,4 +1689,14 @@ test("ai-output renders markdown and actions without overflow", async ({ page })
     ),
   );
   expect(overflow).toBe(false);
+});
+
+test("metadata window focuses title input on open", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=metadata");
+
+  const title = page.getByRole("textbox", { name: "Title" });
+  await expect(title).toBeVisible();
+  await expect(title).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Notes and tags" })).toBeVisible();
 });

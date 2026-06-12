@@ -15,6 +15,9 @@ fn supported_script_capability(capability: &str) -> bool {
         "history:read-content"
             | "history:search"
             | "history:write-metadata"
+            | "history:promote"
+            | "metadata:read-tags"
+            | "metadata:edit-active"
             | "history:delete"
             | "clipboard:read"
             | "clipboard:write"
@@ -26,6 +29,8 @@ fn supported_script_capability(capability: &str) -> bool {
             | "ui:markdown-output"
             | "ai:summarize"
             | "log:write"
+            | "enrichment:run"
+            | "enrichment:read"
             | "commands:run"
             | "picker:open"
             | "picker:filter"
@@ -43,13 +48,19 @@ fn required_script_host_capabilities(method: &str) -> Option<&'static [&'static 
         "history.search" => Some(&["history:search"]),
         "history.get" => Some(&["history:read-content"]),
         "history.update" => Some(&["history:write-metadata"]),
+        "history.move" => Some(&["history:promote"]),
+        "history.promote" => Some(&["history:promote"]),
         "history.remove" => Some(&["history:delete"]),
+        "metadata.listTags" => Some(&["metadata:read-tags"]),
+        "metadata.editActive" => Some(&["metadata:edit-active"]),
         "clipboard.read" => Some(&["clipboard:read"]),
         "ui.alert" => Some(&["ui:alert"]),
         "ui.confirm" => Some(&["ui:confirm"]),
         "ui.input" => Some(&["ui:input"]),
         "ai.respondMarkdown" => Some(&["ai:summarize"]),
         "ai.summarizeMarkdown" => Some(&["ai:summarize"]),
+        "enrichment.runForItem" => Some(&["enrichment:run"]),
+        "enrichment.getResult" => Some(&["enrichment:read"]),
         "commands.run" => Some(&["commands:run"]),
         _ => None,
     }

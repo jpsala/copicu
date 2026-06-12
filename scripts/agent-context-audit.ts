@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 type Finding = {
@@ -102,6 +102,10 @@ function walkMarkdownFiles(dir: string): string[] {
 
 for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md", "docs/GLOSSARY.md", "docs/TOPICS.md"]) {
   if (!exists(path)) add("error", `Missing ${path}`);
+}
+
+if (!exists("docs/skills")) {
+  add("error", "Missing docs/skills/");
 }
 
 warnIfTooLarge("AGENTS.md", 6000, "AGENTS.md");
@@ -217,6 +221,47 @@ for (const file of walkMarkdownFiles(join(root, "docs", "tracks"))) {
   }
 }
 
+if (exists("docs/skills")) {
+  const skillDirs = listDirs("docs/skills");
+  if (!skillDirs.length) {
+    add("warn", "docs/skills/ exists but has no skill directories");
+  }
+
+  for (const skillDir of skillDirs) {
+    const skillFile = `${skillDir}/SKILL.md`;
+    if (!exists(skillFile)) {
+      add("warn", `${skillDir} is missing SKILL.md`);
+      continue;
+    }
+
+    const content = read(skillFile);
+    const fm = frontmatter(content);
+    if (!fm) {
+      add("warn", `${skillFile} has no frontmatter`);
+      continue;
+    }
+
+    for (const key of ["name", "description"]) {
+      if (!hasFrontmatterKey(fm, key)) add("warn", `${skillFile} frontmatter missing ${key}`);
+    }
+  }
+}
+
+if (!exists(".agents/skills")) {
+  add("warn", "Missing .agents/skills compatibility junction");
+} else if (exists("docs/skills")) {
+  const stats = lstatSync(join(root, ".agents/skills"));
+  if (!(stats.isSymbolicLink() || stats.isDirectory())) {
+    add("warn", ".agents/skills exists but is not a directory-like link");
+  }
+
+  const compatPath = realpathSync(join(root, ".agents/skills"));
+  const canonicalPath = realpathSync(join(root, "docs/skills"));
+  if (compatPath !== canonicalPath) {
+    add("warn", ".agents/skills does not resolve to docs/skills");
+  }
+}
+
 const specDirs = ["specs", ".specify/specs"].flatMap((specRoot) =>
   listDirs(specRoot).map((path) => ({
     path,
@@ -255,8 +300,10 @@ if (!exists("docs/.generated/context-index.md")) {
     "docs/WORKING_MEMORY.md",
     "docs/GLOSSARY.md",
     "docs/TOPICS.md",
+    "docs/skills/README.md",
     "docs/tracks/README.md",
     ...topicFiles.map((file) => `docs/topics/${file}`),
+    ...walkMarkdownFiles(join(root, "docs", "skills")).map((path) => relative(root, path).replaceAll("\\", "/")),
     ...trackMarkdown,
     ...specMarkdown,
   ];

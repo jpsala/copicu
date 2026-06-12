@@ -4,12 +4,19 @@ status: draft
 kind: decision-map
 triggers:
   - custom windows
+  - multiwindow
+  - multiple windows
+  - ventanas standalone
+  - ventana metadata
+  - ui-host
   - frameless
   - undecorated
   - transparent window
   - titlebar custom
   - drag region
   - window chrome
+  - window capabilities
+  - capabilities por ventana
   - ventanas custom
 primary_refs:
   - docs/topics/window-state-and-monitor-policy.md
@@ -23,11 +30,102 @@ primary_refs:
   - src/main.tsx
   - src/styles.css
   - src/themeCatalog.ts
+  - https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/
+  - https://v2.tauri.app/learn/window-customization/
+  - https://v2.tauri.app/reference/javascript/api/namespacewindow/
+  - https://docs.rs/tauri/latest/tauri/webview/struct.WebviewWindowBuilder.html
 ---
 
 # Custom Window System
 
-Plan y research para usar ventanas custom en Copicu sin repetir problemas conocidos de WebView2/Electrobun.
+Registro canonico de research, decisiones y patrones para ventanas Tauri en Copicu.
+
+Usar este topic antes de tocar:
+
+- nuevas ventanas standalone;
+- labels/routing/capabilities por ventana;
+- `decorations`, `transparent`, `shadow`, `always_on_top`, `skipTaskbar`;
+- `CustomWindowFrame`, titlebars, drag regions y controles de ventana;
+- `ui-host`, prompts, toasts, settings, metadata, scripts y superficies fuera del picker.
+
+## Fuente Y Autoridad
+
+Clasificacion usada en este topic:
+
+| Nivel | Significado | Uso |
+| --- | --- | --- |
+| Canonica | Documentacion oficial Tauri/docs.rs o Electron docs cuando se compara pattern de desktop webview. | Puede guiar decisiones base. |
+| Mantenedor | Comentario de maintainer en GitHub Discussions/issues. | Fuerte senal practica, pero verificar version/contexto. |
+| Issue | Bug report o reproduccion en GitHub. | Evidencia de riesgo o limite, no contrato API. |
+| Local | Experiencia dogfood o comportamiento observado en Copicu. | Valido para este repo; no generalizar sin fuente externa. |
+
+Regla de precedencia:
+
+1. Para ventanas Tauri, las guias oficiales actuales de `v2.tauri.app` y docs.rs de la version Tauri usada por el proyecto ganan ante contradicciones.
+2. En particular, `Capabilities for Different Windows and Platforms` y `Window Customization` son canonicas para labels/capabilities/chrome custom. Si un issue, blog, video, StackOverflow o recuerdo local contradice esas guias, usar las guias oficiales y anotar el conflicto.
+3. Antes de fijar una decision durable, verificar que la fuente sea de Tauri v2 actual. Al 2026-06-12, la pagina oficial de releases lista `tauri v2.11.2`, que coincide con `src-tauri/Cargo.toml`.
+4. Issues de GitHub sirven para riesgos y workarounds, pero no reemplazan la documentacion oficial salvo que un maintainer indique explicitamente el cambio y la doc este desactualizada.
+
+### Fuentes Canonicas Activas
+
+| Fuente | Autoridad | Aprendizaje |
+| --- | --- | --- |
+| Tauri Capabilities for Different Windows and Platforms: https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/ | Canonica | Tauri espera labels de ventana y capabilities por ventana/plataforma. Los permisos se aplican con `windows: ["label"]` y pueden separarse por categoria. |
+| Tauri Capabilities Overview: https://v2.tauri.app/security/capabilities/ | Canonica | Capabilities son boundaries de permisos por ventana/webview; si una ventana participa en mas de una capability, sus permisos se fusionan. Los comandos propios registrados en `invoke_handler` quedan permitidos por defecto salvo que se acoten con manifest/guards. |
+| Tauri Capability Reference: https://v2.tauri.app/reference/acl/capability/ | Canonica | Una capability agrupa permisos para aislar acceso IPC; usar labels exactos o globs para reducir impacto de vulnerabilidades frontend. |
+| Tauri Window Customization: https://v2.tauri.app/learn/window-customization/ | Canonica | `decorations: false` + custom titlebar es pattern soportado, pero requiere permisos `core:window:*`; `data-tauri-drag-region` aplica solo al elemento marcado. |
+| Tauri Window API: https://v2.tauri.app/reference/javascript/api/namespacewindow/ | Canonica | Las ventanas se identifican por label; `close()` emite close-request y `destroy()` fuerza cierre; `hide()` no destruye la ventana. |
+| Tauri `WebviewWindowBuilder`: https://docs.rs/tauri/latest/tauri/webview/struct.WebviewWindowBuilder.html | Canonica | Crear ventanas desde comandos/event handlers en Windows puede deadlockear; usar comandos async o threads separados. Labels deben ser unicos. |
+| Tauri Window State Plugin: https://v2.tauri.app/plugin/window-state/ | Canonica | Existe plugin oficial para guardar/restaurar estado de ventanas; Copicu mantiene capa propia por necesitar politica por superficie/monitor, pero debe seguir el principio de crear oculto y restaurar antes de mostrar. |
+| Electron BrowserWindow: https://electronjs.org/docs/latest/api/browser-window | Canonica comparativa | Electron resuelve prompts/child tools con ventanas hijas/modal reales (`parent`, `modal`) y `ready-to-show`, no con un host transparente que dibuja una pseudo-ventana. |
+| Electron Custom Window Styles: https://electronjs.org/docs/latest/tutorial/custom-window-styles | Canonica comparativa | Las ventanas transparentes tienen limites por plataforma; no usarlas como base de formularios/herramientas salvo necesidad real. |
+
+### Fuentes De Mantenedores / GitHub
+
+| Fuente | Autoridad | Aprendizaje |
+| --- | --- | --- |
+| Tauri Discussion #11643: https://github.com/orgs/tauri-apps/discussions/11643 | Mantenedor | Para React, un maintainer prefiere multiwindow con un solo `index.html` y routing por ventana salvo apps muy grandes. Los contextos siguen separados por WebView. |
+| Tauri Discussion #6569: https://github.com/orgs/tauri-apps/discussions/6569 | Mantenedor | Tauri tiene APIs owner/parent en Rust, pero no un `ShowDialog` bloqueante consistente en todas las plataformas. |
+| Tauri Discussion #9423: https://github.com/orgs/tauri-apps/discussions/9423 | Comunidad | Pregunta recurrente: config/settings como ventana separada con entrypoint propio o routing compartido. No hay una unica receta oficial. |
+| Tauri Discussion #9303: https://github.com/orgs/tauri-apps/discussions/9303 | Comunidad | Riesgo practico: emitir a una ventana nueva antes de que el listener frontend este listo puede perder el primer mensaje. Usar pending state, handshake o evento diferido. |
+
+### Issues Relevantes
+
+| Fuente | Autoridad | Aprendizaje |
+| --- | --- | --- |
+| Tauri #4881: https://github.com/tauri-apps/tauri/issues/4881 | Issue | `transparent: true` en Windows puede dejar fondo blanco hasta resize; marcado como upstream. |
+| Tauri #8308: https://github.com/tauri-apps/tauri/issues/8308 | Issue | Diferencias de comportamiento de ventanas transparentes entre Tauri v1/v2 en Windows. |
+| Tauri #14859: https://github.com/tauri-apps/tauri/issues/14859 | Issue | `decorations: false` + `shadow: false` + `transparent: true` puede mostrar titlebar/borde en Windows. |
+| Tauri #9286: https://github.com/tauri-apps/tauri/issues/9286 | Issue | Ventanas hijas creadas cuando `main` arranca hidden tuvieron problemas de show/hide; cuidar lifecycle de secondary windows. |
+
+## Regla Arquitectonica Actual
+
+Las funcionalidades durables fuera del picker deben ser ventanas de producto de primera clase, no pseudo-modales dentro de un host transparente.
+
+Decision vigente 2026-06-12:
+
+- Las superficies ricas (`metadata`, `scripts`, `history-manager`, inspectors/editors grandes) se crean como ventanas Tauri standalone con label/capability/lifecycle propios.
+- El frontend default sigue siendo un solo `index.html` React/Vite con routing por `getCurrentWindow().label` o `?window=<label>` para dev/visual tests. Multiples HTML entrypoints quedan diferidos hasta que una superficie sea suficientemente grande para justificar build/config separado.
+- Rust es duenio de lifecycle, show/focus/hide/destroy, bounds, monitor policy, pending payloads y autorizacion backend.
+- Las capabilities de Tauri reducen permisos frontend/plugin, pero no reemplazan guards en comandos propios. Todo comando sensible debe validar `window.label()` o quedar acotado por manifest de comandos.
+- `ui-host` queda solo para request/response chico: alert, confirm, input simple y prompts temporales. No debe alojar metadata/scripts ni herramientas ricas.
+
+Pattern preferido para Copicu:
+
+1. Label estable por superficie (`settings`, futuro `metadata`, `scripts`, `history-manager`).
+2. Window creation/reuse en Rust siguiendo el pattern de `settings`.
+3. Frontend route por window label o query `?window=<label>` para visual checks.
+4. `CustomWindowFrame` como contenido raiz si la ventana usa chrome propio.
+5. Fondo opaco en Windows salvo necesidad probada de transparencia.
+6. Capability por ventana y por categoria, no un `default.json` cada vez mas amplio.
+7. Comandos Tauri sensibles validan tambien `window.label()` cuando corresponda, porque las capabilities controlan permisos frontend/plugin pero el backend propio sigue siendo responsable de sus comandos.
+8. Registry declarativo para evitar defaults dispersos en `lib.rs`, frontend y capabilities.
+
+Contra-pattern observado:
+
+- `ui-host` como ventana transparente generica que renderiza un panel/modal interno para flujos ricos.
+- Resultado local: sensacion de "ventana dentro de ventana" y posibilidad de dejar un host vacio visible si el contenido se limpia antes de ocultar/destruir la ventana.
+- Mantener `ui-host` solo para prompts chicos/temporales o migrarlo gradualmente a ventanas dedicadas.
 
 ## Contexto
 
@@ -271,6 +369,54 @@ Si la ventana queda negra/blanca pero los logs prueban data viva, clasificar com
 
 ## Arquitectura Propuesta
 
+### Surface Registry Host-Owned
+
+Antes de crear `metadata` o `scripts`, introducir un registry chico de superficies. Objetivo: que label, route, lifecycle, chrome, bounds y permisos no queden duplicados entre Rust, React, capabilities y docs.
+
+Contrato conceptual:
+
+```text
+Surface {
+  label: "metadata" | "scripts" | ...
+  route: "index.html?window=metadata"
+  kind: "picker" | "document" | "utility" | "prompt" | "toast"
+  chromeVariant: "floatingPicker" | "document" | "utility" | "prompt" | "toast"
+  lifecycle: "cached" | "destroy-on-close" | "request-response"
+  boundsPolicy: "cursor-monitor" | "last-monitor" | "fixed-position" | "none"
+  capability: "surface-metadata"
+  allowedCommands: ["get_history_item", "update_history_item", ...]
+  readiness: "pending-state" | "event-after-ready" | "static"
+}
+```
+
+Reglas del registry:
+
+- Rust es la fuente de verdad para crear/reusar/cerrar ventanas y para aplicar defaults nativos.
+- React solo decide que app renderizar segun label/route; no debe inventar ventanas durables por su cuenta.
+- Cada superficie nueva agrega:
+  - label estable;
+  - entry en registry Rust;
+  - branch de routing frontend;
+  - capability propia o de categoria;
+  - guards backend por `window.label()` en comandos sensibles;
+  - politica de readiness/pending payload si recibe data al abrir;
+  - policy explicita de bounds/monitor;
+  - visual check con `?window=<label>`.
+- Si una superficie crece lo suficiente para necesitar bundle separado, recien entonces evaluar HTML entrypoint propio y configurar Vite/Tauri para incluirlo en `dist`.
+
+Matriz inicial recomendada:
+
+| Surface | Kind | Route | Lifecycle | Bounds | Capability | Nota |
+| --- | --- | --- | --- | --- | --- | --- |
+| `main` | picker | `index.html` | cached/hidden | cursor-monitor | `surface-main` | Quick picker; no app shell pesada. |
+| `settings` | document | `index.html?window=settings` | cached o destroy-on-close, decidir | last-monitor | `surface-settings` | Hoy cachea con `hide()` aunque docs digan close real; normalizar. |
+| `ai-output` | document | `index.html?window=ai-output` | cached | last-monitor | `surface-ai-output` | Usa pending payload para no perder primer emit. |
+| `metadata` | utility o document | `index.html?window=metadata` | cached si se reabre mucho | last-monitor | `surface-metadata` | Primer candidato para sacar editor rico del picker. |
+| `scripts` | document | `index.html?window=scripts` | cached | last-monitor | `surface-scripts` | Workbench de scripts/diagnostics; no `ui-host`. |
+| `ui-host` | prompt | `index.html?window=ui-host` | request-response | none/fixed | `surface-ui-host` | Solo alert/confirm/input chico; evitar transparencia si causa bugs. |
+| `notifications` | toast | `index.html?window=notifications` | cached/hidden | fixed-position | `surface-notifications` | Toast stack posicionado por Rust. |
+| `whichkey` | utility | `index.html?window=whichkey` | destroy-on-close | none/fixed | `surface-whichkey` | Temporal; mantener opt-out de bounds por ahora. |
+
 Frontend:
 
 - `src/ui/window/CustomWindowFrame.tsx`
@@ -300,14 +446,39 @@ Backend:
 - Centralizar creacion de ventanas que hoy vive dispersa en `lib.rs`.
 - Mantener labels estables: `main`, `settings`, `ui-host`, `notifications`.
 - Opcional: `WindowKind` Rust para defaults por tipo.
+- El registry puede vivir al principio en `src-tauri/src/windows.rs` o extender `window_state.rs`; si crece, separar `surface_registry.rs`.
 
 Capabilities:
 
-- Agregar solo si se usa desde frontend:
+- No seguir ampliando un unico `default.json` para todas las ventanas.
+- Crear capabilities por superficie o categoria:
+  - `surface-main.json`;
+  - `surface-settings.json`;
+  - `surface-ai-output.json`;
+  - `surface-ui-host.json`;
+  - `surface-notifications.json`;
+  - `surface-whichkey.json`;
+  - futuras `surface-metadata.json` y `surface-scripts.json`.
+- Agregar permisos solo si se usan desde frontend:
   - `core:window:allow-start-dragging`;
   - `core:window:allow-start-resize-dragging` solo si implementamos resize handles;
   - permisos de minimize/maximize/close si los botones los llaman desde JS.
 - Preferir comandos Rust existentes para flujos semanticos (`hide_picker`, `open_settings_window`, `close_settings_window`) cuando haya logica de app.
+- Para comandos propios sensibles, agregar guard:
+  - Settings-only: `update_settings`, tag configs, edit scripts path.
+  - Main/metadata-only: `update_history_item`, `delete_history_item`, `set_item_tags`, `activate_item`.
+  - AI-output-only: `copy_markdown_output`, `add_markdown_output_to_history`, `export_markdown_output` si quedan exclusivos de esa ventana.
+  - WhichKey-only: hotkey pending/clear/step.
+  - Ui-host-only: `resolve_ui_host_request`, `pending_ui_host_request`.
+
+Readiness/payload:
+
+- No emitir data critica inmediatamente despues de crear una WebView nueva sin handshake o pending state.
+- Usar uno de estos patterns:
+  1. Estado pending en Rust + comando `pending_<surface>()` al montar.
+  2. Evento `surface-ready` desde frontend antes de emitir payload.
+  3. Delay corto solo como workaround temporal, documentado y con diagnostics.
+- `ai-output` ya usa el pattern pending payload. `ui-host` usa request activo + `pending_ui_host_request`.
 
 ## Primer Corte Implementable
 
@@ -458,13 +629,29 @@ Si falla cualquiera de esos puntos, rollback tactico:
 - Settings `document` custom debe mantener resize confiable o aceptar el limite de undecorated?
 - El editor grande debe ser `utility` custom o `document` nativo?
 - Conviene guardar preferencia `windowChromeMode: native | custom` para dogfood A/B?
+- `settings` debe ser `cached` con `hide()` o close real con `destroy()`?
+- El primer surface nuevo debe ser `metadata` o `scripts`?
+- Guardaremos command allowlist via guards manuales por label o via `AppManifest::commands` cuando sea viable?
 
 ## Proximo Paso
 
-En la siguiente sesion, implementar solo el primer corte del picker custom:
+Primer corte de surface registry aplicado el 2026-06-12 antes de crear nuevas ventanas ricas.
 
-1. `CustomWindowFrame` compartido.
-2. `WindowDragStrip` con permiso `allow-start-dragging`.
-3. `main` solido frameless, sin transparencia real si no es imprescindible.
-4. Validacion manual de mover/hide/focus/resize.
-5. Actualizar este topic con resultados.
+Estado:
+
+1. Registry Rust creado en `src-tauri/src/surface_registry.rs` para `main`, `settings`, `ai-output`, `ui-host`, `notifications` y `whichkey`.
+2. `window_state.rs` consume el registry para bounds/resizable/default size.
+3. Builders Rust de ventanas actuales consumen el registry para route/chrome nativo/tamano/lifecycle base.
+4. `settings` queda normalizada como `cached/hidden`; no cambiar a `destroy-on-close` sin prueba visual/foco.
+5. `src-tauri/capabilities/default.json` fue reemplazado por capabilities por superficie.
+6. Comandos sensibles tienen guards backend por `window.label()`.
+7. Primer surface nuevo aplicado: `metadata` usa registry, capability `surface-metadata`, pending payload Rust y ventana standalone para editar metadata de un item.
+
+Siguiente orden recomendado:
+
+1. Dogfood nativo de `metadata`: abrir desde item menu, `Shift+F2` y script `Assign metadata`, guardar metadata sintetica, validar cierre/foco/bounds.
+2. Decidir si migrar batch metadata a ventana standalone o si empezar `scripts`.
+3. Para la proxima surface, agregarla al registry con label/capability/lifecycle/bounds/readiness explicitos.
+4. Crear branch de routing frontend y capability JSON propia.
+5. Agregar guards backend desde el primer commit.
+6. Revalidar: `npm run build`, `npm run visual:check`, `cargo check`.

@@ -34,6 +34,7 @@ struct AiScriptPlannerRunnerRequest {
     prompt: String,
     current_query: String,
     visible_item_ids: Vec<i64>,
+    active_item_id: Option<i64>,
     current_item_id: Option<i64>,
     selected_item_ids: Vec<i64>,
     endpoint: String,
@@ -61,6 +62,8 @@ pub struct AiMarkdownResponseContext {
     #[serde(default)]
     pub current_query: Option<String>,
     #[serde(default)]
+    pub active_item_id: Option<String>,
+    #[serde(default)]
     pub current_item_id: Option<String>,
     #[serde(default)]
     pub selected_item_ids: Vec<String>,
@@ -74,6 +77,7 @@ impl Default for AiMarkdownResponseContext {
             title: None,
             source: None,
             current_query: None,
+            active_item_id: None,
             current_item_id: None,
             selected_item_ids: Vec::new(),
             visible_item_ids: Vec::new(),
@@ -127,6 +131,9 @@ pub struct AiScriptContext {
     pub current_query: String,
     #[serde(default)]
     pub visible_item_ids: Vec<i64>,
+    #[serde(default)]
+    pub active_item_id: Option<i64>,
+    #[serde(default)]
     pub current_item_id: Option<i64>,
     #[serde(default)]
     pub selected_item_ids: Vec<i64>,
@@ -264,6 +271,7 @@ pub fn plan_ai_script(
         prompt: prompt.trim().to_string(),
         current_query: context.current_query,
         visible_item_ids: context.visible_item_ids,
+        active_item_id: context.active_item_id.or(context.current_item_id),
         current_item_id: context.current_item_id,
         selected_item_ids: context.selected_item_ids,
         endpoint: runtime.endpoint,
@@ -383,6 +391,8 @@ fn validate_ai_script_plan(plan: &AiScriptPlan) -> Result<(), String> {
             "history:read-content"
                 | "history:search"
                 | "history:write-metadata"
+                | "metadata:read-tags"
+                | "metadata:edit-active"
                 | "history:delete"
                 | "clipboard:read"
                 | "clipboard:write"

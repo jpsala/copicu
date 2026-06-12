@@ -4,10 +4,12 @@ mod actions;
 pub mod ai_planner;
 mod clipboard;
 mod clipboard_probe;
+mod enrichment;
 mod host;
 mod hotkeys;
 mod image_capture;
 pub mod storage;
+mod surface_registry;
 mod ui_host;
 mod window_focus;
 #[cfg(not(test))]
@@ -16,6 +18,9 @@ mod window_state;
 #[cfg(not(test))]
 use std::{
     collections::HashMap,
+    env,
+    path::Path,
+    process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -38,23 +43,19 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[cfg(not(test))]
-const MAIN_WINDOW_LABEL: &str = "main";
+const MAIN_WINDOW_LABEL: &str = surface_registry::MAIN;
 #[cfg(not(test))]
-const NOTIFICATIONS_WINDOW_LABEL: &str = "notifications";
+const NOTIFICATIONS_WINDOW_LABEL: &str = surface_registry::NOTIFICATIONS;
 #[cfg(not(test))]
 const UI_HOST_WINDOW_LABEL: &str = ui_host::UI_HOST_WINDOW_LABEL;
 #[cfg(not(test))]
-const SETTINGS_WINDOW_LABEL: &str = "settings";
+const SETTINGS_WINDOW_LABEL: &str = surface_registry::SETTINGS;
 #[cfg(not(test))]
-const AI_OUTPUT_WINDOW_LABEL: &str = "ai-output";
+const AI_OUTPUT_WINDOW_LABEL: &str = surface_registry::AI_OUTPUT;
 #[cfg(not(test))]
-const WHICHKEY_WINDOW_LABEL: &str = "whichkey";
+const METADATA_WINDOW_LABEL: &str = surface_registry::METADATA;
 #[cfg(not(test))]
-#[allow(dead_code)]
-const WHICHKEY_WINDOW_WIDTH: u32 = 440;
-#[cfg(not(test))]
-#[allow(dead_code)]
-const WHICHKEY_WINDOW_HEIGHT: u32 = 260;
+const WHICHKEY_WINDOW_LABEL: &str = surface_registry::WHICHKEY;
 const NOTIFICATION_TOAST_EVENT: &str = "copicu://toast";
 #[cfg(not(test))]
 const AI_OUTPUT_OPEN_EVENT: &str = "copicu://ai-output/open";
@@ -62,6 +63,10 @@ const AI_OUTPUT_OPEN_EVENT: &str = "copicu://ai-output/open";
 const COMPOUND_HOTKEY_PENDING_EVENT: &str = "copicu://hotkeys/compound-pending";
 #[cfg(not(test))]
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
+#[cfg(not(test))]
+const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
+#[cfg(not(test))]
+const METADATA_OPEN_EVENT: &str = "copicu://metadata/open";
 #[cfg(not(test))]
 const NOTIFICATIONS_WINDOW_WIDTH: u32 = 340;
 #[cfg(not(test))]
@@ -72,6 +77,8 @@ const NOTIFICATIONS_WINDOW_MARGIN: i32 = 10;
 const TRAY_TOGGLE_ID: &str = "toggle";
 #[cfg(not(test))]
 const TRAY_SETTINGS_ID: &str = "settings";
+#[cfg(not(test))]
+const TRAY_EDIT_SCRIPTS_ID: &str = "edit-scripts";
 #[cfg(not(test))]
 const TRAY_QUIT_ID: &str = "quit";
 #[cfg(not(test))]
@@ -84,6 +91,8 @@ const STARTUP_HIDE_ENFORCE_INTERVAL: Duration = Duration::from_millis(100);
 const STARTUP_HIDE_ENFORCE_ATTEMPTS: usize = 24;
 #[cfg(not(test))]
 const NATIVE_WINDOW_TASK_DELAY: Duration = Duration::from_millis(90);
+#[cfg(not(test))]
+const METADATA_PREWARM_DELAY: Duration = Duration::from_millis(350);
 #[cfg(not(test))]
 const SCRIPT_ACTION_REFRESH_INTERVAL: Duration = Duration::from_millis(1500);
 #[cfg(not(test))]
@@ -178,6 +187,7 @@ struct CurrentPickerShortcut {
 struct GlobalScriptShortcutAction {
     action_id: String,
     shortcut_label: String,
+    selection: actions::SelectionRequirement,
 }
 
 #[cfg(not(test))]
@@ -200,6 +210,77 @@ fn diag_log(_event: &str, _detail: impl AsRef<str>) {
             .unwrap_or_default();
         eprintln!("[diag {unix_ms}] {_event}: {}", _detail.as_ref());
     }
+}
+
+#[cfg(not(test))]
+fn require_surface_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    allowed_labels: &[&str],
+    command: &str,
+) -> Result<(), String> {
+    if allowed_labels.iter().any(|label| *label == window.label()) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "{command} cannot be called from window '{}'",
+        window.label()
+    ))
+}
+
+#[cfg(not(test))]
+fn build_surface_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+) -> Result<tauri::WebviewWindow<R>, String> {
+    let surface = surface_registry::require(label)?;
+    let started_at = Instant::now();
+    diag_log(
+        "surface.build.start",
+        format!(
+            "label={} route={} lifecycle={:?}",
+            surface.label, surface.route, surface.lifecycle
+        ),
+    );
+    dev_log(format_args!(
+        "build surface: label={} kind={:?} chrome={:?} lifecycle={:?} bounds={:?} capability={}",
+        surface.label,
+        surface.kind,
+        surface.chrome,
+        surface.lifecycle,
+        surface.bounds_policy,
+        surface.capability
+    ));
+    let mut builder =
+        WebviewWindowBuilder::new(app, surface.label, WebviewUrl::App(surface.route.into()))
+            .title(surface.title)
+            .inner_size(surface.width as f64, surface.height as f64)
+            .min_inner_size(surface.min_width as f64, surface.min_height as f64)
+            .decorations(surface.decorations)
+            .transparent(surface.transparent)
+            .resizable(surface.resizable)
+            .shadow(surface.shadow)
+            .skip_taskbar(surface.skip_taskbar)
+            .always_on_top(surface.always_on_top)
+            .visible(false)
+            .focused(false);
+
+    if let (Some(max_width), Some(max_height)) = (surface.max_width, surface.max_height) {
+        builder = builder.max_inner_size(max_width as f64, max_height as f64);
+    }
+
+    let window = builder
+        .build()
+        .map_err(|error| format!("{} window build failed: {error}", surface.label))?;
+    diag_log(
+        "surface.build.done",
+        format!(
+            "label={} elapsed_ms={}",
+            surface.label,
+            started_at.elapsed().as_millis()
+        ),
+    );
+    Ok(window)
 }
 
 #[cfg(not(test))]
@@ -461,6 +542,7 @@ fn execute_ai_history_action_plan(
                     .unwrap_or(ai_planner::AiScriptContext {
                         current_query: request.query.clone(),
                         visible_item_ids: Vec::new(),
+                        active_item_id: None,
                         current_item_id: None,
                         selected_item_ids: Vec::new(),
                     });
@@ -604,6 +686,7 @@ fn ai_script_run(
     let context = request.context.unwrap_or(ai_planner::AiScriptContext {
         current_query: String::new(),
         visible_item_ids: Vec::new(),
+        active_item_id: None,
         current_item_id: None,
         selected_item_ids: Vec::new(),
     });
@@ -687,6 +770,7 @@ fn show_picker(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(not(test))]
 #[tauri::command]
 fn hide_picker(window: tauri::WebviewWindow) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "hide_picker")?;
     host::hide_picker(&window)
 }
 
@@ -730,6 +814,70 @@ pub(crate) struct MarkdownOutputPayload {
 }
 
 #[cfg(not(test))]
+#[derive(Clone, Default)]
+struct AiOutputState {
+    latest: Arc<Mutex<Option<MarkdownOutputPayload>>>,
+}
+
+#[cfg(not(test))]
+impl AiOutputState {
+    fn set_latest(&self, payload: MarkdownOutputPayload) -> Result<(), String> {
+        let mut latest = self
+            .latest
+            .lock()
+            .map_err(|_| "ai-output state lock poisoned".to_string())?;
+        *latest = Some(payload);
+        Ok(())
+    }
+
+    fn latest(&self) -> Result<Option<MarkdownOutputPayload>, String> {
+        self.latest
+            .lock()
+            .map_err(|_| "ai-output state lock poisoned".to_string())
+            .map(|latest| latest.clone())
+    }
+}
+
+#[cfg(not(test))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenMetadataWindowRequest {
+    item_id: i64,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataEditorPayload {
+    item: storage::HistoryItem,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+struct MetadataEditorState {
+    latest: Arc<Mutex<Option<MetadataEditorPayload>>>,
+}
+
+#[cfg(not(test))]
+impl MetadataEditorState {
+    fn set_latest(&self, payload: MetadataEditorPayload) -> Result<(), String> {
+        let mut latest = self
+            .latest
+            .lock()
+            .map_err(|_| "metadata state lock poisoned".to_string())?;
+        *latest = Some(payload);
+        Ok(())
+    }
+
+    fn latest(&self) -> Result<Option<MetadataEditorPayload>, String> {
+        self.latest
+            .lock()
+            .map_err(|_| "metadata state lock poisoned".to_string())
+            .map(|latest| latest.clone())
+    }
+}
+
+#[cfg(not(test))]
 #[tauri::command]
 fn open_markdown_output(
     app: tauri::AppHandle,
@@ -740,11 +888,114 @@ fn open_markdown_output(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn open_metadata_window(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    request: OpenMetadataWindowRequest,
+) -> Result<bool, String> {
+    let started_at = Instant::now();
+    diag_log(
+        "metadata.open.command.start",
+        format!(
+            "source_window={} item_id={}",
+            window.label(),
+            request.item_id
+        ),
+    );
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_metadata_window")?;
+    let fetch_started_at = Instant::now();
+    let item = storage.get_item(request.item_id)?;
+    diag_log(
+        "metadata.open.item-fetch.done",
+        format!(
+            "item_id={} elapsed_ms={} total_ms={}",
+            request.item_id,
+            fetch_started_at.elapsed().as_millis(),
+            started_at.elapsed().as_millis()
+        ),
+    );
+    let item_id = request.item_id;
+    thread::spawn(move || {
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) =
+                open_metadata_editor_window(&app_for_main_thread, MetadataEditorPayload { item })
+            {
+                eprintln!("metadata window open failed: {error}");
+            }
+        }) {
+            eprintln!("metadata window dispatch failed: {error}");
+        }
+    });
+    diag_log(
+        "metadata.open.command.dispatched",
+        format!(
+            "item_id={} total_ms={}",
+            item_id,
+            started_at.elapsed().as_millis()
+        ),
+    );
+    Ok(true)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn pending_metadata_editor(
+    window: tauri::WebviewWindow,
+    state: State<'_, MetadataEditorState>,
+) -> Result<Option<MetadataEditorPayload>, String> {
+    require_surface_window(&window, &[METADATA_WINDOW_LABEL], "pending_metadata_editor")?;
+    let payload = state.latest()?;
+    diag_log(
+        "metadata.pending",
+        format!(
+            "window={} has_payload={} item_id={}",
+            window.label(),
+            payload.is_some(),
+            payload
+                .as_ref()
+                .map(|payload| payload.item.id())
+                .unwrap_or_default()
+        ),
+    );
+    Ok(payload)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn close_metadata_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    require_surface_window(&window, &[METADATA_WINDOW_LABEL], "close_metadata_window")?;
+    let started_at = Instant::now();
+    window
+        .hide()
+        .map_err(|error| format!("metadata window hide failed: {error}"))?;
+    diag_log(
+        "metadata.close.hide.done",
+        format!("elapsed_ms={}", started_at.elapsed().as_millis()),
+    );
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn pending_ai_output(
+    window: tauri::WebviewWindow,
+    state: State<'_, AiOutputState>,
+) -> Result<Option<MarkdownOutputPayload>, String> {
+    require_surface_window(&window, &[AI_OUTPUT_WINDOW_LABEL], "pending_ai_output")?;
+    state.latest()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn copy_markdown_output(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     suppression: State<'_, clipboard::SelfWriteSuppression>,
     markdown: String,
 ) -> Result<(), String> {
+    require_surface_window(&window, &[AI_OUTPUT_WINDOW_LABEL], "copy_markdown_output")?;
     let hash = storage::hash_text(&markdown);
     suppression.suppress_hash(hash.clone());
     app.clipboard().write_text(markdown).map_err(|error| {
@@ -756,9 +1007,15 @@ fn copy_markdown_output(
 #[cfg(not(test))]
 #[tauri::command]
 fn add_markdown_output_to_history(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     markdown: String,
 ) -> Result<i64, String> {
+    require_surface_window(
+        &window,
+        &[AI_OUTPUT_WINDOW_LABEL],
+        "add_markdown_output_to_history",
+    )?;
     let hash = storage::hash_text(&markdown);
     storage.insert_text(&markdown, &hash)
 }
@@ -766,9 +1023,11 @@ fn add_markdown_output_to_history(
 #[cfg(not(test))]
 #[tauri::command]
 fn export_markdown_output(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     payload: MarkdownOutputPayload,
 ) -> Result<String, String> {
+    require_surface_window(&window, &[AI_OUTPUT_WINDOW_LABEL], "export_markdown_output")?;
     let document_dir = app
         .path()
         .document_dir()
@@ -802,10 +1061,12 @@ fn position_notifications_window(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(not(test))]
 #[tauri::command]
 fn resolve_ui_host_request(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     ui_host: State<'_, ui_host::UiHostState>,
     request: ui_host::UiHostResolveRequest,
 ) -> Result<(), String> {
+    require_surface_window(&window, &[UI_HOST_WINDOW_LABEL], "resolve_ui_host_request")?;
     ui_host.resolve(request)?;
     if let Some(window) = app.get_webview_window(UI_HOST_WINDOW_LABEL) {
         if let Err(error) = window.hide() {
@@ -813,6 +1074,16 @@ fn resolve_ui_host_request(
         }
     }
     Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn pending_ui_host_request(
+    window: tauri::WebviewWindow,
+    ui_host: State<'_, ui_host::UiHostState>,
+) -> Result<Option<serde_json::Value>, String> {
+    require_surface_window(&window, &[UI_HOST_WINDOW_LABEL], "pending_ui_host_request")?;
+    ui_host.active_request()
 }
 
 #[cfg(not(test))]
@@ -865,15 +1136,26 @@ fn count_marked_history_items(storage: State<'_, storage::AppStorage>) -> Result
 #[cfg(not(test))]
 #[tauri::command]
 fn update_history_item(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::UpdateHistoryItemRequest,
 ) -> Result<(), String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
+        "update_history_item",
+    )?;
     storage.update_item(request)
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn delete_history_item(storage: State<'_, storage::AppStorage>, id: i64) -> Result<(), String> {
+fn delete_history_item(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "delete_history_item")?;
     storage.delete_item(id)
 }
 
@@ -895,10 +1177,12 @@ fn get_settings(storage: State<'_, storage::AppStorage>) -> Result<storage::AppS
 #[cfg(not(test))]
 #[tauri::command]
 fn update_settings(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
     mut settings: storage::AppSettings,
 ) -> Result<storage::AppSettings, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_settings")?;
     settings.general.global_shortcut =
         normalize_picker_global_shortcut(&settings.general.global_shortcut)?;
     apply_autostart_setting(&app, settings.general.launch_on_startup)?;
@@ -906,6 +1190,17 @@ fn update_settings(
     actions::refresh_script_action_cache(&storage)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
     Ok(next_settings)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn edit_scripts_in_vscode(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_scripts_in_vscode")?;
+    open_scripts_folder_in_vscode(&app, &storage)
 }
 
 #[cfg(not(test))]
@@ -931,18 +1226,22 @@ fn list_tags(storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::Tag
 #[cfg(not(test))]
 #[tauri::command]
 fn create_tag(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::CreateTagRequest,
 ) -> Result<storage::TagSummary, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "create_tag")?;
     storage.create_tag(request)
 }
 
 #[cfg(not(test))]
 #[tauri::command]
 fn update_tag_config(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::UpdateTagConfigRequest,
 ) -> Result<storage::TagSummary, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_tag_config")?;
     storage.update_tag_config(request)
 }
 
@@ -975,9 +1274,11 @@ fn normalize_hotkey_sequence(input: String) -> HotkeyNormalizationResult {
 #[cfg(not(test))]
 #[tauri::command]
 fn set_item_tags(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::SetItemTagsRequest,
 ) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_item_tags")?;
     storage.set_item_tags(request)
 }
 
@@ -1066,10 +1367,23 @@ struct CompoundHotkeyStepResponse {
 #[cfg(not(test))]
 #[tauri::command]
 fn handle_compound_hotkey_step(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     runtime: State<'_, CompoundShortcutRuntime>,
     request: CompoundHotkeyStepRequest,
 ) -> CompoundHotkeyStepResponse {
+    if let Err(error) = require_surface_window(
+        &window,
+        &[WHICHKEY_WINDOW_LABEL],
+        "handle_compound_hotkey_step",
+    ) {
+        return CompoundHotkeyStepResponse {
+            handled: false,
+            pending: false,
+            executed: false,
+            diagnostic: Some(error),
+        };
+    }
     eprintln!("compound shortcut step requested: {}", request.shortcut);
     let step = match hotkeys::HotkeyStep::parse(&request.shortcut) {
         Ok(step) => step,
@@ -1134,9 +1448,18 @@ fn handle_compound_hotkey_step(
 #[cfg(not(test))]
 #[tauri::command]
 fn clear_compound_hotkey_pending(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     runtime: State<'_, CompoundShortcutRuntime>,
 ) {
+    if let Err(error) = require_surface_window(
+        &window,
+        &[WHICHKEY_WINDOW_LABEL],
+        "clear_compound_hotkey_pending",
+    ) {
+        eprintln!("{error}");
+        return;
+    }
     eprintln!("compound shortcut pending clear requested by command");
     clear_compound_temporary_shortcuts(&app, &runtime);
     runtime.clear_pending();
@@ -1154,8 +1477,17 @@ fn clear_compound_hotkey_pending_for_app<R: tauri::Runtime>(app: &tauri::AppHand
 #[cfg(not(test))]
 #[tauri::command]
 fn get_compound_hotkey_pending(
+    window: tauri::WebviewWindow,
     runtime: State<'_, CompoundShortcutRuntime>,
 ) -> Option<CompoundShortcutPendingInfo> {
+    if let Err(error) = require_surface_window(
+        &window,
+        &[WHICHKEY_WINDOW_LABEL],
+        "get_compound_hotkey_pending",
+    ) {
+        eprintln!("{error}");
+        return None;
+    }
     runtime.pending_info()
 }
 
@@ -1180,6 +1512,7 @@ fn activate_item(
     previous_window: State<'_, window_focus::PreviousWindow>,
     request: host::ActivateItemRequest,
 ) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "activate_item")?;
     host::activate_item(
         &app,
         Some(&window),
@@ -1198,8 +1531,6 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcut(picker_shortcut())
-                .expect("failed to configure global shortcut")
                 .with_handler(|app, shortcut, event| {
                     if event.state == ShortcutState::Pressed {
                         handle_global_shortcut(app, shortcut);
@@ -1274,6 +1605,22 @@ pub fn run() {
                     }
                     _ => {}
                 },
+                METADATA_WINDOW_LABEL => match event {
+                    WindowEvent::CloseRequested { api, .. } => {
+                        diag_log("window.event", "metadata close requested");
+                        api.prevent_close();
+                        save_window_bounds_from_event(window);
+                        if let Err(error) = window.hide() {
+                            eprintln!("metadata window hide on close failed: {error}");
+                        }
+                    }
+                    WindowEvent::Moved(_)
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::Focused(false) => {
+                        save_window_bounds_from_event(window);
+                    }
+                    _ => {}
+                },
                 WHICHKEY_WINDOW_LABEL => match event {
                     WindowEvent::CloseRequested { api, .. } => {
                         diag_log("window.event", "whichkey close requested");
@@ -1294,6 +1641,24 @@ pub fn run() {
             }
             TRAY_SETTINGS_ID => {
                 spawn_open_settings_window(app.clone());
+            }
+            TRAY_EDIT_SCRIPTS_ID => {
+                let result = app
+                    .try_state::<storage::AppStorage>()
+                    .ok_or_else(|| "app storage not available".to_string())
+                    .and_then(|storage| open_scripts_folder_in_vscode(app, &storage));
+                if let Err(error) = result {
+                    emit_toast_on_main_thread(
+                        app.clone(),
+                        actions::ActionToast {
+                            title: Some("Edit scripts".to_string()),
+                            message: error,
+                            tone: actions::ToastTone::Warning,
+                            duration_ms: Some(4_500),
+                        },
+                        "tray edit scripts",
+                    );
+                }
             }
             TRAY_QUIT_ID => app.exit(0),
             _ => {}
@@ -1325,10 +1690,15 @@ pub fn run() {
             position_notifications_window,
             record_renderer_diagnostic,
             open_markdown_output,
+            open_metadata_window,
+            pending_metadata_editor,
+            close_metadata_window,
+            pending_ai_output,
             copy_markdown_output,
             add_markdown_output_to_history,
             export_markdown_output,
             resolve_ui_host_request,
+            pending_ui_host_request,
             write_history_item,
             mark_history_item_used,
             set_history_items_marked,
@@ -1340,6 +1710,7 @@ pub fn run() {
             get_history_item,
             get_settings,
             update_settings,
+            edit_scripts_in_vscode,
             list_tags,
             create_tag,
             update_tag_config,
@@ -1362,6 +1733,7 @@ pub fn run() {
                 MacosLauncher::LaunchAgent,
                 None,
             ))?;
+            app.handle().plugin(tauri_plugin_dialog::init())?;
             setup_tray(app)?;
             log_shortcut_registration(app);
             let app_data_dir = std::env::var_os("COPICU_APP_DATA_DIR")
@@ -1387,6 +1759,8 @@ pub fn run() {
             app.manage(CompoundShortcutRuntime::default());
             app.manage(CurrentPickerShortcut::default());
             app.manage(ui_host::UiHostState::default());
+            app.manage(AiOutputState::default());
+            app.manage(MetadataEditorState::default());
             app.manage(window_registry.clone());
             app.manage(storage.clone());
             let suppression = clipboard::SelfWriteSuppression::default();
@@ -1431,6 +1805,11 @@ pub fn run() {
             if let Err(error) = refresh_global_shortcuts_from_storage(app.handle(), &storage) {
                 eprintln!("global shortcut registration failed: {error}");
             }
+            if std::env::var_os("COPICU_TAURI_DEV").is_some() {
+                diag_log("metadata.prewarm.skip", "tauri_dev_vite");
+            } else {
+                spawn_prewarm_metadata_window(app.handle().clone());
+            }
             spawn_script_action_refresh(app.handle().clone(), storage);
             Ok(())
         })
@@ -1441,37 +1820,56 @@ pub fn run() {
 #[cfg(not(test))]
 fn setup_notifications_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
     if app.get_webview_window(NOTIFICATIONS_WINDOW_LABEL).is_none() {
-        WebviewWindowBuilder::new(
-            app,
-            NOTIFICATIONS_WINDOW_LABEL,
-            WebviewUrl::App("index.html".into()),
-        )
-        .title("Copicu Notifications")
-        .inner_size(
-            NOTIFICATIONS_WINDOW_WIDTH as f64,
-            NOTIFICATIONS_WINDOW_HEIGHT as f64,
-        )
-        .min_inner_size(
-            NOTIFICATIONS_WINDOW_WIDTH as f64,
-            NOTIFICATIONS_WINDOW_HEIGHT as f64,
-        )
-        .max_inner_size(
-            NOTIFICATIONS_WINDOW_WIDTH as f64,
-            NOTIFICATIONS_WINDOW_HEIGHT as f64,
-        )
-        .decorations(false)
-        .transparent(true)
-        .resizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .focused(false)
-        .visible(false)
-        .build()
-        .map_err(|error| format!("notifications window build failed: {error}"))?;
+        build_surface_window(app, NOTIFICATIONS_WINDOW_LABEL)?;
     }
 
     position_notifications_window_for_monitor(app)?;
     Ok(())
+}
+
+#[cfg(not(test))]
+fn spawn_prewarm_metadata_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        thread::sleep(METADATA_PREWARM_DELAY);
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if app_for_main_thread
+                .get_webview_window(METADATA_WINDOW_LABEL)
+                .is_some()
+            {
+                diag_log("metadata.prewarm.skip", "already_exists");
+                return;
+            }
+
+            let started_at = Instant::now();
+            diag_log("metadata.prewarm.start", "label=metadata");
+            let window = match build_surface_window(&app_for_main_thread, METADATA_WINDOW_LABEL) {
+                Ok(window) => window,
+                Err(error) => {
+                    eprintln!("metadata prewarm build failed: {error}");
+                    diag_log("metadata.prewarm.failed", error);
+                    return;
+                }
+            };
+
+            if let Some(registry) =
+                app_for_main_thread.try_state::<window_state::WindowStateRegistry>()
+            {
+                if let Err(error) =
+                    registry.restore(&window, window_state::RestoreTarget::LastMonitor)
+                {
+                    eprintln!("metadata prewarm restore failed: {error}");
+                }
+            }
+
+            diag_log(
+                "metadata.prewarm.done",
+                format!("elapsed_ms={}", started_at.elapsed().as_millis()),
+            );
+        }) {
+            eprintln!("metadata prewarm dispatch failed: {error}");
+        }
+    });
 }
 
 #[cfg(not(test))]
@@ -1480,23 +1878,7 @@ fn open_settings_window_on_main_thread<R: tauri::Runtime>(
 ) -> Result<(), String> {
     let window = match app.get_webview_window(SETTINGS_WINDOW_LABEL) {
         Some(window) => window,
-        None => WebviewWindowBuilder::new(
-            app,
-            SETTINGS_WINDOW_LABEL,
-            WebviewUrl::App("index.html".into()),
-        )
-        .title("Copicu Settings")
-        .inner_size(820.0, 620.0)
-        .min_inner_size(680.0, 460.0)
-        .decorations(false)
-        .transparent(false)
-        .resizable(true)
-        .shadow(false)
-        .skip_taskbar(false)
-        .visible(false)
-        .focused(false)
-        .build()
-        .map_err(|error| format!("settings window build failed: {error}"))?,
+        None => build_surface_window(app, SETTINGS_WINDOW_LABEL)?,
     };
 
     if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
@@ -1527,24 +1909,7 @@ fn open_whichkey_window_on_main_thread<R: tauri::Runtime>(
             .map_err(|error| format!("whichkey stale window destroy failed: {error}"))?;
     }
 
-    let window = WebviewWindowBuilder::new(
-        app,
-        WHICHKEY_WINDOW_LABEL,
-        WebviewUrl::App("index.html?window=whichkey".into()),
-    )
-    .title("Copicu WhichKey")
-    .inner_size(WHICHKEY_WINDOW_WIDTH as f64, WHICHKEY_WINDOW_HEIGHT as f64)
-    .min_inner_size(320.0, 160.0)
-    .max_inner_size(520.0, 420.0)
-    .decorations(false)
-    .transparent(false)
-    .resizable(false)
-    .shadow(false)
-    .skip_taskbar(true)
-    .visible(false)
-    .focused(false)
-    .build()
-    .map_err(|error| format!("whichkey window build failed: {error}"))?;
+    let window = build_surface_window(app, WHICHKEY_WINDOW_LABEL)?;
 
     let previous_window = app.state::<window_focus::PreviousWindow>();
     if let Err(error) = previous_window.remember_foreground_excluding(Some(&window)) {
@@ -1577,25 +1942,13 @@ pub(crate) fn open_ai_output_window<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     payload: MarkdownOutputPayload,
 ) -> Result<(), String> {
+    if let Some(state) = app.try_state::<AiOutputState>() {
+        state.set_latest(payload.clone())?;
+    }
+
     let window = match app.get_webview_window(AI_OUTPUT_WINDOW_LABEL) {
         Some(window) => window,
-        None => WebviewWindowBuilder::new(
-            app,
-            AI_OUTPUT_WINDOW_LABEL,
-            WebviewUrl::App("index.html".into()),
-        )
-        .title("Copicu Output")
-        .inner_size(940.0, 680.0)
-        .min_inner_size(680.0, 460.0)
-        .decorations(false)
-        .transparent(false)
-        .resizable(true)
-        .shadow(false)
-        .skip_taskbar(false)
-        .visible(false)
-        .focused(false)
-        .build()
-        .map_err(|error| format!("ai-output window build failed: {error}"))?,
+        None => build_surface_window(app, AI_OUTPUT_WINDOW_LABEL)?,
     };
 
     if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
@@ -1615,6 +1968,110 @@ pub(crate) fn open_ai_output_window<R: tauri::Runtime>(
     window
         .emit(AI_OUTPUT_OPEN_EVENT, payload)
         .map_err(|error| format!("ai-output emit failed: {error}"))?;
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn open_metadata_editor_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    payload: MetadataEditorPayload,
+) -> Result<(), String> {
+    let started_at = Instant::now();
+    let item_id = payload.item.id();
+    let cache_hit = app.get_webview_window(METADATA_WINDOW_LABEL).is_some();
+    diag_log(
+        "metadata.open.backend.start",
+        format!("item_id={} cache_hit={}", item_id, cache_hit),
+    );
+    if let Some(state) = app.try_state::<MetadataEditorState>() {
+        state.set_latest(payload.clone())?;
+        diag_log(
+            "metadata.open.pending-set.done",
+            format!(
+                "item_id={} total_ms={}",
+                item_id,
+                started_at.elapsed().as_millis()
+            ),
+        );
+    }
+
+    let window = match app.get_webview_window(METADATA_WINDOW_LABEL) {
+        Some(window) => window,
+        None => build_surface_window(app, METADATA_WINDOW_LABEL)?,
+    };
+    diag_log(
+        "metadata.open.window-ready",
+        format!(
+            "item_id={} cache_hit={} total_ms={}",
+            item_id,
+            cache_hit,
+            started_at.elapsed().as_millis()
+        ),
+    );
+
+    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+        let restore_started_at = Instant::now();
+        registry
+            .restore(&window, window_state::RestoreTarget::LastMonitor)
+            .map_err(|error| format!("metadata window state restore failed: {error}"))?;
+        diag_log(
+            "metadata.open.restore.done",
+            format!(
+                "item_id={} elapsed_ms={} total_ms={}",
+                item_id,
+                restore_started_at.elapsed().as_millis(),
+                started_at.elapsed().as_millis()
+            ),
+        );
+    }
+    let show_started_at = Instant::now();
+    window
+        .show()
+        .map_err(|error| format!("metadata window show failed: {error}"))?;
+    diag_log(
+        "metadata.open.show.done",
+        format!(
+            "item_id={} elapsed_ms={} total_ms={}",
+            item_id,
+            show_started_at.elapsed().as_millis(),
+            started_at.elapsed().as_millis()
+        ),
+    );
+    window
+        .unminimize()
+        .map_err(|error| format!("metadata window unminimize failed: {error}"))?;
+    let focus_started_at = Instant::now();
+    window
+        .set_focus()
+        .map_err(|error| format!("metadata window focus failed: {error}"))?;
+    if !window.is_focused().unwrap_or(false) {
+        if let Err(error) = window_focus::focus_tauri_window(&window) {
+            eprintln!("metadata native focus failed: {error}");
+        }
+    }
+    diag_log(
+        "metadata.open.focus.done",
+        format!(
+            "item_id={} elapsed_ms={} total_ms={} focused={}",
+            item_id,
+            focus_started_at.elapsed().as_millis(),
+            started_at.elapsed().as_millis(),
+            window.is_focused().unwrap_or(false)
+        ),
+    );
+    let emit_started_at = Instant::now();
+    window
+        .emit(METADATA_OPEN_EVENT, payload)
+        .map_err(|error| format!("metadata emit failed: {error}"))?;
+    diag_log(
+        "metadata.open.emit.done",
+        format!(
+            "item_id={} elapsed_ms={} total_ms={}",
+            item_id,
+            emit_started_at.elapsed().as_millis(),
+            started_at.elapsed().as_millis()
+        ),
+    );
     Ok(())
 }
 
@@ -1713,9 +2170,9 @@ fn position_whichkey_window_for_monitor<R: tauri::Runtime>(
 
     let monitor_position = monitor.position();
     let monitor_size = monitor.size();
-    let x = monitor_position.x
-        + ((monitor_size.width.saturating_sub(WHICHKEY_WINDOW_WIDTH)) / 2) as i32;
-    let y = monitor_position.y + monitor_size.height as i32 - WHICHKEY_WINDOW_HEIGHT as i32 - 96;
+    let surface = surface_registry::require(WHICHKEY_WINDOW_LABEL)?;
+    let x = monitor_position.x + ((monitor_size.width.saturating_sub(surface.width)) / 2) as i32;
+    let y = monitor_position.y + monitor_size.height as i32 - surface.height as i32 - 96;
 
     window
         .set_position(PhysicalPosition::new(x, y))
@@ -1739,9 +2196,19 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
 
     let toggle = MenuItem::with_id(app, TRAY_TOGGLE_ID, toggle_label, true, None::<&str>)?;
     let settings = MenuItem::with_id(app, TRAY_SETTINGS_ID, "Settings", true, None::<&str>)?;
+    let edit_scripts = MenuItem::with_id(
+        app,
+        TRAY_EDIT_SCRIPTS_ID,
+        "Edit scripts",
+        true,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
     let primary_separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&toggle, &settings, &primary_separator, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&toggle, &settings, &edit_scripts, &primary_separator, &quit],
+    )?;
 
     let mut tray_builder = TrayIconBuilder::with_id("main")
         .tooltip(app_label)
@@ -1939,9 +2406,16 @@ fn apply_autostart_setting<R: tauri::Runtime>(
             .enable()
             .map_err(|error| format!("failed to enable launch on startup: {error}"))?;
     } else {
-        autostart
-            .disable()
-            .map_err(|error| format!("failed to disable launch on startup: {error}"))?;
+        let was_enabled = autostart.is_enabled().unwrap_or(false);
+        if !was_enabled {
+            return Ok(());
+        }
+        if let Err(error) = autostart.disable() {
+            if !autostart.is_enabled().unwrap_or(false) {
+                return Ok(());
+            }
+            return Err(format!("failed to disable launch on startup: {error}"));
+        }
     }
     Ok(())
 }
@@ -2628,6 +3102,7 @@ fn register_simple_global_script_shortcut<R: tauri::Runtime>(
                 GlobalScriptShortcutAction {
                     action_id: action.id.clone(),
                     shortcut_label,
+                    selection: action.input.selection.clone(),
                 },
             );
         }
@@ -2806,6 +3281,20 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
         .clone();
     let previous_window = app.state::<window_focus::PreviousWindow>().inner().clone();
     let window = app.get_webview_window(MAIN_WINDOW_LABEL);
+    let current_item_id = if shortcut_action.selection == actions::SelectionRequirement::Active {
+        match storage.list_recent() {
+            Ok(items) => items.first().map(|item| item.id()),
+            Err(error) => {
+                eprintln!(
+                    "global script shortcut active item lookup failed for {}: {}",
+                    shortcut_action.action_id, error
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
     let result = actions::run_action(
         &app,
         window.as_ref(),
@@ -2817,7 +3306,7 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
             context: actions::ActionContext {
                 trigger: actions::Trigger::GlobalShortcut,
                 shortcut: Some(shortcut_action.shortcut_label.clone()),
-                current_item_id: None,
+                current_item_id,
                 selected_item_ids: Vec::new(),
                 view: None,
             },
@@ -3001,6 +3490,135 @@ fn emit_toast_on_main_thread<R: tauri::Runtime + 'static>(
 }
 
 #[cfg(not(test))]
+fn focus_settings_section<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    section: &'static str,
+) {
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(150));
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = app_for_main_thread.emit_to(
+                SETTINGS_WINDOW_LABEL,
+                SETTINGS_FOCUS_SECTION_EVENT,
+                section,
+            ) {
+                eprintln!("settings focus section emit failed: {error}");
+            }
+        }) {
+            eprintln!("settings focus section dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    storage: &storage::AppStorage,
+) -> Result<(), String> {
+    let settings = storage.get_settings()?;
+    let vscode_path = normalize_vscode_launcher_path(&settings.scripts.vscode_path);
+    if vscode_path.is_empty() {
+        spawn_open_settings_window(app.clone());
+        focus_settings_section(app.clone(), "scripts");
+        return Err("VS Code not configured. Set Settings > Actions > VS Code path.".to_string());
+    }
+
+    let launcher_path = Path::new(&vscode_path);
+    if !launcher_path.exists() {
+        spawn_open_settings_window(app.clone());
+        focus_settings_section(app.clone(), "scripts");
+        return Err(format!(
+            "VS Code launcher not found: {}",
+            launcher_path.display()
+        ));
+    }
+
+    let scripts_folder = Path::new(&settings.scripts.folder_path);
+    if !scripts_folder.exists() {
+        spawn_open_settings_window(app.clone());
+        focus_settings_section(app.clone(), "scripts");
+        return Err(format!(
+            "Scripts folder not found: {}",
+            scripts_folder.display()
+        ));
+    }
+
+    let spawn_result = match launcher_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+    {
+        Some(extension) if extension == "cmd" || extension == "bat" => Command::new("cmd")
+            .arg("/C")
+            .arg(&vscode_path)
+            .arg(scripts_folder)
+            .spawn(),
+        Some(extension) if extension == "ps1" => Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-File")
+            .arg(&vscode_path)
+            .arg(scripts_folder)
+            .spawn(),
+        _ => Command::new(&vscode_path).arg(scripts_folder).spawn(),
+    };
+
+    spawn_result.map_err(|error| {
+        spawn_open_settings_window(app.clone());
+        focus_settings_section(app.clone(), "scripts");
+        format!(
+            "Could not open VS Code. Check Settings > Actions > VS Code path and point it to Code.exe, code.cmd, or a valid launcher script. ({error})"
+        )
+    })?;
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn normalize_vscode_launcher_path(raw_path: &str) -> String {
+    let trimmed = raw_path.trim();
+    let unquoted = if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
+        trimmed[1..trimmed.len() - 1].trim()
+    } else {
+        trimmed
+    };
+    expand_windows_env_vars(unquoted)
+}
+
+#[cfg(not(test))]
+fn expand_windows_env_vars(input: &str) -> String {
+    let mut expanded = String::with_capacity(input.len());
+    let mut rest = input;
+
+    while let Some(start) = rest.find('%') {
+        expanded.push_str(&rest[..start]);
+        let after_start = &rest[start + 1..];
+        let Some(end) = after_start.find('%') else {
+            expanded.push('%');
+            expanded.push_str(after_start);
+            return expanded;
+        };
+
+        let variable_name = &after_start[..end];
+        if variable_name.is_empty() {
+            expanded.push_str("%%");
+        } else if let Ok(value) = env::var(variable_name) {
+            expanded.push_str(&value);
+        } else {
+            expanded.push('%');
+            expanded.push_str(variable_name);
+            expanded.push('%');
+        }
+
+        rest = &after_start[end + 1..];
+    }
+
+    expanded.push_str(rest);
+    expanded
+}
+
+#[cfg(not(test))]
 fn execute_shortcut_route<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     route: hotkeys::ShortcutRoute,
@@ -3017,6 +3635,7 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
                     GlobalScriptShortcutAction {
                         action_id,
                         shortcut_label,
+                        selection: actions::SelectionRequirement::None,
                     },
                 )
             });

@@ -1,16 +1,48 @@
 # Decisiones
 
-## Decisiones Agenticas
+## Decisiones De Producto/Arquitectura
 
-### 2026-06-11 - Usar Goal para tareas concretas
+### 2026-06-12 - Ventanas de producto con surface registry
 
 Estado: accepted
 
-Decision: cuando JP pida `goal`, `gol`, `usar Goal` o entregue una tarea concreta y terminable, Codex debe crear un Goal con objetivo corto alineado a la track/spec activa. No se asigna presupuesto salvo pedido explicito. El Goal se completa solo despues de implementar, verificar y persistir conocimiento durable si corresponde. El comando `continuar con goal` hace primero un cierre de valor liviano y despues crea un Goal en la misma sesion para ejecutar el proximo paso acordado. El comando `continuar sesion con goal` hace cierre de valor, crea nueva sesion con handoff compacto y pide que la nueva sesion arranque un Goal para el proximo lote.
+Decision: Las superficies ricas y durables fuera del picker (`metadata`, `scripts`, `history-manager` y similares) deben implementarse como ventanas Tauri standalone de producto, con label estable, capability propia, lifecycle Rust-owned, bounds policy y guards backend por `window.label()`. No deben vivir como pseudo-modales dentro de `ui-host`. En React/Vite, el default sera un solo `index.html` con routing por `window.label()` o `?window=<label>`; multiples HTML entrypoints quedan diferidos hasta que una superficie sea suficientemente grande para justificar build/config separado.
 
-Motivo: Goal sirve para dar cierre operativo a tareas dentro de una sesion, mientras el sistema agentico sigue usando docs, tracks y specs como memoria durable. `continuar sesion con goal` reduce riesgo de contexto inflado cuando el plan ya esta acordado y conviene ejecutar el siguiente lote desde una sesion limpia.
+Motivo: La documentacion oficial Tauri v2 modela ventanas por label y capabilities por ventana/webview; tambien advierte que los comandos propios registrados quedan disponibles por defecto salvo que se acoten. Un maintainer de Tauri recomienda para React resolver multiwindow con un solo HTML y router salvo apps grandes. El pattern reduce drift, mantiene el picker liviano y evita que `ui-host` se convierta en un window-manager falso.
 
-Proximo paso: aplicar Goal en tareas cerrables, usar `continuar con goal` cuando alcance el contexto actual, usar `continuar sesion con goal` para lotes que conviene ejecutar limpios, y evitarlo en preguntas rapidas, exploracion abierta o decisiones que requieran aclaracion previa.
+Proximo paso: crear un surface registry host-owned que declare `label`, `route`, `kind`, `capabilities`, `lifecycle`, `boundsPolicy`, `chromeVariant` y `allowedCommands`, y usarlo como primer corte antes de crear `metadata` o `scripts`.
+
+## Decisiones Agenticas
+
+### 2026-06-12 - Canonizar skills locales en `docs/skills`
+
+Estado: accepted
+
+Decision: `docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` queda solo como junction de compatibilidad para descubrimiento tecnico de Codex. Los comandos operativos `sigamos`, `cerrar sesion`, `continuar sesion`, `continuar sesion con gol` y `realinear os` se representan como skills locales versionadas dentro de `docs/skills/`.
+
+Motivo: las skills dan discovery barato para slash commands, pero la logica durable debe seguir en topics, scripts y docs canonicos para evitar drift y mantener el sistema agentico visible.
+
+Proximo paso: mantener `docs/skills/`, `scripts/ensure-skills-link.ps1`, `context-index` y `context-audit` alineados cuando se actualice OS Lite.
+
+### 2026-06-11 - Simplificar continuidad con `gol`
+
+Estado: accepted
+
+Decision: el sistema agentico conserva cuatro comandos de continuidad: `cerrar sesion`, `continuar sesion`, `continuar sesion con gol` y `siguiente`. `continuar sesion con gol` equivale a `continuar sesion`, pero el handoff debe pedir que el thread nuevo arranque con `gol` para el proximo lote acordado. `siguiente` es alias de `continuar sesion con gol`. `continuar con gol` queda solo como alias de `continuar sesion con gol`; se elimina la variante que seguia trabajando con Goal en la misma sesion. `goal` / `gol` como comando suelto deja de ser regla automatica del sistema agentico.
+
+Motivo: habia demasiadas variantes parecidas y la diferencia entre misma sesion, nueva sesion y Goal generaba ambiguedad. La continuidad operativa queda basada en cierre de valor mas thread nuevo cuando aparece `continuar sesion`, `continuar sesion con gol`, `continuar con gol` o `siguiente`.
+
+Proximo paso: mantener AGENTS, topics, glossary, working memory y guia alineados con esta matriz simple.
+
+### 2026-06-11 - Usar Goal para tareas concretas
+
+Estado: superseded by 2026-06-11 - Simplificar continuidad con `gol`
+
+Decision reemplazada: se elimino la regla automatica de `goal` / `gol` como comando suelto del sistema agentico y se elimino la variante `continuar con goal` que seguia en la misma sesion. Ver la decision nueva de continuidad con `gol`.
+
+Motivo: la semantica anterior era ambigua frente a `continuar sesion`, `continuar sesion con gol` y `siguiente`.
+
+Proximo paso: usar la matriz nueva.
 
 ### 2026-06-10 - Prevenir contaminacion de contexto
 

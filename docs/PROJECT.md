@@ -76,3 +76,10 @@ Usuarios power de escritorio que copian y reutilizan texto, codigo, URLs, HTML o
 - Paste-to-previous-window depende de foco, permisos, timing e input sintetico.
 - Fidelidad de HTML, RTF, imagenes y formatos custom puede ser costosa.
 - Tauri plugins pueden no cubrir todo; probablemente hagan falta modulos Rust propios.
+
+## Infraestructura Agentica
+
+- `docs/skills/`: skills locales portables incluidas como parte de OS Lite.
+- `.agents/skills`: junction de compatibilidad hacia `docs/skills/`.
+- `scripts/ensure-skills-link.ps1`: recrea o valida la junction local `.agents/skills`.
+- `scripts/agent-context-audit.ts`: auditor de docs, topics, tracks y skills.

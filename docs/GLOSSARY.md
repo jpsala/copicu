@@ -11,10 +11,14 @@ Fuente estable para abreviaturas, nombres cortos y definiciones recurrentes del 
 | CC | copycu | Alias corto pedido para el producto/proyecto. El resto de docs todavia usa `Copicu`; reconciliar el nombre cuando se formalice la marca. |
 | Context Bloat | Contaminacion de contexto: cuando reglas, working memory, topics o tracks crecen hasta volverse lectura obligatoria amplia. |
 | Context Index | `docs/.generated/context-index.md`, cache generado de topics, tracks, specs y aliases. |
+| Local Skill | Skill local portable versionada dentro del repo. |
+| Skills Canonicas | Carpeta `docs/skills/`, fuente de verdad de las skills locales. |
+| Skills Compat | Carpeta `.agents/skills`, junction de compatibilidad hacia `docs/skills/`. |
 | Realinear OS | Comando para auditar y reparar drift de la capa agentica siguiendo `docs/topics/agentic-os-operations.md`. |
-| Goal / Gol | Unidad Codex para una tarea concreta; objetivo corto, sin presupuesto salvo pedido. |
-| Continuar Con Goal | Checkpoint y Goal en la misma sesion. |
-| Continuar Sesion Con Goal | Checkpoint, sesion nueva y Goal inicial. |
+| Sigamos | Seguir trabajando en la sesion actual sin cierre de valor, sin handoff y sin thread nuevo. |
+| Continuar Sesion Con Gol | Alias de `continuar sesion` que ademas instruye al thread nuevo a arrancar con `gol` para el proximo lote acordado. |
+| Continuar Con Gol | Alias de `continuar sesion con gol`; no existe una variante que siga en la misma sesion. |
+| Siguiente | Alias de `continuar sesion con gol`. |
 
 ## Regla De Uso
 

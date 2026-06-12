@@ -15,11 +15,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import Keyboard from "lucide-react/dist/esm/icons/keyboard.mjs";
 import Pin from "lucide-react/dist/esm/icons/pin.mjs";
 import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import Search from "lucide-react/dist/esm/icons/search.mjs";
+import Tags from "lucide-react/dist/esm/icons/tags.mjs";
 import Terminal from "lucide-react/dist/esm/icons/terminal.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import {
@@ -116,7 +118,7 @@ type ActionTrigger =
   | "cli"
   | "devRun";
 
-type SelectionRequirement = "none" | "optional" | "one" | "oneOrMore" | "many";
+type SelectionRequirement = "none" | "optional" | "active" | "one" | "oneOrMore" | "many";
 type ActionInputSource = "pickerSelection" | "clipboard" | "historySearch" | "none";
 type ClipKind = "text" | "html" | "image" | "fileList" | "unknown";
 
@@ -156,6 +158,7 @@ type ActionDefinition = {
 type ActionContext = {
   trigger: ActionTrigger;
   shortcut: string | null;
+  activeItemId: number | null;
   currentItemId: number | null;
   selectedItemIds: number[];
   view: {
@@ -249,6 +252,19 @@ type MarkdownOutputPayload = {
 
 type ActivationOptions = Omit<ActivateItemRequest, "itemId">;
 type EnterAction = "copy" | "paste";
+type EnrichmentApplyMode = "autoApply" | "suggestOnly";
+
+type EnrichmentSettings = {
+  enabled: boolean;
+  applyMode: EnrichmentApplyMode;
+  detectors: {
+    path: boolean;
+    url: boolean;
+    json: boolean;
+    code: boolean;
+    secretRisk: boolean;
+  };
+};
 
 type AppSettings = {
   schemaVersion: 1;
@@ -259,6 +275,7 @@ type AppSettings = {
   picker: {
     hideOnFocusLost: boolean;
     enterAction: EnterAction;
+    promoteActiveOnCopy: boolean;
   };
   history: {
     retentionCount: number;
@@ -269,7 +286,9 @@ type AppSettings = {
   };
   scripts: {
     folderPath: string;
+    vscodePath: string;
   };
+  enrichment: EnrichmentSettings;
   ai: {
     enabled: boolean;
     endpoint: string;
@@ -291,6 +310,10 @@ type UpdateHistoryItemRequest = {
   tags: string | null;
   mimePrimary: string | null;
   marked?: boolean | null;
+};
+
+type MetadataEditorPayload = {
+  item: HistoryItem;
 };
 
 type SetHistoryItemsMarkedRequest = {
@@ -315,8 +338,10 @@ const WHICHKEY_WINDOW_LABEL = "whichkey";
 const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
 const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
+const METADATA_OPEN_EVENT = "copicu://metadata/open";
 const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
+const SETTINGS_FOCUS_SECTION_EVENT = "copicu://settings/focus-section";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
@@ -327,6 +352,9 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
   "history:write-metadata",
+  "history:promote",
+  "metadata:read-tags",
+  "metadata:edit-active",
   "history:delete",
   "clipboard:read",
   "clipboard:write",
@@ -338,6 +366,8 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "ui:markdown-output",
   "ai:summarize",
   "log:write",
+  "enrichment:run",
+  "enrichment:read",
   "commands:run",
   "picker:open",
   "picker:filter",
@@ -358,6 +388,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   picker: {
     hideOnFocusLost: true,
     enterAction: "copy",
+    promoteActiveOnCopy: true,
   },
   history: {
     retentionCount: 0,
@@ -368,6 +399,18 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   scripts: {
     folderPath: "Documents\\Copicu\\Scripts",
+    vscodePath: "",
+  },
+  enrichment: {
+    enabled: true,
+    applyMode: "autoApply",
+    detectors: {
+      path: true,
+      url: true,
+      json: true,
+      code: true,
+      secretRisk: true,
+    },
   },
   ai: {
     enabled: false,
@@ -375,6 +418,27 @@ const DEFAULT_SETTINGS: AppSettings = {
     model: "openai/gpt-4.1-mini",
   },
 };
+
+function normalizeSettings(settings: AppSettings): AppSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    general: { ...DEFAULT_SETTINGS.general, ...settings.general },
+    picker: { ...DEFAULT_SETTINGS.picker, ...settings.picker },
+    history: { ...DEFAULT_SETTINGS.history, ...settings.history },
+    appearance: { ...DEFAULT_SETTINGS.appearance, ...settings.appearance },
+    scripts: { ...DEFAULT_SETTINGS.scripts, ...settings.scripts },
+    enrichment: {
+      ...DEFAULT_SETTINGS.enrichment,
+      ...settings.enrichment,
+      detectors: {
+        ...DEFAULT_SETTINGS.enrichment.detectors,
+        ...settings.enrichment?.detectors,
+      },
+    },
+    ai: { ...DEFAULT_SETTINGS.ai, ...settings.ai },
+  };
+}
 
 function normalizeRetentionCount(value: number | string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -394,6 +458,17 @@ function applyAppearance(appearance: AppSettings["appearance"]) {
   applyCopicuAppearance(document.documentElement, appearance);
 }
 
+function nullableTrim(value: string) {
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+function metadataTags(value: string | null) {
+  const tags = new Set(
+    Array.from(value?.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu) ?? [], (match) => `#${match[2]}`),
+  );
+  return tags.size === 0 ? null : Array.from(tags).join(" ");
+}
 
 function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
   return invoke("set_history_items_marked", { request });
@@ -405,6 +480,10 @@ function setHistoryQueryMarked(request: SetHistoryQueryMarkedRequest) {
 
 function listActions() {
   return invoke<ActionDefinition[]>("list_actions");
+}
+
+function editScriptsInVscode() {
+  return invoke("edit_scripts_in_vscode");
 }
 
 function listTags() {
@@ -421,6 +500,18 @@ function updateTagConfig(request: UpdateTagConfigRequest) {
 
 function setItemTags(request: SetItemTagsRequest) {
   return invoke<void>("set_item_tags", { request });
+}
+
+function pendingMetadataEditor() {
+  return invoke<MetadataEditorPayload | null>("pending_metadata_editor");
+}
+
+function updateHistoryItem(request: UpdateHistoryItemRequest) {
+  return invoke<void>("update_history_item", { request });
+}
+
+function closeMetadataWindow() {
+  return invoke("close_metadata_window");
 }
 
 function countMarkedHistoryItems() {
@@ -529,6 +620,10 @@ function resolveUiHostRequest(id: string, value: unknown) {
       value,
     },
   });
+}
+
+function pendingUiHostRequest() {
+  return invoke<UiHostRequest | null>("pending_ui_host_request");
 }
 
 function openMarkdownOutput(payload: MarkdownOutputPayload) {
@@ -797,6 +892,195 @@ export function WhichKeyWindowApp() {
   );
 }
 
+export function MetadataWindowApp() {
+  const [payload, setPayload] = useState<MetadataEditorPayload | null>(null);
+  const [notes, setNotes] = useState("");
+  const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    document.body.classList.add("metadata-window");
+    recordRendererDiagnostic("metadata.mount", `label=${currentWindowLabel()}`);
+    return () => {
+      document.body.classList.remove("metadata-window");
+    };
+  }, []);
+
+  const loadPayload = useCallback((nextPayload: MetadataEditorPayload | null) => {
+    const itemId = nextPayload?.item.id ?? null;
+    recordRendererDiagnostic("metadata.loadPayload", `item_id=${itemId ?? "none"}`);
+    setPayload(nextPayload);
+    setTitle(nextPayload?.item.title ?? "");
+    setNotes(nextPayload?.item.notes ?? "");
+    setError(null);
+    [0, 80, 220, 500].forEach((delayMs) => {
+      window.setTimeout(() => {
+        titleRef.current?.focus();
+        recordRendererDiagnostic(
+          "metadata.title-focused",
+          `item_id=${itemId ?? "none"} delay_ms=${delayMs} active=${document.activeElement === titleRef.current}`,
+        );
+      }, delayMs);
+    });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    recordRendererDiagnostic("metadata.pending.request", `label=${currentWindowLabel()}`);
+    void pendingMetadataEditor()
+      .then((nextPayload) => {
+        recordRendererDiagnostic(
+          "metadata.pending.response",
+          `has_payload=${Boolean(nextPayload)} item_id=${nextPayload?.item.id ?? "none"}`,
+        );
+        if (active) {
+          loadPayload(nextPayload);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(String(loadError));
+        }
+      });
+    const unlistenPromise = listen<MetadataEditorPayload>(
+      METADATA_OPEN_EVENT,
+      (event: Event<MetadataEditorPayload>) => {
+        recordRendererDiagnostic("metadata.event.open", `item_id=${event.payload.item.id}`);
+        loadPayload(event.payload);
+      },
+    );
+    return () => {
+      active = false;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [loadPayload]);
+
+  const closeWindow = useCallback(() => {
+    void closeMetadataWindow().catch((closeError) => setError(String(closeError)));
+  }, []);
+
+  const save = useCallback(async () => {
+    if (!payload || saving) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const request: UpdateHistoryItemRequest = {
+      id: payload.item.id,
+      text: payload.item.text,
+      title: nullableTrim(title),
+      notes: nullableTrim(notes),
+      tags: metadataTags(notes),
+      mimePrimary: payload.item.mime_primary,
+    };
+    try {
+      await updateHistoryItem(request);
+      await emitTo("main", HISTORY_CHANGED_EVENT, {
+        itemId: payload.item.id,
+        contentKind: payload.item.content_kind,
+      });
+      await closeMetadataWindow();
+    } catch (saveError) {
+      setError(String(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }, [notes, payload, saving, title]);
+
+  const handleEditorKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLFormElement>) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeWindow();
+      }
+      if (event.key === "F2" || ((event.ctrlKey || event.metaKey) && event.key === "Enter")) {
+        event.preventDefault();
+        void save();
+      }
+    },
+    [closeWindow, save],
+  );
+
+  return (
+    <CustomWindowFrame
+      variant="utility"
+      title="Metadata"
+      controls={["minimize", "maximize", "close"]}
+    >
+      <main className="metadata-window-app" aria-label="Metadata editor">
+        <header className="metadata-window-header">
+          <div className="metadata-window-title">
+            <Tags size={18} strokeWidth={2.2} aria-hidden="true" />
+            <div>
+              <strong>Edit metadata</strong>
+              <span>{payload ? `Item #${payload.item.id}` : "Waiting for item"}</span>
+            </div>
+          </div>
+          {payload?.item.content_kind ? (
+            <UiBadge className="settings-summary-badge" variant="light">
+              {payload.item.content_kind}
+            </UiBadge>
+          ) : null}
+        </header>
+
+        {payload ? (
+          <form
+            className="metadata-window-form"
+            onKeyDown={handleEditorKeyDown}
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault();
+              void save();
+            }}
+          >
+            <label>
+              <span>Title</span>
+              <UiTextInput
+                ref={titleRef}
+                value={title}
+                placeholder="Optional title"
+                onChange={(event) => setTitle(event.currentTarget.value)}
+              />
+            </label>
+            <label>
+              <span>Notes and tags</span>
+              <UiTextarea
+                className="notes-input"
+                value={notes}
+                placeholder="#work&#10;Markdown notes about this clip"
+                onChange={(event) => setNotes(event.currentTarget.value)}
+                autosize={false}
+              />
+            </label>
+            <section className="metadata-window-preview" aria-label="Metadata preview">
+              <span>Tags</span>
+              <strong>{metadataTags(notes) ?? "No tags"}</strong>
+            </section>
+            {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
+            <div className="metadata-window-buttons">
+              <UiButton type="button" variant="default" onClick={closeWindow}>
+                Cancel
+              </UiButton>
+              <UiButton type="submit" variant="filled" loading={saving}>
+                Save metadata
+              </UiButton>
+            </div>
+          </form>
+        ) : (
+          <div className="metadata-window-empty">
+            <UiLoader size="sm" />
+            <span>Waiting for metadata payload</span>
+          </div>
+        )}
+      </main>
+    </CustomWindowFrame>
+  );
+}
+
 export function SettingsWindowApp() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [draft, setDraft] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -866,9 +1150,9 @@ export function SettingsWindowApp() {
   const saveSettings = useCallback(async () => {
     try {
       setError(null);
-      const nextSettings = await invoke<AppSettings>("update_settings", {
+      const nextSettings = normalizeSettings(await invoke<AppSettings>("update_settings", {
         settings: draft,
-      });
+      }));
       setSettings(nextSettings);
       setDraft(nextSettings);
       if (isTauriRuntime()) {
@@ -897,6 +1181,7 @@ export function SettingsWindowApp() {
           context: {
             trigger,
             shortcut: null,
+            activeItemId: null,
             currentItemId: null,
             selectedItemIds: [],
             view: null,
@@ -1023,6 +1308,44 @@ export function SettingsWindowApp() {
     [pushToast],
   );
 
+  const openScriptsInEditor = useCallback(async () => {
+    try {
+      setError(null);
+      await editScriptsInVscode();
+    } catch (openError) {
+      setError(String(openError));
+    }
+  }, []);
+
+  const browseVscodePath = useCallback(async () => {
+    try {
+      setError(null);
+      const selected = await openDialog({
+        directory: false,
+        multiple: false,
+        title: "Choose VS Code launcher",
+        filters: [
+          {
+            name: "Launchers",
+            extensions: ["exe", "cmd", "bat", "ps1"],
+          },
+        ],
+      });
+      if (typeof selected !== "string" || selected.length === 0) {
+        return;
+      }
+      setDraft((current) => ({
+        ...current,
+        scripts: {
+          ...current.scripts,
+          vscodePath: selected,
+        },
+      }));
+    } catch (browseError) {
+      setError(String(browseError));
+    }
+  }, []);
+
   useEffect(() => {
     document.body.classList.add("settings-window");
     return () => {
@@ -1036,8 +1359,9 @@ export function SettingsWindowApp() {
     invoke<AppSettings>("get_settings")
       .then((nextSettings) => {
         if (active) {
-          setSettings(nextSettings);
-          setDraft(nextSettings);
+          const normalizedSettings = normalizeSettings(nextSettings);
+          setSettings(normalizedSettings);
+          setDraft(normalizedSettings);
         }
       })
       .catch((loadError) => {
@@ -1109,6 +1433,8 @@ export function SettingsWindowApp() {
           onCreateTag={createSettingsTag}
           onUpdateTag={updateSettingsTag}
           onOpenTagFiltered={openTagFiltered}
+          onEditScripts={() => void openScriptsInEditor()}
+          onBrowseVscodePath={() => void browseVscodePath()}
           onCancel={closeWindow}
           onSave={() => void saveSettings()}
         />
@@ -1192,7 +1518,7 @@ export function NotificationsApp() {
 export function UiHostApp() {
   const [request, setRequest] = useState<UiHostRequest | null>(null);
   const [inputValue, setInputValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     document.body.classList.add("ui-host-window");
@@ -1228,6 +1554,17 @@ export function UiHostApp() {
       setInputValue(event.payload.defaultValue ?? "");
     }).then((value) => {
       unlisten = value;
+      void pendingUiHostRequest()
+        .then((pendingRequest) => {
+          if (!active || !pendingRequest) {
+            return;
+          }
+          setRequest(pendingRequest);
+          setInputValue(pendingRequest.defaultValue ?? "");
+        })
+        .catch((error) => {
+          void recordRendererDiagnostic("ui-host-pending-request-failed", String(error), "error");
+        });
     });
 
     return () => {
@@ -1296,9 +1633,11 @@ export function UiHostApp() {
           {request.body ? <p>{request.body}</p> : null}
         </div>
         {request.kind === "input" ? (
-          <UiTextInput
+          <UiTextarea
             ref={inputRef}
             aria-label={request.title}
+            autosize={false}
+            minRows={2}
             value={inputValue}
             placeholder={request.placeholder ?? ""}
             onChange={(event) => setInputValue(event.currentTarget.value)}
@@ -1384,6 +1723,8 @@ type SettingsPanelProps = {
     request: Omit<UpdateTagConfigRequest, "tagId">,
   ) => Promise<TagSummary>;
   onOpenTagFiltered: (tag: TagSummary) => void;
+  onEditScripts: () => void;
+  onBrowseVscodePath: () => void;
   onCancel: () => void;
   onSave: () => void;
 };
@@ -1393,6 +1734,7 @@ type SettingSection =
   | "picker"
   | "history"
   | "appearance"
+  | "enrichment"
   | "tags"
   | "scripts"
   | "ai";
@@ -1418,6 +1760,8 @@ function SettingsPanel({
   onCreateTag,
   onUpdateTag,
   onOpenTagFiltered,
+  onEditScripts,
+  onBrowseVscodePath,
   onCancel,
   onSave,
 }: SettingsPanelProps) {
@@ -1470,6 +1814,11 @@ function SettingsPanel({
       description: "Theme and preset",
     },
     {
+      id: "enrichment",
+      label: "Enrichment",
+      description: "Clipboard detectors and apply policy",
+    },
+    {
       id: "tags",
       label: "Tags",
       description: "Labels, pinning and filtered script links",
@@ -1494,6 +1843,26 @@ function SettingsPanel({
     normalizedQuery.length === 0
       ? settingSections.filter((section) => section.id === activeSection)
       : settingSections.filter(sectionMatches);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+
+    let unlistenFocus: (() => void) | undefined;
+    void listen<SettingSection>(SETTINGS_FOCUS_SECTION_EVENT, (event: Event<SettingSection>) => {
+      setActiveSection(event.payload);
+      if (query.length > 0) {
+        onQueryChange("");
+      }
+    }).then((cleanup) => {
+      unlistenFocus = cleanup;
+    });
+
+    return () => {
+      unlistenFocus?.();
+    };
+  }, [onQueryChange, query.length]);
 
   return (
     <form
@@ -1542,6 +1911,7 @@ function SettingsPanel({
           <UiBadge className="settings-summary-badge" variant="light">{draft.general.globalShortcut}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.picker.enterAction === "copy" ? "Enter copies" : "Enter pastes"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{draft.enrichment.enabled ? "Enrichment on" : "Enrichment off"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{tags.length} tags</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{actionSummary.scriptCount} scripts</UiBadge>
         </div>
@@ -1633,6 +2003,23 @@ function SettingsPanel({
                           picker: {
                             ...draft.picker,
                             enterAction: (value ?? "copy") as EnterAction,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("picker", "Promote active item", "Move copied or activated item to top") ? (
+                  <SettingRow label="Promote active item" description="Moves a copied or activated history item to the top, matching CopyQ's default.">
+                    <UiSwitch
+                      label="Promote active item"
+                      checked={draft.picker.promoteActiveOnCopy}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            promoteActiveOnCopy: checked,
                           },
                         })
                       }
@@ -1731,6 +2118,136 @@ function SettingsPanel({
               </SettingsSection>
             ) : null}
 
+            {displayedSections.some((section) => section.id === "enrichment") ? (
+              <SettingsSection title="Enrichment" description="Local post-capture detectors and minimal apply policy.">
+                {visible("enrichment", "Enable enrichment", "Run internal detectors after clipboard persistence and before clipboardChange scripts") ? (
+                  <SettingRow label="Enable enrichment" description="Disables only the automatic post-capture enrichment pipeline. Manual script calls can still inspect items.">
+                    <UiSwitch
+                      label="Enable enrichment"
+                      checked={draft.enrichment.enabled}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          enrichment: {
+                            ...draft.enrichment,
+                            enabled: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("enrichment", "Apply mode", "auto apply suggest only placeholder") ? (
+                  <SettingRow label="Apply mode" description="`Suggest only` is a placeholder policy for manual/API inspection without automatic tag application.">
+                    <UiSelect
+                      aria-label="Enrichment apply mode"
+                      value={draft.enrichment.applyMode}
+                      data={[
+                        { value: "autoApply", label: "Auto apply" },
+                        { value: "suggestOnly", label: "Suggest only" },
+                      ]}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          enrichment: {
+                            ...draft.enrichment,
+                            applyMode: (value ?? "autoApply") as EnrichmentApplyMode,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("enrichment", "Detectors", "path url json code secret risk") ? (
+                  <SettingRow label="Detectors" description="Built-in universal detectors. They stay local and deterministic; no AI or payload logging.">
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <UiSwitch
+                        label="Path"
+                        checked={draft.enrichment.detectors.path}
+                        onChange={(checked) =>
+                          onDraftChange({
+                            ...draft,
+                            enrichment: {
+                              ...draft.enrichment,
+                              detectors: {
+                                ...draft.enrichment.detectors,
+                                path: checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <UiSwitch
+                        label="URL"
+                        checked={draft.enrichment.detectors.url}
+                        onChange={(checked) =>
+                          onDraftChange({
+                            ...draft,
+                            enrichment: {
+                              ...draft.enrichment,
+                              detectors: {
+                                ...draft.enrichment.detectors,
+                                url: checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <UiSwitch
+                        label="JSON"
+                        checked={draft.enrichment.detectors.json}
+                        onChange={(checked) =>
+                          onDraftChange({
+                            ...draft,
+                            enrichment: {
+                              ...draft.enrichment,
+                              detectors: {
+                                ...draft.enrichment.detectors,
+                                json: checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <UiSwitch
+                        label="Code"
+                        checked={draft.enrichment.detectors.code}
+                        onChange={(checked) =>
+                          onDraftChange({
+                            ...draft,
+                            enrichment: {
+                              ...draft.enrichment,
+                              detectors: {
+                                ...draft.enrichment.detectors,
+                                code: checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                      <UiSwitch
+                        label="Secret risk"
+                        checked={draft.enrichment.detectors.secretRisk}
+                        onChange={(checked) =>
+                          onDraftChange({
+                            ...draft,
+                            enrichment: {
+                              ...draft.enrichment,
+                              detectors: {
+                                ...draft.enrichment.detectors,
+                                secretRisk: checked,
+                              },
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
             {displayedSections.some((section) => section.id === "tags") ? (
               <SettingsSection title="Tags" description="Manage tag metadata. Filtered shortcuts live in Actions scripts.">
                 {visible("tags", "Tag summary", "Counts pinned tags scripts actions") ? (
@@ -1773,6 +2290,42 @@ function SettingsPanel({
                         })
                       }
                     />
+                  </SettingRow>
+                ) : null}
+                {visible("scripts", "VS Code path", "Executable path used to edit scripts and other local action assets") ? (
+                  <SettingRow
+                    label="VS Code path"
+                    description="Path to `Code.exe`, `code.cmd`, or a local launcher script used to edit scripts and other local action files."
+                  >
+                    <div style={{ display: "grid", gap: 8, gridTemplateColumns: "minmax(0, 1fr) auto" }}>
+                      <UiTextInput
+                        aria-label="VS Code path"
+                        value={draft.scripts.vscodePath}
+                        placeholder="C:\\Users\\<you>\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+                        onChange={(event) =>
+                          onDraftChange({
+                            ...draft,
+                            scripts: {
+                              ...draft.scripts,
+                              vscodePath: event.currentTarget.value,
+                            },
+                          })
+                        }
+                      />
+                      <UiButton type="button" variant="default" onClick={onBrowseVscodePath}>
+                        Browse...
+                      </UiButton>
+                    </div>
+                  </SettingRow>
+                ) : null}
+                {visible("scripts", "Open scripts in VS Code", "Open the configured scripts folder in VS Code from settings or tray menu") ? (
+                  <SettingRow
+                    label="Open scripts in VS Code"
+                    description="Opens the configured scripts folder in VS Code. If the editor path is wrong, Copicu returns here so you can fix it."
+                  >
+                    <UiButton type="button" variant="default" onClick={onEditScripts}>
+                      Open scripts in VS Code
+                    </UiButton>
                   </SettingRow>
                 ) : null}
                 {visible("scripts", "Discovered actions", "Built-in and local script registry diagnostics") ? (
@@ -2327,7 +2880,10 @@ function ScriptRegistryList({
         const canRun =
           !hasErrors &&
           unsupportedCapabilities(action).length === 0 &&
-          (action.triggers.includes("devRun") || action.triggers.includes("commandPalette"));
+          ((action.triggers.includes("devRun") &&
+            actionRunnableForTrigger(action, "devRun", [])) ||
+            (action.triggers.includes("commandPalette") &&
+              actionRunnableForTrigger(action, "commandPalette", [])));
 
         return (
           <details
@@ -2435,6 +2991,9 @@ function itemsForActionContext(action: ActionDefinition, items: HistoryItem[]) {
   if (action.input.selection === "none" || action.input.source === "none") {
     return [];
   }
+  if (action.input.selection === "active") {
+    return items.slice(0, 1);
+  }
   return items;
 }
 
@@ -2455,6 +3014,8 @@ function actionMatchesSelection(action: ActionDefinition, items: HistoryItem[]) 
       return items.length === 0;
     case "optional":
       return true;
+    case "active":
+      return items.length === 1;
     case "one":
       return items.length === 1;
     case "oneOrMore":
