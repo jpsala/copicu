@@ -36,7 +36,6 @@ import ListChecks from "lucide-react/dist/esm/icons/list-checks.mjs";
 import ListRestart from "lucide-react/dist/esm/icons/list-restart.mjs";
 import MoreVertical from "lucide-react/dist/esm/icons/more-vertical.mjs";
 import Pencil from "lucide-react/dist/esm/icons/pencil.mjs";
-import Pin from "lucide-react/dist/esm/icons/pin.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import Search from "lucide-react/dist/esm/icons/search.mjs";
 import Settings2 from "lucide-react/dist/esm/icons/settings-2.mjs";
@@ -65,6 +64,7 @@ import {
   UiTooltip,
   UiUnstyledButton,
 } from "./ui/controls";
+import { ShortcutBadge } from "./ui/ShortcutBadge";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
 import "@mantine/core/styles.css";
@@ -369,6 +369,11 @@ type CompoundHotkeyPendingEvent = {
   expiresAtUnixMs?: number;
 };
 
+type PickerSessionSnapshot = {
+  reset: boolean;
+  generation: number;
+};
+
 type WhichKeyEntry = {
   key: string;
   label: string;
@@ -432,6 +437,7 @@ type AppSettings = {
     hideOnFocusLost: boolean;
     enterAction: EnterAction;
     promoteActiveOnCopy: boolean;
+    pinToggleShortcut: string;
   };
   history: {
     retentionCount: number;
@@ -613,6 +619,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     hideOnFocusLost: true,
     enterAction: "copy",
     promoteActiveOnCopy: true,
+    pinToggleShortcut: "F8",
   },
   history: {
     retentionCount: 0,
@@ -749,6 +756,10 @@ function clearCompoundHotkeyPending() {
 
 function hideWhichKeyWindow() {
   return invoke("hide_whichkey_window");
+}
+
+function consumePickerSessionSnapshot() {
+  return invoke<PickerSessionSnapshot>("consume_picker_session_snapshot");
 }
 
 function getCompoundHotkeyPending() {
@@ -971,6 +982,7 @@ function App() {
   const [markedTotalCount, setMarkedTotalCount] = useState<number | null>(null);
   const [newClipsAvailable, setNewClipsAvailable] = useState(false);
   const [query, setQuery] = useState("");
+  const [pickerPinned, setPickerPinned] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -1145,10 +1157,16 @@ function App() {
     setAiComposerMode(false);
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
+    queryRef.current = "";
     setQuery("");
+    setHistoryInputQuery("");
+    setHistoryQuery("");
     setSelectedItemId(null);
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
+    if (searchRef.current) {
+      searchRef.current.value = "";
+    }
     historyScrollRef.current?.scrollTo({ top: 0 });
   }, [closeTransientEditors]);
 
@@ -1174,6 +1192,24 @@ function App() {
         console.warn("hide picker failed", error);
       });
   }, [resetPickerSession]);
+
+  const setPickerKeepOpenMode = useCallback((keepOpen: boolean) => {
+    const previousSettings = settings;
+    const optimisticSettings: AppSettings = {
+      ...settings,
+      picker: {
+        ...settings.picker,
+        hideOnFocusLost: !keepOpen,
+      },
+    };
+    setSettings(optimisticSettings);
+    void invoke<AppSettings>("set_picker_keep_open", { keepOpen })
+      .then(setSettings)
+      .catch((error) => {
+        setSettings(previousSettings);
+        console.warn("picker keep-open setting update failed", error);
+      });
+  }, [settings]);
 
   const clearWhichKeyRevealTimer = useCallback(() => {
     if (whichKeyRevealTimerRef.current !== null) {
@@ -1773,11 +1809,17 @@ function App() {
       try {
         setActionError(null);
         setOpenItemMenu(null);
+        const effectiveActivation = pickerPinned || !settings.picker.hideOnFocusLost
+          ? {
+              ...activation,
+              hidePicker: false,
+            }
+          : activation;
         await activateHostItem({
           itemId: item.id,
-          ...activation,
+          ...effectiveActivation,
         });
-        if (activation.hidePicker) {
+        if (effectiveActivation.hidePicker) {
           pickerWasHiddenRef.current = true;
           resetPickerSession();
         }
@@ -1786,7 +1828,7 @@ function App() {
         focusSearch();
       }
     },
-    [focusSearch, resetPickerSession],
+    [focusSearch, pickerPinned, resetPickerSession, settings.picker.hideOnFocusLost],
   );
 
   const runActionDefinition = useCallback(
@@ -2163,7 +2205,7 @@ function App() {
             >
               <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
               <span>{action.title}</span>
-              {action.shortcut ? <UiKbd>{normalizeShortcutString(action.shortcut)}</UiKbd> : null}
+              <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
             </UiUnstyledButton>
           ))}
           <UiUnstyledButton
@@ -2509,22 +2551,39 @@ function App() {
         pickerWasHiddenRef.current = true;
         return;
       }
-      const resetAfterHidden = pickerWasHiddenRef.current;
-      pickerWasHiddenRef.current = false;
-      if (resetAfterHidden) {
-        resetPickerSession();
-      }
-      void refreshHistory({
-        resetScroll: resetAfterHidden,
-        respectManualScroll: !resetAfterHidden,
-        showPending: false,
-        allowAi: false,
-      }).catch((error) => {
-        if (active) {
-          setHistoryPending(false);
-          setHistoryError(String(error));
+
+      void (async () => {
+        let resetFromHost = false;
+        try {
+          const session = await consumePickerSessionSnapshot();
+          resetFromHost = session.reset;
+        } catch (error) {
+          console.warn("consume picker session failed", error);
         }
-      });
+        if (!active) {
+          return;
+        }
+        if (resetFromHost) {
+          pickerWasHiddenRef.current = true;
+        }
+        const resetAfterHidden = pickerWasHiddenRef.current;
+        pickerWasHiddenRef.current = false;
+        if (resetAfterHidden) {
+          resetPickerSession();
+        }
+        void refreshHistory({
+          resetScroll: resetAfterHidden,
+          respectManualScroll: !resetAfterHidden,
+          showPending: false,
+          queryOverride: resetAfterHidden ? "" : null,
+          allowAi: false,
+        }).catch((error) => {
+          if (active) {
+            setHistoryPending(false);
+            setHistoryError(String(error));
+          }
+        });
+      })();
     };
     window.addEventListener("focus", refreshOnFocus);
     document.addEventListener("visibilitychange", refreshOnFocus);
@@ -2708,16 +2767,6 @@ function App() {
             );
           }
           break;
-        case "a":
-        case "A":
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            setSelectedIds(new Set(history.map((item) => item.id)));
-            if (selectedItem) {
-              selectionAnchorItemIdRef.current = selectedItem.id;
-            }
-          }
-          break;
       }
     },
   };
@@ -2733,11 +2782,15 @@ function App() {
   return (
     <main className="app-shell">
       <CustomWindowFrame
-        controls={["pin", "minimize", "maximize", "hide"]}
+        controls={["pin", "keep-open", "minimize", "maximize", "hide"]}
         hideLabel="Hide Copicu"
+        keepOpen={!settings.picker.hideOnFocusLost}
+        pinShortcutLabel={settings.picker.pinToggleShortcut}
         title="Copicu"
         variant="floatingPicker"
         onHide={hidePickerWindow}
+        onKeepOpenChange={setPickerKeepOpenMode}
+        onPinChange={setPickerPinned}
       >
       <section className="picker-panel" aria-label="Copicu">
         <div className={`search-row${aiComposerMode ? " is-ai-mode" : ""}`}>
@@ -2858,7 +2911,14 @@ function App() {
               }}
             />
           )}
-          <UiTooltip label={aiComposerMode ? "AI mode, switch to search" : "Search mode, switch to AI"}>
+          <UiTooltip
+            label={(
+              <span className="tooltip-shortcut-label">
+                <span>{aiComposerMode ? "AI mode, switch to search" : "Search mode, switch to AI"}</span>
+                <ShortcutBadge shortcut="Ctrl+I" />
+              </span>
+            )}
+          >
             <UiIconButton
               type="button"
               className="composer-mode-button"
@@ -3177,7 +3237,7 @@ function App() {
                             >
                               <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
                               <span>{action.title}</span>
-                              {action.shortcut ? <UiKbd>{normalizeShortcutString(action.shortcut)}</UiKbd> : null}
+                              <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
                             </UiUnstyledButton>
                           ))}
                           <UiUnstyledButton
@@ -3604,7 +3664,7 @@ function CommandPalette({
                     {action.description ? <small>{action.description}</small> : null}
                   </span>
                   <span className="action-badges">
-                    {action.shortcut ? <UiKbd>{normalizeShortcutString(action.shortcut)}</UiKbd> : null}
+                    <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
                     <UiBadge className="action-source-badge" variant="default">
                       {action.source === "script" ? "Script" : "Built-in"}
                     </UiBadge>

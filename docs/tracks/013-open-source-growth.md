@@ -1,7 +1,7 @@
 ---
 id: open-source-growth
 status: active
-updated: 2026-06-09
+updated: 2026-06-12
 ---
 
 # Open Source Growth
@@ -155,12 +155,12 @@ Un contributor necesita:
 - [ ] Gif corto: paste-to-previous-window.
 - [ ] Gif corto: tag/filter workflow.
 - [ ] Gif corto: AI command mode con Markdown output, usando datos sinteticos.
-- [ ] Guardar assets en `docs/assets/` o `.github/assets/` y linkear desde README.
+- [x] Guardar assets en `docs/assets/` o `.github/assets/` y linkear desde README.
 
 ### README Improvements
 
 - [x] Subir "Install Windows alpha" cerca del inicio.
-- [ ] Agregar screenshot/gif inicial visible.
+- [x] Agregar screenshot/gif inicial visible.
 - [x] Agregar "Large histories without rendering thousands of rows" con wording honesto.
 - [x] Agregar "Limitations of this alpha".
 - [x] Agregar "What to test and report".
@@ -177,10 +177,33 @@ Un contributor necesita:
 
 ### Distribution
 
-- [ ] Workflow reproducible de release Windows.
-- [ ] Checks de release: build, visual, rust tests, secret scan basico, audit de `.env`/logs/DB/blobs.
-- [ ] Documentar SHA256 de instalador por release.
-- [ ] Mejorar notas de release con known issues.
+- [x] Workflow reproducible de release Windows.
+- [x] Checks de release: build, visual, rust tests, secret scan basico, audit de `.env`/logs/DB/blobs.
+- [x] Documentar SHA256 de instalador por release.
+- [x] Mejorar notas de release con known issues / highlights verificables.
+
+### Estado 2026-06-12
+
+- Publicado release final `v0.2.0` en GitHub con instalador NSIS Windows x64.
+- Rama de publicacion: `codex/release-0.2.0`.
+- PR draft abierto: `#9`.
+- Verificaciones usadas en el corte:
+  - `npm run build`
+  - `npm run visual:check`
+  - `npm run capabilities:drift:test`
+  - `npm run ai:planner:test`
+  - `npm run tauri:build`
+- Siguiente foco de crecimiento publico:
+  - agregar screenshot/gif visible en README;
+  - `install:current` ya revalidado sobre instalada real el 2026-06-12;
+  - seguir endureciendo el checklist para futuros releases sin depender de memoria manual.
+
+### Estado 2026-06-13
+
+- Preparado corte `v0.2.1` con version alineada en npm, Tauri y Cargo.
+- README actualizado para apuntar a `v0.2.1`, instalador `Copicu_0.2.1_x64-setup.exe`, demo sintetica y SHA256 final.
+- `npm run install:current` genero el instalador NSIS, reemplazo la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`.
+- SHA256: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`.
 
 ## Launch Messages
 

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 #[cfg(not(test))]
-use tauri::{AppHandle, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 #[cfg(not(test))]
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -92,7 +92,14 @@ pub fn mark_used(storage: &crate::storage::AppStorage, item_id: i64) -> Result<(
 pub fn hide_picker<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
     window
         .hide()
-        .map_err(|error| format!("failed to hide picker window: {error}"))
+        .map_err(|error| format!("failed to hide picker window: {error}"))?;
+    if let Some(session) = window
+        .app_handle()
+        .try_state::<crate::PickerSessionController>()
+    {
+        session.mark_transient_hidden();
+    }
+    Ok(())
 }
 
 #[cfg(test)]

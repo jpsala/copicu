@@ -137,6 +137,8 @@ pub struct BuiltinEnrichmentResult {
     pub content_kind: String,
     pub enabled: bool,
     pub apply_mode: EnrichmentApplyMode,
+    pub auto_apply_enabled: bool,
+    pub manual_apply_allowed: bool,
     pub eligible: bool,
     pub tags: Vec<BuiltinEnrichmentTagResult>,
 }

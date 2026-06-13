@@ -6,24 +6,33 @@ Copicu started as a CopyQ-inspired clipboard manager, but the goal is not to clo
 
 The clipboard is usually treated as a passive list of things you copied. Copicu treats it as working memory: searchable, previewable, editable, taggable, scriptable, and reusable.
 
-## Install Windows Release Candidate
+## Install Windows Release
 
-Copicu currently ships as a Windows release candidate.
+Copicu currently ships as a Windows release.
 
 1. Download the latest Windows installer from [Releases](https://github.com/jpsala/copicu/releases).
 2. Run the `Copicu_*_x64-setup.exe` installer.
 3. Open Copicu and use the picker to search, copy, edit, tag, or paste synthetic/test clipboard items first.
 
-Current release candidate:
+Current release:
 
-- [v0.2.0-rc.2](https://github.com/jpsala/copicu/releases/tag/v0.2.0-rc.2)
-- Asset: `Copicu_0.2.0_x64-setup.exe`
+- [v0.2.1](https://github.com/jpsala/copicu/releases/tag/v0.2.1)
+- Asset: `Copicu_0.2.1_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `6A427F084765A3CC60B1A34C854AF33310A29CCC1C1D4002DF23337109DE7E4F`
+- SHA256: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`
 
-`v0.2.0-rc.2` includes the Windows installer fixes for `WebView2Loader.dll` and launches as a normal GUI application without opening a console window.
+`v0.2.1` includes the Windows installer fixes for `WebView2Loader.dll`, launches as a normal GUI application without opening a console window, and adds the latest picker/session, shortcut, enrichment, and synthetic demo updates.
 
 Copicu is used daily as a local clipboard manager. The core picker, history capture, search, editing, tags, shortcuts, and paste workflow are in active use.
+
+## Synthetic Demo
+
+This demo uses generated synthetic clipboard data only.
+
+![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
+
+Static poster: [docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png](docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png)
+Video: [docs/assets/videos/copicu-synthetic-picker-demo.mp4](docs/assets/videos/copicu-synthetic-picker-demo.mp4)
 
 ## Current Limitations
 

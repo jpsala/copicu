@@ -40,6 +40,8 @@ export default defineAction({
       kind: item.kind,
       textLength: item.text?.length ?? 0,
       applyMode: result.applyMode,
+      autoApplyEnabled: result.autoApplyEnabled,
+      manualApplyAllowed: result.manualApplyAllowed,
       detectors: result.tags.map((tag) => tag.detector),
       appliedDetectors: appliedLabels,
       suggestedDetectors: suggestedLabels,
@@ -47,8 +49,8 @@ export default defineAction({
 
     const title = appliedLabels.length > 0 ? "Enrichment applied" : "Enrichment suggested";
     let message = "Matched detectors: " + detectorLabels.join(", ") + ".";
-    if (result.applyMode === "suggestOnly" && suggestedLabels.length > 0) {
-      message += " Suggest only mode left tags unapplied.";
+    if (!result.autoApplyEnabled && suggestedLabels.length > 0) {
+      message += " Auto apply is off, so tags stayed as suggestions.";
     } else if (appliedLabels.length > 0) {
       message += " Tags were applied automatically.";
     }

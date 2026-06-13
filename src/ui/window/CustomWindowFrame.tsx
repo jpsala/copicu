@@ -18,6 +18,10 @@ type CustomWindowFrameProps = {
   controls?: WindowControlId[];
   hideLabel?: string;
   onHide?: () => void;
+  onKeepOpenChange?: (keepOpen: boolean) => void;
+  onPinChange?: (pinned: boolean) => void;
+  keepOpen?: boolean;
+  pinShortcutLabel?: string;
   resizable?: boolean;
   title: string;
   variant: CustomWindowVariant;
@@ -29,6 +33,10 @@ export function CustomWindowFrame({
   controls,
   hideLabel,
   onHide,
+  onKeepOpenChange,
+  onPinChange,
+  keepOpen,
+  pinShortcutLabel,
   resizable,
   title,
   variant,
@@ -44,7 +52,11 @@ export function CustomWindowFrame({
           closeLabel={closeLabel}
           controls={windowControls}
           hideLabel={hideLabel}
+          keepOpen={keepOpen}
+          onKeepOpenChange={onKeepOpenChange}
           onHide={onHide}
+          onPinChange={onPinChange}
+          pinShortcutLabel={pinShortcutLabel}
         />
       </div>
       <div className="window-frame-content">{children}</div>

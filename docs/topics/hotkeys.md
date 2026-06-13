@@ -123,6 +123,29 @@ Esta arquitectura depende de enfocar Copicu para capturar pasos posteriores, per
 - WhichKey puede abrirse automaticamente por `revealDelayMs` o manualmente por ruta.
 - No ejecutar paste ni escribir clipboard solo por entrar en secuencia.
 
+## Settings Y Hints UI
+
+Decision de producto 2026-06-12: Copicu necesita una superficie de Settings para ver los hotkeys de la app y, en la medida posible, los hotkeys declarados por scripts. Esta superficie debe empezar como inventario confiable y diagnostico antes de prometer edicion universal.
+
+Reglas para el corte:
+
+- Mostrar en un panel unico los shortcuts app-owned, globales, compuestos, locales relevantes y scripts descubiertos con `shortcut`.
+- Editar solo shortcuts cuya fuente de verdad sea segura y persistida por Settings. Para scripts, el shortcut vive en metadata/source del script; editar desde Settings requiere un flujo explicito para modificar archivo u overridear de forma documentada.
+- Reusar el normalizador/display formatter existente para evitar strings inconsistentes.
+- Exponer conflictos y estado de registro junto al shortcut, no como error oculto posterior.
+- Los controles UI con hotkey asignado deben poder mostrar un hint compacto en tooltip o label usando un componente tipo `Kbd`, sin duplicar texto largo en todas partes.
+- No usar hotkeys renderer como sustituto de hotkeys nativos/globales cuando el comportamiento depende de foco o ventana. El intento de pin del picker con `Ctrl+G`, `Ctrl+Shift+O` y `F8` fue no confiable en WebView/Computer Use; para toggles de ventana usar ruta nativa/global si se implementa.
+
+Estado implementado 2026-06-12:
+
+- `Settings > Hotkeys` existe como inventario v1.
+- Los shortcuts editables desde ahi son `general.globalShortcut` para abrir picker y `picker.pinToggleShortcut` para togglear pin/always-on-top del picker.
+- Los shortcuts locales app-owned relevantes se listan como read-only: `Ctrl+K`, `Ctrl+I`, `Enter`/`Shift+Enter`, `F2`/`Shift+F2`.
+- Los scripts descubiertos con `shortcut` se listan con triggers, archivo y diagnostics, pero siguen read-only en Settings.
+- El toggle de pin ahora va por ruta nativa/global, no por handler React. Default actual: `F8`.
+- `Keep picker open` no es el shortcut de pin: es una politica persistida del picker togglada desde la barra del picker; el pin queda como always-on-top. Si se quiere hotkey para `Keep picker open`, debe agregarse como ruta nativa/global o comando host-owned, no como handler renderer.
+- El patron visual reusable vive en `ShortcutBadge` y ya se usa para hints compactos en menus/command palette, tooltip del toggle AI y tooltip del boton de pin.
+
 ## Implementacion Actual 2026-06-08
 
 - Foundation Rust en `src-tauri/src/hotkeys.rs`: parser/formatter, `HotkeySequence`, `HotkeyStep`, `ShortcutRoute`, registry/trie y diagnosticos.

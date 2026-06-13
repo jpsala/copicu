@@ -475,6 +475,91 @@ Actualizacion 2026-06-09:
 - El script `020` hardcodea `tag:context`; el siguiente diseno debe buscar una accion/comando parametrizable para que varios hotkeys/rutas pasen `{ tag | query }` a una implementacion comun, en vez de duplicar un script por tag.
 - Cierre de decision posterior: usar `copicu.commands.run("picker.open", params)` con allowlist y capabilities explicitas. Sacar hotkeys de tags de Settings y moverlos a scripts.
 
+## Proximo Corte Propuesto: Settings Hotkeys
+
+JP pidio una superficie unica en Settings para entender y ajustar los hotkeys propios de Copicu.
+
+Alcance recomendado v1:
+
+- Seccion `Settings > Hotkeys` con inventario consolidado de shortcuts de app: picker global, comandos globales, secuencias compuestas, shortcuts locales relevantes y rutas de scripts.
+- Incluir scripts descubiertos con `shortcut`, `triggers`, action id, nombre visible, archivo de origen y diagnostico de conflicto/registro.
+- Separar claramente `editable ahora` de `solo lectura/abrir origen`. Los hotkeys app-owned pueden editarse si ya tienen settings persistidos; los hotkeys de scripts viven en metadata/source del script, asi que editarlos desde Settings puede requerir un flujo dedicado que modifique archivo, regenere registry y maneje errores.
+- No reintroducir hotkeys nativos por tag. Los filtros por tag/query siguen expresados como scripts.
+- Agregar un patron visual reusable para mostrar shortcuts en UI: componente compacto tipo `Kbd`/glyph, usable en labels y tooltips sin convertir cada boton en texto largo.
+- En hover de controles con hotkey asignado, mostrar el shortcut canonico y la accion que dispara. Si el control ya tiene label suficiente, preferir hint visual discreto; si no, tooltip explicito.
+
+Preguntas de diseno para el corte:
+
+- Fuente de verdad: que shortcuts vienen de Settings, cuales del registry de scripts y cuales son hardcodeados locales del renderer.
+- Politica de edicion: si un script declara `shortcut` en archivo, decidir entre editar archivo automaticamente, abrir el script, o duplicar override en settings.
+- Diagnosticos: conflictos entre app shortcuts, scripts globales, compuestos y shortcuts locales deben verse antes de guardar cambios.
+- Testing: cubrir visualmente el panel y al menos un control con tooltip/hint de hotkey; no depender solo de screenshots.
+
+## Implementado 2026-06-12: Settings Hotkeys V1
+
+- Settings tiene seccion nueva `Hotkeys`.
+- V1 separa inventario/diagnostico de edicion real:
+  - editable: `general.globalShortcut` del picker y `picker.pinToggleShortcut` para togglear pin/always-on-top;
+  - read-only app-owned: `Ctrl+K`, `Ctrl+I`, `Enter`/`Shift+Enter`, `F2`/`Shift+F2`;
+  - read-only scripts: acciones descubiertas con `shortcut`, triggers, archivo y diagnostics.
+- No se prometio edicion universal de scripts; la fuente de verdad sigue siendo el archivo/metadata del script.
+- El toggle de pin del picker ahora tiene ruta nativa/global propia y default `F8`. Cuando queda pinned, deja de ocultarse por focus-lost; al despinnear vuelve a aplicar esa policy.
+- Se agrego `ShortcutBadge` reusable para mostrar shortcuts compactos por pasos/teclas. El picker lo usa en menus de acciones y command palette; el toggle AI muestra tooltip con `Ctrl+I`; el boton de pin muestra el shortcut configurado.
+
+Checks de cierre:
+
+- `npm run build`: paso.
+- `cargo check`: paso.
+- `npm run visual:check`: paso 84/84.
+- `npm run dev:restart`: relanzo la app dev del worktree para dejar la UI visible actualizada.
+
+Siguiente corte sugerido:
+
+1. Dogfoodear si el panel alcanza para detectar conflictos reales de scripts/globales.
+2. Decidir si vale agregar status nativo del picker shortcut, no solo el valor guardado.
+3. Diseñar un flujo explicito para editar shortcuts de scripts sin tocar archivos de forma opaca.
+
+## Implementado 2026-06-12: Reset Tras Focus-Lost
+
+Computer Use hizo un dogfood completo del picker usando principalmente teclado contra la instancia dev aislada (`Ctrl+Shift+.`). Validado:
+
+- `Ctrl+Shift+.` abre el picker desde Notepad.
+- `Ctrl+A` en search reemplaza la query nativamente; ya no dispara multi-select.
+- Navegacion con `Down`, `PageDown` y `Home` responde.
+- Con `Keep picker open` activo, `Enter` no oculta ni resetea query.
+- Con `Keep picker open` activo, `Shift+Enter` pego un item sintetico en Notepad y dejo el picker visible con la query intacta.
+- Con `Keep picker open` apagado, focus-lost oculta el picker como ventana transitoria y, al reabrir, resetea la sesion.
+
+Inconsistencia corregida:
+
+```text
+1. Dejar Keep picker open off.
+2. Abrir picker con Ctrl+Shift+. desde Notepad.
+3. Escribir una query unica sin resultados, por ejemplo NO_MATCH_FOCUS_RESET_<timestamp>.
+4. Enfocar Notepad y esperar que el picker se oculte por focus-lost.
+5. Reabrir con Ctrl+Shift+.
+```
+
+Esperado:
+
+- al ocultarse por focus-lost, la sesion transitoria se resetea igual que en `Enter`, doble click o hide explicito;
+- al reabrir, query vacia, seleccion/anchor transitorios limpios y primer item visible seleccionado.
+
+Implementacion:
+
+- `PickerSessionController` en Rust es la fuente de verdad de sesion transitoria hidden/resettable.
+- `host::hide_picker()` marca la sesion cuando oculta exitosamente; esto cubre hide explicito, toggle, activaciones y scripts que pasan por la primitiva host.
+- `PickerFocusPolicy::schedule_hide()` tambien marca la sesion cuando ejecuta el `window.hide()` nativo por focus-lost.
+- `main` consume `consume_picker_session_snapshot()` al recuperar foco/visibilidad y, si `reset=true`, ejecuta `resetPickerSession()` y `refreshHistory({ queryOverride: "" })`.
+- `resetPickerSession()` limpia tambien `historyInputQuery`, `historyQuery`, `queryRef` y el valor DOM del search para evitar estados derivados viejos.
+
+Validacion:
+
+- `npm run build`: paso, con warning conocido de chunk grande.
+- `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check`: paso.
+- `npm run visual:check`: paso 84/84.
+- Dogfood real Computer Use contra Notepad: `Ctrl+Shift+.` abre dev, query sintetica `NO_MATCH_FOCUS_RESET_<timestamp>` produce no-results, focus-lost oculta, `Ctrl+Shift+.` reabre con input real vacio. UI Automation puede conservar una linea vieja en cache; la prueba de escritura posterior confirmo `oldPlusProbe=false` y `probeOnly=true`.
+
 ## Prompt Proxima Sesion
 
 ```text

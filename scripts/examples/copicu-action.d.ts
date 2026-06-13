@@ -169,6 +169,8 @@ type EnrichmentResult = {
   contentKind: string;
   enabled: boolean;
   applyMode: EnrichmentApplyMode;
+  autoApplyEnabled: boolean;
+  manualApplyAllowed: boolean;
   eligible: boolean;
   tags: EnrichmentTagResult[];
 };

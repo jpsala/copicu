@@ -138,6 +138,7 @@ async function mockTauriInvoke(
       };
     };
     (window as any).__copicuTestInvocations = [];
+    (window as any).__copicuTestWindowPinned = false;
     (window as any).__copicuTestHistoryItems = items;
     (window as any).__copicuTestCompoundPending = pending;
     (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
@@ -1165,6 +1166,32 @@ test("double click activates selected item", async ({ page }) => {
   expect(activatedItemId).toBe(101);
 });
 
+test("pinned picker keeps filter when activating item", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  await search.fill("long");
+  const pinButton = page.getByRole("button", { name: "Pin window on top" });
+  await pinButton.click();
+  await expect(page.getByRole("button", { name: "Unpin window from top" })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "activate_item"),
+  );
+  const activationRequest = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "activate_item")
+      .at(-1)
+      .args.request,
+  );
+  expect(activationRequest.itemId).toBe(101);
+  expect(activationRequest.hidePicker).toBe(false);
+  await expect(search).toHaveValue("long");
+});
+
 test("right click on item opens item actions menu", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1484,6 +1511,19 @@ test("delete key in search input preserves native text editing", async ({ page }
       .map((call: any) => call.args.id),
   );
   expect(deletedIdsAfterTextEdit).toEqual([]);
+});
+
+test("ctrl+a in search input replaces query text", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("#path");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.keyboard.type("constelaciones");
+
+  await expect(search).toHaveValue("constelaciones");
+  await expect(page.locator(".feed-item.is-multi-selected")).toHaveCount(0);
 });
 
 test("multi selection menu deletes selected items", async ({ page }) => {

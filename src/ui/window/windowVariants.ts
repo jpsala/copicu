@@ -5,7 +5,7 @@ export type CustomWindowVariant =
   | "prompt"
   | "toast";
 
-export type WindowControlId = "pin" | "minimize" | "maximize" | "hide" | "close";
+export type WindowControlId = "pin" | "keep-open" | "minimize" | "maximize" | "hide" | "close";
 
 export const DEFAULT_WINDOW_CONTROLS: Record<CustomWindowVariant, WindowControlId[]> = {
   floatingPicker: ["pin", "minimize", "maximize", "hide"],

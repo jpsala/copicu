@@ -1674,7 +1674,7 @@ fn script_enrichment_get_result(
         storage,
         parse_script_item_id(&payload.item_id)?,
         None,
-        false,
+        true,
     )?;
     serde_json::to_value(result)
         .map_err(|error| format!("failed to encode enrichment result: {error}"))
@@ -1697,7 +1697,6 @@ fn script_enrichment_run_for_item(
         .map_err(|error| format!("failed to encode enrichment run result: {error}"))
 }
 
-#[cfg(not(test))]
 fn builtin_enrichment_result_for_item(
     storage: &crate::storage::AppStorage,
     item_id: i64,
@@ -1714,6 +1713,9 @@ fn builtin_enrichment_result_for_item(
             content_kind,
             enabled: settings.enabled,
             apply_mode: settings.apply_mode,
+            auto_apply_enabled: settings.enabled
+                && settings.apply_mode == crate::enrichment::EnrichmentApplyMode::AutoApply,
+            manual_apply_allowed: false,
             eligible: false,
             tags: Vec::new(),
         });
@@ -1721,11 +1723,14 @@ fn builtin_enrichment_result_for_item(
 
     let detected = crate::enrichment::detect_text_builtin_tags(item.text(), &settings);
     let applied_rule_tags = storage.list_item_rule_tag_slugs(item_id)?;
+    let auto_apply_enabled = settings.enabled
+        && settings.apply_mode == crate::enrichment::EnrichmentApplyMode::AutoApply;
+    let manual_apply_allowed = allow_apply && !detected.is_empty();
     let should_apply = allow_apply
-        && options
-            .as_ref()
-            .and_then(|options| options.apply)
-            .unwrap_or(settings.apply_mode == crate::enrichment::EnrichmentApplyMode::AutoApply);
+        && match options.as_ref().and_then(|options| options.apply) {
+            Some(apply) => apply,
+            None => auto_apply_enabled,
+        };
 
     let newly_applied = if should_apply && !detected.is_empty() {
         storage.apply_builtin_enrichment(item_id, &detected)?
@@ -1745,6 +1750,8 @@ fn builtin_enrichment_result_for_item(
         content_kind,
         enabled: settings.enabled,
         apply_mode: settings.apply_mode,
+        auto_apply_enabled,
+        manual_apply_allowed,
         eligible: true,
         tags: detected
             .into_iter()
@@ -2347,6 +2354,70 @@ mod tests {
             .is_some());
     }
 
+    #[test]
+    fn enrichment_run_for_item_does_not_auto_apply_when_disabled() {
+        let storage = open_test_storage("enrichment-disabled-auto-apply");
+        let item_id = storage
+            .insert_text(r"C:\dev\chat\copyq-tauri", "hash-enrichment-disabled")
+            .expect("text item should insert");
+        let mut settings = storage.get_settings().expect("settings should load");
+        settings.enrichment.enabled = false;
+        settings.enrichment.apply_mode = crate::enrichment::EnrichmentApplyMode::AutoApply;
+        storage
+            .update_settings(settings)
+            .expect("settings should persist");
+
+        let result = builtin_enrichment_result_for_item(&storage, item_id, None, true)
+            .expect("result should load");
+
+        assert!(!result.enabled);
+        assert!(!result.auto_apply_enabled);
+        assert!(result.manual_apply_allowed);
+        assert!(result
+            .tags
+            .iter()
+            .any(|tag| tag.tag == "path" && !tag.applied));
+        assert!(storage
+            .list_item_rule_tag_slugs(item_id)
+            .expect("rule tags should load")
+            .is_empty());
+    }
+
+    #[test]
+    fn enrichment_run_for_item_can_apply_explicitly_in_suggest_only_mode() {
+        let storage = open_test_storage("enrichment-suggest-only-manual-apply");
+        let item_id = storage
+            .insert_text("/usr/local/bin/copicu", "hash-enrichment-suggest-only")
+            .expect("text item should insert");
+        let mut settings = storage.get_settings().expect("settings should load");
+        settings.enrichment.enabled = true;
+        settings.enrichment.apply_mode = crate::enrichment::EnrichmentApplyMode::SuggestOnly;
+        storage
+            .update_settings(settings)
+            .expect("settings should persist");
+
+        let result = builtin_enrichment_result_for_item(
+            &storage,
+            item_id,
+            Some(crate::enrichment::RunForItemOptions { apply: Some(true) }),
+            true,
+        )
+        .expect("result should load");
+
+        assert!(!result.auto_apply_enabled);
+        assert!(result.manual_apply_allowed);
+        assert!(result
+            .tags
+            .iter()
+            .any(|tag| tag.tag == "path" && tag.applied));
+        assert_eq!(
+            storage
+                .list_item_rule_tag_slugs(item_id)
+                .expect("rule tags should load"),
+            vec!["path".to_string()]
+        );
+    }
+
     fn test_script_action(
         id: &str,
         shortcut: &str,
@@ -2384,5 +2455,14 @@ mod tests {
         let path = dir.join(file_name);
         std::fs::write(&path, source).expect("temp script should be written");
         path
+    }
+
+    fn open_test_storage(label: &str) -> crate::storage::AppStorage {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-actions-test-{label}-{}-{}",
+            std::process::id(),
+            now_unix_ms()
+        ));
+        crate::storage::AppStorage::open(&app_data_dir).expect("test storage should open")
     }
 }

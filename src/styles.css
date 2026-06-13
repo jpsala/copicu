@@ -360,7 +360,13 @@ button {
 }
 
 .window-control-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-muted));
   color: var(--accent);
+}
+
+.window-control-button.is-keep-open[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .window-control-button.is-close:hover,
@@ -2417,6 +2423,112 @@ kbd {
 
 .hotkey-field-status.has-error {
   color: var(--danger);
+}
+
+.shortcut-badge {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.shortcut-badge-step {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+}
+
+.shortcut-badge-step + .shortcut-badge-step::before {
+  content: ",";
+  margin-right: 3px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.tooltip-shortcut-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hotkey-inventory-list,
+.hotkey-script-list {
+  display: grid;
+  gap: 10px;
+}
+
+.hotkey-inventory-item,
+.hotkey-script-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.hotkey-inventory-header,
+.hotkey-script-header {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hotkey-inventory-header strong,
+.hotkey-script-header strong {
+  color: var(--ink);
+  font-size: 0.84rem;
+  line-height: 1.2;
+}
+
+.hotkey-inventory-header p,
+.hotkey-script-copy p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.hotkey-inventory-copy,
+.hotkey-script-copy {
+  min-width: 0;
+}
+
+.hotkey-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hotkey-script-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.hotkey-script-path {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.hotkey-script-diagnostics {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.73rem;
+}
+
+.hotkey-script-diagnostics li {
+  line-height: 1.3;
 }
 
 .segmented-control {
