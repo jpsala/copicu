@@ -15,7 +15,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Revisar otra extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `specs/008-clipboard-enrichment/spec.md` | Flujo manual de edicion de shortcuts de scripts validado; patch preview queda opcional/futuro si JP lo pide. |
 | Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Dogfood prewarm de `metadata`; mantenerlo si la velocidad percibida compensa el coste idle. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` publicado con demo sintetica en README; siguiente paso: mergear PR `#10` cuando JP confirme el corte. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` publicado y PR `#10` mergeado a `main`; siguiente paso: elegir proximo frente de crecimiento o release hardening. |
 | Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` ya quedo revalidado end-to-end; siguiente corte: decidir si recuperar code split o atacar el warning de chunk grande. |
 | OS Lite/docs | active | `docs/topics/docs-knowledge-system.md` | Mantener ruta caliente liviana; usar `docs/topics/agentic-os-operations.md` para `realinear os`. |
 | Skills locales | reference | `docs/topics/local-codex-skills.md` | Abrir solo para crear/revisar skills locales o discutir costo de discovery. |
@@ -50,7 +50,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 
 ## Riesgos
 
-- Worktree esperado tras cierre: rama `codex/release-0.2.1` limpia y pusheada; PR draft `#10` abierto contra `main`.
+- Worktree esperado tras merge de release: rama `main` limpia y alineada con `origin/main`; PR `#10` mergeado.
 - No confiar en `Process.Responding` como readiness de WebView.
 - `visual:check` puede fallar por infraestructura Vite/WebView, no necesariamente por assertions.
 - En shortcuts globales, evitar next-step globals temporales y emits backend hacia `main` sin harness.
@@ -108,7 +108,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 - Settings Hotkeys slice 2026-06-13: el inventario ahora muestra status nativo real para `general.globalShortcut` y `picker.pinToggleShortcut` via `get_app_shortcut_status`: `Registered`, `Conflict`, `Unsupported`, `Disabled` o `Checking`, con error OS visible cuando falla. El refresh backend reintenta registrar si el estado interno coincide con el setting pero el OS no lo tiene registrado.
 - Settings Hotkeys slice 2026-06-13: scripts con `shortcut` siguen read-only para Settings, pero ahora cada fila tiene `Edit shortcut`, `Open source` y `Refresh diagnostics`. `edit_script_in_vscode(path)` abre el archivo puntual tras validar que esta dentro de la carpeta configurada de scripts. No hay patch automatico ni override persistido.
 - Settings Hotkeys dogfood 2026-06-13: perfil dev aislado valido el flujo manual con script sintetico temporal. Cache inicial `Ctrl+Alt+Shift+9`; cambio manual a `Ctrl+Alt+Shift+T` produjo diagnostico `global shortcut collides with another script`; cambio a `Ctrl+Alt+Shift+8` limpio diagnosticos y registro el shortcut. El script temporal fue eliminado y dev quedo relanzada sin ese action.
-- Release 2026-06-13: version alineada a `0.2.1` en npm, Tauri y Cargo; `npm run install:current` genero e instalo `src-tauri\target\release\bundle\nsis\Copicu_0.2.1_x64-setup.exe` sobre la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. SHA256 final: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`. Commit `a5c38a4`, rama `codex/release-0.2.1`, release GitHub `v0.2.1` y PR draft `#10` quedaron publicados.
+- Release 2026-06-13: version alineada a `0.2.1` en npm, Tauri y Cargo; `npm run install:current` genero e instalo `src-tauri\target\release\bundle\nsis\Copicu_0.2.1_x64-setup.exe` sobre la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. SHA256 final: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`. Commit `a5c38a4`, rama `codex/release-0.2.1`, release GitHub `v0.2.1` y PR `#10` quedaron publicados; PR `#10` fue marcado ready y mergeado a `main` el 2026-06-13 con merge commit `2207675`.
 
 ## Comandos De Contexto
 
@@ -127,7 +127,7 @@ Continuidad: `sigamos` continua en la misma sesion sin cierre ni handoff. `cerra
 
 Proximo lote recomendado:
 
-1. Revisar y mergear PR draft `#10` si JP confirma el corte `v0.2.1`.
+1. Decidir si el siguiente frente es recuperar code split/limpiar warning de chunk grande o seguir con actions modularization.
 2. Opcional/futuro: si JP quiere editar shortcuts de scripts sin abrir el editor, disenar patch preview controlado; no hay necesidad inmediata despues del dogfood manual.
 3. Opcional: agregar test focalizado para `consume_picker_session_snapshot()`/focus-lost cuando haya harness nativo confiable; `visual:check` ya cubre hide explicito.
 
