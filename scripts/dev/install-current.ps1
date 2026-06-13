@@ -6,7 +6,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$installer = Join-Path $repoRoot "src-tauri\target\release\bundle\nsis\Copicu_0.2.0_x64-setup.exe"
+$tauriConfig = Get-Content (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
+$installer = Join-Path $repoRoot "src-tauri\target\release\bundle\nsis\Copicu_$($tauriConfig.version)_x64-setup.exe"
 $installedExe = Join-Path $env:LOCALAPPDATA "Copicu\copicu.exe"
 
 Push-Location $repoRoot

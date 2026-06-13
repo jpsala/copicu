@@ -35,7 +35,7 @@ Flow:
 - Minimal settings must exist for:
   - global `enabled`;
   - per-detector toggles;
-  - a clear `suggestOnly` vs `autoApply` policy placeholder.
+  - a clear `suggestOnly` vs `autoApply` policy.
 - Minimal script host API must exist for:
   - `copicu.enrichment.runForItem(itemId, options?)`;
   - `copicu.enrichment.getResult(itemId)`.
@@ -100,6 +100,8 @@ Meaning:
 
 - `autoApply`: watcher applies normalized rule tags post-capture.
 - `suggestOnly`: watcher computes results but does not auto-apply tags; scripts or future UI can inspect results manually.
+- `enabled = false`: watcher does not auto-apply tags even if `applyMode = autoApply`.
+- Manual script application is explicit: `enrichment.runForItem(itemId, { apply: true })` can apply detected rule tags for an item.
 
 ## Architecture
 
@@ -115,7 +117,8 @@ Scripts remain an extension point, but they are not the source of truth for univ
 Minimal scriptability in this slice reuses the host API bridge:
 
 - `enrichment.getResult(itemId)` returns the deterministic result for an item;
-- `enrichment.runForItem(itemId, options?)` can apply tags when allowed by the request/policy.
+- `enrichment.runForItem(itemId, options?)` can apply tags when requested or when policy auto-apply is active.
+- `EnrichmentResult` exposes `autoApplyEnabled` and `manualApplyAllowed` so scripts can distinguish applied tags from suggestions without inferring policy from settings fields.
 
 ## Acceptance Criteria
 

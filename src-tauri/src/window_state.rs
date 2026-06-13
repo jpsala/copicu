@@ -10,7 +10,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use tauri::{Monitor, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, Window};
+use tauri::{Manager, Monitor, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, Window};
 
 use crate::surface_registry;
 
@@ -138,13 +138,21 @@ impl WindowStateRegistry {
             return Ok(());
         }
 
-        let monitors = window
+        let app = window.app_handle();
+        let monitors = app
             .available_monitors()
             .map_err(|error| format!("window {} monitors failed: {error}", behavior.label))?
             .into_iter()
             .map(|monitor| monitor_snapshot(&monitor))
             .collect::<Vec<_>>();
-        let Some(target_monitor) = choose_target_monitor(window, target, &monitors) else {
+        let cursor_position = app.cursor_position().ok();
+        let primary_monitor = app
+            .primary_monitor()
+            .map_err(|error| format!("window {} primary monitor failed: {error}", behavior.label))?
+            .map(|monitor| monitor_snapshot(&monitor));
+        let Some(target_monitor) =
+            choose_target_monitor(target, &monitors, cursor_position, primary_monitor.clone())
+        else {
             return Ok(());
         };
 
@@ -286,51 +294,36 @@ fn write_state_file(path: &PathBuf, state: &PersistedWindowState) -> Result<(), 
     std::fs::write(path, content).map_err(|error| format!("window state write failed: {error}"))
 }
 
-fn choose_target_monitor<R: Runtime>(
-    window: &WebviewWindow<R>,
+fn choose_target_monitor(
     target: RestoreTarget,
     monitors: &[MonitorSnapshot],
+    cursor_position: Option<PhysicalPosition<f64>>,
+    primary_monitor: Option<MonitorSnapshot>,
 ) -> Option<MonitorSnapshot> {
     match target {
-        RestoreTarget::CursorMonitor => window
-            .cursor_position()
-            .ok()
-            .and_then(|position| {
-                window
-                    .monitor_from_point(position.x, position.y)
-                    .ok()
-                    .flatten()
-            })
-            .map(|monitor| monitor_snapshot(&monitor))
-            .or_else(|| {
-                window
-                    .current_monitor()
-                    .ok()
-                    .flatten()
-                    .map(|monitor| monitor_snapshot(&monitor))
-            })
-            .or_else(|| {
-                window
-                    .primary_monitor()
-                    .ok()
-                    .flatten()
-                    .map(|monitor| monitor_snapshot(&monitor))
-            })
+        RestoreTarget::CursorMonitor => cursor_position
+            .and_then(|position| monitor_for_point(monitors, position))
+            .or(primary_monitor)
             .or_else(|| monitors.first().cloned()),
-        RestoreTarget::LastMonitor => window
-            .current_monitor()
-            .ok()
-            .flatten()
-            .map(|monitor| monitor_snapshot(&monitor))
-            .or_else(|| {
-                window
-                    .primary_monitor()
-                    .ok()
-                    .flatten()
-                    .map(|monitor| monitor_snapshot(&monitor))
-            })
-            .or_else(|| monitors.first().cloned()),
+        RestoreTarget::LastMonitor => primary_monitor.or_else(|| monitors.first().cloned()),
     }
+}
+
+fn monitor_for_point(
+    monitors: &[MonitorSnapshot],
+    position: PhysicalPosition<f64>,
+) -> Option<MonitorSnapshot> {
+    let x = position.x.floor() as i32;
+    let y = position.y.floor() as i32;
+    monitors
+        .iter()
+        .find(|monitor| {
+            x >= monitor.work_x
+                && y >= monitor.work_y
+                && x < monitor.work_x + monitor.work_width as i32
+                && y < monitor.work_y + monitor.work_height as i32
+        })
+        .cloned()
 }
 
 fn normalize_bounds(

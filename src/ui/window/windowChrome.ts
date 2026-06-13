@@ -1,5 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { emitTo } from "@tauri-apps/api/event";
+
+const MAIN_WINDOW_LABEL = "main";
+const PICKER_PIN_STATE_EVENT = "copicu://picker/pin-state";
 
 export type WindowResizeDirection =
   | "East"
@@ -13,6 +17,11 @@ export type WindowResizeDirection =
 
 function isTauriRuntime() {
   return Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+}
+
+function testWindowPinState(): boolean | null {
+  const testWindow = window as Window & { __copicuTestWindowPinned?: boolean };
+  return typeof testWindow.__copicuTestWindowPinned === "boolean" ? testWindow.__copicuTestWindowPinned : null;
 }
 
 export function recordWindowChromeEvent(event: string, detail?: string) {
@@ -32,6 +41,10 @@ export function recordWindowChromeEvent(event: string, detail?: string) {
 }
 
 export async function readWindowPinState(defaultValue = false): Promise<boolean> {
+  const testPinned = testWindowPinState();
+  if (testPinned !== null) {
+    return testPinned;
+  }
   if (!isTauriRuntime()) {
     return defaultValue;
   }
@@ -46,10 +59,16 @@ export async function readWindowMaximizedState(defaultValue = false): Promise<bo
 }
 
 export async function setWindowPinned(pinned: boolean): Promise<void> {
+  const testWindow = window as Window & { __copicuTestWindowPinned?: boolean };
+  if (typeof testWindow.__copicuTestWindowPinned === "boolean") {
+    testWindow.__copicuTestWindowPinned = pinned;
+    return;
+  }
   if (!isTauriRuntime()) {
     return;
   }
   await getCurrentWindow().setAlwaysOnTop(pinned);
+  await emitTo(MAIN_WINDOW_LABEL, PICKER_PIN_STATE_EVENT, pinned).catch(() => undefined);
 }
 
 export async function minimizeCurrentWindow(): Promise<void> {

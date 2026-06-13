@@ -32,7 +32,7 @@ fn dev_log(args: std::fmt::Arguments<'_>) {
 #[cfg(not(debug_assertions))]
 fn dev_log(_args: std::fmt::Arguments<'_>) {}
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Default, Serialize)]
 pub struct CaptureStats {
     captured_count: u64,
     captured_image_count: u64,
@@ -44,7 +44,7 @@ pub struct CaptureStats {
     event_count: u64,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Default, Serialize)]
 pub struct CaptureSnapshot {
     stats: CaptureStats,
     events: Vec<CaptureEvent>,

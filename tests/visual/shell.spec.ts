@@ -138,6 +138,7 @@ async function mockTauriInvoke(
       };
     };
     (window as any).__copicuTestInvocations = [];
+    (window as any).__copicuTestWindowPinned = false;
     (window as any).__copicuTestHistoryItems = items;
     (window as any).__copicuTestCompoundPending = pending;
     (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
@@ -209,6 +210,21 @@ async function mockTauriInvoke(
             return null;
           case "get_compound_hotkey_pending":
             return (window as any).__copicuTestCompoundPending;
+          case "get_app_shortcut_status":
+            return {
+              picker: {
+                label: "Ctrl+Shift+,",
+                registered: true,
+                supported: true,
+                error: null,
+              },
+              pin: {
+                label: "F8",
+                registered: true,
+                supported: true,
+                error: null,
+              },
+            };
           case "clear_compound_hotkey_pending":
             (window as any).__copicuTestCompoundPending = null;
             return null;
@@ -363,6 +379,10 @@ async function mockTauriInvoke(
             }
             return actions;
           }
+          case "edit_script_in_vscode":
+            return null;
+          case "refresh_script_action_cache":
+            return await (window as any).__TAURI_INTERNALS__.invoke("list_actions");
           case "run_action":
             return {
               actionId: args.request.actionId,
@@ -1165,6 +1185,32 @@ test("double click activates selected item", async ({ page }) => {
   expect(activatedItemId).toBe(101);
 });
 
+test("pinned picker keeps filter when activating item", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  await search.fill("long");
+  const pinButton = page.getByRole("button", { name: "Pin window on top" });
+  await pinButton.click();
+  await expect(page.getByRole("button", { name: "Unpin window from top" })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "activate_item"),
+  );
+  const activationRequest = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "activate_item")
+      .at(-1)
+      .args.request,
+  );
+  expect(activationRequest.itemId).toBe(101);
+  expect(activationRequest.hidePicker).toBe(false);
+  await expect(search).toHaveValue("long");
+});
+
 test("right click on item opens item actions menu", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1486,6 +1532,19 @@ test("delete key in search input preserves native text editing", async ({ page }
   expect(deletedIdsAfterTextEdit).toEqual([]);
 });
 
+test("ctrl+a in search input replaces query text", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("#path");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
+  await page.keyboard.type("constelaciones");
+
+  await expect(search).toHaveValue("constelaciones");
+  await expect(page.locator(".feed-item.is-multi-selected")).toHaveCount(0);
+});
+
 test("multi selection menu deletes selected items", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1587,6 +1646,19 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
     ),
   );
   expect(registryOverflow).toBe(false);
+  await page.getByLabel("Search settings").fill("hotkeys");
+  await expect(page.getByLabel("App shortcuts")).toContainText("Open picker");
+  await expect(page.getByLabel("App shortcuts")).toContainText("Registered");
+  await expect(page.getByLabel("App shortcuts")).toContainText("Toggle pin on top");
+  await page.getByRole("button", { name: "Edit shortcut" }).first().click();
+  await expect(page.getByText("Manual source edit")).toBeVisible();
+  await expect(page.getByText("Current shortcut")).toBeVisible();
+  await page.getByRole("button", { name: "Open this file" }).click();
+  await page.getByRole("button", { name: "Refresh diagnostics" }).click();
+  await expect(page.getByText("Scripts refreshed")).toBeVisible();
+  const invocations = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(invocations.some((entry: any) => entry.cmd === "edit_script_in_vscode")).toBe(true);
+  expect(invocations.some((entry: any) => entry.cmd === "refresh_script_action_cache")).toBe(true);
   await page.getByLabel("Search settings").fill("theme");
   const themeSelect = page.getByRole("combobox", { name: "Theme" });
   await expect(themeSelect).toBeVisible();

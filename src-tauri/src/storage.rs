@@ -296,6 +296,8 @@ pub struct PickerSettings {
     pub enter_action: EnterAction,
     #[serde(default = "default_promote_active_on_copy")]
     pub promote_active_on_copy: bool,
+    #[serde(default = "default_pin_toggle_shortcut")]
+    pub pin_toggle_shortcut: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -403,6 +405,7 @@ impl Default for AppSettings {
                 hide_on_focus_lost: true,
                 enter_action: EnterAction::Copy,
                 promote_active_on_copy: default_promote_active_on_copy(),
+                pin_toggle_shortcut: default_pin_toggle_shortcut(),
             },
             history: HistorySettings {
                 retention_count: UNLIMITED_HISTORY_LIMIT,
@@ -421,6 +424,10 @@ impl Default for AppSettings {
 
 fn default_promote_active_on_copy() -> bool {
     true
+}
+
+fn default_pin_toggle_shortcut() -> String {
+    "F8".to_string()
 }
 
 fn default_global_shortcut() -> String {
@@ -1927,6 +1934,7 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     }
     settings.tray.vscode_path.clear();
     settings.scripts.folder_path = settings.scripts.folder_path.trim().to_string();
+    settings.picker.pin_toggle_shortcut = settings.picker.pin_toggle_shortcut.trim().to_string();
     let endpoint = settings.ai.endpoint.trim().trim_end_matches('/');
     let model = settings.ai.model.trim();
     if endpoint.is_empty() {
@@ -2021,6 +2029,9 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     }
     if settings.general.global_shortcut.trim().is_empty() {
         return Err("global shortcut cannot be empty".to_string());
+    }
+    if settings.picker.pin_toggle_shortcut.contains(',') {
+        return Err("pin toggle shortcut must be a single shortcut".to_string());
     }
     if settings.scripts.folder_path.trim().is_empty() {
         return Err("scripts folder path cannot be empty".to_string());

@@ -65,6 +65,7 @@ const COMPOUND_HOTKEY_PENDING_EVENT: &str = "copicu://hotkeys/compound-pending";
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
 const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
+const PICKER_PIN_STATE_EVENT: &str = "copicu://picker/pin-state";
 #[cfg(not(test))]
 const METADATA_OPEN_EVENT: &str = "copicu://metadata/open";
 #[cfg(not(test))]
@@ -106,6 +107,21 @@ const ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS: bool = false;
 #[derive(Clone, Default)]
 struct PickerFocusPolicy {
     generation: Arc<AtomicU64>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+pub(crate) struct PickerSessionController {
+    reset_pending: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PickerSessionSnapshot {
+    reset: bool,
+    generation: u64,
 }
 
 #[cfg(not(test))]
@@ -167,6 +183,36 @@ struct HotkeyNormalizationResult {
 #[cfg(not(test))]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+struct NativeShortcutStatus {
+    label: String,
+    registered: bool,
+    supported: bool,
+    error: Option<String>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppShortcutStatus {
+    picker: NativeShortcutStatus,
+    pin: NativeShortcutStatus,
+}
+
+#[cfg(not(test))]
+impl Default for NativeShortcutStatus {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: None,
+        }
+    }
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WhichKeyEntry {
     key: String,
     label: String,
@@ -180,6 +226,14 @@ struct WhichKeyEntry {
 #[derive(Clone)]
 struct CurrentPickerShortcut {
     shortcut: Arc<Mutex<Shortcut>>,
+    status: Arc<Mutex<NativeShortcutStatus>>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+struct CurrentPickerPinShortcut {
+    shortcut: Arc<Mutex<Option<Shortcut>>>,
+    status: Arc<Mutex<NativeShortcutStatus>>,
 }
 
 #[cfg(not(test))]
@@ -300,10 +354,12 @@ impl PickerFocusPolicy {
                 return;
             }
 
+            let reset_app = app.clone();
             if let Err(error) = app.run_on_main_thread(move || {
                 if window.is_focused().unwrap_or(false)
                     || !window.is_visible().unwrap_or(false)
                     || window.is_always_on_top().unwrap_or(false)
+                    || !should_hide_on_focus_lost(&window)
                 {
                     return;
                 }
@@ -311,12 +367,30 @@ impl PickerFocusPolicy {
                 if let Err(error) = window.hide() {
                     eprintln!("window delayed hide on focus lost failed: {error}");
                 } else {
+                    if let Some(session) = reset_app.try_state::<PickerSessionController>() {
+                        session.mark_transient_hidden();
+                    }
                     diag_log("window.focus.hide", "focus lost");
                 }
             }) {
                 eprintln!("window delayed hide dispatch failed: {error}");
             }
         });
+    }
+}
+
+#[cfg(not(test))]
+impl PickerSessionController {
+    pub(crate) fn mark_transient_hidden(&self) {
+        self.reset_pending.store(true, Ordering::SeqCst);
+        self.generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn consume_snapshot(&self) -> PickerSessionSnapshot {
+        PickerSessionSnapshot {
+            reset: self.reset_pending.swap(false, Ordering::SeqCst),
+            generation: self.generation.load(Ordering::SeqCst),
+        }
     }
 }
 
@@ -386,11 +460,16 @@ impl InitialMainWindowHide {
     }
 }
 
-#[cfg(not(test))]
 impl Default for CurrentPickerShortcut {
     fn default() -> Self {
         Self {
             shortcut: Arc::new(Mutex::new(picker_shortcut())),
+            status: Arc::new(Mutex::new(NativeShortcutStatus {
+                label: PICKER_SHORTCUT_LABEL.to_string(),
+                registered: false,
+                supported: true,
+                error: None,
+            })),
         }
     }
 }
@@ -412,26 +491,111 @@ impl CurrentPickerShortcut {
             Err(_) => eprintln!("picker shortcut mutex poisoned"),
         }
     }
+
+    fn status(&self) -> NativeShortcutStatus {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| NativeShortcutStatus {
+                label: PICKER_SHORTCUT_LABEL.to_string(),
+                registered: false,
+                supported: true,
+                error: Some("picker shortcut status unavailable".to_string()),
+            })
+    }
+
+    fn set_status(&self, status: NativeShortcutStatus) {
+        match self.status.lock() {
+            Ok(mut current) => {
+                *current = status;
+            }
+            Err(_) => eprintln!("picker shortcut status mutex poisoned"),
+        }
+    }
+}
+
+#[cfg(not(test))]
+impl CurrentPickerPinShortcut {
+    fn get(&self) -> Option<Shortcut> {
+        self.shortcut.lock().ok().and_then(|shortcut| *shortcut)
+    }
+
+    fn set(&self, next_shortcut: Option<Shortcut>) {
+        match self.shortcut.lock() {
+            Ok(mut shortcut) => {
+                *shortcut = next_shortcut;
+            }
+            Err(_) => eprintln!("picker pin shortcut mutex poisoned"),
+        }
+    }
+
+    fn status(&self) -> NativeShortcutStatus {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| NativeShortcutStatus {
+                label: String::new(),
+                registered: false,
+                supported: false,
+                error: Some("picker pin shortcut status unavailable".to_string()),
+            })
+    }
+
+    fn set_status(&self, status: NativeShortcutStatus) {
+        match self.status.lock() {
+            Ok(mut current) => {
+                *current = status;
+            }
+            Err(_) => eprintln!("picker pin shortcut status mutex poisoned"),
+        }
+    }
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn get_capture_stats(capture: State<'_, clipboard::ClipboardCapture>) -> clipboard::CaptureStats {
-    capture.stats()
+fn get_capture_stats<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> clipboard::CaptureStats {
+    app.try_state::<clipboard::ClipboardCapture>()
+        .map(|capture| capture.stats())
+        .unwrap_or_default()
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn get_capture_snapshot(
-    capture: State<'_, clipboard::ClipboardCapture>,
-) -> clipboard::CaptureSnapshot {
-    capture.snapshot()
+fn get_capture_snapshot<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> clipboard::CaptureSnapshot {
+    app.try_state::<clipboard::ClipboardCapture>()
+        .map(|capture| capture.snapshot())
+        .unwrap_or_default()
 }
 
 #[cfg(not(test))]
 #[tauri::command]
 fn get_clipboard_probe() -> Result<clipboard_probe::ClipboardProbe, String> {
     clipboard_probe::probe_clipboard()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppShortcutStatus {
+    let picker = app
+        .try_state::<CurrentPickerShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: PICKER_SHORTCUT_LABEL.to_string(),
+            registered: false,
+            supported: true,
+            error: Some("picker shortcut state unavailable".to_string()),
+        });
+    let pin = app
+        .try_state::<CurrentPickerPinShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: Some("picker pin shortcut state unavailable".to_string()),
+        });
+
+    AppShortcutStatus { picker, pin }
 }
 
 #[cfg(not(test))]
@@ -772,6 +936,20 @@ fn show_picker(app: tauri::AppHandle) -> Result<(), String> {
 fn hide_picker(window: tauri::WebviewWindow) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "hide_picker")?;
     host::hide_picker(&window)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn consume_picker_session_snapshot(
+    window: tauri::WebviewWindow,
+    session: tauri::State<PickerSessionController>,
+) -> Result<PickerSessionSnapshot, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL],
+        "consume_picker_session_snapshot",
+    )?;
+    Ok(session.consume_snapshot())
 }
 
 #[cfg(not(test))]
@@ -1185,10 +1363,35 @@ fn update_settings(
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_settings")?;
     settings.general.global_shortcut =
         normalize_picker_global_shortcut(&settings.general.global_shortcut)?;
+    settings.picker.pin_toggle_shortcut =
+        normalize_optional_single_shortcut(&settings.picker.pin_toggle_shortcut, "pin toggle")?;
     apply_autostart_setting(&app, settings.general.launch_on_startup)?;
     let next_settings = storage.update_settings(settings)?;
+    apply_picker_keep_open_window_policy(&app, &next_settings);
     actions::refresh_script_action_cache(&storage)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
+    Ok(next_settings)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn set_picker_keep_open(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    keep_open: bool,
+) -> Result<storage::AppSettings, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_picker_keep_open")?;
+    let mut settings = storage.get_settings()?;
+    settings.picker.hide_on_focus_lost = !keep_open;
+    let next_settings = storage.update_settings(settings)?;
+    apply_picker_keep_open_policy_to_window(&window, &next_settings)?;
+    diag_log(
+        "picker.keep_open",
+        format!(
+            "keep_open={keep_open} hide_on_focus_lost={}",
+            next_settings.picker.hide_on_focus_lost
+        ),
+    );
     Ok(next_settings)
 }
 
@@ -1200,7 +1403,19 @@ fn edit_scripts_in_vscode(
     storage: State<'_, storage::AppStorage>,
 ) -> Result<(), String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_scripts_in_vscode")?;
-    open_scripts_folder_in_vscode(&app, &storage)
+    open_scripts_path_in_vscode(&app, &storage, None)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn edit_script_in_vscode(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    path: String,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_script_in_vscode")?;
+    open_scripts_path_in_vscode(&app, &storage, Some(Path::new(&path)))
 }
 
 #[cfg(not(test))]
@@ -1213,6 +1428,27 @@ fn normalize_picker_global_shortcut(input: &str) -> Result<String, String> {
     let normalized = sequence.to_string();
     if shortcut_from_label(&normalized).is_none() {
         return Err(format!("unsupported picker shortcut: {normalized}"));
+    }
+    Ok(normalized)
+}
+
+#[cfg(not(test))]
+fn normalize_optional_single_shortcut(input: &str, label: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+
+    let sequence = hotkeys::HotkeySequence::parse(trimmed)
+        .map_err(|error| format!("invalid {label} shortcut: {error}"))?;
+    if !sequence.is_simple() {
+        return Err(format!(
+            "{label} shortcut must be a single shortcut, not a sequence"
+        ));
+    }
+    let normalized = sequence.to_string();
+    if shortcut_from_label(&normalized).is_none() {
+        return Err(format!("unsupported {label} shortcut: {normalized}"));
     }
     Ok(normalized)
 }
@@ -1482,7 +1718,7 @@ fn get_compound_hotkey_pending(
 ) -> Option<CompoundShortcutPendingInfo> {
     if let Err(error) = require_surface_window(
         &window,
-        &[WHICHKEY_WINDOW_LABEL],
+        &[MAIN_WINDOW_LABEL, WHICHKEY_WINDOW_LABEL],
         "get_compound_hotkey_pending",
     ) {
         eprintln!("{error}");
@@ -1678,12 +1914,14 @@ pub fn run() {
             get_capture_stats,
             get_capture_snapshot,
             get_clipboard_probe,
+            get_app_shortcut_status,
             list_recent_items,
             search_items,
             list_history_page,
             history_search,
             show_picker,
             hide_picker,
+            consume_picker_session_snapshot,
             open_settings_window,
             hide_whichkey_window,
             close_settings_window,
@@ -1710,7 +1948,9 @@ pub fn run() {
             get_history_item,
             get_settings,
             update_settings,
+            set_picker_keep_open,
             edit_scripts_in_vscode,
+            edit_script_in_vscode,
             list_tags,
             create_tag,
             update_tag_config,
@@ -1753,11 +1993,13 @@ pub fn run() {
             let window_registry = window_state::WindowStateRegistry::open(app_data_dir.clone());
 
             app.manage(PickerFocusPolicy::default());
+            app.manage(PickerSessionController::default());
             let initial_main_window_hide = InitialMainWindowHide::default();
             app.manage(initial_main_window_hide.clone());
             app.manage(GlobalScriptShortcuts::default());
             app.manage(CompoundShortcutRuntime::default());
             app.manage(CurrentPickerShortcut::default());
+            app.manage(CurrentPickerPinShortcut::default());
             app.manage(ui_host::UiHostState::default());
             app.manage(AiOutputState::default());
             app.manage(MetadataEditorState::default());
@@ -1861,10 +2103,17 @@ fn spawn_prewarm_metadata_window<R: tauri::Runtime + 'static>(app: tauri::AppHan
                     eprintln!("metadata prewarm restore failed: {error}");
                 }
             }
+            if let Err(error) = window.hide() {
+                eprintln!("metadata prewarm hide failed: {error}");
+            }
 
             diag_log(
                 "metadata.prewarm.done",
-                format!("elapsed_ms={}", started_at.elapsed().as_millis()),
+                format!(
+                    "elapsed_ms={} visible={}",
+                    started_at.elapsed().as_millis(),
+                    window.is_visible().unwrap_or(false)
+                ),
             );
         }) {
             eprintln!("metadata prewarm dispatch failed: {error}");
@@ -2344,7 +2593,41 @@ fn initialize_picker_window<R: tauri::Runtime>(
     }
     window
         .set_always_on_top(false)
-        .map_err(|error| format!("window initial always-on-top reset failed: {error}"))
+        .map_err(|error| format!("window initial always-on-top reset failed: {error}"))?;
+    if let Some(storage) = window.app_handle().try_state::<storage::AppStorage>() {
+        let settings = storage.get_settings()?;
+        apply_picker_keep_open_policy_to_window(window, &settings)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn apply_picker_keep_open_window_policy<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    settings: &storage::AppSettings,
+) {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Err(error) = apply_picker_keep_open_policy_to_window(&window, settings) {
+            eprintln!("picker keep-open window policy failed: {error}");
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn apply_picker_keep_open_policy_to_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    settings: &storage::AppSettings,
+) -> Result<(), String> {
+    let keep_open = !settings.picker.hide_on_focus_lost;
+    let skip_taskbar = !keep_open;
+    window
+        .set_skip_taskbar(skip_taskbar)
+        .map_err(|error| format!("picker skip-taskbar policy failed: {error}"))?;
+    diag_log(
+        "picker.keep_open.window_policy",
+        format!("keep_open={keep_open} skip_taskbar={skip_taskbar}"),
+    );
+    Ok(())
 }
 
 #[cfg(not(test))]
@@ -2464,16 +2747,50 @@ fn toggle_main_window_without_focus<R: tauri::Runtime>(
         format!("visible={visible} focused={focused} foreground={foreground}"),
     );
     if visible {
+        let pinned = window.is_always_on_top().unwrap_or(false);
+        let keep_open = app
+            .try_state::<storage::AppStorage>()
+            .and_then(|storage| storage.get_settings().ok())
+            .map(|settings| !settings.picker.hide_on_focus_lost)
+            .unwrap_or(false);
+        if (pinned || keep_open) && !focused {
+            eprintln!("main window no-focus toggle ok: focused persistent picker");
+            diag_log(
+                "window.toggle.no_focus",
+                format!(
+                    "focus persistent focused={focused} foreground={foreground} pinned={pinned} keep_open={keep_open}"
+                ),
+            );
+            return show_main_window_with_focus(app, true, true);
+        }
+
         host::hide_picker(&window)?;
         eprintln!("main window no-focus toggle ok: hidden");
         diag_log(
             "window.toggle.no_focus",
-            format!("hidden focused={focused} foreground={foreground}"),
+            format!(
+                "hidden focused={focused} foreground={foreground} pinned={pinned} keep_open={keep_open}"
+            ),
         );
         return Ok(());
     }
 
     show_main_window_with_focus(app, true, false)
+}
+
+#[cfg(not(test))]
+fn toggle_main_window_pin<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "main window not available".to_string())?;
+    let next_pinned = !window
+        .is_always_on_top()
+        .map_err(|error| format!("failed to read main window pin state: {error}"))?;
+    window
+        .set_always_on_top(next_pinned)
+        .map_err(|error| format!("failed to set main window pin state: {error}"))?;
+    emit_picker_pin_state(app, next_pinned);
+    Ok(())
 }
 
 #[cfg(not(test))]
@@ -2522,6 +2839,21 @@ fn spawn_toggle_main_window_without_focus<R: tauri::Runtime + 'static>(app: taur
 }
 
 #[cfg(not(test))]
+fn spawn_toggle_main_window_pin<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = toggle_main_window_pin(&app_for_main_thread) {
+                eprintln!("{error}");
+            }
+        }) {
+            eprintln!("main window pin toggle dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
 fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     app: &tauri::AppHandle<R>,
     shortcut: &Shortcut,
@@ -2550,6 +2882,16 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     if *shortcut == picker_shortcut {
         eprintln!("global shortcut pressed: {shortcut:?}");
         spawn_toggle_main_window_without_focus(app.clone());
+        return;
+    }
+
+    if app
+        .try_state::<CurrentPickerPinShortcut>()
+        .and_then(|current| current.get())
+        .is_some_and(|pin_shortcut| *shortcut == pin_shortcut)
+    {
+        eprintln!("picker pin shortcut pressed: {shortcut:?}");
+        spawn_toggle_main_window_pin(app.clone());
         return;
     }
 
@@ -2940,6 +3282,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
     settings: &storage::AppSettings,
 ) {
     refresh_picker_shortcut_from_settings(app, settings);
+    refresh_picker_pin_shortcut_from_settings(app, settings);
 
     if let Some(shortcuts) = app.try_state::<GlobalScriptShortcuts>() {
         for shortcut in shortcuts.current_shortcuts() {
@@ -3118,20 +3461,33 @@ fn refresh_picker_shortcut_from_settings<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     settings: &storage::AppSettings,
 ) {
+    let Some(current) = app.try_state::<CurrentPickerShortcut>() else {
+        eprintln!("picker shortcut state not ready");
+        return;
+    };
     let Some(next_shortcut) = shortcut_from_label(&settings.general.global_shortcut) else {
         eprintln!(
             "picker shortcut not refreshed: unsupported shortcut {}",
             settings.general.global_shortcut
         );
+        current.set_status(NativeShortcutStatus {
+            label: settings.general.global_shortcut.clone(),
+            registered: false,
+            supported: false,
+            error: Some("unsupported shortcut".to_string()),
+        });
         return;
     };
 
-    let Some(current) = app.try_state::<CurrentPickerShortcut>() else {
-        eprintln!("picker shortcut state not ready");
-        return;
-    };
     let previous_shortcut = current.get();
-    if previous_shortcut == next_shortcut {
+    let already_registered = app.global_shortcut().is_registered(next_shortcut);
+    if previous_shortcut == next_shortcut && already_registered {
+        current.set_status(NativeShortcutStatus {
+            label: settings.general.global_shortcut.clone(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
         return;
     }
 
@@ -3144,6 +3500,12 @@ fn refresh_picker_shortcut_from_settings<R: tauri::Runtime>(
     match app.global_shortcut().register(next_shortcut) {
         Ok(()) => {
             current.set(next_shortcut);
+            current.set_status(NativeShortcutStatus {
+                label: settings.general.global_shortcut.clone(),
+                registered: true,
+                supported: true,
+                error: None,
+            });
             eprintln!(
                 "picker shortcut registered from settings: {}",
                 settings.general.global_shortcut
@@ -3154,11 +3516,120 @@ fn refresh_picker_shortcut_from_settings<R: tauri::Runtime>(
                 "picker shortcut registration failed for {}: {error}",
                 settings.general.global_shortcut
             );
+            current.set_status(NativeShortcutStatus {
+                label: settings.general.global_shortcut.clone(),
+                registered: false,
+                supported: true,
+                error: Some(error.to_string()),
+            });
             if !app.global_shortcut().is_registered(previous_shortcut) {
                 if let Err(restore_error) = app.global_shortcut().register(previous_shortcut) {
                     eprintln!(
                         "picker shortcut restore failed for {previous_shortcut:?}: {restore_error}"
                     );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn refresh_picker_pin_shortcut_from_settings<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    settings: &storage::AppSettings,
+) {
+    let Some(current) = app.try_state::<CurrentPickerPinShortcut>() else {
+        eprintln!("picker pin shortcut state not ready");
+        return;
+    };
+    let next_shortcut = if settings.picker.pin_toggle_shortcut.trim().is_empty() {
+        None
+    } else {
+        shortcut_from_label(&settings.picker.pin_toggle_shortcut)
+    };
+
+    if !settings.picker.pin_toggle_shortcut.trim().is_empty() && next_shortcut.is_none() {
+        current.set_status(NativeShortcutStatus {
+            label: settings.picker.pin_toggle_shortcut.clone(),
+            registered: false,
+            supported: false,
+            error: Some("unsupported shortcut".to_string()),
+        });
+        eprintln!(
+            "picker pin shortcut not refreshed: unsupported shortcut {}",
+            settings.picker.pin_toggle_shortcut
+        );
+        return;
+    }
+
+    let previous_shortcut = current.get();
+    let already_registered = next_shortcut
+        .map(|shortcut| app.global_shortcut().is_registered(shortcut))
+        .unwrap_or(false);
+    if previous_shortcut == next_shortcut && already_registered {
+        current.set_status(NativeShortcutStatus {
+            label: settings.picker.pin_toggle_shortcut.clone(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
+        return;
+    }
+
+    if let Some(previous_shortcut) = previous_shortcut {
+        if app.global_shortcut().is_registered(previous_shortcut) {
+            if let Err(error) = app.global_shortcut().unregister(previous_shortcut) {
+                eprintln!("picker pin shortcut unregister failed: {previous_shortcut:?}: {error}");
+            }
+        }
+    }
+
+    let Some(next_shortcut) = next_shortcut else {
+        current.set(None);
+        current.set_status(NativeShortcutStatus {
+            label: settings.picker.pin_toggle_shortcut.clone(),
+            registered: false,
+            supported: true,
+            error: None,
+        });
+        eprintln!("picker pin shortcut disabled from settings");
+        return;
+    };
+
+    match app.global_shortcut().register(next_shortcut) {
+        Ok(()) => {
+            current.set(Some(next_shortcut));
+            current.set_status(NativeShortcutStatus {
+                label: settings.picker.pin_toggle_shortcut.clone(),
+                registered: true,
+                supported: true,
+                error: None,
+            });
+            eprintln!(
+                "picker pin shortcut registered from settings: {}",
+                settings.picker.pin_toggle_shortcut
+            );
+        }
+        Err(error) => {
+            eprintln!(
+                "picker pin shortcut registration failed for {}: {error}",
+                settings.picker.pin_toggle_shortcut
+            );
+            current.set_status(NativeShortcutStatus {
+                label: settings.picker.pin_toggle_shortcut.clone(),
+                registered: false,
+                supported: true,
+                error: Some(error.to_string()),
+            });
+            if let Some(previous_shortcut) = previous_shortcut {
+                if !app.global_shortcut().is_registered(previous_shortcut) {
+                    if let Err(restore_error) = app.global_shortcut().register(previous_shortcut) {
+                        eprintln!(
+                            "picker pin shortcut restore failed for {previous_shortcut:?}: {restore_error}"
+                        );
+                    } else {
+                        current.set(Some(previous_shortcut));
+                    }
                 }
             }
         }
@@ -3490,6 +3961,13 @@ fn emit_toast_on_main_thread<R: tauri::Runtime + 'static>(
 }
 
 #[cfg(not(test))]
+fn emit_picker_pin_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, pinned: bool) {
+    if let Err(error) = app.emit_to(MAIN_WINDOW_LABEL, PICKER_PIN_STATE_EVENT, pinned) {
+        eprintln!("picker pin state emit failed: {error}");
+    }
+}
+
+#[cfg(not(test))]
 fn focus_settings_section<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     section: &'static str,
@@ -3515,6 +3993,15 @@ fn focus_settings_section<R: tauri::Runtime + 'static>(
 fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     storage: &storage::AppStorage,
+) -> Result<(), String> {
+    open_scripts_path_in_vscode(app, storage, None)
+}
+
+#[cfg(not(test))]
+fn open_scripts_path_in_vscode<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    storage: &storage::AppStorage,
+    target_path: Option<&Path>,
 ) -> Result<(), String> {
     let settings = storage.get_settings()?;
     let vscode_path = normalize_vscode_launcher_path(&settings.scripts.vscode_path);
@@ -3544,6 +4031,28 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
         ));
     }
 
+    let scripts_folder = scripts_folder
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve scripts folder: {error}"))?;
+    let open_target = match target_path {
+        Some(path) => {
+            let canonical_path = path
+                .canonicalize()
+                .map_err(|error| format!("Script file not found: {} ({error})", path.display()))?;
+            if !canonical_path.starts_with(&scripts_folder) {
+                return Err("Script file must be inside the configured scripts folder.".to_string());
+            }
+            if !canonical_path.is_file() {
+                return Err(format!(
+                    "Script path is not a file: {}",
+                    canonical_path.display()
+                ));
+            }
+            canonical_path
+        }
+        None => scripts_folder,
+    };
+
     let spawn_result = match launcher_path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -3552,7 +4061,7 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
         Some(extension) if extension == "cmd" || extension == "bat" => Command::new("cmd")
             .arg("/C")
             .arg(&vscode_path)
-            .arg(scripts_folder)
+            .arg(&open_target)
             .spawn(),
         Some(extension) if extension == "ps1" => Command::new("powershell")
             .arg("-NoProfile")
@@ -3560,9 +4069,9 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
             .arg("Bypass")
             .arg("-File")
             .arg(&vscode_path)
-            .arg(scripts_folder)
+            .arg(&open_target)
             .spawn(),
-        _ => Command::new(&vscode_path).arg(scripts_folder).spawn(),
+        _ => Command::new(&vscode_path).arg(&open_target).spawn(),
     };
 
     spawn_result.map_err(|error| {
