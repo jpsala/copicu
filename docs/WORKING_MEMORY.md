@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto.
 
-Ultima actualizacion manual: 2026-06-12.
+Ultima actualizacion manual: 2026-06-13.
 
 ## Regla
 
@@ -15,7 +15,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Revisar otra extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `specs/008-clipboard-enrichment/spec.md` | Siguiente corte recomendado: auditar estado final de shortcuts/globales/script y decidir si agregar status nativo visible del registro. |
 | Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Dogfood prewarm de `metadata`; mantenerlo si la velocidad percibida compensa el coste idle. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` queda como siguiente release con demo sintetica en README; mantener checklist de release antes de nuevos cortes. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` publicado con demo sintetica en README; siguiente paso: mergear PR `#10` cuando JP confirme el corte. |
 | Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` ya quedo revalidado end-to-end; siguiente corte: decidir si recuperar code split o atacar el warning de chunk grande. |
 | OS Lite/docs | active | `docs/topics/docs-knowledge-system.md` | Mantener ruta caliente liviana; usar `docs/topics/agentic-os-operations.md` para `realinear os`. |
 | Skills locales | reference | `docs/topics/local-codex-skills.md` | Abrir solo para crear/revisar skills locales o discutir costo de discovery. |
@@ -50,7 +50,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 
 ## Riesgos
 
-- Hay cambios locales no revisados en Rust/docs; no revertirlos.
+- Worktree esperado tras cierre: rama `codex/release-0.2.1` limpia y pusheada; PR draft `#10` abierto contra `main`.
 - No confiar en `Process.Responding` como readiness de WebView.
 - `visual:check` puede fallar por infraestructura Vite/WebView, no necesariamente por assertions.
 - En shortcuts globales, evitar next-step globals temporales y emits backend hacia `main` sin harness.
@@ -105,7 +105,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 - Picker keyboard dogfood 2026-06-12: Computer Use valido flujo casi todo teclado. Se encontro y corrigio que `Ctrl+A` en search capturaba multi-select de items en vez de seleccionar texto; ahora reemplaza query nativamente y tiene visual test. El modelo de pin queda por mouse por ahora; no reintroducir hotkey renderer para pin sin ruta nativa/global.
 - Picker focus-lost reset 2026-06-12: corregido con `PickerSessionController` host-owned. `host::hide_picker()` y el hide nativo de `PickerFocusPolicy::schedule_hide()` marcan sesion transitoria hidden/resettable; `main` consume `consume_picker_session_snapshot()` al recuperar foco y refresca con `queryOverride: ""`. Dogfood real con Notepad + `Ctrl+Shift+.` paso: UI Automation puede conservar linea vieja en cache, pero el input real reabre vacio (`oldPlusProbe=false`, `probeOnly=true`).
 - Settings Hotkeys slice 2026-06-12: `Settings > Hotkeys` ya existe como inventario v1. Ahora edita dos shortcuts app-owned persistidos: `general.globalShortcut` para abrir picker y `picker.pinToggleShortcut` para togglear pin/always-on-top nativo del picker. Default actual del pin toggle: `F8`. `Keep picker open` se maneja desde Picker settings/barra del picker, no desde el shortcut de pin. Los shortcuts locales app-owned (`Ctrl+K`, `Ctrl+I`, `Enter`/`Shift+Enter`, `F2`/`Shift+F2`) siguen read-only; scripts descubiertos con `shortcut` siguen read-only porque la fuente de verdad vive en source/metadata del script. Hay `ShortcutBadge` reusable para hints compactos; el picker ya lo usa en menus de acciones/command palette, el toggle AI muestra tooltip con `Ctrl+I` y el boton de pin muestra su shortcut configurado.
-- Release 2026-06-13: version alineada a `0.2.1` en npm, Tauri y Cargo; `npm run install:current` genero e instalo `src-tauri\target\release\bundle\nsis\Copicu_0.2.1_x64-setup.exe` sobre la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. SHA256 final: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`.
+- Release 2026-06-13: version alineada a `0.2.1` en npm, Tauri y Cargo; `npm run install:current` genero e instalo `src-tauri\target\release\bundle\nsis\Copicu_0.2.1_x64-setup.exe` sobre la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. SHA256 final: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`. Commit `a5c38a4`, rama `codex/release-0.2.1`, release GitHub `v0.2.1` y PR draft `#10` quedaron publicados.
 
 ## Comandos De Contexto
 
@@ -124,10 +124,9 @@ Continuidad: `sigamos` continua en la misma sesion sin cierre ni handoff. `cerra
 
 Proximo lote recomendado:
 
-1. Hacer review final de la tanda `Settings > Hotkeys` + `Keep picker open` + `PickerSessionController` y decidir si se mergea o se separa en commits.
-2. Auditar shortcuts actuales: globales de app, locales del picker/settings, compuestos, command palette y scripts con `shortcut`.
-3. Decidir si el siguiente slice agrega status nativo del picker shortcut y un flujo explicito para editar shortcuts de scripts sin mutacion opaca.
-4. Opcional: agregar test focalizado para `consume_picker_session_snapshot()`/focus-lost cuando haya harness nativo confiable; `visual:check` ya cubre hide explicito.
+1. Revisar y mergear PR draft `#10` si JP confirma el corte `v0.2.1`.
+2. Decidir si el siguiente slice agrega status nativo del picker shortcut y un flujo explicito para editar shortcuts de scripts sin mutacion opaca.
+3. Opcional: agregar test focalizado para `consume_picker_session_snapshot()`/focus-lost cuando haya harness nativo confiable; `visual:check` ya cubre hide explicito.
 
 ## Promocion De Memoria
 

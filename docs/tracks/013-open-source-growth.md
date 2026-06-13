@@ -1,7 +1,7 @@
 ---
 id: open-source-growth
 status: active
-updated: 2026-06-12
+updated: 2026-06-13
 ---
 
 # Open Source Growth
@@ -200,9 +200,10 @@ Un contributor necesita:
 
 ### Estado 2026-06-13
 
-- Preparado corte `v0.2.1` con version alineada en npm, Tauri y Cargo.
+- Publicado corte `v0.2.1` con version alineada en npm, Tauri y Cargo.
 - README actualizado para apuntar a `v0.2.1`, instalador `Copicu_0.2.1_x64-setup.exe`, demo sintetica y SHA256 final.
 - `npm run install:current` genero el instalador NSIS, reemplazo la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`.
+- Commit `a5c38a4`, rama `codex/release-0.2.1`, release GitHub `v0.2.1` y PR draft `#10` publicados.
 - SHA256: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`.
 
 ## Launch Messages
