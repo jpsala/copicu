@@ -183,6 +183,36 @@ struct HotkeyNormalizationResult {
 #[cfg(not(test))]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+struct NativeShortcutStatus {
+    label: String,
+    registered: bool,
+    supported: bool,
+    error: Option<String>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppShortcutStatus {
+    picker: NativeShortcutStatus,
+    pin: NativeShortcutStatus,
+}
+
+#[cfg(not(test))]
+impl Default for NativeShortcutStatus {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: None,
+        }
+    }
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WhichKeyEntry {
     key: String,
     label: String,
@@ -196,12 +226,14 @@ struct WhichKeyEntry {
 #[derive(Clone)]
 struct CurrentPickerShortcut {
     shortcut: Arc<Mutex<Shortcut>>,
+    status: Arc<Mutex<NativeShortcutStatus>>,
 }
 
 #[cfg(not(test))]
 #[derive(Clone, Default)]
 struct CurrentPickerPinShortcut {
     shortcut: Arc<Mutex<Option<Shortcut>>>,
+    status: Arc<Mutex<NativeShortcutStatus>>,
 }
 
 #[cfg(not(test))]
@@ -432,6 +464,12 @@ impl Default for CurrentPickerShortcut {
     fn default() -> Self {
         Self {
             shortcut: Arc::new(Mutex::new(picker_shortcut())),
+            status: Arc::new(Mutex::new(NativeShortcutStatus {
+                label: PICKER_SHORTCUT_LABEL.to_string(),
+                registered: false,
+                supported: true,
+                error: None,
+            })),
         }
     }
 }
@@ -453,6 +491,27 @@ impl CurrentPickerShortcut {
             Err(_) => eprintln!("picker shortcut mutex poisoned"),
         }
     }
+
+    fn status(&self) -> NativeShortcutStatus {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| NativeShortcutStatus {
+                label: PICKER_SHORTCUT_LABEL.to_string(),
+                registered: false,
+                supported: true,
+                error: Some("picker shortcut status unavailable".to_string()),
+            })
+    }
+
+    fn set_status(&self, status: NativeShortcutStatus) {
+        match self.status.lock() {
+            Ok(mut current) => {
+                *current = status;
+            }
+            Err(_) => eprintln!("picker shortcut status mutex poisoned"),
+        }
+    }
 }
 
 #[cfg(not(test))]
@@ -467,6 +526,27 @@ impl CurrentPickerPinShortcut {
                 *shortcut = next_shortcut;
             }
             Err(_) => eprintln!("picker pin shortcut mutex poisoned"),
+        }
+    }
+
+    fn status(&self) -> NativeShortcutStatus {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| NativeShortcutStatus {
+                label: String::new(),
+                registered: false,
+                supported: false,
+                error: Some("picker pin shortcut status unavailable".to_string()),
+            })
+    }
+
+    fn set_status(&self, status: NativeShortcutStatus) {
+        match self.status.lock() {
+            Ok(mut current) => {
+                *current = status;
+            }
+            Err(_) => eprintln!("picker pin shortcut status mutex poisoned"),
         }
     }
 }
@@ -491,6 +571,31 @@ fn get_capture_snapshot<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> clipboar
 #[tauri::command]
 fn get_clipboard_probe() -> Result<clipboard_probe::ClipboardProbe, String> {
     clipboard_probe::probe_clipboard()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppShortcutStatus {
+    let picker = app
+        .try_state::<CurrentPickerShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: PICKER_SHORTCUT_LABEL.to_string(),
+            registered: false,
+            supported: true,
+            error: Some("picker shortcut state unavailable".to_string()),
+        });
+    let pin = app
+        .try_state::<CurrentPickerPinShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: Some("picker pin shortcut state unavailable".to_string()),
+        });
+
+    AppShortcutStatus { picker, pin }
 }
 
 #[cfg(not(test))]
@@ -839,7 +944,11 @@ fn consume_picker_session_snapshot(
     window: tauri::WebviewWindow,
     session: tauri::State<PickerSessionController>,
 ) -> Result<PickerSessionSnapshot, String> {
-    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "consume_picker_session_snapshot")?;
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL],
+        "consume_picker_session_snapshot",
+    )?;
     Ok(session.consume_snapshot())
 }
 
@@ -1294,7 +1403,19 @@ fn edit_scripts_in_vscode(
     storage: State<'_, storage::AppStorage>,
 ) -> Result<(), String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_scripts_in_vscode")?;
-    open_scripts_folder_in_vscode(&app, &storage)
+    open_scripts_path_in_vscode(&app, &storage, None)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn edit_script_in_vscode(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    path: String,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_script_in_vscode")?;
+    open_scripts_path_in_vscode(&app, &storage, Some(Path::new(&path)))
 }
 
 #[cfg(not(test))]
@@ -1793,6 +1914,7 @@ pub fn run() {
             get_capture_stats,
             get_capture_snapshot,
             get_clipboard_probe,
+            get_app_shortcut_status,
             list_recent_items,
             search_items,
             list_history_page,
@@ -1828,6 +1950,7 @@ pub fn run() {
             update_settings,
             set_picker_keep_open,
             edit_scripts_in_vscode,
+            edit_script_in_vscode,
             list_tags,
             create_tag,
             update_tag_config,
@@ -3338,20 +3461,33 @@ fn refresh_picker_shortcut_from_settings<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     settings: &storage::AppSettings,
 ) {
+    let Some(current) = app.try_state::<CurrentPickerShortcut>() else {
+        eprintln!("picker shortcut state not ready");
+        return;
+    };
     let Some(next_shortcut) = shortcut_from_label(&settings.general.global_shortcut) else {
         eprintln!(
             "picker shortcut not refreshed: unsupported shortcut {}",
             settings.general.global_shortcut
         );
+        current.set_status(NativeShortcutStatus {
+            label: settings.general.global_shortcut.clone(),
+            registered: false,
+            supported: false,
+            error: Some("unsupported shortcut".to_string()),
+        });
         return;
     };
 
-    let Some(current) = app.try_state::<CurrentPickerShortcut>() else {
-        eprintln!("picker shortcut state not ready");
-        return;
-    };
     let previous_shortcut = current.get();
-    if previous_shortcut == next_shortcut {
+    let already_registered = app.global_shortcut().is_registered(next_shortcut);
+    if previous_shortcut == next_shortcut && already_registered {
+        current.set_status(NativeShortcutStatus {
+            label: settings.general.global_shortcut.clone(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
         return;
     }
 
@@ -3364,6 +3500,12 @@ fn refresh_picker_shortcut_from_settings<R: tauri::Runtime>(
     match app.global_shortcut().register(next_shortcut) {
         Ok(()) => {
             current.set(next_shortcut);
+            current.set_status(NativeShortcutStatus {
+                label: settings.general.global_shortcut.clone(),
+                registered: true,
+                supported: true,
+                error: None,
+            });
             eprintln!(
                 "picker shortcut registered from settings: {}",
                 settings.general.global_shortcut
@@ -3374,6 +3516,12 @@ fn refresh_picker_shortcut_from_settings<R: tauri::Runtime>(
                 "picker shortcut registration failed for {}: {error}",
                 settings.general.global_shortcut
             );
+            current.set_status(NativeShortcutStatus {
+                label: settings.general.global_shortcut.clone(),
+                registered: false,
+                supported: true,
+                error: Some(error.to_string()),
+            });
             if !app.global_shortcut().is_registered(previous_shortcut) {
                 if let Err(restore_error) = app.global_shortcut().register(previous_shortcut) {
                     eprintln!(
@@ -3390,18 +3538,41 @@ fn refresh_picker_pin_shortcut_from_settings<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     settings: &storage::AppSettings,
 ) {
+    let Some(current) = app.try_state::<CurrentPickerPinShortcut>() else {
+        eprintln!("picker pin shortcut state not ready");
+        return;
+    };
     let next_shortcut = if settings.picker.pin_toggle_shortcut.trim().is_empty() {
         None
     } else {
         shortcut_from_label(&settings.picker.pin_toggle_shortcut)
     };
 
-    let Some(current) = app.try_state::<CurrentPickerPinShortcut>() else {
-        eprintln!("picker pin shortcut state not ready");
+    if !settings.picker.pin_toggle_shortcut.trim().is_empty() && next_shortcut.is_none() {
+        current.set_status(NativeShortcutStatus {
+            label: settings.picker.pin_toggle_shortcut.clone(),
+            registered: false,
+            supported: false,
+            error: Some("unsupported shortcut".to_string()),
+        });
+        eprintln!(
+            "picker pin shortcut not refreshed: unsupported shortcut {}",
+            settings.picker.pin_toggle_shortcut
+        );
         return;
-    };
+    }
+
     let previous_shortcut = current.get();
-    if previous_shortcut == next_shortcut {
+    let already_registered = next_shortcut
+        .map(|shortcut| app.global_shortcut().is_registered(shortcut))
+        .unwrap_or(false);
+    if previous_shortcut == next_shortcut && already_registered {
+        current.set_status(NativeShortcutStatus {
+            label: settings.picker.pin_toggle_shortcut.clone(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
         return;
     }
 
@@ -3415,6 +3586,12 @@ fn refresh_picker_pin_shortcut_from_settings<R: tauri::Runtime>(
 
     let Some(next_shortcut) = next_shortcut else {
         current.set(None);
+        current.set_status(NativeShortcutStatus {
+            label: settings.picker.pin_toggle_shortcut.clone(),
+            registered: false,
+            supported: true,
+            error: None,
+        });
         eprintln!("picker pin shortcut disabled from settings");
         return;
     };
@@ -3422,6 +3599,12 @@ fn refresh_picker_pin_shortcut_from_settings<R: tauri::Runtime>(
     match app.global_shortcut().register(next_shortcut) {
         Ok(()) => {
             current.set(Some(next_shortcut));
+            current.set_status(NativeShortcutStatus {
+                label: settings.picker.pin_toggle_shortcut.clone(),
+                registered: true,
+                supported: true,
+                error: None,
+            });
             eprintln!(
                 "picker pin shortcut registered from settings: {}",
                 settings.picker.pin_toggle_shortcut
@@ -3432,6 +3615,12 @@ fn refresh_picker_pin_shortcut_from_settings<R: tauri::Runtime>(
                 "picker pin shortcut registration failed for {}: {error}",
                 settings.picker.pin_toggle_shortcut
             );
+            current.set_status(NativeShortcutStatus {
+                label: settings.picker.pin_toggle_shortcut.clone(),
+                registered: false,
+                supported: true,
+                error: Some(error.to_string()),
+            });
             if let Some(previous_shortcut) = previous_shortcut {
                 if !app.global_shortcut().is_registered(previous_shortcut) {
                     if let Err(restore_error) = app.global_shortcut().register(previous_shortcut) {
@@ -3805,6 +3994,15 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     storage: &storage::AppStorage,
 ) -> Result<(), String> {
+    open_scripts_path_in_vscode(app, storage, None)
+}
+
+#[cfg(not(test))]
+fn open_scripts_path_in_vscode<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    storage: &storage::AppStorage,
+    target_path: Option<&Path>,
+) -> Result<(), String> {
     let settings = storage.get_settings()?;
     let vscode_path = normalize_vscode_launcher_path(&settings.scripts.vscode_path);
     if vscode_path.is_empty() {
@@ -3833,6 +4031,28 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
         ));
     }
 
+    let scripts_folder = scripts_folder
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve scripts folder: {error}"))?;
+    let open_target = match target_path {
+        Some(path) => {
+            let canonical_path = path
+                .canonicalize()
+                .map_err(|error| format!("Script file not found: {} ({error})", path.display()))?;
+            if !canonical_path.starts_with(&scripts_folder) {
+                return Err("Script file must be inside the configured scripts folder.".to_string());
+            }
+            if !canonical_path.is_file() {
+                return Err(format!(
+                    "Script path is not a file: {}",
+                    canonical_path.display()
+                ));
+            }
+            canonical_path
+        }
+        None => scripts_folder,
+    };
+
     let spawn_result = match launcher_path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -3841,7 +4061,7 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
         Some(extension) if extension == "cmd" || extension == "bat" => Command::new("cmd")
             .arg("/C")
             .arg(&vscode_path)
-            .arg(scripts_folder)
+            .arg(&open_target)
             .spawn(),
         Some(extension) if extension == "ps1" => Command::new("powershell")
             .arg("-NoProfile")
@@ -3849,9 +4069,9 @@ fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
             .arg("Bypass")
             .arg("-File")
             .arg(&vscode_path)
-            .arg(scripts_folder)
+            .arg(&open_target)
             .spawn(),
-        _ => Command::new(&vscode_path).arg(scripts_folder).spawn(),
+        _ => Command::new(&vscode_path).arg(&open_target).spawn(),
     };
 
     spawn_result.map_err(|error| {

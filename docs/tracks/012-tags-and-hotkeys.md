@@ -560,58 +560,81 @@ Validacion:
 - `npm run visual:check`: paso 84/84.
 - Dogfood real Computer Use contra Notepad: `Ctrl+Shift+.` abre dev, query sintetica `NO_MATCH_FOCUS_RESET_<timestamp>` produce no-results, focus-lost oculta, `Ctrl+Shift+.` reabre con input real vacio. UI Automation puede conservar una linea vieja en cache; la prueba de escritura posterior confirmo `oldPlusProbe=false` y `probeOnly=true`.
 
+## Implementado 2026-06-13: Status Nativo De Shortcuts App
+
+Settings > Hotkeys ahora muestra el estado real del registro nativo para los shortcuts app-owned editables:
+
+- `general.globalShortcut` / Open picker.
+- `picker.pinToggleShortcut` / Toggle pin on top.
+
+Implementacion:
+
+- Rust conserva `NativeShortcutStatus` para picker y pin con `label`, `registered`, `supported` y `error`.
+- Nuevo comando `get_app_shortcut_status` devuelve el ultimo resultado conocido del backend nativo.
+- `refresh_picker_shortcut_from_settings()` y `refresh_picker_pin_shortcut_from_settings()` actualizan status en casos registered, unsupported, disabled y error de registro OS.
+- Si el estado interno coincide con el shortcut guardado pero el OS no lo tiene registrado, el refresh ya no sale temprano: reintenta registrar.
+- Settings pinta `Registered`, `Conflict`, `Unsupported`, `Disabled` o `Checking` en el inventario de hotkeys.
+
+Validacion:
+
+- `npm run build`: paso, con warning conocido de chunk grande.
+- `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check`: paso.
+- `npm run visual:check`: paso 84/84.
+
+## Implementado 2026-06-13: Flujo Explicito Para Shortcuts De Scripts
+
+Settings > Hotkeys mantiene los shortcuts de scripts como read-only en Settings, pero ahora ofrece un flujo explicito para editarlos desde su fuente real:
+
+- Cada script con `shortcut` muestra accion `Edit shortcut`.
+- El flujo expandido muestra shortcut actual, abre el archivo puntual del script y ofrece `Refresh diagnostics`.
+- El backend agrega `edit_script_in_vscode(path)` y valida que el archivo exista dentro de la carpeta configurada de scripts antes de abrirlo.
+- `edit_scripts_in_vscode` sigue abriendo la carpeta completa; ambos caminos reutilizan la misma configuracion de VS Code.
+- No hay patch automatico ni override persistido desde Settings. La mutacion ocurre en el archivo fuente del script y el usuario refresca la cache/diagnosticos despues de guardar.
+
+Validacion:
+
+- `npm run build`: paso, con warning conocido de chunk grande.
+- `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check`: paso.
+- `npm run visual:check`: paso 84/84.
+
+Dogfood 2026-06-13:
+
+- Se uso perfil dev aislado (`.codex-run/dev-isolated`) con script sintetico temporal `dogfood.shortcutEdit`; no se toco la instalada ni scripts reales.
+- Cache inicial detecto `Ctrl+Alt+Shift+9` sin diagnosticos y registro `global script shortcut registered: Ctrl+Alt+Shift+9 -> dogfood.shortcutEdit`.
+- Cambio manual del archivo a `Ctrl+Alt+Shift+T` y refresh/cache produjo `diagnostic_count=1` con `global shortcut collides with another script: Ctrl+Alt+Shift+T`.
+- Cambio manual a `Ctrl+Alt+Shift+8` limpio diagnosticos (`diagnostic_count=0`) y registro `global script shortcut registered: Ctrl+Alt+Shift+8 -> dogfood.shortcutEdit`.
+- El script temporal fue eliminado y la cache aislada quedo sin `dogfood.shortcutEdit`.
+- Se amplio `tests/visual/shell.spec.ts` para cubrir expansion de `Edit shortcut`, `Open this file`, `Refresh diagnostics`, toast `Scripts refreshed` e invocaciones `edit_script_in_vscode` / `refresh_script_action_cache`.
+- Intento con WebView2 CDP no expuso endpoint y una apertura por hotkey reporto `window native handle unavailable`; para esta validacion se uso evidencia de cache/diagnosticos/logs del backend, mas visual test del flujo UI.
+
+Conclusion: el flujo manual alcanza para el corte actual. Un patch preview controlado queda como mejora opcional, no como pendiente inmediato.
+
 ## Prompt Proxima Sesion
 
 ```text
 Seguimos en C:\dev\chat\copyq-tauri.
 
-Objetivo unico: dogfoodear los scripts `020`-`024` que abren el picker filtrado desde Actions/globalShortcut/commandPalette. No pegar automaticamente ni activar items. No tocar WhichKey salvo que sea estrictamente necesario para diagnosticos.
+Objetivo recomendado: revisar y mergear PR draft `#10` si JP confirma el corte `v0.2.1`, o elegir el proximo lote de producto.
 
 Leer primero:
 - AGENTS.md
 - docs/WORKING_MEMORY.md
-- docs/tracks/004-actions-scripting.md
-- docs/topics/actions-and-scripting-api.md
 - docs/tracks/012-tags-and-hotkeys.md
 - docs/topics/hotkeys.md
-- docs/topics/tag-management-hotkeys.md
-- docs/topics/ui-surface-architecture.md
-- src-tauri/src/lib.rs
-- src-tauri/src/hotkeys.rs
-- src-tauri/src/storage.rs
-- src/main.tsx
-- scripts/examples/copicu-action.d.ts
-- scripts/copicu-script-runner.mjs
+- docs/tracks/004-actions-scripting.md solo si el diseno toca el contrato de scripts.
 
 Estado vigente:
-- B2 post-compound main window renderer/IPC esta cerrado.
-- Runtime actual: `ENABLE_COMPOUND_GLOBAL_SHORTCUTS = true`, `ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS = false`.
-- No registrar next-step globals temporales.
-- No emitir `COMPOUND_HOTKEY_PENDING_EVENT` ni otros eventos backend hacia el WebView principal desde el camino de global shortcut/compound pending.
-- El prefijo compuesto muestra/focaliza Copicu por main thread.
-- El renderer consulta `get_compound_hotkey_pending` cada 250 ms y captura el segundo paso con `document keydown`.
-- `Ctrl+Alt+C,T` con `jp.compoundHotkeyToast` real fue validado en el runtime B2: script completo, heartbeats continuan, drag post mueve por `GetWindowRect`, X custom post completa.
-- Tags backend/API existe: `list_tags`, `create_tag`, `update_tag_config`, `set_item_tags`.
-- Settings > Tags ya no tiene recorder/status/conteo de hotkeys; conserva lista/counts/create/pin/Open filtered y copy de Actions scripts.
-- Native tag hotkeys ya fueron implementados y validados historicamente, pero ahora estan retirados. La decision vigente es scripts, no Settings-owned tag hotkeys.
-- `copicu.commands.run("picker.open", { query, rememberPrevious, show, focus })` existe como patron parametrizable allowlisted. Requiere capabilities `commands:run` y `picker:open`.
-- `020-open-tag-filtered.ts` a `024-open-prompt-filtered.ts` existen en `scripts/examples/` y fueron copiados a `Documents/Copicu/Scripts`.
-- Checks de cierre pasaron: `npm run build`, typecheck TS de wrappers, `npm run visual:check` 66/66 y `cargo check`.
-- CDP/IPC verifico root montado, Settings > Tags sin recorder/status, logs `script.picker.open.*`, heartbeats, Hide/X custom y drag por `GetWindowRect`.
-- Inyecciones sinteticas de `Ctrl+Alt+Shift+T` no dispararon el global shortcut; para validar el hook real usar Computer Use o teclado fisico.
+- Settings > Hotkeys V1 existe y separa editable app-owned de read-only renderer/script shortcuts.
+- `general.globalShortcut` y `picker.pinToggleShortcut` ya muestran status nativo real via `get_app_shortcut_status`.
+- El backend reintenta registrar app-owned shortcuts si el estado interno coincide con Settings pero el OS no lo tiene registrado.
+- Scripts con `shortcut` siguen read-only para Settings: `Edit shortcut` abre el archivo puntual, `Refresh diagnostics` recarga registry/diagnosticos despues de guardar, y no hay mutacion automatica ni override persistido. Dogfood manual sintetico ya valido conflicto y limpieza de diagnosticos; patch preview queda opcional/futuro.
+- No reintroducir hotkeys nativos por tag; los filtros por tag/query siguen expresados como scripts.
+- Runtime compuesto mantiene invariantes: no next-step globals temporales y no emits backend hacia `main` desde pending.
+- Dev app fue reiniciada con `npm run dev:restart`; instalada y dev pueden coexistir y chocar en hotkeys globales.
 
 Plan:
-1. Relanzar app viva desde este worktree si no sigue corriendo; si Vite queda con `#root` vacio, limpiar/esperar optimizer antes de lanzar Cargo.
-2. Probar `Ctrl+Alt+Shift+T` con Computer Use/tecla fisica y confirmar que `examples.openTagFiltered` abre `tag:context` sin copiar/pegar.
-3. Probar `021`-`024` desde command palette y, si se puede, sus hotkeys fisicos.
-4. Revisar Settings > Actions diagnostics para conflictos de shortcuts reales.
-5. Verificar root montado por CDP, IPC `record_renderer_diagnostic`, heartbeats, drag por `GetWindowRect`, Hide/X custom y logs `script.picker.open.*`.
-6. No persistir payloads reales del clipboard; usar tags/datos sinteticos.
+1. Confirmar si PR `#10` se mergea o si se abre nuevo lote.
+2. Si se toca codigo, repetir `npm run build`, `npm run visual:check` y `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check`.
 
-No persistir payloads reales del clipboard. No usar screenshots como unica evidencia de drag; medir con Win32 `GetWindowRect`.
-
-Si se toca codigo, repetir:
-- npm run build
-- npm run visual:check
-- cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check
+No persistir payloads reales del clipboard.
 ```

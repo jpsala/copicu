@@ -2165,6 +2165,12 @@ kbd {
   color: var(--success);
 }
 
+.readonly-status.is-warning {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--line));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-muted));
+  color: var(--warning);
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr);
@@ -2529,6 +2535,49 @@ kbd {
 
 .hotkey-script-diagnostics li {
   line-height: 1.3;
+}
+
+.hotkey-script-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hotkey-script-edit-flow {
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-soft) 46%, var(--surface));
+  padding: 9px;
+}
+
+.hotkey-script-edit-flow > strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.hotkey-script-edit-flow ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+  font-size: 0.73rem;
+  line-height: 1.34;
+}
+
+.hotkey-script-edit-preview {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .segmented-control {

@@ -304,6 +304,18 @@ type HotkeyNormalizationResult = {
   error: string | null;
 };
 
+type NativeShortcutStatus = {
+  label: string;
+  registered: boolean;
+  supported: boolean;
+  error: string | null;
+};
+
+type AppShortcutStatus = {
+  picker: NativeShortcutStatus;
+  pin: NativeShortcutStatus;
+};
+
 type UpdateHistoryItemRequest = {
   id: number;
   text: string;
@@ -485,8 +497,20 @@ function listActions() {
   return invoke<ActionDefinition[]>("list_actions");
 }
 
+function getAppShortcutStatus() {
+  return invoke<AppShortcutStatus>("get_app_shortcut_status");
+}
+
 function editScriptsInVscode() {
   return invoke("edit_scripts_in_vscode");
+}
+
+function editScriptInVscode(path: string) {
+  return invoke("edit_script_in_vscode", { path });
+}
+
+function refreshScriptActionCache() {
+  return invoke<ActionDefinition[]>("refresh_script_action_cache");
 }
 
 function listTags() {
@@ -1090,6 +1114,7 @@ export function SettingsWindowApp() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
+  const [shortcutStatus, setShortcutStatus] = useState<AppShortcutStatus | null>(null);
   const [tags, setTags] = useState<TagSummary[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -1158,6 +1183,7 @@ export function SettingsWindowApp() {
       }));
       setSettings(nextSettings);
       setDraft(nextSettings);
+      setShortcutStatus(await getAppShortcutStatus());
       if (isTauriRuntime()) {
         await emitTo("main", SETTINGS_UPDATED_EVENT, nextSettings);
         await closeSettingsWindow();
@@ -1320,6 +1346,43 @@ export function SettingsWindowApp() {
     }
   }, []);
 
+  const openScriptInEditor = useCallback(async (action: ActionDefinition) => {
+    if (!action.script?.path) {
+      setError("Script source path is unavailable.");
+      return;
+    }
+
+    try {
+      setError(null);
+      await editScriptInVscode(action.script.path);
+    } catch (openError) {
+      setError(String(openError));
+    }
+  }, []);
+
+  const refreshScriptActions = useCallback(async () => {
+    try {
+      setError(null);
+      const actions = await refreshScriptActionCache();
+      setActionDefinitions(actions);
+      setShortcutStatus(await getAppShortcutStatus());
+      pushToast({
+        title: "Scripts refreshed",
+        message: "Shortcut diagnostics are up to date.",
+        tone: "success",
+      });
+    } catch (refreshError) {
+      const message = String(refreshError);
+      setError(message);
+      pushToast({
+        title: "Refresh scripts failed",
+        message,
+        tone: "danger",
+        durationMs: STICKY_TOAST_DURATION_MS,
+      });
+    }
+  }, [pushToast]);
+
   const browseVscodePath = useCallback(async () => {
     try {
       setError(null);
@@ -1385,6 +1448,18 @@ export function SettingsWindowApp() {
         }
       });
 
+    getAppShortcutStatus()
+      .then((status) => {
+        if (active) {
+          setShortcutStatus(status);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(String(loadError));
+        }
+      });
+
     listTags()
       .then((nextTags) => {
         if (active) {
@@ -1430,6 +1505,7 @@ export function SettingsWindowApp() {
           tags={tags}
           tagsLoading={tagsLoading}
           tagSummary={tagSummary}
+          shortcutStatus={shortcutStatus}
           onDraftChange={setDraft}
           onQueryChange={setQuery}
           onRunScript={runStandaloneScriptAction}
@@ -1437,6 +1513,8 @@ export function SettingsWindowApp() {
           onUpdateTag={updateSettingsTag}
           onOpenTagFiltered={openTagFiltered}
           onEditScripts={() => void openScriptsInEditor()}
+          onEditScript={(action) => void openScriptInEditor(action)}
+          onRefreshScripts={() => void refreshScriptActions()}
           onBrowseVscodePath={() => void browseVscodePath()}
           onCancel={closeWindow}
           onSave={() => void saveSettings()}
@@ -1717,6 +1795,7 @@ type SettingsPanelProps = {
     pinnedCount: number;
     itemCount: number;
   };
+  shortcutStatus: AppShortcutStatus | null;
   onDraftChange: (settings: AppSettings) => void;
   onQueryChange: (query: string) => void;
   onRunScript: (action: ActionDefinition) => void;
@@ -1727,6 +1806,8 @@ type SettingsPanelProps = {
   ) => Promise<TagSummary>;
   onOpenTagFiltered: (tag: TagSummary) => void;
   onEditScripts: () => void;
+  onEditScript: (action: ActionDefinition) => void;
+  onRefreshScripts: () => void;
   onBrowseVscodePath: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -1758,6 +1839,7 @@ function SettingsPanel({
   tags,
   tagsLoading,
   tagSummary,
+  shortcutStatus,
   onDraftChange,
   onQueryChange,
   onRunScript,
@@ -1765,6 +1847,8 @@ function SettingsPanel({
   onUpdateTag,
   onOpenTagFiltered,
   onEditScripts,
+  onEditScript,
+  onRefreshScripts,
   onBrowseVscodePath,
   onCancel,
   onSave,
@@ -2026,6 +2110,7 @@ function SettingsPanel({
                     <AppShortcutInventory
                       pickerShortcut={draft.general.globalShortcut}
                       pinShortcut={draft.picker.pinToggleShortcut}
+                      shortcutStatus={shortcutStatus}
                       onPickerShortcutChange={(globalShortcut) =>
                         onDraftChange({
                           ...draft,
@@ -2053,7 +2138,12 @@ function SettingsPanel({
                     description="Read-only in v1. Script shortcuts live in action source/metadata, so editing remains explicit through the scripts folder."
                     wide
                   >
-                    <ScriptShortcutList actions={scriptActions} onEditScripts={onEditScripts} />
+                    <ScriptShortcutList
+                      actions={scriptActions}
+                      onEditScripts={onEditScripts}
+                      onEditScript={onEditScript}
+                      onRefreshScripts={onRefreshScripts}
+                    />
                   </SettingRow>
                 ) : null}
               </SettingsSection>
@@ -2789,9 +2879,15 @@ function SettingRow({
   );
 }
 
-function ReadOnlyStatus({ value, tone = "neutral" }: { value: string; tone?: "neutral" | "success" }) {
+function ReadOnlyStatus({
+  value,
+  tone = "neutral",
+}: {
+  value: string;
+  tone?: "neutral" | "success" | "warning";
+}) {
   return (
-    <UiBadge className={`readonly-status is-${tone}`} variant={tone === "success" ? "light" : "default"}>
+    <UiBadge className={`readonly-status is-${tone}`} variant={tone === "neutral" ? "default" : "light"}>
       {value}
     </UiBadge>
   );
@@ -2800,11 +2896,13 @@ function ReadOnlyStatus({ value, tone = "neutral" }: { value: string; tone?: "ne
 function AppShortcutInventory({
   pickerShortcut,
   pinShortcut,
+  shortcutStatus,
   onPickerShortcutChange,
   onPinShortcutChange,
 }: {
   pickerShortcut: string;
   pinShortcut: string;
+  shortcutStatus: AppShortcutStatus | null;
   onPickerShortcutChange: (value: string) => void;
   onPinShortcutChange: (value: string) => void;
 }) {
@@ -2815,11 +2913,11 @@ function AppShortcutInventory({
           <div className="hotkey-inventory-header">
             <strong>Open picker</strong>
             <div className="hotkey-meta">
-              <ReadOnlyStatus value="Global native" tone="success" />
+              <ShortcutRegistrationStatusBadge status={shortcutStatus?.picker ?? null} />
               <ReadOnlyStatus value="Editable" />
             </div>
           </div>
-          <p>Global shortcut registered by the Tauri native shortcut backend.</p>
+          <p>{shortcutStatusDescription(shortcutStatus?.picker ?? null, "Global shortcut registered by the Tauri native shortcut backend.")}</p>
         </div>
         <HotkeyField
           label="Open picker shortcut"
@@ -2834,11 +2932,11 @@ function AppShortcutInventory({
           <div className="hotkey-inventory-header">
             <strong>Toggle pin on top</strong>
             <div className="hotkey-meta">
-              <ReadOnlyStatus value="Global native" tone="success" />
+              <ShortcutRegistrationStatusBadge status={shortcutStatus?.pin ?? null} />
               <ReadOnlyStatus value="Editable" />
             </div>
           </div>
-          <p>Toggles always-on-top for the picker. Use the picker title-bar keep-open control for a persistent picker without z-order pinning.</p>
+          <p>{shortcutStatusDescription(shortcutStatus?.pin ?? null, "Toggles always-on-top for the picker. Use the picker title-bar keep-open control for a persistent picker without z-order pinning.")}</p>
         </div>
         <HotkeyField
           label="Toggle pin shortcut"
@@ -2893,13 +2991,47 @@ function AppShortcutInventory({
   );
 }
 
+function ShortcutRegistrationStatusBadge({ status }: { status: NativeShortcutStatus | null }) {
+  if (!status) {
+    return <ReadOnlyStatus value="Checking" />;
+  }
+  if (!status.supported) {
+    return <ReadOnlyStatus value="Unsupported" tone="warning" />;
+  }
+  if (status.registered) {
+    return <ReadOnlyStatus value="Registered" tone="success" />;
+  }
+  if (status.error) {
+    return <ReadOnlyStatus value="Conflict" tone="warning" />;
+  }
+  return <ReadOnlyStatus value="Disabled" />;
+}
+
+function shortcutStatusDescription(status: NativeShortcutStatus | null, fallback: string) {
+  if (!status) {
+    return fallback;
+  }
+  if (status.error) {
+    return status.error;
+  }
+  if (!status.registered && status.supported) {
+    return "Shortcut is disabled or waiting for a saved value.";
+  }
+  return fallback;
+}
+
 function ScriptShortcutList({
   actions,
   onEditScripts,
+  onEditScript,
+  onRefreshScripts,
 }: {
   actions: ActionDefinition[];
   onEditScripts: () => void;
+  onEditScript: (action: ActionDefinition) => void;
+  onRefreshScripts: () => void;
 }) {
+  const [editingActionId, setEditingActionId] = useState<string | null>(null);
   const shortcutActions = actions.filter((action) => Boolean(normalizeShortcutString(action.shortcut ?? "")));
 
   if (shortcutActions.length === 0) {
@@ -2922,6 +3054,9 @@ function ScriptShortcutList({
         <UiButton type="button" variant="default" size="xs" onClick={onEditScripts}>
           Open scripts in VS Code
         </UiButton>
+        <UiButton type="button" variant="default" size="xs" onClick={onRefreshScripts}>
+          Refresh scripts
+        </UiButton>
       </div>
       {shortcutActions.map((action) => {
         const normalizedShortcut = normalizeShortcutString(action.shortcut ?? "");
@@ -2930,6 +3065,7 @@ function ScriptShortcutList({
         const shortcutTriggers = action.triggers.filter((trigger) =>
           trigger === "globalShortcut" || trigger === "localShortcut",
         );
+        const isEditing = editingActionId === action.id;
         return (
           <section key={action.id} className="hotkey-script-item">
             <div className="hotkey-script-copy">
@@ -2963,6 +3099,53 @@ function ScriptShortcutList({
                     </li>
                   ))}
                 </ul>
+              ) : null}
+              <div className="hotkey-script-actions">
+                <UiButton
+                  type="button"
+                  variant={isEditing ? "filled" : "default"}
+                  size="xs"
+                  onClick={() => setEditingActionId(isEditing ? null : action.id)}
+                >
+                  {isEditing ? "Hide edit flow" : "Edit shortcut"}
+                </UiButton>
+                <UiButton
+                  type="button"
+                  variant="default"
+                  size="xs"
+                  disabled={!action.script?.path}
+                  onClick={() => onEditScript(action)}
+                >
+                  Open source
+                </UiButton>
+              </div>
+              {isEditing ? (
+                <div className="hotkey-script-edit-flow">
+                  <strong>Manual source edit</strong>
+                  <ol>
+                    <li>Open the script source and change the `shortcut` value.</li>
+                    <li>Save the file in your editor. Settings will not patch it silently.</li>
+                    <li>Refresh scripts here and review Conflict or Ready before using it.</li>
+                  </ol>
+                  <div className="hotkey-script-edit-preview">
+                    <span>Current shortcut</span>
+                    <ShortcutBadge shortcut={normalizedShortcut} />
+                  </div>
+                  <div className="hotkey-script-actions">
+                    <UiButton
+                      type="button"
+                      variant="default"
+                      size="xs"
+                      disabled={!action.script?.path}
+                      onClick={() => onEditScript(action)}
+                    >
+                      Open this file
+                    </UiButton>
+                    <UiButton type="button" variant="default" size="xs" onClick={onRefreshScripts}>
+                      Refresh diagnostics
+                    </UiButton>
+                  </div>
+                </div>
               ) : null}
             </div>
           </section>
