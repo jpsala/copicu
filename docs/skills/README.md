@@ -33,6 +33,21 @@
 
 La fuente canonica del comportamiento esta en `docs/topics/docs-knowledge-system.md` y `docs/topics/agentic-os-operations.md`; las skills son wrappers cortos para discovery.
 
+## Aliases Pi
+
+Este repo tambien incluye prompt templates Pi en `.pi/prompts/` para invocacion comoda desde el editor:
+
+| Prompt Pi | Expande a |
+| --- | --- |
+| `/sigamos` | `sigamos` |
+| `/cerrar` | `cerrar sesion` |
+| `/continuar` | `continuar sesion` |
+| `/siguiente` | `continuar sesion con gol` |
+| `/realinear` | `realinear os` |
+| `/research <tema>` | research tecnico con `code_search`, `web_search`/`fetch_content` y `librarian` segun corresponda |
+
+Estos prompts son conveniencia Pi, no reemplazan las skills portables ni los topics canonicos.
+
 ## Validacion
 
 ```powershell
