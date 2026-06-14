@@ -69,6 +69,8 @@ AGENTS.md -> docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/
 
 `gol` no es memoria durable del sistema agentico. En estos flujos solo aparece como instruccion para que una sesion nueva arranque el proximo lote con control de ejecucion.
 
+La memoria automatica de Pi, como `pi-observational-memory`, es ayuda de continuidad entre compacciones y sesiones largas. No es fuente de verdad del proyecto. Si una observacion automatica contradice `AGENTS.md`, `docs/WORKING_MEMORY.md`, topics, tracks, specs o decisiones versionadas, prevalece la documentacion del repo. Cuando una observacion resulte durable, promoverla al destino correcto en esta capa agentica.
+
 Si durante ese lote aparece conocimiento durable, promoverlo al destino correcto: decision, topic, working memory, track o spec.
 
 `continuar sesion con gol` hace `continuar sesion` y ademas pide que el thread nuevo arranque con `gol` para el proximo lote acordado.
