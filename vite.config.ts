@@ -5,21 +5,53 @@ const restartMode = process.env.COPICU_VITE_RESTART_MODE === "1";
 const probeMode = process.env.COPICU_VITE_PROBE_MODE === "1";
 const tauriDevMode = process.env.COPICU_TAURI_DEV === "1" || restartMode;
 
-function devRequestTimingPlugin() {
+function vendorChunk(moduleId: string) {
+  const id = moduleId.replaceAll("\\", "/");
+  if (!id.includes("/node_modules/")) {
+    return null;
+  }
+  if (id.includes("/node_modules/react/") || id.includes("/node_modules/react-dom/")) {
+    return "vendor-react";
+  }
+  if (id.includes("/node_modules/@mantine/")) {
+    return "vendor-mantine";
+  }
+  if (id.includes("/node_modules/@tauri-apps/")) {
+    return "vendor-tauri";
+  }
+  if (id.includes("/node_modules/@tanstack/")) {
+    return "vendor-virtual";
+  }
+  return null;
+}
+
+function copicuHtmlEntryPlugin(useBootEntry: boolean) {
   return {
-    name: "copicu-dev-request-timing",
+    name: "copicu-html-entry",
     transformIndexHtml: {
       order: "post",
       handler(html) {
+        const entryHtml = useBootEntry
+          ? html.replace(
+              /<script type="module" src="\/src\/main\.tsx"><\/script>/g,
+              '<script type="module" src="/src/boot.tsx"></script>',
+            )
+          : html;
         if (!tauriDevMode) {
-          return html;
+          return entryHtml;
         }
-        return html.replace(
+        return entryHtml.replace(
           /<script type="module" src="\/@vite\/client"><\/script>\s*/g,
           "",
         );
       },
     },
+  };
+}
+
+function devRequestTimingPlugin() {
+  return {
+    name: "copicu-dev-request-timing",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const startedAt = performance.now();
@@ -52,8 +84,8 @@ function devRequestTimingPlugin() {
   };
 }
 
-export default defineConfig({
-  plugins: [devRequestTimingPlugin(), react()],
+export default defineConfig(({ command }) => ({
+  plugins: [copicuHtmlEntryPlugin(command === "build"), devRequestTimingPlugin(), react()],
   clearScreen: false,
   optimizeDeps: {
     include: [
@@ -85,4 +117,11 @@ export default defineConfig({
           clientFiles: ["./src/main.tsx"],
         },
   },
-});
+  build: {
+    rolldownOptions: {
+      output: {
+        manualChunks: vendorChunk,
+      },
+    },
+  },
+}));
