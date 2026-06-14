@@ -9,6 +9,10 @@ triggers:
   - context index
   - working memory
   - track
+  - checkpoint
+  - persistir estado
+  - persistí estado
+  - persistir lo valioso
   - cerrar sesion
   - continuar sesion
   - siguiente
@@ -22,6 +26,10 @@ triggers:
   - slash commands
   - docs/skills
   - .agents/skills
+  - pi os
+  - os-status
+  - os-compact
+  - os-continuar
 primary_refs:
   - AGENTS.md
   - docs/README.md
@@ -30,6 +38,9 @@ primary_refs:
   - docs/GLOSSARY.md
   - docs/skills/
   - docs/topics/agentic-os-operations.md
+  - docs/topics/pi-agentic-os.md
+  - .pi/extensions/
+  - .pi/prompts/
   - scripts/context-index.ts
   - scripts/agent-context-audit.ts
 ---
@@ -80,6 +91,27 @@ Si durante ese lote aparece conocimiento durable, promoverlo al destino correcto
 `siguiente` es alias de `continuar sesion con gol`.
 
 `sigamos` continua el trabajo activo en la misma sesion. No hace cierre de valor ni prepara handoff.
+
+## Checkpoint De Valor
+
+`checkpoint` / `persistí estado` persiste valor durable sin cortar la sesion actual.
+
+Usarlo cuando el contexto empieza a crecer, antes de una compactacion manual, despues de decidir algo importante o antes de una tarea grande. A diferencia de `cerrar sesion`, no prepara handoff, no abre thread nuevo, no pide `gol` y no ejecuta `/compact` salvo pedido explicito.
+
+Flujo:
+
+1. extraer solo decisiones, estado vivo, archivos/cambios relevantes, checks, riesgos y proximo paso;
+2. descartar transcript, intentos triviales, razonamiento intermedio y logs largos;
+3. rutear cada memoria a `AGENTS.md`, `docs/WORKING_MEMORY.md`, topic, track, spec o decision segun corresponda;
+4. regenerar `docs/.generated/context-index.md` si cambian topics, tracks, specs, skills, aliases o prompts documentados;
+5. correr `bun run context:audit` si se toco la capa agentica o hay riesgo de drift;
+6. responder con sintesis compacta y seguir en la misma sesion.
+
+Si no hay valor durable nuevo, no tocar docs por tocar: decir que no habia checkpoint necesario y seguir.
+
+Hay una extension Pi local en `.pi/extensions/checkpoint-nudge.ts` que no ejecuta checkpoints automaticamente: solo avisa por uso de contexto en 70%, 85% y 92%, mantiene status de footer, etiqueta checkpoints en `/tree` y ofrece `/checkpoint-nudge prefill|mute|unmute|test`.
+
+Para comandos Pi adicionales (`/os-status`, `/os-compact`, `/os-continuar`) abrir `docs/topics/pi-agentic-os.md`.
 
 ## Cierre Y Continuacion De Sesion
 

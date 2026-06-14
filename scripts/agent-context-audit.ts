@@ -165,6 +165,10 @@ if (exists("docs/topics/docs-knowledge-system.md") && !topicsIndex.includes("top
   add("warn", "docs/topics/docs-knowledge-system.md exists but is not linked from docs/TOPICS.md");
 }
 
+if (exists(".pi/extensions") && !topicsIndex.includes("topics/pi-agentic-os.md")) {
+  add("warn", ".pi/extensions exists but docs/topics/pi-agentic-os.md is not linked from docs/TOPICS.md");
+}
+
 const topicFiles = exists("docs/topics")
   ? readdirSync(join(root, "docs", "topics")).filter((name) => name.endsWith(".md")).sort()
   : [];
@@ -302,6 +306,14 @@ if (!exists("docs/.generated/context-index.md")) {
     "docs/TOPICS.md",
     "docs/skills/README.md",
     "docs/tracks/README.md",
+    ...walkMarkdownFiles(join(root, ".pi", "prompts")).map((path) => relative(root, path).replaceAll("\\", "/")),
+    ...(
+      exists(".pi/extensions")
+        ? readdirSync(join(root, ".pi", "extensions"), { withFileTypes: true })
+          .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+          .map((entry) => `.pi/extensions/${entry.name}`)
+        : []
+    ),
     ...topicFiles.map((file) => `docs/topics/${file}`),
     ...walkMarkdownFiles(join(root, "docs", "skills")).map((path) => relative(root, path).replaceAll("\\", "/")),
     ...trackMarkdown,

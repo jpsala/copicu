@@ -5,6 +5,46 @@ const restartMode = process.env.COPICU_VITE_RESTART_MODE === "1";
 const probeMode = process.env.COPICU_VITE_PROBE_MODE === "1";
 const tauriDevMode = process.env.COPICU_TAURI_DEV === "1" || restartMode;
 
+const HIGHLIGHT_VENDOR_PACKAGES = [
+  "rehype-highlight",
+  "highlight.js",
+  "lowlight",
+] as const;
+
+const MARKDOWN_VENDOR_PACKAGES = [
+  "react-markdown",
+  "remark-gfm",
+  "unified",
+  "vfile",
+  "bail",
+  "devlop",
+  "extend",
+  "is-plain-obj",
+  "trough",
+  "zwitch",
+  "mdast-util-",
+  "micromark",
+  "remark-parse",
+  "remark-rehype",
+  "hast-util-",
+  "html-url-attributes",
+  "property-information",
+  "space-separated-tokens",
+  "comma-separated-tokens",
+  "decode-named-character-reference",
+  "character-entities",
+  "trim-lines",
+  "unist-util-",
+  "markdown-table",
+  "longest-streak",
+] as const;
+
+function matchesNodePackage(id: string, packageNames: readonly string[]) {
+  return packageNames.some((packageName) =>
+    id.includes(`/node_modules/${packageName}`),
+  );
+}
+
 function vendorChunk(moduleId: string) {
   const id = moduleId.replaceAll("\\", "/");
   if (!id.includes("/node_modules/")) {
@@ -12,6 +52,12 @@ function vendorChunk(moduleId: string) {
   }
   if (id.includes("/node_modules/react/") || id.includes("/node_modules/react-dom/")) {
     return "vendor-react";
+  }
+  if (matchesNodePackage(id, HIGHLIGHT_VENDOR_PACKAGES)) {
+    return "vendor-highlight";
+  }
+  if (matchesNodePackage(id, MARKDOWN_VENDOR_PACKAGES)) {
+    return "vendor-markdown";
   }
   if (id.includes("/node_modules/@mantine/")) {
     return "vendor-mantine";

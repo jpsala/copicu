@@ -14,6 +14,7 @@
 - `impeccable/`: skill local para trabajo de UI/frontend.
 - `speckit-*/`: skills locales del workflow SpecKit.
 - `sigamos/`: continuar el trabajo activo en la misma sesion.
+- `checkpoint/`: persistir valor durable sin cerrar ni cambiar de sesion.
 - `cerrar-sesion/`: cierre de valor sin transcript.
 - `continuar-sesion/`: cierre de valor mas handoff compacto para sesion nueva.
 - `continuar-sesion-con-gol/`: variante de continuidad que pide arrancar la proxima sesion con `gol`.
@@ -24,6 +25,7 @@
 | Usuario dice | Skill | Efecto | No confundir con |
 | --- | --- | --- | --- |
 | `sigamos` | `sigamos` | Sigue en la misma sesion sin cierre, handoff ni thread nuevo. | `continuar sesion`, que corta contexto. |
+| `checkpoint` / `persistí estado` | `checkpoint` | Promueve valor durable a docs sin cerrar, compactar, handoff ni thread nuevo. | `cerrar sesion`, que es cierre operativo. |
 | `cerrar sesion` | `cerrar-sesion` | Promueve valor durable a docs, regenera indice y corre audit. No crea transcript. | `continuar sesion`, que ademas prepara handoff. |
 | `continuar sesion` | `continuar-sesion` | Hace cierre de valor y prepara handoff compacto para sesion nueva. | `continuar sesion con gol`, que pide arrancar la nueva sesion con `gol`. |
 | `continuar sesion con gol` | `continuar-sesion-con-gol` | Cierre + handoff + instruccion explicita de arrancar con `gol`. | `sigamos`; no existe variante de `gol` para seguir en la misma sesion. |
@@ -40,13 +42,16 @@ Este repo tambien incluye prompt templates Pi en `.pi/prompts/` para invocacion 
 | Prompt Pi | Expande a |
 | --- | --- |
 | `/sigamos` | `sigamos` |
+| `/checkpoint` | `checkpoint` |
 | `/cerrar` | `cerrar sesion` |
 | `/continuar` | `continuar sesion` |
 | `/siguiente` | `continuar sesion con gol` |
 | `/realinear` | `realinear os` |
 | `/research <tema>` | research tecnico con `code_search`, `web_search`/`fetch_content` y `librarian` segun corresponda |
 
-Estos prompts son conveniencia Pi, no reemplazan las skills portables ni los topics canonicos.
+Extensiones Pi del OS local documentadas en `docs/topics/pi-agentic-os.md`: `/checkpoint-nudge`, `/os-status`, `/os-compact` y `/os-continuar`.
+
+Estos prompts y extensiones son conveniencia Pi, no reemplazan las skills portables ni los topics canonicos.
 
 ## Validacion
 

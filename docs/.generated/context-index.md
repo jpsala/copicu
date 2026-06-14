@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-14T04:53:34.211Z
+Generated: 2026-06-14T05:43:45.780Z
 
 ## Topics
 
@@ -13,7 +13,7 @@ Generated: 2026-06-14T04:53:34.211Z
 - active: [compound-hotkeys-and-whichkey](../topics/compound-hotkeys-and-whichkey.md) - hotkeys compuestos, hotkey sequence, key sequence, chord, whichkey, which key
 - active: [copyq-technical-baseline](../topics/copyq-technical-baseline.md) - CopyQ, copyq, copy-q, copycube, baseline, paridad, como lo hace CopyQ, enter item
 - draft: [custom-window-system](../topics/custom-window-system.md) - custom windows, multiwindow, multiple windows, ventanas standalone, ventana metadata, ui-host, frameless, undecorated
-- active: [docs-knowledge-system](../topics/docs-knowledge-system.md) - sistema agentico, os lite, documentacion liviana, context index, working memory, track, cerrar sesion, continuar sesion
+- active: [docs-knowledge-system](../topics/docs-knowledge-system.md) - sistema agentico, os lite, documentacion liviana, context index, working memory, track, checkpoint, persistir estado
 - active: [filtering-and-query-syntax](../topics/filtering-and-query-syntax.md) - filtering, filtros, search, busqueda, query syntax, FTS, tags, AI search
 - active: [global-shortcut-and-tray](../topics/global-shortcut-and-tray.md) - global shortcut, shortcut global, hotkey, tray, system tray, background app
 - active: [hotkeys](../topics/hotkeys.md) - hotkey, hotkeys, shortcut, global shortcut, hotkey compuesto, key sequence, chord
@@ -23,6 +23,7 @@ Generated: 2026-06-14T04:53:34.211Z
 - active: [markdown-output-surface](../topics/markdown-output-surface.md) - markdown output, salida markdown, ai-output, informes, summaries, reportes, export markdown
 - active: [open-source-github](../topics/open-source-github.md) - open source, GitHub public, repo publico, publicar repo, README publico, project website, web del proyecto, contributors
 - active: [performance-and-memory](../topics/performance-and-memory.md) - performance, memoria, consumo, idle, velocidad, large history, benchmarks
+- active: [pi-agentic-os](../topics/pi-agentic-os.md) - pi os, pi agentic os, checkpoint-nudge, os-status, os-compact, os-continuar, compactacion pi, sesiones pi
 - active: [picker-interaction](../topics/picker-interaction.md) - picker, buscador, search, filtro, regex, fuzzy, preview, keyboard navigation
 - active: [product-ambition](../topics/product-ambition.md) - Copicu, CopyQ baseline, AI, plugins, metadata, product ambition
 - active: [product-direction](../topics/product-direction.md) - producto, MVP, CopyQ, recomendaciones, alcance, roadmap
@@ -79,13 +80,20 @@ Generated: 2026-06-14T04:53:34.211Z
 ## Skills
 
 - Canon: [docs/skills/](../skills/)
-- Operational commands: sigamos, cerrar-sesion, continuar-sesion, continuar-sesion-con-gol, realinear-os
+- Operational commands: sigamos, checkpoint, cerrar-sesion, continuar-sesion, continuar-sesion-con-gol, realinear-os
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
+
+## Pi Resources
+
+- Prompts: cerrar, checkpoint, continuar, realinear, research, sigamos, siguiente
+- Extensions: checkpoint-nudge.ts, os-tools.ts
+- Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
 
 ## Aliases
 
 | Alias | Significado | Nota |
 | SA | Sistema agentico de este proyecto | Documentacion, reglas y memoria que usan los agentes para trabajar en este repo. |
+| OS | Sistema agentico de este proyecto | Alias corto de SA; no significa sistema operativo cuando se use en contexto agentico del repo. |
 | CQ | CopyQ | Referencia funcional principal; baseline, no objetivo de compatibilidad total. |
 | CC | copycu | Alias corto pedido para el producto/proyecto. El resto de docs todavia usa `Copicu`; reconciliar el nombre cuando se formalice la marca. |
 | Context Bloat | Contaminacion de contexto: cuando reglas, working memory, topics o tracks crecen hasta volverse lectura obligatoria amplia. |

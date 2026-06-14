@@ -1,0 +1,4 @@
+interface:
+  display_name: Checkpoint
+  short_description: Persistir valor durable sin cerrar sesion
+  default_prompt: Usa Checkpoint para guardar decisiones, estado vivo y proximos pasos sin cortar la sesion actual.

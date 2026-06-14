@@ -108,6 +108,7 @@ const skillDirs = exists("docs/skills")
 if (skillDirs.length) {
   const operationalSkills = [
     "sigamos",
+    "checkpoint",
     "cerrar-sesion",
     "continuar-sesion",
     "continuar-sesion-con-gol",
@@ -119,6 +120,21 @@ if (skillDirs.length) {
 } else {
   lines.push("- Missing docs/skills/");
 }
+lines.push("");
+
+lines.push("## Pi Resources");
+lines.push("");
+const piPrompts = markdownFiles(".pi/prompts").map((path) => path.replace(".pi/prompts/", "").replace(/\.md$/, ""));
+const piExtensions = exists(".pi/extensions")
+  ? readdirSync(join(root, ".pi", "extensions"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .map((entry) => entry.name)
+    .sort()
+  : [];
+if (piPrompts.length) lines.push(`- Prompts: ${piPrompts.join(", ")}`);
+if (piExtensions.length) lines.push(`- Extensions: ${piExtensions.join(", ")}`);
+if (!piPrompts.length && !piExtensions.length) lines.push("- No project Pi resources found.");
+lines.push("- Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)");
 lines.push("");
 
 lines.push("## Aliases");

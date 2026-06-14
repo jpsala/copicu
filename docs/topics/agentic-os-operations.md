@@ -17,6 +17,8 @@ primary_refs:
   - docs/.generated/context-index.md
   - docs/skills/
   - docs/tracks/
+  - .pi/extensions/
+  - .pi/prompts/
   - scripts/ensure-skills-link.ps1
   - scripts/agent-context-audit.ts
 ---
@@ -48,6 +50,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Routing: topics relevantes existen, tienen triggers utiles y estan linkeados desde `docs/TOPICS.md`.
 - Continuidad: track activo tiene estado, next step y refs que existen.
 - Skills: `docs/skills/` existe, `.agents/skills` apunta ahi por junction y no hay duplicacion real.
+- Pi: `.pi/prompts/` y `.pi/extensions/` estan documentados en `docs/topics/pi-agentic-os.md` cuando afectan el OS.
 - Decisiones: lo durable esta en `docs/DECISIONS.md` o topic estable, no enterrado en tracks.
 - Specs: specs activas estan indexadas, no tienen prefijos duplicados y tienen `spec.md`.
 - Drift: docs raiz no contradicen la ruta inicial, los comandos reales ni el estado actual del repo.
