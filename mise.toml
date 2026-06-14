@@ -1,0 +1,10 @@
+[tools]
+node = "24.16.0"
+
+[tasks.dev-vite-chunk-check]
+description = "Developer Vite chunk measurement gate. Builds once and reports large-chunk warnings without failing."
+run = "node scripts/validation/vite-chunk-check.mjs --enforce=none"
+
+[tasks.release-vite-chunk-check]
+description = "Release Vite chunk gate. Fails if Vite reports large chunks."
+run = "node scripts/validation/vite-chunk-check.mjs --enforce=no-large-chunk-warning"

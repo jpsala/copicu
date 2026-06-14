@@ -1,0 +1,25 @@
+name: Agentic Validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-vite-chunk-check:
+    name: release-vite-chunk-check
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+        with:
+          cache: true
+      - name: Install npm dependencies
+        run: npm ci
+      - name: Run release Vite chunk gate
+        run: mise run release-vite-chunk-check

@@ -30,6 +30,8 @@ triggers:
   - os-status
   - os-compact
   - os-continuar
+  - context bloat
+  - contaminacion de contexto
 primary_refs:
   - AGENTS.md
   - docs/README.md
@@ -65,7 +67,23 @@ AGENTS.md -> docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/
 - `docs/GLOSSARY.md` guarda aliases recurrentes.
 - `docs/.generated/context-index.md` es cache generado por `bun run context:index`.
 - `docs/skills/` es la fuente canonica de skills locales portables; `.agents/skills` es solo compatibilidad tecnica.
+- `.pi/` es adapter opcional para Pi: comandos, prompts y nudges; no reemplaza la memoria versionada.
 - `scripts/agent-context-audit.ts` debe avisar sobre drift barato de detectar.
+
+## Donde Poner Cada Cosa
+
+| Contenido | Destino |
+| --- | --- |
+| Regla critica para todos los agentes | `AGENTS.md` |
+| Estado vivo corto | `docs/WORKING_MEMORY.md` |
+| Indice generado de contexto | `docs/.generated/context-index.md` |
+| Decision durable | `docs/DECISIONS.md` |
+| Pregunta pendiente | `docs/OPEN_QUESTIONS.md` |
+| Conocimiento reusable por tema | `docs/topics/<topic>.md` |
+| Trabajo vivo retomable | `docs/tracks/<track>.md` |
+| Skill local portable | `docs/skills/<skill>/` |
+| Feature grande | `specs/<feature>/` |
+| Contexto historico grande | `docs/reference/` o track archivada |
 
 ## Cuando Se Descubre Algo
 
@@ -147,6 +165,16 @@ No hacer:
 Objetivo de la nueva sesion:
 Primer paso:
 ```
+
+## Mantenimiento
+
+- No duplicar specs enteras en working memory.
+- No guardar transcripts largos.
+- No convertir `AGENTS.md`, `WORKING_MEMORY.md`, `TOPICS.md` ni tracks activas en lectura obligatoria amplia.
+- Si un documento crece porque acumula historia, separar: estado vivo corto, decision durable, topic reusable, track retomable o archivo historico.
+- La ruta caliente debe seguir siendo pequena: indice generado, working memory corta, router y solo el topic/track necesario.
+- Si una track descubre algo durable, promoverlo a docs raiz, topic, decision o spec.
+- Si aparece un documento suelto, integrarlo, indexarlo, archivarlo con estado claro o preguntar antes de borrarlo.
 
 ## Auditoria
 

@@ -9,6 +9,11 @@ triggers:
   - drift de contexto
   - actualizar os lite
   - sistema agentico
+  - os lite
+  - init os
+  - adopt os
+  - update os
+  - migrar sistema agentico
 primary_refs:
   - AGENTS.md
   - docs/GLOSSARY.md
@@ -20,12 +25,22 @@ primary_refs:
   - .pi/extensions/
   - .pi/prompts/
   - scripts/ensure-skills-link.ps1
+  - scripts/context-index.ts
   - scripts/agent-context-audit.ts
 ---
 
 # Operaciones Del Sistema Agentico
 
 Usar este topic cuando JP pida auditar, reparar, actualizar o realinear la capa agentica del repo.
+
+## Intenciones
+
+| Pedido | Accion |
+| --- | --- |
+| `realinear os` | Auditar y reparar drift de la capa agentica local. |
+| `actualizar os lite` / `update` | Comparar contra `c:\dev\agentic-project-os-lite` y traer mejoras portables sin pisar contexto local. |
+| `adopt` / migracion | Fusionar reglas y memoria existentes; no resetear con templates genericos. |
+| context bloat | Compactar ruta caliente y mover historia a `docs/reference/` o tracks archivadas. |
 
 ## Comando `realinear os`
 
@@ -72,7 +87,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Mover archivos historicos grandes cuando no este claro su destino.
 - Cambiar convenciones principales del sistema.
 - Tocar codigo producto, specs de feature, datos, deploy o release.
-- Reemplazar diferencias locales respecto del upstream `C:\dev\chat\agentic-project-os-lite`.
+- Reemplazar diferencias locales respecto del upstream `c:\dev\agentic-project-os-lite` sin revisar/mergear.
 
 ### Cierre
 
@@ -90,12 +105,15 @@ bun run context:audit
 
 ## Actualizar Desde Upstream
 
-1. Leer primero el sistema local.
-2. Comparar solo la capa agentica: `AGENTS.md`, docs de contexto, topics, tracks, scripts, `.specify/` y `docs/skills/` si aplica.
-3. Preservar convenciones locales como `docs/tracks/`, reglas de producto, Windows-first, Tauri, clipboard privacy y release.
-4. No copiar contexto generico del upstream que no aplique a Copicu.
-5. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
-6. Preservar `docs/skills/` como fuente canonica y regenerar `.agents/skills` con `scripts/ensure-skills-link.ps1`.
+1. Leer primero el sistema local y verificar `git status`.
+2. Comparar solo la capa agentica: `AGENTS.md`, docs de contexto, topics base, scripts, `.pi/`, `.specify/` y `docs/skills/` si aplica.
+3. Preservar memoria local: `docs/WORKING_MEMORY.md`, `docs/DECISIONS.md`, tracks, specs y topics de producto no se pisan; se fusionan si hace falta.
+4. Preservar convenciones locales como `docs/tracks/`, reglas de producto, Windows-first, Tauri, clipboard privacy, dev/instalada y release.
+5. Traer mejoras portables de scripts, prompts, extensiones y skills cuando no dependan de contexto del upstream.
+6. No copiar contexto generico del upstream que no aplique a Copicu.
+7. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
+8. Preservar `docs/skills/` como fuente canonica y regenerar `.agents/skills` con `scripts/ensure-skills-link.ps1`.
+9. Regenerar indice y correr audit antes de reportar.
 
 ## Criterio De Exito
 

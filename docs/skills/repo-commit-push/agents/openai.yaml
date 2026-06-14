@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Commit Push"
+  short_description: "Commit, push, and inclusion checklist"
+  default_prompt: "Use $repo-commit-push to commit all needed repository changes, push them, and verify required files are included."

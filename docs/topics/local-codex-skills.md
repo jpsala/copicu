@@ -9,12 +9,21 @@ triggers:
   - docs/skills
   - .agents/skills
   - sigamos
+  - checkpoint
+  - persistir estado
   - cerrar sesion
   - continuar sesion
   - continuar sesion con gol
   - continuar con gol
   - siguiente
   - realinear os
+  - evaluar skills
+  - pasar a skills
+  - promover a skill
+  - hacer commits
+  - push
+  - publicar cambios
+  - repo commit push
   - skill o topic
   - metadata minima
   - modelo hibrido
@@ -62,6 +71,17 @@ Una instruccion activa puede funcionar como skill si tiene forma de accion. No c
 4. La skill apunta a la fuente canonica y no duplica procedimiento largo.
 5. Si cambia la logica, se actualiza la fuente canonica y se revisa si la skill sigue apuntando bien.
 
+### Metadata Minima
+
+Una skill con metadata minima es aceptable cuando:
+
+- el nombre del comando ya es claro;
+- el comportamiento canonico vive en un topic o script;
+- el objetivo principal es que Codex descubra el comando;
+- repetir el procedimiento dentro del `SKILL.md` aumentaria drift.
+
+No usar metadata minima cuando el comando es riesgoso, tiene muchos pasos fragiles o requiere validacion precisa. En esos casos el `SKILL.md` debe tener guardrails suficientes o delegar a un script.
+
 ## Criterio De Promocion
 
 Antes de crear una skill nueva, responder:
@@ -74,17 +94,30 @@ Antes de crear una skill nueva, responder:
 
 Si la respuesta fuerte es "si" en 3 o mas puntos, crear skill. Si no, dejarlo como topic, regla activa o track.
 
+## Auditoria De Candidatos
+
+Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
+
+1. Usar la skill `evaluar-skills`.
+2. Leer ruta liviana: indice, working memory y topics.
+3. Buscar candidatos en `AGENTS.md`, `docs/TOPICS.md`, `docs/topics/`, `docs/tracks/` y `docs/skills/README.md`.
+4. Proponer shortlist con recomendacion: `skill`, `skill hibrida`, `topic`, `regla activa`, `track` o `no promover`.
+5. Implementar solo despues de confirmar o si JP pide "hacelo".
+
 ## Comandos Cubiertos
 
 | Comando conversacional | Skill | Fuente canonica | Resultado esperado |
 | --- | --- | --- | --- |
 | `sigamos` | `docs/skills/sigamos/` | `AGENTS.md`, `docs/topics/docs-knowledge-system.md` | Continuar en la misma sesion sin cierre ni handoff. |
+| `checkpoint` / `persistir estado` | `docs/skills/checkpoint/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable sin cerrar, handoff, thread nuevo ni compactar. |
 | `cerrar sesion` | `docs/skills/cerrar-sesion/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable, regenerar indice, correr audit y responder compacto. |
 | `continuar sesion` | `docs/skills/continuar-sesion/` | `docs/topics/docs-knowledge-system.md` | Hacer cierre de valor y preparar handoff compacto para sesion nueva. |
 | `continuar sesion con gol` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Handoff para sesion nueva que debe arrancar con `gol`. |
 | `continuar con gol` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias de `continuar sesion con gol`. |
 | `siguiente` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias corto de continuidad con `gol`, no "seguir aqui". |
 | `realinear os` | `docs/skills/realinear-os/` | `docs/topics/agentic-os-operations.md` | Auditar/reparar la capa agentica sin tocar producto salvo pedido explicito. |
+| `evaluar skills` / `pasar a skills` | `docs/skills/evaluar-skills/` | Este topic | Auditar candidatos para promoverlos a skills hibridas. |
+| `hacer commits` / `push` / `publicar cambios` / `repo commit push` | `docs/skills/repo-commit-push/` | `docs/skills/repo-commit-push/SKILL.md` | Revisar inclusion, validar, commitear y pushear el batch del repo. |
 
 Regla de precedencia: si una skill y su topic divergen, corregir la skill para que vuelva a apuntar al topic; no duplicar procedimiento largo dentro de `SKILL.md`.
 

@@ -30,6 +30,7 @@ Para entender el estado actual sin inflar contexto:
 - `user/README.md`: guia clara de que es Copicu, que hace y como se usa.
 - `user/scripts.md`: guia exhaustiva de scripts, metadata, API host, capabilities y ejemplos.
 - `USER_GUIDE.md`: guia breve para humanos sobre como usar la capa agentica.
+- `OS_PLAYBOOK.md`: playbook humano para elegir entre checkpoint, continuidad, compaction, `/gol`, `/until-done`, dogfood y auditoria.
 
 ## Contexto Inicial
 
@@ -45,7 +46,8 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 - `DECISIONS.md`: decisiones y estado.
 - `OPEN_QUESTIONS.md`: preguntas pendientes.
 - `GLOSSARY.md`: aliases y definiciones recurrentes.
-- `USER_GUIDE.md`: guia humana del sistema agentico.
+- `USER_GUIDE.md`: guia humana breve del sistema agentico.
+- `OS_PLAYBOOK.md`: guia practica para usar comandos, flujos y automatizaciones del OS en Pi.
 - `TOPICS.md` y `topics/`: conocimiento recuperable.
 - `WORKING_MEMORY.md`: memoria operativa actual.
 - `tracks/`: trabajos vivos retomables.

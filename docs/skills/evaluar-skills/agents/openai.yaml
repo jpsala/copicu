@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evaluar Skills"
+  short_description: "Detecta candidatos a skills hibridas"
+  default_prompt: "Evaluar que comandos, tracks, topics o reglas del sistema agentico conviene pasar a skills hibridas."

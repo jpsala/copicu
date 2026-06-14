@@ -19,6 +19,8 @@
 - `continuar-sesion/`: cierre de valor mas handoff compacto para sesion nueva.
 - `continuar-sesion-con-gol/`: variante de continuidad que pide arrancar la proxima sesion con `gol`.
 - `realinear-os/`: auditoria y reparacion de la capa agentica.
+- `evaluar-skills/`: auditar que partes del sistema agentico conviene promover a skills hibridas.
+- `repo-commit-push/`: checklist para incluir cambios necesarios, commitear y pushear.
 
 ## Comandos Operativos
 
@@ -32,6 +34,8 @@
 | `continuar con gol` | `continuar-sesion-con-gol` | Alias de `continuar sesion con gol`. | `sigamos`. |
 | `siguiente` | `continuar-sesion-con-gol` | Alias corto para cortar contexto y seguir el proximo lote con `gol`. | "hacer el siguiente paso" en la misma sesion. |
 | `realinear os` | `realinear-os` | Audita y repara drift de la capa agentica sin tocar producto salvo pedido explicito. | Refactors de producto o arquitectura runtime. |
+| `evaluar skills` / `pasar a skills` | `evaluar-skills` | Propone que reglas/procedimientos conviene promover a skill hibrida. | Convertir todo en skill por defecto. |
+| `hacer commits` / `push` / `publicar cambios` / `repo commit push` | `repo-commit-push` | Revisa inclusion, valida, commitea y pushea el batch. | Commits automaticos sin revisar secretos o cambios ajenos. |
 
 La fuente canonica del comportamiento esta en `docs/topics/docs-knowledge-system.md` y `docs/topics/agentic-os-operations.md`; las skills son wrappers cortos para discovery.
 

@@ -2,12 +2,12 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-14T12:03:50.797Z
+Generated: 2026-06-14T17:54:07.063Z
 
 ## Topics
 
 - active: [actions-and-scripting-api](../topics/actions-and-scripting-api.md) - actions, scripting, scripts, plugins, TypeScript actions, JavaScript actions, CopyQ commands, command context
-- active: [agentic-os-operations](../topics/agentic-os-operations.md) - realinear os, auditar sistema agentico, reparar sistema agentico, drift de contexto, actualizar os lite, sistema agentico
+- active: [agentic-os-operations](../topics/agentic-os-operations.md) - realinear os, auditar sistema agentico, reparar sistema agentico, drift de contexto, actualizar os lite, sistema agentico, os lite, init os
 - draft: [ai-search-and-actions](../topics/ai-search-and-actions.md) - AI, OpenAI, OpenRouter, natural language search, vague search, commands, filters, actions
 - active: [clipboard](../topics/clipboard.md) - clipboard, portapapeles, clipboard manager, capture, text capture, HTML clipboard
 - active: [compound-hotkeys-and-whichkey](../topics/compound-hotkeys-and-whichkey.md) - hotkeys compuestos, hotkey sequence, key sequence, chord, whichkey, which key
@@ -17,13 +17,13 @@ Generated: 2026-06-14T12:03:50.797Z
 - active: [filtering-and-query-syntax](../topics/filtering-and-query-syntax.md) - filtering, filtros, search, busqueda, query syntax, FTS, tags, AI search
 - active: [global-shortcut-and-tray](../topics/global-shortcut-and-tray.md) - global shortcut, shortcut global, hotkey, tray, system tray, background app
 - active: [hotkeys](../topics/hotkeys.md) - hotkey, hotkeys, shortcut, global shortcut, hotkey compuesto, key sequence, chord
-- reference: [local-codex-skills](../topics/local-codex-skills.md) - skills locales, local skills, slash commands, docs/skills, .agents/skills, sigamos, cerrar sesion, continuar sesion
+- reference: [local-codex-skills](../topics/local-codex-skills.md) - skills locales, local skills, slash commands, docs/skills, .agents/skills, sigamos, checkpoint, persistir estado
 - reference: [macos-portability-research-unindexed](../topics/macos-portability-research-unindexed.md) - macOS port, Mac port, clipboard manager mac, paste previous window macOS
 - active: [mantine-ui-system](../topics/mantine-ui-system.md) - Mantine, MUI, UI library, component library, themes, design system
 - active: [markdown-output-surface](../topics/markdown-output-surface.md) - markdown output, salida markdown, ai-output, informes, summaries, reportes, export markdown
 - active: [open-source-github](../topics/open-source-github.md) - open source, GitHub public, repo publico, publicar repo, README publico, project website, web del proyecto, contributors
 - active: [performance-and-memory](../topics/performance-and-memory.md) - performance, memoria, consumo, idle, velocidad, large history, benchmarks
-- active: [pi-agentic-os](../topics/pi-agentic-os.md) - pi os, pi agentic os, checkpoint-nudge, os-status, os-compact, os-continuar, compactacion pi, sesiones pi
+- active: [pi-agentic-os](../topics/pi-agentic-os.md) - pi os, pi agentic os, checkpoint-nudge, os-status, os-compact, os-continuar, seguir, os-sync
 - active: [picker-interaction](../topics/picker-interaction.md) - picker, buscador, search, filtro, regex, fuzzy, preview, keyboard navigation
 - active: [product-ambition](../topics/product-ambition.md) - Copicu, CopyQ baseline, AI, plugins, metadata, product ambition
 - active: [product-direction](../topics/product-direction.md) - producto, MVP, CopyQ, recomendaciones, alcance, roadmap
@@ -86,7 +86,7 @@ Generated: 2026-06-14T12:03:50.797Z
 ## Pi Resources
 
 - Prompts: cerrar, checkpoint, continuar, realinear, research, sigamos, siguiente
-- Extensions: checkpoint-nudge.ts, os-tools.ts
+- Extensions: checkpoint-nudge.ts, copicu-computer-use.ts, os-tools.ts
 - Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
 
 ## Aliases
@@ -106,4 +106,3 @@ Generated: 2026-06-14T12:03:50.797Z
 | Continuar Sesion Con Gol | Alias de `continuar sesion` que ademas instruye al thread nuevo a arrancar con `gol` para el proximo lote acordado. |
 | Continuar Con Gol | Alias de `continuar sesion con gol`; no existe una variante que siga en la misma sesion. |
 | Siguiente | Alias de `continuar sesion con gol`. |
-

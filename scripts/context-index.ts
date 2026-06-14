@@ -72,7 +72,7 @@ lines.push("");
 lines.push("## Tracks");
 lines.push("");
 for (const path of markdownFiles("docs/tracks")) {
-  if (path.endsWith("/README.md")) continue;
+  if (path.endsWith("/README.md") || path.endsWith("/TEMPLATE.md")) continue;
   const content = read(path);
   const status = trackStatus(content);
   const label = title(content);
@@ -149,6 +149,8 @@ if (exists("docs/GLOSSARY.md")) {
   lines.push("- No glossary found.");
 }
 lines.push("");
+
+while (lines.at(-1) === "") lines.pop();
 
 const output = "docs/.generated/context-index.md";
 mkdirSync(dirname(join(root, output)), { recursive: true });

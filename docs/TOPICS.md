@@ -43,8 +43,8 @@ primary_refs:
 | Markdown output, salida Markdown, informes, summaries, reportes generados, export Markdown | [Markdown Output Surface](topics/markdown-output-surface.md) | Explica la ventana `ai-output`, como se usa desde scripts/AI, acciones disponibles y diferencia con el historial. |
 | UI auxiliar propia, ui-host, notificaciones custom, prompts de scripts, confirm, input | [UI Host Custom Surface](tracks/009-ui-host-custom-surface.md) | Plan para ventana auxiliar controlada por Copicu con placement, formato, elementos y request/response IDs. |
 | Guia de usuario, explicacion publica del proyecto, scripts para usuarios, ejemplos de automatizacion | [User Guide](user/README.md), [Scripts Guide](user/scripts.md) | Documentacion de usuario final sobre que es Copicu y como usar scripts. |
-| Sistema agentico, OS Lite, documentacion liviana, context index, tracks, cerrar sesion, continuar sesion, gol, continuar con gol, continuar sesion con gol, siguiente, handoff | [Sistema De Conocimiento Agentico](topics/docs-knowledge-system.md) | Explica la capa agentica local, como mantenerla liviana y como cerrar/continuar sesiones sin perder valor. |
-| Pi OS, extensiones Pi, checkpoint-nudge, os-status, os-compact, os-continuar, sesiones Pi, compactacion Pi | [Pi Agentic OS](topics/pi-agentic-os.md) | Adaptacion del OS local a Pi: comandos, extensiones, nudges, labels, compaction y sesiones nuevas. |
+| Sistema agentico, OS Lite, documentacion liviana, context index, tracks, cerrar sesion, continuar sesion, gol, continuar con gol, continuar sesion con gol, siguiente, handoff | [Sistema De Conocimiento Agentico](topics/docs-knowledge-system.md), [OS Playbook](OS_PLAYBOOK.md) | Explica la capa agentica local, como mantenerla liviana y como cerrar/continuar sesiones sin perder valor. |
+| Pi OS, extensiones Pi, checkpoint-nudge, os-status, os-sync, os-compact, os-continuar, sesiones Pi, compactacion Pi, until-done, gol | [Pi Agentic OS](topics/pi-agentic-os.md), [OS Playbook](OS_PLAYBOOK.md) | Adaptacion del OS local a Pi: comandos, extensiones, nudges, labels, sync, compaction, sesiones nuevas y ejecucion segura con `/gol`. |
 | Realinear os, auditar sistema agentico, reparar sistema agentico, drift de contexto | [Operaciones Del Sistema Agentico](topics/agentic-os-operations.md) | Playbook para auditar y reparar la capa agentica sin tocar producto. |
 | Skills locales, slash commands, `.agents/skills`, `docs/skills`, metadata, costo de discovery | [Skills Locales De Codex](topics/local-codex-skills.md) | Referencia bajo demanda para decidir que convertir en skill y como mantener discovery barato. |
 | AI, OpenAI/OpenRouter, busqueda en lenguaje natural, filtros inteligentes, comandos AI | [AI Search And Actions](topics/ai-search-and-actions.md) | Define provider inicial, query planner, relacion con actions y privacy gates. |
@@ -80,6 +80,7 @@ primary_refs:
 | `OPEN_QUESTIONS.md` | Preguntas abiertas. |
 | `GLOSSARY.md` | Aliases, nombres cortos y definiciones recurrentes. |
 | `USER_GUIDE.md` | Guia humana breve para usar el sistema agentico. |
+| `OS_PLAYBOOK.md` | Playbook practico para usar el OS: comandos, workflows, `/gol`, `/until-done`, checkpoint, continuidad, compaction y dogfood. |
 | `WORKING_MEMORY.md` | Estado vivo y siguiente paso probable. |
 | `tracks/` | Trabajos vivos retomables. |
 | `.generated/context-index.md` | Cache generado de topics, tracks, specs y aliases. |

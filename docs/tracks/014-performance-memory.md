@@ -132,8 +132,11 @@ Cierre dev runtime 2026-06-12:
   - `npm run ai:planner:test` pasa;
   - `restart-dev.ps1 -EnableClipboardWatcher -RemoteDebug -ViteDev` monta picker en CDP con input enfocado y `window.__copicuDev=true`;
   - paste por API dev (`__copicuDev.invoke("activate_item", ...)`) contra Notepad pasa.
+- Corte release chunk gate 2026-06-14:
+  - `mise run dev-vite-chunk-check` y `mise run release-vite-chunk-check` miden `npm run build` con Node 24.16.0 pinneado por `mise.toml`;
+  - el warning Vite de chunk grande ya no se reproduce en el build actual: chunk JS mayor observado `vendor-mantine` aprox 258.29 kB, `largeChunkWarnings=0`;
+  - `release-vite-chunk-check` falla si vuelve el warning `Some chunks are larger than`, sin tocar el entry directo `src/main.tsx` ni reintroducir `src/boot.tsx`/`html-proxy`.
 - Pendiente:
-  - decidir si aceptar el warning de chunk grande o recuperar code split con un entry que no active `html-proxy` ni se cuelgue como `src/boot.tsx`;
   - `built-dev` sigue siendo la ruta mas estable para dogfood si Vite dev vuelve a mostrar variabilidad.
 
 Cierre harness nativo 2026-06-12:
