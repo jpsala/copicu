@@ -14,13 +14,12 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
-| Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Revisar otra extraccion mecanica chica sin tocar runner Node. |
-| Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `specs/008-clipboard-enrichment/spec.md` | Flujo manual de edicion de shortcuts de scripts validado; patch preview queda opcional/futuro si JP lo pide. |
-| Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Mantener dogfood de prewarm `metadata` si la velocidad percibida compensa el coste idle. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local quedo `ahead 2` con hardening agentico/chunk gate y guia RTK; hacer `git push` cuando GitHub auth vuelva a funcionar en el entorno de Pi. |
-| Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` revalidado; decidir si recuperar code split o atacar warning de chunk grande. |
-| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Pi tiene `copicu_computer_use` y `pi-until-done`; usar `/checkpoint`, `/os-status`, `/os-compact`, `/os-continuar`, `/gol`; track 012 ya compactada, quedan otros warnings de bloat. |
-| Skills locales | reference | `docs/topics/local-codex-skills.md` | Abrir solo para crear/revisar skills locales o discutir costo de discovery. |
+| Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
+| Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | Shortcuts de scripts: flujo manual validado; patch preview opcional. |
+| Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md` | Dogfood prewarm `metadata`; built-dev sigue ruta estable. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local `ahead 4`; reintentar `git push` cuando GitHub auth funcione en Pi. |
+| Dev/instalada | active | `docs/topics/windows-installer.md` | `install:current` revalidado; instalada/dev separados. |
+| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Track 012 compactada; quedan warnings de TOPICS/topics grandes. |
 
 ## Specs Activas
 
@@ -35,31 +34,30 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 - Copicu es CopyQ-inspired, no CopyQ-compatible.
 - Stack vigente: Tauri 2, React/Vite/TypeScript, Rust, SQLite, Mantine donde aporta.
-- Preferencia JP: favorecer velocidad/latencia percibida agresivamente por defecto; aceptar coste extra razonable de memoria/procesos si no es extremo.
-- Instalada es herramienta diaria: `%APPDATA%\dev.jpsala.copicu\copicu.sqlite3`; dev debe usar `.codex-run\dev-isolated` por defecto.
+- Preferir velocidad/latencia percibida; aceptar coste razonable de memoria si no es extremo.
+- Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
 - Paste-to-previous-window sigue siendo el flujo nativo mas riesgoso.
-- Open source Windows `v0.2.1` queda como release actual.
-- Scripts/AI deben usar host APIs/capabilities, no SQL/shell/fs/network crudo.
+- Release actual: Windows `v0.2.1`.
+- Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
-- `metadata` standalone queda `CachedHidden` + prewarm por velocidad percibida, salvo coste extremo en dogfood.
-- Para UI relevante, usar `docs/topics/ui-design-and-impeccable.md`.
-- `docs/skills/` es la fuente canonica de skills locales; `.agents/skills` es junction de compatibilidad.
-- Skills operativas locales incluyen continuidad/checkpoint, `realinear-os`, `evaluar-skills` y `repo-commit-push`.
-- Para comandos operativos, preferir modelo hibrido: skill/prompt corto para discovery y logica durable en topic/script/doc canonico.
-- Ruta inicial liviana; no convertir `AGENTS.md`, `WORKING_MEMORY.md`, `TOPICS.md` ni tracks activos en transcript.
-- Pi compaction ayuda pero no es memoria durable; valor durable va a docs versionados.
-- Para testear Copicu desde Pi, usar `copicu_computer_use`: AHK-MCP local via `.codex-run`, teclado/screenshots como ruta confiable; UIA sirve poco dentro del WebView Tauri y `window_info` puede timeoutear.
-- `pi-rtk-optimizer` global queda recomendado en `mode: "rewrite"` para ahorrar contexto sin avisos; mantener `readCompaction.enabled: false` y `sourceCodeFilteringEnabled: false` para preservar lecturas exactas y anchors de edicion.
+- `metadata` standalone queda `CachedHidden` + prewarm salvo coste extremo.
+- UI relevante: abrir `docs/topics/ui-design-and-impeccable.md`.
+- Skills canonicas: `docs/skills/`; `.agents/skills` es compatibilidad.
+- Comandos operativos: skill/prompt corto + logica durable en topic/script/doc.
+- Ruta inicial liviana; no convertir hot context en transcript.
+- Pi compaction no es memoria durable; valor durable va a docs versionados.
+- Test Copicu en Pi: usar `copicu_computer_use`; UIA sirve poco dentro del WebView.
+- `pi-rtk-optimizer`: recomendado `mode: "rewrite"`; mantener `readCompaction.enabled=false` y `sourceCodeFilteringEnabled=false`.
 
 ## Riesgos / Pendientes Tecnicos
 
-- Warning Vite por chunk grande ya no se reproduce en build actual; `mise run release-vite-chunk-check` lo protege sin tocar la ruta segura `src/main.tsx` directa.
-- `visual:check` y tests Rust focalizados pueden fallar por infraestructura local; contrastar con `cargo check`, build y dogfood.
-- `git push` desde Pi queda bloqueado si `gh auth status` reporta token invalido; al cierre `main` esta limpio pero `ahead 2`.
+- Chunk gate: build actual sin warning; `mise run release-vite-chunk-check` protege regresion.
+- Infra local: si `visual:check`/Rust focalizados fallan, contrastar con `cargo check`, build y dogfood.
+- Push bloqueado mientras `gh auth status` reporte token invalido; `main` limpio pero `ahead 4`.
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
-- `tauri dev` puede tardar o quedar blanco por Vite; para dogfood normal usar `npm run dev:restart` / built-dev.
-- Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }` sigue vigente.
-- `docs/tracks/012-tags-and-hotkeys.md` fue compactada y su historial completo archivado en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`; quedan warnings de bloat en Working Memory, TOPICS y topics grandes.
+- Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
+- Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
+- Track 012 compactada; historial en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`.
 
 ## Comandos De Contexto
 
@@ -71,15 +69,13 @@ npm run perf:windows -- -AppDataDir .codex-run\perf-memory-20260611\app-data-10k
 npm run install:current
 ```
 
-Comandos conversacionales: `realinear os`, `sigamos`, `checkpoint`/`persistí estado`, `cerrar sesion`, `continuar sesion`, `continuar sesion con gol`/`continuar con gol`/`siguiente`, `evaluar skills`, `repo commit push`.
-
-Comandos Pi locales: `/checkpoint`, `/checkpoint-nudge [prefill|mute|unmute|test]`, `/os-status [audit]`, `/os-sync`, `/os-compact [foco]`, `/os-continuar [objetivo]`/`/seguir [objetivo]`, `/gol [objetivo]` -> prepara `/until-done`, `/until-done <objetivo>` via `pi-until-done`, `/reload`. Tool local: `copicu_computer_use` (`self_test`, `open_picker`, `focus`, `send`, `type`, `click`, `screenshot`, `debug_last`).
+Comandos conversacionales y Pi locales estan documentados en `docs/topics/docs-knowledge-system.md` y `docs/topics/pi-agentic-os.md`.
 
 ## Proximo Paso Probable
 
 Proximo lote recomendado:
 
-1. Reintentar `git push` de `main` cuando GitHub auth este arreglado en el entorno de Pi (`main...origin/main [ahead 2]`).
+1. Reintentar `git push` de `main` cuando GitHub auth este arreglado en Pi (`main...origin/main [ahead 4]`).
 2. Seguir en modo normal por defecto; reservar `/gol`/`until-done` para tareas largas o autonomas donde el costo de contrato/bootstrap se justifique.
 3. Mantener como secundarios: actions modularization, bloat documental restante y patch preview de shortcuts si JP lo pide.
 
