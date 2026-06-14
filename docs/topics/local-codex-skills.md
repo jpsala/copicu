@@ -76,13 +76,17 @@ Si la respuesta fuerte es "si" en 3 o mas puntos, crear skill. Si no, dejarlo co
 
 ## Comandos Cubiertos
 
-- `sigamos`
-- `cerrar sesion`
-- `continuar sesion`
-- `continuar sesion con gol`
-- `continuar con gol`
-- `siguiente`
-- `realinear os`
+| Comando conversacional | Skill | Fuente canonica | Resultado esperado |
+| --- | --- | --- | --- |
+| `sigamos` | `docs/skills/sigamos/` | `AGENTS.md`, `docs/topics/docs-knowledge-system.md` | Continuar en la misma sesion sin cierre ni handoff. |
+| `cerrar sesion` | `docs/skills/cerrar-sesion/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable, regenerar indice, correr audit y responder compacto. |
+| `continuar sesion` | `docs/skills/continuar-sesion/` | `docs/topics/docs-knowledge-system.md` | Hacer cierre de valor y preparar handoff compacto para sesion nueva. |
+| `continuar sesion con gol` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Handoff para sesion nueva que debe arrancar con `gol`. |
+| `continuar con gol` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias de `continuar sesion con gol`. |
+| `siguiente` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias corto de continuidad con `gol`, no "seguir aqui". |
+| `realinear os` | `docs/skills/realinear-os/` | `docs/topics/agentic-os-operations.md` | Auditar/reparar la capa agentica sin tocar producto salvo pedido explicito. |
+
+Regla de precedencia: si una skill y su topic divergen, corregir la skill para que vuelva a apuntar al topic; no duplicar procedimiento largo dentro de `SKILL.md`.
 
 ## Validacion
 

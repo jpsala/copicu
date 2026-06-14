@@ -19,6 +19,20 @@
 - `continuar-sesion-con-gol/`: variante de continuidad que pide arrancar la proxima sesion con `gol`.
 - `realinear-os/`: auditoria y reparacion de la capa agentica.
 
+## Comandos Operativos
+
+| Usuario dice | Skill | Efecto | No confundir con |
+| --- | --- | --- | --- |
+| `sigamos` | `sigamos` | Sigue en la misma sesion sin cierre, handoff ni thread nuevo. | `continuar sesion`, que corta contexto. |
+| `cerrar sesion` | `cerrar-sesion` | Promueve valor durable a docs, regenera indice y corre audit. No crea transcript. | `continuar sesion`, que ademas prepara handoff. |
+| `continuar sesion` | `continuar-sesion` | Hace cierre de valor y prepara handoff compacto para sesion nueva. | `continuar sesion con gol`, que pide arrancar la nueva sesion con `gol`. |
+| `continuar sesion con gol` | `continuar-sesion-con-gol` | Cierre + handoff + instruccion explicita de arrancar con `gol`. | `sigamos`; no existe variante de `gol` para seguir en la misma sesion. |
+| `continuar con gol` | `continuar-sesion-con-gol` | Alias de `continuar sesion con gol`. | `sigamos`. |
+| `siguiente` | `continuar-sesion-con-gol` | Alias corto para cortar contexto y seguir el proximo lote con `gol`. | "hacer el siguiente paso" en la misma sesion. |
+| `realinear os` | `realinear-os` | Audita y repara drift de la capa agentica sin tocar producto salvo pedido explicito. | Refactors de producto o arquitectura runtime. |
+
+La fuente canonica del comportamiento esta en `docs/topics/docs-knowledge-system.md` y `docs/topics/agentic-os-operations.md`; las skills son wrappers cortos para discovery.
+
 ## Validacion
 
 ```powershell
