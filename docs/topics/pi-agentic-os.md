@@ -12,6 +12,8 @@ triggers:
   - compactacion pi
   - sesiones pi
   - extensiones pi
+  - rtk
+  - pi-rtk-optimizer
 primary_refs:
   - .pi/extensions/checkpoint-nudge.ts
   - .pi/extensions/os-tools.ts
@@ -51,6 +53,16 @@ Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla
 - `/os-compact`: wrapper seguro para `ctx.compact()` con instrucciones de preservacion OS.
 - `/os-continuar`: usa `ctx.newSession()` y `SessionManager.appendCustomMessageEntry()` para crear una sesion nueva con handoff basado en docs vivos, no en transcript.
 - Hook `session_before_compact`: avisa que existe la ruta manual `/checkpoint` -> `/os-compact`.
+
+### `pi-rtk-optimizer` y `rtk`
+
+- `pi-rtk-optimizer` es una extension global de Pi, no una dependencia de Copicu.
+- Usa el binario correcto `rtk-ai/rtk` (`rtk gain` debe funcionar). Evitar `npm rtk`, que es otro proyecto.
+- Instalacion local vigente: `C:\Users\jpsal\.local\bin\rtk.exe`.
+- Config actual recomendada: `mode: "suggest"`, no `rewrite`, para dogfood conservador.
+- Usarlo cuando un comando pueda generar mucho ruido: `git diff`, `git log`, test runners, builds largos o busquedas grandes.
+- No usarlo cuando haga falta evidencia exacta o anchors de edicion: lecturas puntuales, diffs pequenos, errores raros o debugging donde el detalle completo importa.
+- Si Pi avisa que `rtk` no esta disponible despues de instalarlo, usar `/reload` o reiniciar Pi.
 
 ## Politica De Automatizacion
 
