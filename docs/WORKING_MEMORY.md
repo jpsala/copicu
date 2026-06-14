@@ -17,7 +17,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Revisar otra extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `specs/008-clipboard-enrichment/spec.md` | Flujo manual de edicion de shortcuts de scripts validado; patch preview queda opcional/futuro si JP lo pide. |
 | Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Mantener dogfood de prewarm `metadata` si la velocidad percibida compensa el coste idle. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` publicado y PR `#10` mergeado a `main`; elegir proximo frente de crecimiento o release hardening. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local quedo `ahead 2` con hardening agentico/chunk gate y guia RTK; hacer `git push` cuando GitHub auth vuelva a funcionar en el entorno de Pi. |
 | Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` revalidado; decidir si recuperar code split o atacar warning de chunk grande. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Pi tiene `copicu_computer_use` y `pi-until-done`; usar `/checkpoint`, `/os-status`, `/os-compact`, `/os-continuar`, `/gol`; seguir reduciendo bloat de tracks grandes. |
 | Skills locales | reference | `docs/topics/local-codex-skills.md` | Abrir solo para crear/revisar skills locales o discutir costo de discovery. |
@@ -55,6 +55,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 - Warning Vite por chunk grande ya no se reproduce en build actual; `mise run release-vite-chunk-check` lo protege sin tocar la ruta segura `src/main.tsx` directa.
 - `visual:check` y tests Rust focalizados pueden fallar por infraestructura local; contrastar con `cargo check`, build y dogfood.
+- `git push` desde Pi queda bloqueado si `gh auth status` reporta token invalido; al cierre `main` esta limpio pero `ahead 2`.
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - `tauri dev` puede tardar o quedar blanco por Vite; para dogfood normal usar `npm run dev:restart` / built-dev.
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }` sigue vigente.
@@ -78,7 +79,7 @@ Comandos Pi locales: `/checkpoint`, `/checkpoint-nudge [prefill|mute|unmute|test
 
 Proximo lote recomendado:
 
-1. Revisar y committear el gate `mise run release-vite-chunk-check` junto con docs relacionados si JP quiere cerrar el corte release-hardening.
+1. Reintentar `git push` de `main` cuando GitHub auth este arreglado en el entorno de Pi (`main...origin/main [ahead 2]`).
 2. Seguir en modo normal por defecto; reservar `/gol`/`until-done` para tareas largas o autonomas donde el costo de contrato/bootstrap se justifique.
 3. Mantener como secundarios: actions modularization, bloat de tracks grandes y patch preview de shortcuts.
 
