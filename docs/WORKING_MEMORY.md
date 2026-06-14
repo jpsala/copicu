@@ -17,9 +17,10 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | Shortcuts de scripts: flujo manual validado; patch preview opcional. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md` | Dogfood prewarm `metadata`; built-dev sigue ruta estable. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local `ahead 4`; reintentar `git push` cuando GitHub auth funcione en Pi. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local `ahead 5`; reintentar `git push` cuando GitHub auth funcione en Pi. |
 | Dev/instalada | active | `docs/topics/windows-installer.md` | `install:current` revalidado; instalada/dev separados. |
-| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Track 012 compactada; quedan warnings de TOPICS/topics grandes. |
+| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `docs/topics/picker-interaction.md` | Formalizar oracles del flow usuario real: foco foreground, pin/candadito y clipboard interactivo. |
+| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Track 012 y Working Memory compactadas; quedan warnings de TOPICS/topics grandes. |
 
 ## Specs Activas
 
@@ -46,18 +47,19 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Comandos operativos: skill/prompt corto + logica durable en topic/script/doc.
 - Ruta inicial liviana; no convertir hot context en transcript.
 - Pi compaction no es memoria durable; valor durable va a docs versionados.
-- Test Copicu en Pi: usar `copicu_computer_use`; UIA sirve poco dentro del WebView.
+- Test Copicu en Pi: usar `copicu_computer_use`; UIA sirve poco dentro del WebView; validar foco real con screenshot de pantalla completa ademas de target screenshot.
 - `pi-rtk-optimizer`: recomendado `mode: "rewrite"`; mantener `readCompaction.enabled=false` y `sourceCodeFilteringEnabled=false`.
 
 ## Riesgos / Pendientes Tecnicos
 
 - Chunk gate: build actual sin warning; `mise run release-vite-chunk-check` protege regresion.
 - Infra local: si `visual:check`/Rust focalizados fallan, contrastar con `cargo check`, build y dogfood.
-- Push bloqueado mientras `gh auth status` reporte token invalido; `main` limpio pero `ahead 4`.
+- Push bloqueado mientras `gh auth status` reporte token invalido; `main` limpio pero `ahead 5`.
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
-- Track 012 compactada; historial en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`.
+- Picker stress: flow usuario real paso captura watcher -> abrir picker -> filtrar -> Enter/copy -> pegar de vuelta; riesgos pendientes en foreground real, pin/candadito y wrapper `copicu_computer_use` con errores temporales.
+- Track 012 compactada; historial en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`; auditoria bajo de 6 a 4 warnings tras compactar Working Memory.
 
 ## Comandos De Contexto
 
@@ -75,8 +77,8 @@ Comandos conversacionales y Pi locales estan documentados en `docs/topics/docs-k
 
 Proximo lote recomendado:
 
-1. Reintentar `git push` de `main` cuando GitHub auth este arreglado en Pi (`main...origin/main [ahead 4]`).
-2. Seguir en modo normal por defecto; reservar `/gol`/`until-done` para tareas largas o autonomas donde el costo de contrato/bootstrap se justifique.
+1. Formalizar la bateria picker/Computer Use en comando/oracle repetible: foco foreground, pin/candadito y clipboard interactivo.
+2. Reintentar `git push` de `main` cuando GitHub auth este arreglado en Pi (`main...origin/main [ahead 5]`).
 3. Mantener como secundarios: actions modularization, bloat documental restante y patch preview de shortcuts si JP lo pide.
 
 ## Promocion De Memoria

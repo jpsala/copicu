@@ -22,6 +22,8 @@
     "capabilities:drift:test": "node --test tests/script-capabilities-drift.test.mjs",
     "ai:planner:test": "node --test tests/ai-query-planner.test.mjs",
     "image:sources": "powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File tests/manual/validate-image-sources.ps1",
+    "dogfood:battery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-dogfood-battery.ps1",
+    "dogfood:api": "node --test tests/manual/dogfood/api-surface-coverage.test.mjs && node tests/manual/dogfood/run-script-api-battery.mjs",
     "scripts:run-example": "node scripts/run-example-action.mjs",
     "tauri": "tauri",
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1",

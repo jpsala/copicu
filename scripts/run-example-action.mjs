@@ -150,6 +150,18 @@ globalThis.copicu = {
       console.log(`[metadata.editActive] ${mockItems[0].id}`);
     },
   },
+  ai: {
+    async respondMarkdown(options) {
+      const itemCount = Array.isArray(options.items) ? options.items.length : 0;
+      console.log(`[ai.respondMarkdown] ${options.instruction} items=${itemCount}`);
+      return `Synthetic AI markdown summary for ${itemCount} item(s).`;
+    },
+    async summarizeMarkdown(options) {
+      const itemCount = Array.isArray(options.items) ? options.items.length : 0;
+      console.log(`[ai.summarizeMarkdown] items=${itemCount}`);
+      return `Synthetic AI markdown summary for ${itemCount} item(s).`;
+    },
+  },
   enrichment: {
     async getResult(id) {
       const item = mockItems.find((candidate) => candidate.id === id);
@@ -397,6 +409,8 @@ function mockEnrichmentResult(item, apply) {
     enabled: true,
     applyMode: "autoApply",
     eligible: item.kind === "text",
+    autoApplyEnabled: apply,
+    manualApplyAllowed: true,
     tags,
   };
 }
