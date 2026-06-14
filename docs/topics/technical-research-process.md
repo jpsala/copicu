@@ -30,7 +30,7 @@ Para cada necesidad del MVP o arquitectura:
 5. Registrar decisiones durables en `docs/DECISIONS.md`.
 6. Linkear la decision o pattern desde la spec correspondiente.
 
-`pi-web-access` y la skill `librarian` son herramientas de research; no reemplazan el criterio del proyecto ni las fuentes durables. Si el hallazgo afecta arquitectura, privacidad, dependencias o roadmap, promoverlo a topic, decision o spec.
+`pi-web-access` y la skill `librarian` son herramientas de research; no reemplazan el criterio del proyecto ni las fuentes durables. Si el hallazgo afecta arquitectura, dependencias o roadmap, promoverlo a topic, decision o spec.
 
 En Pi, se puede iniciar este flujo con el prompt template `/research <tema>` definido en `.pi/prompts/research.md`.
 

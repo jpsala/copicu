@@ -47,12 +47,12 @@ No duplicar la misma skill en dos carpetas reales.
 
 | Tipo | Usar cuando | Costo | Ejemplo |
 | --- | --- | --- | --- |
-| Regla activa | Debe condicionar todo trabajo y no es un comando. | Alto pero necesario. | No commitear secretos, no revertir cambios ajenos. |
+| Regla activa | Debe condicionar todo trabajo y no es un comando. | Alto pero necesario. | No revertir cambios de usuario sin pedido explicito. |
 | Topic | Es conocimiento recuperable, criterio o explicacion. | Bajo demanda. | Como decidir donde poner memoria durable. |
 | Skill | Es una accion invocable, repetible y estable. | Metadata siempre descubierta. | `cerrar sesion`, `realinear os`. |
 | Skill hibrida | Se quiere discovery por nombre, pero la logica vive en docs/topics/scripts. | Metadata chica + referencia externa. | `regenerar-contexto`. |
 
-Una instruccion activa puede funcionar como skill si tiene forma de accion. No conviene convertir reglas globales de seguridad o lectura en skills solo para nombrarlas.
+Una instruccion activa puede funcionar como skill si tiene forma de accion. No conviene convertir reglas globales de trabajo o lectura en skills solo para nombrarlas.
 
 ## Modelo Hibrido
 

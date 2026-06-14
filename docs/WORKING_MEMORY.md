@@ -34,9 +34,8 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 - Copicu es CopyQ-inspired, no CopyQ-compatible.
 - Stack vigente: Tauri 2, React/Vite/TypeScript, Rust, SQLite, Mantine donde aporta.
 - Preferencia de producto JP: favorecer velocidad/latencia percibida agresivamente por defecto; aceptar coste extra razonable de memoria/procesos si no es extremo.
-- No persistir ni publicar contenido real del clipboard en docs, tests o logs.
 - Paste-to-previous-window sigue siendo el flujo nativo mas riesgoso.
-- Open source Windows `v0.2.1` queda como release actual; mantener audit de secretos y checklist de release antes de nuevos cortes.
+- Open source Windows `v0.2.1` queda como release actual.
 - Scripts/AI deben usar host APIs/capabilities, no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 arranco como logica interna post-capture, no scripting-first.
 - Para UI relevante, usar `docs/topics/ui-design-and-impeccable.md`.
@@ -55,11 +54,10 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 - `visual:check` puede fallar por infraestructura Vite/WebView, no necesariamente por assertions.
 - En shortcuts globales, evitar next-step globals temporales y emits backend hacia `main` sin harness.
 - Dogfood hotkeys filtrados: JP confirmo `020`-`024`; no volver a implementar hotkeys nativos por tag.
-- `.env`, logs, DBs, blobs, dumps de clipboard, build outputs y `.agents/` no se publican.
 - Lifecycle: Settings cacheada acelera reapertura y cuesta una WebView extra; no cambiar `hide()` a `destroy()` sin prueba visual/foco.
 - Ventanas futuras: seguir `docs/topics/custom-window-system.md`; superficies ricas fuera del picker deben ser standalone via surface registry host-owned, con label/capability/lifecycle/bounds/allowedCommands propios, un solo `index.html` + routing por label por defecto, y no `ui-host` transparente generico.
-- Surface registry host-owned existe en `src-tauri/src/surface_registry.rs`; settings queda lifecycle `cached/hidden` por ahora. Capabilities separadas por superficie reemplazan `default.json`, y comandos sensibles tienen guards por `window.label()`.
-- Clipboard enrichment slice 2026-06-12: `src-tauri/src/enrichment.rs` ahora detecta `path`, `url`, `json`, `code` y `secret-risk` para texto. Sigue siendo local y post-capture.
+- Surface registry host-owned existe en `src-tauri/src/surface_registry.rs`; settings queda lifecycle `cached/hidden` por ahora. Capabilities separadas por superficie reemplazan `default.json`, y comandos con guards dependen de `window.label()`.
+- Clipboard enrichment slice 2026-06-12: `src-tauri/src/enrichment.rs` ahora detecta tipos textuales como `path`, `url`, `json` y `code`. Sigue siendo local y post-capture.
 - Clipboard enrichment slice 2026-06-12: Settings minimos viven en `AppSettings.enrichment` con `enabled`, toggles por detector y `applyMode` (`autoApply` / `suggestOnly` placeholder). Watcher solo auto-aplica cuando `enabled` y `autoApply`.
 - Clipboard enrichment slice 2026-06-12: API host minima para scripts expuesta via `enrichment.runForItem(itemId, options?)` y `enrichment.getResult(itemId)`, con capabilities `enrichment:run` y `enrichment:read`.
 - Clipboard enrichment slice 2026-06-12: persistencia rule-based sigue usando `tags` + `clipboard_item_tags`, sincroniza `clipboard_items.tags`, y ahora conserva `confidence` por detector en relaciones `source=rule`.
