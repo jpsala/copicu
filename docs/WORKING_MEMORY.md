@@ -19,7 +19,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Mantener dogfood de prewarm `metadata` si la velocidad percibida compensa el coste idle. |
 | Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local quedo `ahead 2` con hardening agentico/chunk gate y guia RTK; hacer `git push` cuando GitHub auth vuelva a funcionar en el entorno de Pi. |
 | Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` revalidado; decidir si recuperar code split o atacar warning de chunk grande. |
-| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Pi tiene `copicu_computer_use` y `pi-until-done`; usar `/checkpoint`, `/os-status`, `/os-compact`, `/os-continuar`, `/gol`; seguir reduciendo bloat de tracks grandes. |
+| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Pi tiene `copicu_computer_use` y `pi-until-done`; usar `/checkpoint`, `/os-status`, `/os-compact`, `/os-continuar`, `/gol`; track 012 ya compactada, quedan otros warnings de bloat. |
 | Skills locales | reference | `docs/topics/local-codex-skills.md` | Abrir solo para crear/revisar skills locales o discutir costo de discovery. |
 
 ## Specs Activas
@@ -59,7 +59,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - `tauri dev` puede tardar o quedar blanco por Vite; para dogfood normal usar `npm run dev:restart` / built-dev.
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }` sigue vigente.
-- Tracks grandes, especialmente `docs/tracks/012-tags-and-hotkeys.md`, siguen pendientes de compactacion a referencia.
+- `docs/tracks/012-tags-and-hotkeys.md` fue compactada y su historial completo archivado en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`; quedan warnings de bloat en Working Memory, TOPICS y topics grandes.
 
 ## Comandos De Contexto
 
@@ -81,7 +81,7 @@ Proximo lote recomendado:
 
 1. Reintentar `git push` de `main` cuando GitHub auth este arreglado en el entorno de Pi (`main...origin/main [ahead 2]`).
 2. Seguir en modo normal por defecto; reservar `/gol`/`until-done` para tareas largas o autonomas donde el costo de contrato/bootstrap se justifique.
-3. Mantener como secundarios: actions modularization, bloat de tracks grandes y patch preview de shortcuts.
+3. Mantener como secundarios: actions modularization, bloat documental restante y patch preview de shortcuts si JP lo pide.
 
 ## Promocion De Memoria
 
