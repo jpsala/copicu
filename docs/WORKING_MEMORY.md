@@ -49,6 +49,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Ruta inicial liviana; no convertir `AGENTS.md`, `WORKING_MEMORY.md`, `TOPICS.md` ni tracks activos en transcript.
 - Pi compaction ayuda pero no es memoria durable; valor durable va a docs versionados.
 - Para testear Copicu desde Pi, usar `copicu_computer_use`: AHK-MCP local via `.codex-run`, teclado/screenshots como ruta confiable; UIA sirve poco dentro del WebView Tauri y `window_info` puede timeoutear.
+- `pi-rtk-optimizer` global queda recomendado en `mode: "rewrite"` para ahorrar contexto sin avisos; mantener `readCompaction.enabled: false` y `sourceCodeFilteringEnabled: false` para preservar lecturas exactas y anchors de edicion.
 
 ## Riesgos / Pendientes Tecnicos
 

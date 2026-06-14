@@ -91,9 +91,10 @@ Prompts equivalentes: `/cerrar`, `/continuar`, `/siguiente`, `/sigamos`, `/reali
 - `pi-rtk-optimizer` es una extension global de Pi, no una dependencia de Copicu.
 - Usa el binario correcto `rtk-ai/rtk` (`rtk gain` debe funcionar). Evitar `npm rtk`, que es otro proyecto.
 - Instalacion local vigente: `C:\Users\jpsal\.local\bin\rtk.exe`.
-- Config actual recomendada: `mode: "suggest"`, no `rewrite`, para dogfood conservador.
+- Config actual recomendada: `mode: "rewrite"` para aplicar reescrituras automaticamente y evitar avisos repetidos, manteniendo lecturas exactas.
+- Mantener `readCompaction.enabled: false` y `sourceCodeFilteringEnabled: false` para no romper anchors de `edit`, auditorias del OS ni evidencia exacta en archivos.
 - Politica de uso: aceptar/usar `rtk` para orientacion ruidosa (`git diff/status/log`, logs, busquedas grandes, tests/builds largos) cuando el objetivo sea ahorrar contexto y entender rapido.
-- No usarlo cuando haga falta evidencia exacta o anchors de edicion: verificaciones finales, comandos cuyo output se va a citar, lecturas puntuales, diffs pequenos, errores raros o debugging donde el detalle completo importa.
+- No activar compaction/filtro lossy de `read` cuando haga falta evidencia exacta o anchors de edicion: verificaciones finales, comandos cuyo output se va a citar, lecturas puntuales, diffs pequenos, errores raros o debugging donde el detalle completo importa.
 - Si Pi avisa que `rtk` no esta disponible despues de instalarlo, usar `/reload` o reiniciar Pi.
 
 ## Politica De Automatizacion
