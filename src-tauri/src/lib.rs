@@ -460,6 +460,7 @@ impl InitialMainWindowHide {
     }
 }
 
+#[cfg(not(test))]
 impl Default for CurrentPickerShortcut {
     fn default() -> Self {
         Self {

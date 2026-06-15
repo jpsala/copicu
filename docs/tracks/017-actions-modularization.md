@@ -18,6 +18,7 @@ Cortes aplicados:
 - extraidos helpers de logging de runs, input summary, redaccion de errores y timestamp a `src-tauri/src/actions/logging.rs`;
 - extraida validacion de input de acciones a `src-tauri/src/actions/input.rs`;
 - extraidos IDs/definiciones built-in y helpers `paste_plain`/`join_selected` a `src-tauri/src/actions/builtin.rs`;
+- extraidos tipos publicos del modelo de acciones a `src-tauri/src/actions/model.rs`, con re-export desde `actions.rs` para conservar API publica;
 - `actions.rs` conserva la fachada publica de acciones y cache;
 - `actions::normalize_shortcut_string` sigue siendo la API publica usada por `lib.rs`;
 - tests de discovery siguen cubiertos desde el modulo `actions`;
@@ -58,6 +59,16 @@ Cortes aplicados:
 - `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo test actions` paso: 14 tests verdes.
 - `npm run build` paso.
 - `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check` paso.
+
+2026-06-15, corte model:
+
+- Extraccion mecanica de tipos publicos de acciones a `src-tauri/src/actions/model.rs`.
+- `actions.rs` re-exporta los tipos para conservar `actions::...` como API publica.
+- Se corrigio `impl Default for CurrentPickerShortcut` para quedar bajo `#[cfg(not(test))]`, alineado con el tipo y destrabando compilacion de tests.
+- `cd src-tauri; cargo fmt` paso.
+- `cd src-tauri; cargo check` paso.
+- `cd src-tauri; cargo test actions --no-run` paso.
+- `cd src-tauri; cargo test actions` compilo pero no pudo ejecutar el binario de test por error local `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`.
 
 ## Proximos Cortes Posibles
 
