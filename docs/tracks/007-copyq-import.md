@@ -20,6 +20,18 @@ Import real ejecutado el 2026-06-05 contra `C:\tools\copyq`, sin imprimir payloa
 - 116 items con tag originado desde tabs CopyQ.
 - Settings actualizados a `history.retentionCount = 0` (`0` significa ilimitado).
 
+Reimport incremental ejecutado el 2026-06-14 contra `C:\tools\copyq`, sin imprimir payloads, por posible perdida de items. Se hizo backup previo `copicu.sqlite3.backup-before-copyq-import-20260614-205823`. Resultado final en `C:\Users\jpsal\AppData\Roaming\dev.jpsala.copicu\copicu.sqlite3`:
+
+- 2243 items totales en Copicu.
+- 1942 items `text`.
+- 301 items `image`.
+- Dry-run posterior: `imported=0`, `duplicates=913`, `unsupported=1`, `errors=0`.
+- Settings se mantienen en `history.retentionCount = 0` (`0` significa ilimitado).
+
+Limpieza de duplicados ejecutada el 2026-06-14 despues del reimport. Se hizo backup previo `copicu.sqlite3.backup-before-dedupe-20260614-211025`, se consolidaron tags/notas/copy metadata cuando aplicaba y se eliminaron 34 filas duplicadas por contenido exacto. Resultado final: 2209 items totales (`1937` text, `272` image) y `0` grupos duplicados remanentes por contenido exacto.
+
+Ajuste posterior el 2026-06-14: tras probar captura real, Copicu si estaba capturando, pero 17 items importados desde CopyQ quedaron con `created_at_unix_ms` en el futuro respecto del reloj local, por lo que las capturas nuevas no aparecian arriba en el picker. Se hizo backup `copicu.sqlite3.backup-before-future-timestamp-clamp-20260614-212830`, se acotaron esos timestamps al pasado inmediato preservando orden relativo, se reinicio la app instalada y una captura nueva quedo primera en la lista.
+
 La fuente completa no es `C:\tools\copyq\data\copyq_data.db`; esa base es un mirror parcial creado por un script previo. La fuente completa esta en la instancia viva de CopyQ y sus archivos nativos:
 
 - CLI: `C:\tools\copyq\copyq.exe`
