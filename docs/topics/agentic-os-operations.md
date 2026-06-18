@@ -7,9 +7,9 @@ triggers:
   - auditar sistema agentico
   - reparar sistema agentico
   - drift de contexto
-  - actualizar os lite
+  - actualizar aos
   - sistema agentico
-  - os lite
+  - aos
   - init os
   - adopt os
   - update os
@@ -38,7 +38,7 @@ Usar este topic cuando JP pida auditar, reparar, actualizar o realinear la capa 
 | Pedido | Accion |
 | --- | --- |
 | `realinear os` | Auditar y reparar drift de la capa agentica local. |
-| `actualizar os lite` / `update` | Comparar contra `c:\dev\agentic-project-os-lite` y traer mejoras portables sin pisar contexto local. |
+| `actualizar aos` / `update` | Comparar contra `c:\dev\os` y traer mejoras portables sin pisar contexto local. |
 | `adopt` / migracion | Fusionar reglas y memoria existentes; no resetear con templates genericos. |
 | context bloat | Compactar ruta caliente y mover historia a `docs/reference/` o tracks archivadas. |
 
@@ -87,7 +87,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Mover archivos historicos grandes cuando no este claro su destino.
 - Cambiar convenciones principales del sistema.
 - Tocar codigo producto, specs de feature, datos, deploy o release.
-- Reemplazar diferencias locales respecto del upstream `c:\dev\agentic-project-os-lite` sin revisar/mergear.
+- Reemplazar diferencias locales respecto del upstream `c:\dev\os` sin revisar/mergear.
 
 ### Cierre
 

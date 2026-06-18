@@ -12,7 +12,7 @@ Use this skill to close a repository batch cleanly.
 1. Read the repo's lightweight agent context first if present: context index, working memory, and project instructions.
 2. Inspect `git status --short --branch`, staged and unstaged diffs, and untracked files.
 3. Verify that generated or moved project assets that should be versioned are included, and that ignored/local files are intentionally excluded.
-4. Run the repo's relevant validation commands. For OS Lite repos, prefer:
+4. Run the repo's relevant validation commands. For AOS repos, prefer:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1

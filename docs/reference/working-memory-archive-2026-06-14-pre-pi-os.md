@@ -17,7 +17,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 | Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Dogfood prewarm de `metadata`; mantenerlo si la velocidad percibida compensa el coste idle. |
 | Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` publicado y PR `#10` mergeado a `main`; siguiente paso: elegir proximo frente de crecimiento o release hardening. |
 | Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` ya quedo revalidado end-to-end; siguiente corte: decidir si recuperar code split o atacar el warning de chunk grande. |
-| OS Lite/docs | active | `docs/topics/docs-knowledge-system.md` | Mantener ruta caliente liviana; usar `docs/topics/agentic-os-operations.md` para `realinear os`. |
+| AOS/docs | active | `docs/topics/docs-knowledge-system.md` | Mantener ruta caliente liviana; usar `docs/topics/agentic-os-operations.md` para `realinear os`. |
 | Skills locales | reference | `docs/topics/local-codex-skills.md` | Abrir solo para crear/revisar skills locales o discutir costo de discovery. |
 
 ## Specs Activas
@@ -44,7 +44,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 - La ruta inicial debe seguir liviana; no convertir `AGENTS.md`, `WORKING_MEMORY.md`, `TOPICS.md` ni tracks activos en transcript.
 - Instalada es la herramienta diaria: `%APPDATA%\dev.jpsala.copicu\copicu.sqlite3`. Dev no debe tocar esa DB por defecto.
 - Comando conversacional `actualizar instalada`/`promover dev a instalada`: ejecutar `npm run install:current`.
-- Al aplicar OS Lite a otros proyectos, copiar/fusionar `docs/skills/` y recrear `.agents/skills` con `scripts/ensure-skills-link.ps1`.
+- Al aplicar AOS a otros proyectos, copiar/fusionar `docs/skills/` y recrear `.agents/skills` con `scripts/ensure-skills-link.ps1`.
 - Dev aislado: `npm run tauri:dev`, `npm run dev:built`, `npm run dev:restart`; app data `.codex-run\dev-isolated\app-data`, hotkey `Ctrl+Shift+.`, tray `Copicu Dev`.
 
 ## Riesgos

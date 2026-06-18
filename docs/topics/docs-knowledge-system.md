@@ -4,7 +4,7 @@ status: active
 kind: how-to
 triggers:
   - sistema agentico
-  - os lite
+  - aos
   - documentacion liviana
   - context index
   - working memory
@@ -49,7 +49,7 @@ primary_refs:
 
 # Sistema De Conocimiento Agentico
 
-Este repo usa una version local de Agentic Project OS Lite adaptada a Copicu. La regla principal es leer poco, elegir bien el topic y abrir referencias profundas solo cuando el trabajo lo necesite.
+Este repo usa una version local de Agentic OS (AOS) adaptada a Copicu. La regla principal es leer poco, elegir bien el topic y abrir referencias profundas solo cuando el trabajo lo necesite.
 
 ## Ruta Caliente
 

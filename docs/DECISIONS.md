@@ -22,7 +22,7 @@ Decision: `docs/skills/` es la fuente canonica de skills locales del repo. `.age
 
 Motivo: las skills dan discovery barato para slash commands, pero la logica durable debe seguir en topics, scripts y docs canonicos para evitar drift y mantener el sistema agentico visible.
 
-Proximo paso: mantener `docs/skills/`, `scripts/ensure-skills-link.ps1`, `context-index` y `context-audit` alineados cuando se actualice OS Lite.
+Proximo paso: mantener `docs/skills/`, `scripts/ensure-skills-link.ps1`, `context-index` y `context-audit` alineados cuando se actualice AOS.
 
 ### 2026-06-11 - Simplificar continuidad con `gol`
 
@@ -62,7 +62,7 @@ Decision: `AGENTS.md` mantiene una instruccion corta para `realinear os` y el pl
 
 Motivo: Permite reparar drift sin cargar un procedimiento largo en la ruta caliente.
 
-Proximo paso: usarlo para mantener la capa agentica alineada con OS Lite y las convenciones locales de Copicu.
+Proximo paso: usarlo para mantener la capa agentica alineada con AOS y las convenciones locales de Copicu.
 
 ### 2026-06-10 - Mantener guia humana como puerta de entrada
 

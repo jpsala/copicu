@@ -79,7 +79,7 @@ Usuarios power de escritorio que copian y reutilizan texto, codigo, URLs, HTML o
 
 ## Infraestructura Agentica
 
-- `docs/skills/`: skills locales portables incluidas como parte de OS Lite.
+- `docs/skills/`: skills locales portables incluidas como parte de AOS.
 - `.agents/skills`: junction de compatibilidad hacia `docs/skills/`.
 - `scripts/ensure-skills-link.ps1`: recrea o valida la junction local `.agents/skills`.
 - `scripts/agent-context-audit.ts`: auditor de docs, topics, tracks y skills.

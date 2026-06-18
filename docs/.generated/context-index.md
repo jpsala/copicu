@@ -2,18 +2,18 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-15T00:49:54.714Z
+Generated: 2026-06-18T12:36:34.600Z
 
 ## Topics
 
 - active: [actions-and-scripting-api](../topics/actions-and-scripting-api.md) - actions, scripting, scripts, plugins, TypeScript actions, JavaScript actions, CopyQ commands, command context
-- active: [agentic-os-operations](../topics/agentic-os-operations.md) - realinear os, auditar sistema agentico, reparar sistema agentico, drift de contexto, actualizar os lite, sistema agentico, os lite, init os
+- active: [agentic-os-operations](../topics/agentic-os-operations.md) - realinear os, auditar sistema agentico, reparar sistema agentico, drift de contexto, actualizar aos, sistema agentico, aos, init os
 - draft: [ai-search-and-actions](../topics/ai-search-and-actions.md) - AI, OpenAI, OpenRouter, natural language search, vague search, commands, filters, actions
 - active: [clipboard](../topics/clipboard.md) - clipboard, portapapeles, clipboard manager, capture, text capture, HTML clipboard
 - active: [compound-hotkeys-and-whichkey](../topics/compound-hotkeys-and-whichkey.md) - hotkeys compuestos, hotkey sequence, key sequence, chord, whichkey, which key
 - active: [copyq-technical-baseline](../topics/copyq-technical-baseline.md) - CopyQ, copyq, copy-q, copycube, baseline, paridad, como lo hace CopyQ, enter item
 - draft: [custom-window-system](../topics/custom-window-system.md) - custom windows, multiwindow, multiple windows, ventanas standalone, ventana metadata, ui-host, frameless, undecorated
-- active: [docs-knowledge-system](../topics/docs-knowledge-system.md) - sistema agentico, os lite, documentacion liviana, context index, working memory, track, checkpoint, persistir estado
+- active: [docs-knowledge-system](../topics/docs-knowledge-system.md) - sistema agentico, aos, documentacion liviana, context index, working memory, track, checkpoint, persistir estado
 - active: [filtering-and-query-syntax](../topics/filtering-and-query-syntax.md) - filtering, filtros, search, busqueda, query syntax, FTS, tags, AI search
 - active: [global-shortcut-and-tray](../topics/global-shortcut-and-tray.md) - global shortcut, shortcut global, hotkey, tray, system tray, background app
 - active: [hotkeys](../topics/hotkeys.md) - hotkey, hotkeys, shortcut, global shortcut, hotkey compuesto, key sequence, chord
