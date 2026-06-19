@@ -8,6 +8,8 @@ mod enrichment;
 mod host;
 mod hotkeys;
 mod image_capture;
+mod markdown_output;
+mod script_editor;
 pub mod storage;
 mod surface_registry;
 mod ui_host;
@@ -18,9 +20,7 @@ mod window_state;
 #[cfg(not(test))]
 use std::{
     collections::HashMap,
-    env,
     path::Path,
-    process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
@@ -1218,13 +1218,13 @@ fn export_markdown_output(
             export_dir.display()
         )
     })?;
-    let file_name = safe_markdown_file_name(
+    let file_name = markdown_output::safe_file_name(
         payload
             .suggested_file_name
             .as_deref()
             .unwrap_or(payload.title.as_str()),
     );
-    let path = unique_markdown_path(&export_dir, &file_name);
+    let path = markdown_output::unique_path(&export_dir, &file_name);
     std::fs::write(&path, payload.markdown)
         .map_err(|error| format!("failed to write markdown file {}: {error}", path.display()))?;
     Ok(path.to_string_lossy().into_owned())
@@ -1406,7 +1406,7 @@ fn edit_scripts_in_vscode(
     storage: State<'_, storage::AppStorage>,
 ) -> Result<(), String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_scripts_in_vscode")?;
-    open_scripts_path_in_vscode(&app, &storage, None)
+    script_editor::open_scripts_path_in_vscode(&app, &storage, None)
 }
 
 #[cfg(not(test))]
@@ -1418,7 +1418,7 @@ fn edit_script_in_vscode(
     path: String,
 ) -> Result<(), String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "edit_script_in_vscode")?;
-    open_scripts_path_in_vscode(&app, &storage, Some(Path::new(&path)))
+    script_editor::open_scripts_path_in_vscode(&app, &storage, Some(Path::new(&path)))
 }
 
 #[cfg(not(test))]
@@ -1885,7 +1885,9 @@ pub fn run() {
                 let result = app
                     .try_state::<storage::AppStorage>()
                     .ok_or_else(|| "app storage not available".to_string())
-                    .and_then(|storage| open_scripts_folder_in_vscode(app, &storage));
+                    .and_then(|storage| {
+                        script_editor::open_scripts_folder_in_vscode(app, &storage)
+                    });
                 if let Err(error) = result {
                     emit_toast_on_main_thread(
                         app.clone(),
@@ -2325,47 +2327,6 @@ fn open_metadata_editor_window<R: tauri::Runtime>(
         ),
     );
     Ok(())
-}
-
-#[cfg(not(test))]
-fn safe_markdown_file_name(value: &str) -> String {
-    let mut safe = value
-        .chars()
-        .map(|character| match character {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => character,
-            ' ' | '.' => '-',
-            _ => '-',
-        })
-        .collect::<String>()
-        .trim_matches('-')
-        .to_ascii_lowercase();
-    if safe.is_empty() {
-        safe = "copicu-output".to_string();
-    }
-    if safe.len() > 80 {
-        safe.truncate(80);
-        safe = safe.trim_matches('-').to_string();
-    }
-    if !safe.ends_with(".md") {
-        safe.push_str(".md");
-    }
-    safe
-}
-
-#[cfg(not(test))]
-fn unique_markdown_path(dir: &std::path::Path, file_name: &str) -> std::path::PathBuf {
-    let initial = dir.join(file_name);
-    if !initial.exists() {
-        return initial;
-    }
-    let stem = file_name.strip_suffix(".md").unwrap_or(file_name);
-    for index in 2..1000 {
-        let candidate = dir.join(format!("{stem}-{index}.md"));
-        if !candidate.exists() {
-            return candidate;
-        }
-    }
-    dir.join(format!("{stem}-latest.md"))
 }
 
 #[cfg(not(test))]
@@ -3994,144 +3955,6 @@ fn focus_settings_section<R: tauri::Runtime + 'static>(
             eprintln!("settings focus section dispatch failed: {error}");
         }
     });
-}
-
-#[cfg(not(test))]
-fn open_scripts_folder_in_vscode<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    storage: &storage::AppStorage,
-) -> Result<(), String> {
-    open_scripts_path_in_vscode(app, storage, None)
-}
-
-#[cfg(not(test))]
-fn open_scripts_path_in_vscode<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    storage: &storage::AppStorage,
-    target_path: Option<&Path>,
-) -> Result<(), String> {
-    let settings = storage.get_settings()?;
-    let vscode_path = normalize_vscode_launcher_path(&settings.scripts.vscode_path);
-    if vscode_path.is_empty() {
-        spawn_open_settings_window(app.clone());
-        focus_settings_section(app.clone(), "scripts");
-        return Err("VS Code not configured. Set Settings > Actions > VS Code path.".to_string());
-    }
-
-    let launcher_path = Path::new(&vscode_path);
-    if !launcher_path.exists() {
-        spawn_open_settings_window(app.clone());
-        focus_settings_section(app.clone(), "scripts");
-        return Err(format!(
-            "VS Code launcher not found: {}",
-            launcher_path.display()
-        ));
-    }
-
-    let scripts_folder = Path::new(&settings.scripts.folder_path);
-    if !scripts_folder.exists() {
-        spawn_open_settings_window(app.clone());
-        focus_settings_section(app.clone(), "scripts");
-        return Err(format!(
-            "Scripts folder not found: {}",
-            scripts_folder.display()
-        ));
-    }
-
-    let scripts_folder = scripts_folder
-        .canonicalize()
-        .map_err(|error| format!("Could not resolve scripts folder: {error}"))?;
-    let open_target = match target_path {
-        Some(path) => {
-            let canonical_path = path
-                .canonicalize()
-                .map_err(|error| format!("Script file not found: {} ({error})", path.display()))?;
-            if !canonical_path.starts_with(&scripts_folder) {
-                return Err("Script file must be inside the configured scripts folder.".to_string());
-            }
-            if !canonical_path.is_file() {
-                return Err(format!(
-                    "Script path is not a file: {}",
-                    canonical_path.display()
-                ));
-            }
-            canonical_path
-        }
-        None => scripts_folder,
-    };
-
-    let spawn_result = match launcher_path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| extension.to_ascii_lowercase())
-    {
-        Some(extension) if extension == "cmd" || extension == "bat" => Command::new("cmd")
-            .arg("/C")
-            .arg(&vscode_path)
-            .arg(&open_target)
-            .spawn(),
-        Some(extension) if extension == "ps1" => Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-ExecutionPolicy")
-            .arg("Bypass")
-            .arg("-File")
-            .arg(&vscode_path)
-            .arg(&open_target)
-            .spawn(),
-        _ => Command::new(&vscode_path).arg(&open_target).spawn(),
-    };
-
-    spawn_result.map_err(|error| {
-        spawn_open_settings_window(app.clone());
-        focus_settings_section(app.clone(), "scripts");
-        format!(
-            "Could not open VS Code. Check Settings > Actions > VS Code path and point it to Code.exe, code.cmd, or a valid launcher script. ({error})"
-        )
-    })?;
-    Ok(())
-}
-
-#[cfg(not(test))]
-fn normalize_vscode_launcher_path(raw_path: &str) -> String {
-    let trimmed = raw_path.trim();
-    let unquoted = if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
-        trimmed[1..trimmed.len() - 1].trim()
-    } else {
-        trimmed
-    };
-    expand_windows_env_vars(unquoted)
-}
-
-#[cfg(not(test))]
-fn expand_windows_env_vars(input: &str) -> String {
-    let mut expanded = String::with_capacity(input.len());
-    let mut rest = input;
-
-    while let Some(start) = rest.find('%') {
-        expanded.push_str(&rest[..start]);
-        let after_start = &rest[start + 1..];
-        let Some(end) = after_start.find('%') else {
-            expanded.push('%');
-            expanded.push_str(after_start);
-            return expanded;
-        };
-
-        let variable_name = &after_start[..end];
-        if variable_name.is_empty() {
-            expanded.push_str("%%");
-        } else if let Ok(value) = env::var(variable_name) {
-            expanded.push_str(&value);
-        } else {
-            expanded.push('%');
-            expanded.push_str(variable_name);
-            expanded.push('%');
-        }
-
-        rest = &after_start[end + 1..];
-    }
-
-    expanded.push_str(rest);
-    expanded
 }
 
 #[cfg(not(test))]

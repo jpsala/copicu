@@ -2,7 +2,6 @@ import {
   Component,
   StrictMode,
   Suspense,
-  type CSSProperties,
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -45,11 +44,34 @@ import Tags from "lucide-react/dist/esm/icons/tags.mjs";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import { copicuMantineTheme } from "./mantineTheme";
-import {
-  applyCopicuAppearance,
-  type ThemeId,
-  type ThemeSetting,
-} from "./themeCatalog";
+import { applyCopicuAppearance } from "./themeCatalog";
+import type {
+  ActionContext,
+  ActionDefinition,
+  ActionEffect,
+  ActionRunResult,
+  ActionTrigger,
+  ActivateItemRequest,
+  ActivationOptions,
+  ClipKind,
+  CompoundHotkeyPendingEvent,
+  CreateTagRequest,
+  EnterAction,
+  MarkdownOutputPayload,
+  RunActionRequest,
+  SetHistoryItemsMarkedRequest,
+  SetHistoryQueryMarkedRequest,
+  SetItemTagsRequest,
+  TagSummary,
+  ToastItem,
+  ToastOptions,
+  UiHostRequest,
+  UpdateHistoryItemRequest,
+  UpdateTagConfigRequest,
+  WhichKeyEntry,
+  WhichKeyState,
+} from "./shared/contracts";
+import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "./shared/settings";
 import {
   UiBadge,
   UiButton,
@@ -65,6 +87,7 @@ import {
   UiUnstyledButton,
 } from "./ui/controls";
 import { ShortcutBadge } from "./ui/ShortcutBadge";
+import { ToastStack } from "./ui/ToastStack";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
 import "@mantine/core/styles.css";
@@ -221,107 +244,6 @@ type SearchInterpretation = {
   warnings: string[];
 } | null;
 
-type TagSummary = {
-  id: number;
-  slug: string;
-  label: string;
-  color: string | null;
-  pinned: boolean;
-  sortOrder: number | null;
-  itemCount: number;
-  autoApplyEnabled: boolean;
-};
-
-type CreateTagRequest = {
-  label: string;
-  color?: string | null;
-};
-
-type UpdateTagConfigRequest = {
-  tagId: number;
-  label?: string | null;
-  color?: string | null;
-  pinned?: boolean;
-  sortOrder?: number | null;
-  hotkey?: string | null;
-  autoApplyEnabled?: boolean;
-};
-
-type SetItemTagsRequest = {
-  itemId: number;
-  tags: string[];
-};
-
-type ActivateItemRequest = {
-  itemId: number;
-  copy: boolean;
-  markUsed: boolean;
-  hidePicker: boolean;
-  focusPrevious: boolean;
-  paste: boolean;
-  pasteShortcut: "default" | "shiftInsert" | "ctrlV";
-};
-
-type ActionTrigger =
-  | "itemMenu"
-  | "commandPalette"
-  | "localShortcut"
-  | "globalShortcut"
-  | "clipboardChange"
-  | "tray"
-  | "cli"
-  | "devRun";
-
-type SelectionRequirement = "none" | "optional" | "active" | "one" | "oneOrMore" | "many";
-type ActionInputSource = "pickerSelection" | "clipboard" | "historySearch" | "none";
-type ClipKind = "text" | "html" | "image" | "fileList" | "unknown";
-
-type ActionInput = {
-  source: ActionInputSource;
-  selection: SelectionRequirement;
-  kinds: ClipKind[] | null;
-  mime: string[] | null;
-  query: string | null;
-};
-
-type ActionDefinition = {
-  id: string;
-  title: string;
-  description: string;
-  shortcut?: string | null;
-  triggers: ActionTrigger[];
-  input: ActionInput;
-  capabilities: string[];
-  builtin: boolean;
-  source: "builtin" | "script";
-  script: {
-    path: string;
-    fileName: string;
-    sourceHash: string;
-  } | null;
-  diagnostics: Array<{
-    severity: "info" | "warning" | "error";
-    message: string;
-  }>;
-  logging: {
-    name: string | null;
-    redact: boolean;
-  } | null;
-};
-
-type ActionContext = {
-  trigger: ActionTrigger;
-  shortcut: string | null;
-  activeItemId: number | null;
-  currentItemId: number | null;
-  selectedItemIds: number[];
-  view: {
-    query: string;
-    visibleItemIds: number[];
-    currentIndex: number | null;
-  } | null;
-};
-
 type AiScriptContext = {
   currentQuery: string;
   visibleItemIds: number[];
@@ -330,154 +252,12 @@ type AiScriptContext = {
   selectedItemIds: number[];
 };
 
-type RunActionRequest = {
-  actionId: string;
-  context: ActionContext;
-};
-
-type ActionRunResult = {
-  actionId: string;
-  status: "completed" | "failed";
-  message: string;
-  toasts?: ToastOptions[];
-  effects?: ActionEffect[];
-};
-
-type ActionEffect = {
-  type: "picker.filter";
-  query: string;
-};
-
-type ToastTone = "info" | "success" | "warning" | "danger";
-
-type ToastOptions = {
-  title?: string;
-  message: string;
-  tone?: ToastTone;
-  durationMs?: number;
-};
-
-type ToastItem = Required<Pick<ToastOptions, "message" | "tone" | "durationMs">> &
-  Pick<ToastOptions, "title"> & {
-    id: number;
-  };
-
-type CompoundHotkeyPendingEvent = {
-  prefixLabel: string;
-  nextSteps: string[];
-  entries?: WhichKeyEntry[];
-  expiresAtUnixMs?: number;
-};
-
 type PickerSessionSnapshot = {
   reset: boolean;
   generation: number;
 };
 
-type WhichKeyEntry = {
-  key: string;
-  label: string;
-  group: string;
-  routeId: string;
-  disabled: boolean;
-  diagnostic?: string | null;
-};
-
-type WhichKeyState = {
-  prefix: string;
-  entries: WhichKeyEntry[];
-  expiresAtUnixMs: number;
-  visible: boolean;
-};
-
-type UiHostRequest = {
-  id: string;
-  kind: "alert" | "confirm" | "input";
-  title: string;
-  body: string;
-  confirmLabel?: string | null;
-  cancelLabel?: string | null;
-  placeholder?: string | null;
-  defaultValue?: string | null;
-  submitLabel?: string | null;
-};
-
-type MarkdownOutputPayload = {
-  title: string;
-  markdown: string;
-  summary?: string | null;
-  source?: string | null;
-  suggestedFileName?: string | null;
-};
-
-type ActivationOptions = Omit<ActivateItemRequest, "itemId">;
 type EditMode = "content" | "metadata";
-type EnterAction = "copy" | "paste";
-type EnrichmentApplyMode = "autoApply" | "suggestOnly";
-
-type EnrichmentSettings = {
-  enabled: boolean;
-  applyMode: EnrichmentApplyMode;
-  detectors: {
-    path: boolean;
-    url: boolean;
-    json: boolean;
-    code: boolean;
-    secretRisk: boolean;
-  };
-};
-
-type AppSettings = {
-  schemaVersion: 1;
-  general: {
-    globalShortcut: string;
-    launchOnStartup: boolean;
-  };
-  picker: {
-    hideOnFocusLost: boolean;
-    enterAction: EnterAction;
-    promoteActiveOnCopy: boolean;
-    pinToggleShortcut: string;
-    settingsShortcut: string;
-  };
-  history: {
-    retentionCount: number;
-  };
-  appearance: {
-    theme: ThemeSetting;
-    themeId: ThemeId;
-  };
-  scripts: {
-    folderPath: string;
-  };
-  enrichment: EnrichmentSettings;
-  ai: {
-    enabled: boolean;
-    endpoint: string;
-    model: string;
-    apiKey: string;
-  };
-};
-
-type UpdateHistoryItemRequest = {
-  id: number;
-  text: string;
-  title: string | null;
-  notes: string | null;
-  tags: string | null;
-  mimePrimary: string | null;
-  marked?: boolean | null;
-};
-
-type SetHistoryItemsMarkedRequest = {
-  ids: number[];
-  marked: boolean;
-};
-
-type SetHistoryQueryMarkedRequest = {
-  query: string;
-  marked: boolean;
-};
 
 type EditDraft = {
   id: number;
@@ -609,48 +389,6 @@ const PASTE_AND_HIDE_ACTIVATION: ActivationOptions = {
   focusPrevious: true,
   paste: true,
   pasteShortcut: "default",
-};
-
-const DEFAULT_SETTINGS: AppSettings = {
-  schemaVersion: 1,
-  general: {
-    globalShortcut: "Ctrl+Shift+,",
-    launchOnStartup: false,
-  },
-  picker: {
-    hideOnFocusLost: true,
-    enterAction: "copy",
-    promoteActiveOnCopy: true,
-    pinToggleShortcut: "F8",
-    settingsShortcut: "Ctrl+,",
-  },
-  history: {
-    retentionCount: 0,
-  },
-  appearance: {
-    theme: "system",
-    themeId: "default",
-  },
-  scripts: {
-    folderPath: "Documents\\Copicu\\Scripts",
-  },
-  enrichment: {
-    enabled: true,
-    applyMode: "autoApply",
-    detectors: {
-      path: true,
-      url: true,
-      json: true,
-      code: true,
-      secretRisk: true,
-    },
-  },
-  ai: {
-    enabled: false,
-    endpoint: "https://openrouter.ai/api/v1",
-    model: "openai/gpt-4.1-mini",
-    apiKey: "",
-  },
 };
 
 function normalizeRetentionCount(value: number | string): number {
@@ -1208,7 +946,7 @@ function App() {
     };
     setSettings(optimisticSettings);
     void invoke<AppSettings>("set_picker_keep_open", { keepOpen })
-      .then(setSettings)
+      .then((nextSettings) => setSettings(normalizeSettings(nextSettings)))
       .catch((error) => {
         setSettings(previousSettings);
         console.warn("picker keep-open setting update failed", error);
@@ -2376,7 +2114,7 @@ function App() {
     invoke<AppSettings>("get_settings")
       .then((nextSettings) => {
         if (active) {
-          setSettings(nextSettings);
+          setSettings(normalizeSettings(nextSettings));
         }
       })
       .catch((error) => {
@@ -2400,7 +2138,7 @@ function App() {
 
     void listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event: Event<AppSettings>) => {
       if (active) {
-        setSettings(event.payload);
+        setSettings(normalizeSettings(event.payload));
         setSettingsError(null);
       }
     }).then((nextUnlisten) => {
@@ -3504,46 +3242,6 @@ function WhichKeyPanel({ state }: { state: WhichKeyState }) {
 
 function LoadingSpinner() {
   return <UiLoader aria-hidden="true" />;
-}
-
-function ToastStack({
-  toasts,
-  onDismiss,
-}: {
-  toasts: ToastItem[];
-  onDismiss: (id: number) => void;
-}) {
-  if (toasts.length === 0) {
-    return null;
-  }
-
-  return createPortal(
-    <ol className="toast-stack" aria-live="polite" aria-label="Notifications">
-      {[...toasts].reverse().map((toast) => (
-        <li
-          key={toast.id}
-          className={`toast-item toast-${toast.tone}`}
-          style={
-            { "--toast-duration": `${toast.durationMs}ms` } as CSSProperties &
-              Record<"--toast-duration", string>
-          }
-        >
-          <div>
-            {toast.title ? <strong>{toast.title}</strong> : null}
-            <p>{toast.message}</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Dismiss notification"
-            onClick={() => onDismiss(toast.id)}
-          >
-            ×
-          </button>
-        </li>
-      ))}
-    </ol>,
-    document.body,
-  );
 }
 
 function CommandPalette({
