@@ -643,7 +643,7 @@ const LazySettingsWindowApp = lazy(() =>
   import("./windows/secondaryWindows").then((module) => ({ default: module.SettingsWindowApp })),
 );
 const LazyWhichKeyWindowApp = lazy(() =>
-  import("./windows/secondaryWindows").then((module) => ({ default: module.WhichKeyWindowApp })),
+  import("./windows/WhichKeyWindowApp").then((module) => ({ default: module.WhichKeyWindowApp })),
 );
 const LazyAiOutputWindowApp = lazy(() =>
   import("./windows/AiOutputWindowApp").then((module) => ({ default: module.AiOutputWindowApp })),

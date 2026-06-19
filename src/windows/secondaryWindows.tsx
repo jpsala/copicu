@@ -36,7 +36,6 @@ import type {
   ActionTrigger,
   ActivateItemRequest,
   ClipKind,
-  CompoundHotkeyPendingEvent,
   CreateTagRequest,
   EnrichmentApplyMode,
   EnterAction,
@@ -51,8 +50,6 @@ import type {
   UiHostRequest,
   UpdateHistoryItemRequest,
   UpdateTagConfigRequest,
-  WhichKeyEntry,
-  WhichKeyState,
 } from "../shared/contracts";
 import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "../shared/settings";
 import {
@@ -117,17 +114,14 @@ type MetadataEditorPayload = {
 
 const DEFAULT_TOAST_DURATION_MS = 3600;
 const STICKY_TOAST_DURATION_MS = 0;
-const WHICHKEY_REVEAL_DELAY_MS = 300;
 const NOTIFICATIONS_WINDOW_LABEL = "notifications";
 const UI_HOST_WINDOW_LABEL = "ui-host";
 const SETTINGS_WINDOW_LABEL = "settings";
 const AI_OUTPUT_WINDOW_LABEL = "ai-output";
-const WHICHKEY_WINDOW_LABEL = "whichkey";
 const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
 const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
 const METADATA_OPEN_EVENT = "copicu://metadata/open";
-const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const SETTINGS_FOCUS_SECTION_EVENT = "copicu://settings/focus-section";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
@@ -261,29 +255,8 @@ function runHostAction(request: RunActionRequest) {
   return invoke<ActionRunResult>("run_action", { request });
 }
 
-function handleCompoundHotkeyStep(shortcut: string) {
-  return invoke<{
-    handled: boolean;
-    pending: boolean;
-    executed: boolean;
-    diagnostic: string | null;
-  }>("handle_compound_hotkey_step", { request: { shortcut } });
-}
-
 function normalizeHotkeySequence(input: string) {
   return invoke<HotkeyNormalizationResult>("normalize_hotkey_sequence", { input });
-}
-
-function clearCompoundHotkeyPending() {
-  return invoke("clear_compound_hotkey_pending");
-}
-
-function hideWhichKeyWindow() {
-  return invoke("hide_whichkey_window");
-}
-
-function getCompoundHotkeyPending() {
-  return invoke<CompoundHotkeyPendingEvent | null>("get_compound_hotkey_pending");
 }
 
 function openSettingsWindow() {
@@ -409,7 +382,6 @@ const IS_NOTIFICATIONS_WINDOW = currentWindowLabel() === NOTIFICATIONS_WINDOW_LA
 const IS_UI_HOST_WINDOW = currentWindowLabel() === UI_HOST_WINDOW_LABEL;
 const IS_SETTINGS_WINDOW = currentWindowLabel() === SETTINGS_WINDOW_LABEL;
 const IS_AI_OUTPUT_WINDOW = currentWindowLabel() === AI_OUTPUT_WINDOW_LABEL;
-const IS_WHICHKEY_WINDOW = currentWindowLabel() === WHICHKEY_WINDOW_LABEL;
 
 if (isTauriRuntime()) {
   recordRendererDiagnostic("module-load", `label=${currentWindowLabel()}`);
@@ -444,191 +416,6 @@ if (isTauriRuntime()) {
       );
     }, 2000);
   }
-}
-
-
-function WhichKeyPanel({ state }: { state: WhichKeyState }) {
-  const groups = new Map<string, WhichKeyEntry[]>();
-  for (const entry of state.entries) {
-    const group = entry.group || "Shortcuts";
-    groups.set(group, [...(groups.get(group) ?? []), entry]);
-  }
-
-  return (
-    <>
-      <div className="whichkey-header">
-        <span>{state.prefix}</span>
-        <strong>Next key</strong>
-      </div>
-      <div className="whichkey-groups">
-        {Array.from(groups, ([group, entries]) => (
-          <section key={group} className="whichkey-group">
-            <h2>{group}</h2>
-            <div className="whichkey-entry-list">
-              {entries.map((entry) => (
-                <div
-                  key={`${entry.routeId}-${entry.key}`}
-                  className={`whichkey-entry${entry.disabled ? " is-disabled" : ""}`}
-                >
-                  <UiKbd>{entry.key}</UiKbd>
-                  <span>{entry.label}</span>
-                  {entry.diagnostic ? <em>{entry.diagnostic}</em> : null}
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-    </>
-  );
-}
-
-export function WhichKeyWindowApp() {
-  const [state, setState] = useState<WhichKeyState | null>(null);
-  const [diagnostic, setDiagnostic] = useState<string | null>(null);
-  const armedAtRef = useRef<number>(0);
-
-  const hideWindow = useCallback(() => {
-    void hideWhichKeyWindow().catch((error) => {
-      console.warn("whichkey hide failed", error);
-    });
-  }, []);
-
-  const clearAndHide = useCallback(() => {
-    void clearCompoundHotkeyPending().finally(hideWindow);
-  }, [hideWindow]);
-
-  const syncPending = useCallback(() => {
-    void getCompoundHotkeyPending()
-      .then((pending) => {
-        if (!pending) {
-          recordRendererDiagnostic("whichkey-sync", "pending=none");
-          setState(null);
-          armedAtRef.current = 0;
-          hideWindow();
-          return;
-        }
-        const entries =
-          pending.entries && pending.entries.length > 0
-            ? pending.entries
-            : pending.nextSteps.map((step) => ({
-                key: step,
-                label: `Press ${step}`,
-                group: "Shortcuts",
-                routeId: step,
-                disabled: false,
-                diagnostic: null,
-              }));
-        setState({
-          prefix: pending.prefixLabel,
-          entries,
-          expiresAtUnixMs: pending.expiresAtUnixMs ?? Date.now() + 3000,
-          visible: true,
-        });
-        recordRendererDiagnostic(
-          "whichkey-sync",
-          `pending=${pending.prefixLabel} entries=${entries.length}`,
-        );
-        if (armedAtRef.current === 0) {
-          armedAtRef.current = Date.now() + 250;
-        }
-      })
-      .catch((error) => {
-        setDiagnostic(String(error));
-      });
-  }, [hideWindow]);
-
-  useEffect(() => {
-    document.body.classList.add("whichkey-window");
-    return () => {
-      document.body.classList.remove("whichkey-window");
-    };
-  }, []);
-
-  useEffect(() => {
-    syncPending();
-    let unlisten: (() => void) | null = null;
-    const interval = rendererDebugDiagnosticsEnabled()
-      ? window.setInterval(syncPending, 150)
-      : null;
-    void listen<CompoundHotkeyPendingEvent>(COMPOUND_HOTKEY_PENDING_EVENT, () => {
-      syncPending();
-    }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
-    });
-    window.addEventListener("focus", syncPending);
-    return () => {
-      if (interval !== null) {
-        window.clearInterval(interval);
-      }
-      unlisten?.();
-      window.removeEventListener("focus", syncPending);
-    };
-  }, [syncPending]);
-
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        clearAndHide();
-        return;
-      }
-
-      if (event.ctrlKey || event.altKey || event.metaKey) {
-        return;
-      }
-
-      if (!state || Date.now() < armedAtRef.current) {
-        return;
-      }
-
-      const shortcut = compoundShortcutFromKeyboardEvent(event);
-      if (!shortcut) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      void handleCompoundHotkeyStep(shortcut)
-        .then((response) => {
-          if (!response.pending) {
-            setState(null);
-            armedAtRef.current = 0;
-            if (response.diagnostic) {
-              setDiagnostic(response.diagnostic);
-              window.setTimeout(hideWindow, 500);
-            } else {
-              hideWindow();
-            }
-            return;
-          }
-          syncPending();
-        })
-        .catch((error) => {
-          setDiagnostic(String(error));
-          window.setTimeout(() => clearAndHide(), 700);
-        });
-    };
-
-    document.addEventListener("keydown", onKeyDown, { capture: true });
-    return () => {
-      document.removeEventListener("keydown", onKeyDown, { capture: true });
-    };
-  }, [clearAndHide, hideWindow, state, syncPending]);
-
-  return (
-    <main className="whichkey-app">
-      <section className="whichkey-window-panel" aria-label="WhichKey shortcuts">
-        {state ? <WhichKeyPanel state={state} /> : (
-          <div className="whichkey-empty">
-            {diagnostic ?? "Waiting for shortcut"}
-          </div>
-        )}
-        {diagnostic && state ? <p className="whichkey-diagnostic">{diagnostic}</p> : null}
-      </section>
-    </main>
-  );
 }
 
 export function MetadataWindowApp() {
