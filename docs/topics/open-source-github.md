@@ -197,13 +197,21 @@ Regla vigente: si despues de un release ya publicado hay cambios nuevos en
 `main`, crear un tag/release nuevo. No mover tags publicados ni reutilizar el
 mismo `vX.Y.Z-rc.N` para que GitHub "parezca" actualizado.
 
-Para release candidates:
+Para release candidates, usar por defecto el helper local:
+
+```powershell
+npm run release:windows
+```
+
+Sin `-Tag`, el helper calcula el proximo release mirando version actual, tags locales y releases de GitHub. Default: patch estable; si hay ambigüedad con una linea prerelease, pregunta entre patch/minor/major/rc/promover estable. Tambien acepta `-Bump minor|major|rc` o `-Tag vX.Y.Z-rc.N`.
+
+El helper actualiza version de proyecto, corre validaciones, builda el instalador, calcula SHA256, actualiza `README.md`, commitea, pushea y crea el release con `gh release create`. Pide confirmacion antes de commit, push y release/subida de asset; `-Yes` solo si JP pide modo automatico. Para release manual o debug paso a paso:
 
 1. Verificar worktree limpio o commitear primero.
 2. Buildar el instalador desde el commit que se va a publicar.
 3. Crear el siguiente tag incremental, por ejemplo `v0.2.0-rc.2`.
 4. Crear el release GitHub apuntando a ese tag y subir el instalador nuevo.
-5. Actualizar `README.md` para que "Current release candidate" apunte al nuevo
+5. Actualizar `README.md` para que "Current release" apunte al nuevo
    tag, asset y SHA256.
 
 Motivo: GitHub muestra la fecha de publicacion original del release. Editar las

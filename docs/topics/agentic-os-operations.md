@@ -14,6 +14,9 @@ triggers:
   - adopt os
   - update os
   - migrar sistema agentico
+  - upstream downstream
+  - metasistema
+  - manager-only
 primary_refs:
   - AGENTS.md
   - docs/GLOSSARY.md
@@ -33,12 +36,18 @@ primary_refs:
 
 Usar este topic cuando JP pida auditar, reparar, actualizar o realinear la capa agentica del repo.
 
+## Principio Upstream / Downstream
+
+Copicu es downstream de AOS. `C:\dev\os` es upstream manager: define vision, playbooks y mejoras portables. A Copicu solo viajan piezas locales aplicables: reglas del proyecto, memoria viva local, topics, tracks, scripts, skills y adapters que se usan aca.
+
+No copiar piezas manager-only de AOS: `docs/OS_PROJECTS.md`, working memory/tracks/decisiones del kit canonico, inventarios globales ni docs que declaren a Copicu como upstream. Si algo del upstream sirve, reescribirlo como contexto local de Copicu.
+
 ## Intenciones
 
 | Pedido | Accion |
 | --- | --- |
 | `realinear os` | Auditar y reparar drift de la capa agentica local. |
-| `actualizar aos` / `update` | Comparar contra `c:\dev\os` y traer mejoras portables sin pisar contexto local. |
+| `actualizar aos` / `update` | Comparar contra `C:\dev\os` y traer solo mejoras portables/locales sin pisar contexto ni copiar manager-only. |
 | `adopt` / migracion | Fusionar reglas y memoria existentes; no resetear con templates genericos. |
 | context bloat | Compactar ruta caliente y mover historia a `docs/reference/` o tracks archivadas. |
 
@@ -106,14 +115,15 @@ bun run context:audit
 ## Actualizar Desde Upstream
 
 1. Leer primero el sistema local y verificar `git status`.
-2. Comparar solo la capa agentica: `AGENTS.md`, docs de contexto, topics base, scripts, `.pi/`, `.specify/` y `docs/skills/` si aplica.
+2. Comparar solo la capa agentica local: `AGENTS.md`, docs de contexto, topics base, scripts, `.pi/`, `.agents`, `.specify` y `docs/skills/` si aplica.
 3. Preservar memoria local: `docs/WORKING_MEMORY.md`, `docs/DECISIONS.md`, tracks, specs y topics de producto no se pisan; se fusionan si hace falta.
 4. Preservar convenciones locales como `docs/tracks/`, reglas de producto, Windows-first, Tauri, clipboard privacy, dev/instalada y release.
-5. Traer mejoras portables de scripts, prompts, extensiones y skills cuando no dependan de contexto del upstream.
-6. No copiar contexto generico del upstream que no aplique a Copicu.
-7. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
-8. Preservar `docs/skills/` como fuente canonica y regenerar `.agents/skills` con `scripts/ensure-skills-link.ps1`.
-9. Regenerar indice y correr audit antes de reportar.
+5. Traer mejoras portables de scripts, prompts, extensiones, skills o audit cuando no dependan de contexto manager-only del upstream.
+6. Omitir piezas manager-only de AOS: registry global, decisiones/tracks/memoria del kit, inventarios personales y docs meta.
+7. Reescribir cualquier mejora del upstream como contexto local de Copicu antes de incorporarla.
+8. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
+9. Preservar `docs/skills/` como fuente canonica y regenerar `.agents/skills` con `scripts/ensure-skills-link.ps1`.
+10. Regenerar indice y correr audit antes de reportar.
 
 ## Criterio De Exito
 

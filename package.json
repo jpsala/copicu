@@ -1,7 +1,7 @@
 {
   "name": "copicu",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
@@ -11,6 +11,7 @@
     "dev:built": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -Built",
     "dev:built:fresh": "npm run build && npm run dev:built",
     "install:current": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/install-current.ps1",
+    "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/release-windows.ps1",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "visual:check": "playwright test",

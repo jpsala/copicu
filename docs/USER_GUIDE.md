@@ -2,6 +2,8 @@
 
 Este repo usa una capa agentica liviana para que agentes puedan trabajar sin cargar toda la historia del proyecto.
 
+Copicu es downstream de AOS: usa mejoras de `C:\dev\os` solo cuando se vuelven contexto local util. No copia registry, decisiones/tracks del kit ni gobierno del metasistema.
+
 No es una wiki completa ni un backlog historico. Su trabajo es que una sesion nueva pueda leer poco, entender el estado vivo, encontrar la fuente correcta y no repetir errores ya aprendidos.
 
 ## Como Se Usa

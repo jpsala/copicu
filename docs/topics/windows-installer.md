@@ -142,7 +142,26 @@ Salida esperada:
 src-tauri/target/release/bundle/nsis/*-setup.exe
 ```
 
-Release candidate publico:
+Release Windows local todo-en-uno:
+
+```powershell
+npm run release:windows
+```
+
+Sin `-Tag`, el helper calcula el proximo release mirando version actual (`package.json` + `src-tauri/tauri.conf.json`), tags locales y releases de GitHub. Default: patch estable. Si hay una linea prerelease mas nueva que el ultimo estable, pregunta con opciones entre patch, rc, promover estable, minor o major. Tambien acepta overrides explicitos:
+
+```powershell
+npm run release:windows -- -Bump minor -Notes "Windows installer refresh."
+npm run release:windows -- -Tag v0.2.2-rc.1 -Notes "Windows installer refresh for v0.2.2 RC 1."
+```
+
+Esto actualiza version de proyecto, corre validaciones, builda el instalador NSIS, calcula SHA256, actualiza `README.md`, commitea, pushea y crea el release GitHub con `gh release create`. Pide confirmacion antes de commit, push y release/subida de asset; `-Yes` solo si JP pide modo automatico. Para dry-run:
+
+```powershell
+npm run release:windows -- -DryRun -SkipBuild -SkipValidation -SkipCommit -SkipPush -SkipGithubRelease
+```
+
+Release candidate publico manual si se necesita depurar paso a paso:
 
 ```powershell
 npm run tauri:build
@@ -179,7 +198,7 @@ Los comandos dev no deben usar esa DB por defecto. `npm run tauri:dev`, `npm run
 
 El hotkey default del perfil dev aislado es `Ctrl+Shift+.` para no competir con la instalada. Si alguna investigacion necesita reproducir contra el perfil real, debe ser opt-in explicito, no default.
 
-Dev aislado tambien setea `COPICU_DISABLE_CLIPBOARD_WATCHER=1` para evitar doble captura mientras la instalada es la herramienta diaria. Pendiente tecnico: los comandos de diagnostico de captura deben devolver snapshot vacio cuando el watcher esta deshabilitado, en vez de requerir state manejado.
+Dev aislado mantiene app-data/scripts separados y hotkey propio, pero el clipboard watcher queda habilitado por defecto para que dogfood/dev capture como la instalada. Si una prueba necesita estabilidad sin captura real, debe deshabilitarlo explicitamente con `COPICU_DISABLE_CLIPBOARD_WATCHER=1`.
 
 El tray de dev debe distinguirse de la instalada:
 

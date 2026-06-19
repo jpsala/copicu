@@ -49,8 +49,9 @@ En la corrida 2026-06-14, `window_info` y target screenshot podian ver Copicu, p
 
 - `visible/exists`: aparece en `windows` y se puede capturar con `PrintWindow`.
 - `foreground/topmost`: aparece realmente al frente en screenshot de pantalla completa.
+- `keyboard-ready`: despues del hotkey, una escritura inmediata llega al search sin hacer click ni llamar a `focus` manual.
 
-Ambas cosas deben validarse por separado.
+Las tres cosas deben validarse por separado. La regresion de 2026-06-18 fue exactamente `visible/exists` sin `keyboard-ready`: el picker se veia, pero el teclado seguia en la app previa por la ruta no-activate.
 
 ## Suite B - mouse
 
@@ -97,6 +98,20 @@ Probar explicitamente estos estados con screenshots de pantalla completa:
 
 ## Suite C - hotkeys
 
+### C0. Hotkey deja el picker keyboard-ready
+
+Esta prueba es obligatoria si se toca hotkey/foco/show/hide. No llamar `focus` entre abrir y tipear, porque eso enmascara la regresion.
+
+1. Enfocar una app externa real, por ejemplo Windows Terminal/WezTerm/Vivaldi: `focus` target externo.
+2. `open_picker`.
+3. Inmediatamente `type` `focus-probe-<token>`.
+4. `screenshot` target `Copicu ahk_class Tauri Window`.
+   - PASS: el search muestra `focus-probe-<token>`.
+   - FAIL: el picker existe o se ve, pero el texto fue a la app externa o no aparece en el search.
+5. `screenshot` target `screen` si hay duda de foreground/topmost.
+
+Evidencia de validacion 2026-06-18: `.codex-run/computer-use/focus-hotkey-after-type-2.png` mostro el token en el search tras abrir con `Ctrl+Shift+.` desde una terminal externa.
+
 ### C1. Abrir/cerrar por hotkey global
 
 1. `open_picker`.
@@ -106,7 +121,7 @@ Probar explicitamente estos estados con screenshots de pantalla completa:
 4. `windows` + `screenshot screen`.
    - PASS: se oculta o deja de estar al frente segun estado pinned.
 
-### C2. Search por teclado
+### C2. Search por teclado con foco explicito
 
 1. Abrir picker.
 2. `focus` target estable.
@@ -115,6 +130,7 @@ Probar explicitamente estos estados con screenshots de pantalla completa:
 5. `send` `{Down}{Up}`.
 6. `screenshot` target.
    - PASS: `json-fixture`, `1 / 6 matches`, seleccion estable.
+   - Nota: esta prueba valida input dentro del picker una vez enfocado, pero no prueba que el hotkey deje el picker keyboard-ready. Para eso usar C0.
 
 ### C3. Pin/keep-active por hotkey
 
@@ -145,8 +161,9 @@ Probar explicitamente estos estados con screenshots de pantalla completa:
 
 ## Pendiente inmediato
 
-1. Ajustar coordenadas exactas del icono pin vs candadito con screenshots full-screen y target.
-2. Definir expected formal de producto:
+1. Mantener C0 como oracle de regresion del hotkey keyboard-ready: cualquier refactor de foco que pase screenshots target pero falle C0 no esta listo.
+2. Ajustar coordenadas exactas del icono pin vs candadito con screenshots full-screen y target.
+3. Definir expected formal de producto:
    - unpinned + focus lost: esconder o solo perder foco?
    - pinned/locked + focus lost: mantener visible y/o mantener foreground?
-3. Convertir esta bateria manual en comando asistido si el tool permite invocarse programaticamente desde Pi.
+4. Convertir esta bateria manual en comando asistido si el tool permite invocarse programaticamente desde Pi.

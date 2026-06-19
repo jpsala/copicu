@@ -52,8 +52,9 @@ Este repo tambien incluye prompt templates Pi en `.pi/prompts/` para invocacion 
 | `/siguiente` | `continuar sesion con gol` |
 | `/realinear` | `realinear os` |
 | `/research <tema>` | research tecnico con `code_search`, `web_search`/`fetch_content` y `librarian` segun corresponda |
+| `/release-windows [tag|patch|minor|major|rc] [notas]` | release Windows completo via `npm run release:windows`; sin tag calcula proximo release automaticamente y confirma antes de efectos externos |
 
-Extensiones Pi del OS local documentadas en `docs/topics/pi-agentic-os.md`: `/checkpoint-nudge`, `/os-status`, `/os-compact` y `/os-continuar`.
+Extensiones Pi del OS local documentadas en `docs/topics/pi-agentic-os.md`: `/checkpoint-nudge`, `/os-status`, `/os-compact`, `/os-continuar`, `/seguir`, `/os-sync` y `/gol`.
 
 Estos prompts y extensiones son conveniencia Pi, no reemplazan las skills portables ni los topics canonicos.
 
@@ -77,3 +78,7 @@ bun run context:audit
 - Copiar o fusionar `docs/skills/` como parte de AOS cuando el repo destino necesite slash commands locales.
 - No copiar `.agents/skills` como carpeta real; recrearla en destino con `scripts/ensure-skills-link.ps1`.
 - Mantener las skills hibridas: metadata y cuerpo corto en la skill, procedimiento durable en topics, scripts o docs canonicos del repo destino.
+
+## Orquestacion
+
+- `aos-orquestar/`: proponer o ejecutar un fan-out controlado con threads/subagentes AOS.

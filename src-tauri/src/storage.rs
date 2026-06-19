@@ -298,6 +298,8 @@ pub struct PickerSettings {
     pub promote_active_on_copy: bool,
     #[serde(default = "default_pin_toggle_shortcut")]
     pub pin_toggle_shortcut: String,
+    #[serde(default = "default_settings_shortcut")]
+    pub settings_shortcut: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -342,6 +344,8 @@ pub struct AiSettings {
     pub enabled: bool,
     pub endpoint: String,
     pub model: String,
+    #[serde(default)]
+    pub api_key: String,
 }
 
 impl Default for AiSettings {
@@ -350,6 +354,7 @@ impl Default for AiSettings {
             enabled: false,
             endpoint: DEFAULT_AI_ENDPOINT.to_string(),
             model: DEFAULT_AI_MODEL.to_string(),
+            api_key: String::new(),
         }
     }
 }
@@ -406,6 +411,7 @@ impl Default for AppSettings {
                 enter_action: EnterAction::Copy,
                 promote_active_on_copy: default_promote_active_on_copy(),
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
+                settings_shortcut: default_settings_shortcut(),
             },
             history: HistorySettings {
                 retention_count: UNLIMITED_HISTORY_LIMIT,
@@ -428,6 +434,10 @@ fn default_promote_active_on_copy() -> bool {
 
 fn default_pin_toggle_shortcut() -> String {
     "F8".to_string()
+}
+
+fn default_settings_shortcut() -> String {
+    "Ctrl+,".to_string()
 }
 
 fn default_global_shortcut() -> String {
@@ -1935,6 +1945,7 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     settings.tray.vscode_path.clear();
     settings.scripts.folder_path = settings.scripts.folder_path.trim().to_string();
     settings.picker.pin_toggle_shortcut = settings.picker.pin_toggle_shortcut.trim().to_string();
+    settings.picker.settings_shortcut = settings.picker.settings_shortcut.trim().to_string();
     let endpoint = settings.ai.endpoint.trim().trim_end_matches('/');
     let model = settings.ai.model.trim();
     if endpoint.is_empty() {
@@ -1947,6 +1958,7 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     } else {
         settings.ai.model = model.to_string();
     }
+    settings.ai.api_key = settings.ai.api_key.trim().to_string();
 }
 
 fn retention_limit_from_conn(conn: &Connection) -> i64 {
@@ -2030,8 +2042,11 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     if settings.general.global_shortcut.trim().is_empty() {
         return Err("global shortcut cannot be empty".to_string());
     }
-    if settings.picker.pin_toggle_shortcut.contains(',') {
+    if contains_hotkey_sequence_delimiter(&settings.picker.pin_toggle_shortcut) {
         return Err("pin toggle shortcut must be a single shortcut".to_string());
+    }
+    if contains_hotkey_sequence_delimiter(&settings.picker.settings_shortcut) {
+        return Err("settings shortcut must be a single shortcut".to_string());
     }
     if settings.scripts.folder_path.trim().is_empty() {
         return Err("scripts folder path cannot be empty".to_string());
@@ -2054,6 +2069,16 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn contains_hotkey_sequence_delimiter(shortcut: &str) -> bool {
+    shortcut.char_indices().any(|(index, character)| {
+        character == ','
+            && shortcut[index + character.len_utf8()..]
+                .chars()
+                .next()
+                .is_some_and(char::is_whitespace)
+    })
 }
 
 fn ensure_scripts_folder(settings: &AppSettings) -> Result<(), String> {
@@ -2156,8 +2181,10 @@ mod tests {
             crate::enrichment::EnrichmentSettings::default()
         );
         assert_eq!(settings.ai, AiSettings::default());
+        assert_eq!(settings.ai.api_key, "");
         assert_eq!(settings.appearance.theme_id, ThemeId::Default);
         assert!(settings.picker.promote_active_on_copy);
+        assert_eq!(settings.picker.settings_shortcut, "Ctrl+,");
         validate_settings(&settings).expect("old settings with script defaults should validate");
     }
 
@@ -2181,6 +2208,24 @@ mod tests {
         assert_eq!(settings.scripts.folder_path, r"C:\Scripts");
         assert_eq!(settings.scripts.vscode_path, r"C:\Tools\VS Code\Code.exe");
         assert_eq!(settings.tray.vscode_path, "");
+    }
+
+    #[test]
+    fn settings_validation_accepts_comma_key_local_settings_shortcut() {
+        let mut settings = AppSettings::default();
+        settings.picker.settings_shortcut = "Ctrl+,".to_string();
+
+        validate_settings(&settings).expect("comma key should not be treated as a sequence");
+    }
+
+    #[test]
+    fn settings_normalize_trims_ai_api_key() {
+        let mut settings = AppSettings::default();
+        settings.ai.api_key = "  synthetic-key  ".to_string();
+
+        normalize_loaded_settings(&mut settings);
+
+        assert_eq!(settings.ai.api_key, "synthetic-key");
     }
 
     #[test]

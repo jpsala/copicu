@@ -95,6 +95,14 @@ Decision inicial para MVP 0:
 - El toggle por global shortcut debe ocultar si la ventana principal esta visible, aunque no este foreground/focused. El criterio anterior en ruta no-focus solo ocultaba si estaba foreground; eso hacia que una segunda pulsacion no ocultara cuando habia dos instancias o foco raro.
 - Dev tray se diferencia con tooltip `Copicu Dev`, menu `Toggle Copicu Dev` y badge `D`.
 
+## Decision 2026-06-18 - hotkey abre con foco
+
+- Problema observado: el picker a veces aparecia al usar el hotkey pero no quedaba listo para escribir. La causa era arquitectonica: el shortcut global usaba la ruta `toggle_main_window_without_focus`, que terminaba en `SW_SHOWNOACTIVATE` / `SWP_NOACTIVATE`.
+- Decision: el hotkey global del picker debe activar/enfocar la ventana por defecto. La ruta actual es `handle_global_shortcut` -> `spawn_toggle_main_window` -> `toggle_main_window` -> `show_main_window` con foco.
+- Motivo: Copicu es keyboard-first; ver el picker sin que el input reciba teclado rompe el flujo principal.
+- Fallback: la ruta no-activate queda disponible solo para diagnostico via `COPICU_PICKER_NO_ACTIVATE=1`, por si hay que comparar contra el bug visual historico de Codex/WebView2.
+- Oracle obligatorio para cambios futuros: desde una app externa foreground, disparar el hotkey y tipear inmediatamente debe escribir en el search de Copicu sin click extra ni llamada manual a `focus`.
+
 ## Preguntas Abiertas
 
 - Hace falta detectar y reportar conflicto de shortcut en MVP 0?

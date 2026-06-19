@@ -40,11 +40,12 @@ La app debe convertir eso en un plan estructurado y ejecutarlo con APIs normales
 - Settings ya incluye AI deshabilitado por defecto:
   - `ai.enabled`;
   - `ai.endpoint` default `https://openrouter.ai/api/v1`;
-  - `ai.model` default `openai/gpt-4.1-mini`.
-- La API key local debe vivir en una variable de entorno o `.env` local ignorado bajo el nombre fijo `COPICU_AI_API_KEY`. Settings no guarda secretos ni nombres de variables.
+  - `ai.model` default `openai/gpt-4.1-mini`;
+  - `ai.apiKey` vacio por defecto, editable como password field local en Settings.
+- La API key local puede vivir en Settings o en una variable de entorno / `.env` local ignorado bajo el nombre fijo `COPICU_AI_API_KEY`.
 - `COPICU_AI_ENDPOINT` y `COPICU_AI_MODEL` son overrides opcionales desde entorno o `.env`; si no existen, se usan los valores de Settings.
-- El host Rust lee primero variables de entorno reales y luego `.env` local del project root como fallback. Como compatibilidad temporal, si falta `COPICU_AI_API_KEY`, intenta claves legacy `GROQ_API_KEY`, `OPENROUTER_API_KEY` y `OPENAI_API_KEY`.
-- No guardar el valor de esa key en docs, logs, tests, DB ni settings exportados.
+- El host Rust lee primero `COPICU_AI_API_KEY` desde variables de entorno reales y luego `.env` local del project root; si falta, usa `ai.apiKey` guardado localmente; como compatibilidad final intenta claves legacy `GROQ_API_KEY`, `OPENROUTER_API_KEY` y `OPENAI_API_KEY`.
+- No guardar el valor de esa key en docs, logs ni tests. Tratar Settings/DB como almacenamiento local sensible.
 - OpenAI-compatible API sigue siendo la abstraccion del cliente; OpenRouter, OpenAI y Groq quedan representados en `.env.example`.
 
 ## Libreria Inicial

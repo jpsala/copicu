@@ -2,6 +2,8 @@
 
 Este proyecto es un clipboard manager inspirado en CopyQ, construido desde cero con Tauri 2, TypeScript y un nucleo chico en Rust.
 
+Copicu es un downstream de AOS: recibe una capa agentica local adaptada al proyecto, no el metasistema completo de `C:\dev\os`. No copiar registry global, tracks/decisiones del kit, inventarios ni docs que hagan parecer que Copicu es el upstream canonico.
+
 ## Lectura Inicial
 
 Antes de trabajar en este proyecto, usar una ruta liviana:

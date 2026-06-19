@@ -83,6 +83,7 @@ await copicu.commands.run("picker.open", {
 - Settings tiene seccion `Hotkeys`.
 - Editable app-owned:
   - `general.globalShortcut` / open picker;
+  - `picker.settingsShortcut` / open Settings from picker (local, not global, default `Ctrl+,`);
   - `picker.pinToggleShortcut` / toggle pin on top.
 - Read-only renderer/app shortcuts visibles: `Ctrl+K`, `Ctrl+I`, `Enter`/`Shift+Enter`, `F2`/`Shift+F2`.
 - Scripts descubiertos muestran `shortcut`, triggers, archivo y diagnosticos.
@@ -99,6 +100,8 @@ await copicu.commands.run("picker.open", {
 - Con Keep picker open off, focus-lost oculta y marca la sesion transitoria para reset.
 - Al reabrir tras focus-lost, query/seleccion/anchor transitorios se limpian.
 - Con Keep picker open on, `Enter` y `Shift+Enter` preservan picker visible/query segun policy.
+- Decision 2026-06-18: el hotkey global del picker abre con foco por defecto para mantener el producto keyboard-first. La ruta no-activate queda solo como fallback diagnostico (`COPICU_PICKER_NO_ACTIVATE=1`) porque mostraba el picker sin que el search recibiera teclado.
+- Oracle de regresion: enfocar app externa -> disparar `Ctrl+Shift+.` -> tipear token sin llamar a `focus` -> screenshot debe mostrar el token en el search. La validacion de 2026-06-18 paso con `.codex-run/computer-use/focus-hotkey-after-type-2.png`.
 
 ## Validaciones De Referencia
 
@@ -118,6 +121,7 @@ Ultimos checks historicos relevantes:
 
 - Dev e instalada pueden coexistir y chocar en hotkeys globales.
 - Inyecciones sinteticas de teclas no siempre disparan hooks globales; validar hotkeys criticos con Computer Use/teclado fisico cuando importe.
+- No validar foco del picker solo con `windows`, `window_info`, target screenshot o una llamada manual a `focus`; esos checks pueden ocultar la regresion donde el picker se ve pero no recibe teclado.
 - WhichKey como ventana secundaria tuvo historicamente problemas de composicion WebView2; no tocarlo salvo objetivo explicito.
 - No usar ausencia de page CDP como unica prueba de que una ventana secundaria no cargo; complementar con logs renderer/IPC.
 - Clicks por coordenadas sobre esquina superior derecha pueden contaminarse por overlays de herramientas; preferir logs y `GetWindowRect`.

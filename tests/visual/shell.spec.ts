@@ -179,6 +179,8 @@ async function mockTauriInvoke(
         hideOnFocusLost: true,
         enterAction: "copy",
         promoteActiveOnCopy: true,
+        pinToggleShortcut: "F8",
+        settingsShortcut: "Ctrl+,",
       },
       history: {
         retentionCount: 1000,
@@ -194,6 +196,7 @@ async function mockTauriInvoke(
         enabled: false,
         endpoint: "https://openrouter.ai/api/v1",
         model: "openai/gpt-4.1-mini",
+        apiKey: "",
       },
     };
     window.__TAURI_INTERNALS__ = {
@@ -1619,6 +1622,20 @@ test("dark color scheme uses dark surfaces", async ({ page }) => {
   expect(colors.panel).not.toBe("rgb(251, 251, 250)");
 });
 
+test("picker local settings shortcut opens settings", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").focus();
+  await page.keyboard.press("Control+Comma");
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "open_settings_window",
+    ),
+  );
+});
+
 test("settings panel is searchable and saves theme", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1649,6 +1666,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await page.getByLabel("Search settings").fill("hotkeys");
   await expect(page.getByLabel("App shortcuts")).toContainText("Open picker");
   await expect(page.getByLabel("App shortcuts")).toContainText("Registered");
+  await expect(page.getByLabel("App shortcuts")).toContainText("Open settings");
   await expect(page.getByLabel("App shortcuts")).toContainText("Toggle pin on top");
   await page.getByRole("button", { name: "Edit shortcut" }).first().click();
   await expect(page.getByText("Manual source edit")).toBeVisible();
@@ -1689,7 +1707,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await page.getByLabel("Search settings").fill("ai");
   await expect(page.getByLabel("AI endpoint")).toBeVisible();
   await expect(page.getByLabel("AI model")).toBeVisible();
-  await expect(page.getByText("COPICU_AI_API_KEY", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("AI API key")).toBeVisible();
 });
 
 test("ui-host input prompt fits compact window", async ({ page }) => {

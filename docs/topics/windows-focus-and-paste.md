@@ -81,10 +81,11 @@ Abrir picker con shortcut global, seleccionar item, volver a la ventana previa y
 - `src-tauri/src/window_focus.rs`: `PreviousWindow` guarda la ultima ventana foreground no propia.
 - `show_picker` desde comando usa el tracker; shortcut/tray tambien intentan recordar foreground al mostrar.
 - `activate_item` soporta `{ copy, markUsed, hidePicker, focusPrevious, paste, pasteShortcut }`.
-- `PasteShortcut::Default` resuelve por proceso: browsers conocidos (`chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `vivaldi.exe`, `opera.exe`, `opera_gx.exe`) usan `Ctrl+V`; el resto usa `Shift+Insert`.
+- `PasteShortcut::Default` resuelve por proceso: browsers conocidos (`chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `vivaldi.exe`, `opera.exe`, `opera_gx.exe`) y Tabby (`tabby.exe`) usan `Ctrl+V`; el resto usa `Shift+Insert`.
 - `PasteShortcut::ShiftInsert` y `PasteShortcut::CtrlV` siguen disponibles como overrides explicitos.
 - `Shift+Enter` en el picker ejecuta copy + hide + focus previous + paste. `Enter` mantiene copy + hide.
 - Delay post-focus antes de enviar paste: 700 ms en MVP 0, elegido de forma conservadora tras pruebas manuales. Convertir a setting/regla por app cuando se trabaje polish de paste.
+- `Shift+Insert` sintetico marca `Insert` como extended key para parecerse mas al teclado fisico en apps terminal/Electron.
 
 ## Validacion 2026-06-05
 

@@ -31,8 +31,9 @@ Get-Process AutoHotkey64 -ErrorAction SilentlyContinue | Stop-Process -Force -Er
 7. `screenshot` con `Copicu ahk_class Tauri Window`.
    - Esperado: PNG legible de picker/WebView.
 8. `send` + `type`.
-   - Secuencia recomendada: focus, `^a{Backspace}`, type `json-fixture`.
+   - Secuencia recomendada para input ya enfocado: focus, `^a{Backspace}`, type `json-fixture`.
    - Esperado: search input contiene `json-fixture`, lista muestra `1 / 6 matches`.
+   - Anti-regresion foco hotkey: para probar que el hotkey deja el picker keyboard-ready, usar `PICKER_COMPUTER_USE_FOCUS_BATTERY.md` C0 y no llamar `focus` antes de `type`.
 9. `click` sobre menu `...` de item.
    - Esperado: menu de acciones visible (`Activate`, `Paste`, `Open URL`, `Edit`, etc. segun item).
 10. `send` navegacion.

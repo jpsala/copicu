@@ -210,8 +210,8 @@ mod platform {
         },
         UI::{
             Input::KeyboardAndMouse::{
-                SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-                VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_SHIFT,
+                SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+                KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_SHIFT,
             },
             WindowsAndMessaging::{
                 BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsWindow,
@@ -459,15 +459,19 @@ mod platform {
                 | "vivaldi.exe"
                 | "opera.exe"
                 | "opera_gx.exe"
+                | "tabby.exe"
         )
     }
 
     fn key_input(key: VIRTUAL_KEY, key_up: bool) -> INPUT {
-        let flags = if key_up {
+        let mut flags = if key_up {
             KEYEVENTF_KEYUP
         } else {
             Default::default()
         };
+        if key == VK_INSERT {
+            flags |= KEYEVENTF_EXTENDEDKEY;
+        }
 
         INPUT {
             r#type: INPUT_KEYBOARD,
@@ -493,6 +497,11 @@ mod platform {
             assert!(default_uses_ctrl_v_for_process("msedge.exe"));
             assert!(default_uses_ctrl_v_for_process("firefox.exe"));
             assert!(default_uses_ctrl_v_for_process("vivaldi.exe"));
+        }
+
+        #[test]
+        fn default_uses_ctrl_v_for_tabby() {
+            assert!(default_uses_ctrl_v_for_process("tabby.exe"));
         }
 
         #[test]

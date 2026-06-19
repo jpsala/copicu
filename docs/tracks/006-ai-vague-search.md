@@ -15,7 +15,7 @@ Lo vamos a implementar, pero por fases.
 
 AI debe ser una capa sobre metadata/actions, no magia pegada encima del picker. La AI traduce intencion a planes estructurados y el host ejecuta esos planes con APIs normales.
 
-Provider externo actual: endpoint OpenAI-compatible configurable. El contrato de credenciales es `.env`/entorno con claves fijas: `COPICU_AI_API_KEY` para el secreto y, opcionalmente, `COPICU_AI_ENDPOINT`/`COPICU_AI_MODEL` para elegir provider/modelo. Settings ya no pide ni guarda nombres de variables de entorno. No guardar el valor de la key en docs, logs, tests, DB ni settings exportados.
+Provider externo actual: endpoint OpenAI-compatible configurable. El contrato de credenciales acepta Settings local (`ai.apiKey`) o `.env`/entorno con claves fijas: `COPICU_AI_API_KEY` para el secreto y, opcionalmente, `COPICU_AI_ENDPOINT`/`COPICU_AI_MODEL` para elegir provider/modelo. Settings ya no pide ni guarda nombres de variables de entorno, pero sí permite guardar la key localmente para usuarios no técnicos. No guardar el valor de la key en docs/logs/tests y tratar DB/settings como almacenamiento local sensible.
 
 Decision 2026-06-06:
 
@@ -43,7 +43,7 @@ Primer planner AI implementado 2026-06-06:
 
 - dependencia agregada: `@ai-sdk/openai-compatible`;
 - runner: `scripts/ai-query-planner.mjs` con Vercel AI SDK v6 (`generateText` + `Output.object`) y Zod;
-- host: `src-tauri/src/ai_planner.rs`, que lee la API key desde env real o `.env` local del project root por clave fija `COPICU_AI_API_KEY`, con overrides opcionales de endpoint/model;
+- host: `src-tauri/src/ai_planner.rs`, que lee la API key desde env real o `.env` local del project root por clave fija `COPICU_AI_API_KEY`, luego `ai.apiKey` de Settings, y como fallback final compat legacy `GROQ_API_KEY`/`OPENROUTER_API_KEY`/`OPENAI_API_KEY`; endpoint/model siguen teniendo overrides opcionales;
 - comando Tauri `history_search` intercepta `mode: "ai"` y ejecuta el plan sobre `storage.history_search`;
 - UI manual: prefijo `ai:` en el search input, por ejemplo `ai: textos largos de ayer con notas`.
 

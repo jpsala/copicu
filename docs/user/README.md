@@ -93,7 +93,7 @@ For the detailed scripting guide, read [scripts.md](scripts.md).
 
 ## AI Provider Configuration
 
-AI is disabled by default. When enabled, Copicu uses an OpenAI-compatible endpoint and reads credentials from environment variables or the project `.env` file.
+AI is disabled by default. When enabled, Copicu uses an OpenAI-compatible endpoint. You can enter the API key in Settings, or provide credentials from environment variables / the project `.env` file.
 
 Use `.env.example` as the template:
 
@@ -103,7 +103,7 @@ COPICU_AI_MODEL=openai/gpt-4.1-mini
 COPICU_AI_API_KEY=your_key_here
 ```
 
-OpenRouter, OpenAI and Groq examples are included in that file. `COPICU_AI_API_KEY` is the fixed secret key name. `COPICU_AI_ENDPOINT` and `COPICU_AI_MODEL` override Settings when present; otherwise Settings provides endpoint/model. Do not commit `.env`.
+OpenRouter, OpenAI and Groq examples are included in that file. `COPICU_AI_API_KEY` is the fixed secret key name and overrides the key saved in Settings when present. `COPICU_AI_ENDPOINT` and `COPICU_AI_MODEL` override Settings when present; otherwise Settings provides endpoint/model. Do not commit `.env`.
 
 ## Scripts Folder
 

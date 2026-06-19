@@ -278,6 +278,7 @@ type AppSettings = {
     enterAction: EnterAction;
     promoteActiveOnCopy: boolean;
     pinToggleShortcut: string;
+    settingsShortcut: string;
   };
   history: {
     retentionCount: number;
@@ -295,6 +296,7 @@ type AppSettings = {
     enabled: boolean;
     endpoint: string;
     model: string;
+    apiKey: string;
   };
 };
 
@@ -404,6 +406,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enterAction: "copy",
     promoteActiveOnCopy: true,
     pinToggleShortcut: "F8",
+    settingsShortcut: "Ctrl+,",
   },
   history: {
     retentionCount: 0,
@@ -431,6 +434,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: false,
     endpoint: "https://openrouter.ai/api/v1",
     model: "openai/gpt-4.1-mini",
+    apiKey: "",
   },
 };
 
@@ -1884,11 +1888,14 @@ function SettingsPanel({
   const hotkeySearchText = [
     draft.general.globalShortcut,
     draft.picker.pinToggleShortcut,
+    draft.picker.settingsShortcut,
     "F8",
     "pin",
     "stay open",
     "keep picker open",
     "hide on focus lost",
+    "open settings",
+    "settings shortcut",
     "Ctrl+K",
     "Ctrl+I",
     "Enter",
@@ -2093,8 +2100,8 @@ function SettingsPanel({
                 {visible("hotkeys", "Shortcut summary", "Global local script editable inventory") ? (
                   <SettingRow label="Shortcut summary" description="Current hotkey surface across the app and discovered scripts.">
                     <div className="action-summary" aria-label="Hotkey summary">
-                      <UiBadge className="settings-summary-badge" variant="light">2 editable app shortcuts</UiBadge>
-                      <UiBadge className="settings-summary-badge" variant="light">5 picker shortcuts</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">3 editable app shortcuts</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">6 picker shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">
                         {scriptActions.filter((action) => Boolean(normalizeShortcutString(action.shortcut ?? ""))).length} script shortcuts
                       </UiBadge>
@@ -2110,6 +2117,7 @@ function SettingsPanel({
                     <AppShortcutInventory
                       pickerShortcut={draft.general.globalShortcut}
                       pinShortcut={draft.picker.pinToggleShortcut}
+                      settingsShortcut={draft.picker.settingsShortcut}
                       shortcutStatus={shortcutStatus}
                       onPickerShortcutChange={(globalShortcut) =>
                         onDraftChange({
@@ -2126,6 +2134,15 @@ function SettingsPanel({
                           picker: {
                             ...draft.picker,
                             pinToggleShortcut,
+                          },
+                        })
+                      }
+                      onSettingsShortcutChange={(settingsShortcut) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            settingsShortcut,
                           },
                         })
                       }
@@ -2532,12 +2549,27 @@ function SettingsPanel({
                     />
                   </SettingRow>
                 ) : null}
-                {visible("ai", "Credentials", "COPICU_AI_API_KEY .env OpenRouter OpenAI") ? (
+                {visible("ai", "API key", "Credentials COPICU_AI_API_KEY settings .env OpenRouter OpenAI") ? (
                   <SettingRow
-                    label="Credentials"
-                    description="Put secrets in .env or the process environment. Copicu reads COPICU_AI_API_KEY, with COPICU_AI_ENDPOINT and COPICU_AI_MODEL as optional overrides."
+                    label="API key"
+                    description="Stored locally in Copicu settings. COPICU_AI_API_KEY from the process environment or .env still overrides this field when present."
                   >
-                    <ReadOnlyStatus value="COPICU_AI_API_KEY" />
+                    <UiTextInput
+                      aria-label="AI API key"
+                      type="password"
+                      value={draft.ai.apiKey}
+                      placeholder="sk-..."
+                      autoComplete="off"
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          ai: {
+                            ...draft.ai,
+                            apiKey: event.currentTarget.value,
+                          },
+                        })
+                      }
+                    />
                   </SettingRow>
                 ) : null}
                 {visible("ai", "Endpoint", "OpenAI-compatible API endpoint base URL") ? (
@@ -2619,9 +2651,10 @@ type HotkeyFieldProps = {
   value: string;
   onChange: (value: string) => void;
   allowSequences?: boolean;
+  helpText?: string;
 };
 
-function HotkeyField({ label, value, onChange, allowSequences = true }: HotkeyFieldProps) {
+function HotkeyField({ label, value, onChange, allowSequences = true, helpText }: HotkeyFieldProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [draftSteps, setDraftSteps] = useState<string[]>([]);
   const [manualValue, setManualValue] = useState(value);
@@ -2840,9 +2873,9 @@ function HotkeyField({ label, value, onChange, allowSequences = true }: HotkeyFi
       <div className={hasError ? "hotkey-field-status has-error" : "hotkey-field-status"}>
         {hasError
           ? validation.error
-          : allowSequences
+          : helpText ?? (allowSequences
             ? "Supports sequences like Ctrl+Alt+C, J."
-            : "Single global shortcut. Script actions can use sequences."}
+            : "Single global shortcut. Script actions can use sequences.")}
       </div>
     </div>
   );
@@ -2896,15 +2929,19 @@ function ReadOnlyStatus({
 function AppShortcutInventory({
   pickerShortcut,
   pinShortcut,
+  settingsShortcut,
   shortcutStatus,
   onPickerShortcutChange,
   onPinShortcutChange,
+  onSettingsShortcutChange,
 }: {
   pickerShortcut: string;
   pinShortcut: string;
+  settingsShortcut: string;
   shortcutStatus: AppShortcutStatus | null;
   onPickerShortcutChange: (value: string) => void;
   onPinShortcutChange: (value: string) => void;
+  onSettingsShortcutChange: (value: string) => void;
 }) {
   return (
     <div className="hotkey-inventory-list" aria-label="App shortcuts">
@@ -2924,6 +2961,26 @@ function AppShortcutInventory({
           value={pickerShortcut}
           allowSequences={false}
           onChange={onPickerShortcutChange}
+        />
+      </section>
+
+      <section className="hotkey-inventory-item">
+        <div className="hotkey-inventory-copy">
+          <div className="hotkey-inventory-header">
+            <strong>Open settings</strong>
+            <div className="hotkey-meta">
+              <ReadOnlyStatus value="Picker local" tone="success" />
+              <ReadOnlyStatus value="Editable" />
+            </div>
+          </div>
+          <p>Opens Settings from inside the picker only. This shortcut is not registered globally.</p>
+        </div>
+        <HotkeyField
+          label="Open settings shortcut"
+          value={settingsShortcut}
+          allowSequences={false}
+          helpText="Single picker-local shortcut. Not registered globally."
+          onChange={onSettingsShortcutChange}
         />
       </section>
 

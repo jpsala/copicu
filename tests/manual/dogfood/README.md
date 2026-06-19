@@ -7,7 +7,7 @@ Bateria guardada para correr periodicamente con Computer Use/AHK sobre la app re
 La bateria especifica del tool `copicu_computer_use` esta en:
 
 - `tests/manual/dogfood/COMPUTER_USE_BATTERY.md` - bateria general del tool.
-- `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md` - bateria especifica del picker, separada en mouse/hotkeys y centrada en foco + pin/candadito.
+- `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md` - bateria especifica del picker, separada en mouse/hotkeys y centrada en foco + pin/candadito. Incluye C0, oracle obligatorio de keyboard-ready: app externa -> hotkey -> type sin `focus` manual debe escribir en search.
 - `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md` - corrida real tipo usuario: seleccionar/copiar texto externo, abrir picker, filtrar, activar, pegar de vuelta y estresar foco/pin.
 
 Estas baterias no son comandos npm: se ejecutan desde el agente llamando acciones reales del tool (`self_test`, `open_picker`, `windows`, `focus`, `window_info`, `read`, `send`, `type`, `click`, `screenshot`, `uia_find`).
@@ -72,6 +72,7 @@ El primer caso que dejamos automatizado es el smoke de picker real:
 - global shortcut registrado;
 - picker visible/focalizable;
 - search input recibe texto;
+- hotkey del picker deja el search keyboard-ready sin click ni `focus` manual;
 - la lista filtra sobre fixtures sembrados;
 - Enter copia el item filtrado y se valida `A_Clipboard`;
 - teclado navega y permite marcas/multiseleccion;
@@ -94,6 +95,7 @@ La suite debe crecer por capas. Cada capa nueva debe dejar evidencia textual + s
 
 ### B. Picker keyboard-first
 
+- [x] Hotkey global abre con foco y permite escribir inmediatamente en search.
 - [x] Buscar texto sembrado.
 - [x] Navegar con flechas.
 - [x] Multi-select con `Space`.

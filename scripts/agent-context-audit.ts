@@ -50,6 +50,22 @@ function frontmatterValue(frontmatterText: string, key: string) {
   return match?.[1]?.trim();
 }
 
+function hasUnsafePlainYamlColon(value: string | undefined) {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (/^["'].*["']$/.test(trimmed)) return false;
+  return /:\s/.test(trimmed);
+}
+
+function warnIfFrontmatterYamlLooksUnsafe(path: string, fm: string) {
+  for (const key of ["description"]) {
+    const value = frontmatterValue(fm, key);
+    if (hasUnsafePlainYamlColon(value)) {
+      add("error", `${path} frontmatter ${key} contains an unquoted colon; quote the value so YAML parsers do not treat it as a nested mapping`);
+    }
+  }
+}
+
 function modifiedMs(path: string) {
   return statSync(join(root, path)).mtimeMs;
 }
@@ -89,6 +105,10 @@ function listDirs(path: string) {
     .filter((entry) => entry.isDirectory())
     .map((entry) => `${path}/${entry.name}`.replaceAll("\\", "/"))
     .sort();
+}
+
+function backtickedSkillRefs(content: string) {
+  return [...content.matchAll(/`([^`*\/]+)\/`/g)].map((match) => match[1]).sort();
 }
 
 function walkMarkdownFiles(dir: string): string[] {
@@ -231,6 +251,15 @@ if (exists("docs/skills")) {
     add("warn", "docs/skills/ exists but has no skill directories");
   }
 
+  if (exists("docs/skills/README.md")) {
+    const skillNames = new Set(skillDirs.map((dir) => dir.split("/").at(-1) ?? dir));
+    for (const skillName of backtickedSkillRefs(read("docs/skills/README.md"))) {
+      if (!skillNames.has(skillName)) {
+        add("warn", `docs/skills/README.md references missing skill docs/skills/${skillName}/`);
+      }
+    }
+  }
+
   for (const skillDir of skillDirs) {
     const skillFile = `${skillDir}/SKILL.md`;
     if (!exists(skillFile)) {
@@ -248,6 +277,15 @@ if (exists("docs/skills")) {
     for (const key of ["name", "description"]) {
       if (!hasFrontmatterKey(fm, key)) add("warn", `${skillFile} frontmatter missing ${key}`);
     }
+    warnIfFrontmatterYamlLooksUnsafe(skillFile, fm);
+  }
+}
+
+if (exists(".pi/prompts")) {
+  for (const file of walkMarkdownFiles(join(root, ".pi", "prompts"))) {
+    const promptPath = relative(root, file).replaceAll("\\", "/");
+    const fm = frontmatter(read(promptPath));
+    if (fm) warnIfFrontmatterYamlLooksUnsafe(promptPath, fm);
   }
 }
 

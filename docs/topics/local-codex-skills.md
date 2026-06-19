@@ -118,6 +118,7 @@ Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
 | `realinear os` | `docs/skills/realinear-os/` | `docs/topics/agentic-os-operations.md` | Auditar/reparar la capa agentica sin tocar producto salvo pedido explicito. |
 | `evaluar skills` / `pasar a skills` | `docs/skills/evaluar-skills/` | Este topic | Auditar candidatos para promoverlos a skills hibridas. |
 | `hacer commits` / `push` / `publicar cambios` / `repo commit push` | `docs/skills/repo-commit-push/` | `docs/skills/repo-commit-push/SKILL.md` | Revisar inclusion, validar, commitear y pushear el batch del repo. |
+| `/release-windows [tag|patch|minor|major|rc] [notas]` en Pi | prompt template `.pi/prompts/release-windows.md` | `docs/topics/windows-installer.md`, `docs/topics/open-source-github.md`, `scripts/dev/release-windows.ps1` | Release Windows completo; sin tag calcula proximo release automaticamente y confirma antes de efectos externos. |
 
 Regla de precedencia: si una skill y su topic divergen, corregir la skill para que vuelva a apuntar al topic; no duplicar procedimiento largo dentro de `SKILL.md`.
 

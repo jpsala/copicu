@@ -1366,6 +1366,8 @@ fn update_settings(
         normalize_picker_global_shortcut(&settings.general.global_shortcut)?;
     settings.picker.pin_toggle_shortcut =
         normalize_optional_single_shortcut(&settings.picker.pin_toggle_shortcut, "pin toggle")?;
+    settings.picker.settings_shortcut =
+        normalize_optional_single_shortcut(&settings.picker.settings_shortcut, "settings")?;
     apply_autostart_setting(&app, settings.general.launch_on_startup)?;
     let next_settings = storage.update_settings(settings)?;
     apply_picker_keep_open_window_policy(&app, &next_settings);
@@ -2882,7 +2884,11 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         .unwrap_or_else(picker_shortcut);
     if *shortcut == picker_shortcut {
         eprintln!("global shortcut pressed: {shortcut:?}");
-        spawn_toggle_main_window_without_focus(app.clone());
+        if std::env::var_os("COPICU_PICKER_NO_ACTIVATE").is_some() {
+            spawn_toggle_main_window_without_focus(app.clone());
+        } else {
+            spawn_toggle_main_window(app.clone());
+        }
         return;
     }
 
@@ -4136,7 +4142,7 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
 ) {
     match route {
         hotkeys::ShortcutRoute::PickerOpen => {
-            spawn_toggle_main_window_without_focus(app);
+            spawn_toggle_main_window(app);
         }
         hotkeys::ShortcutRoute::ScriptRun { action_id } => {
             thread::spawn(move || {

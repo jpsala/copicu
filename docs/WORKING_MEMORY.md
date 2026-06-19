@@ -19,8 +19,8 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md` | Dogfood prewarm `metadata`; built-dev sigue ruta estable. |
 | Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` local `ahead 5`; reintentar `git push` cuando GitHub auth funcione en Pi. |
 | Dev/instalada | active | `docs/topics/windows-installer.md` | `install:current` revalidado; instalada/dev separados. |
-| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `docs/topics/picker-interaction.md` | Formalizar oracles del flow usuario real: foco foreground, pin/candadito y clipboard interactivo. |
-| OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Track 012 y Working Memory compactadas; quedan warnings de TOPICS/topics grandes. |
+| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
+| OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
 
 ## Specs Activas
 
@@ -44,10 +44,11 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - `metadata` standalone queda `CachedHidden` + prewarm salvo coste extremo.
 - UI relevante: abrir `docs/topics/ui-design-and-impeccable.md`.
 - Skills canonicas: `docs/skills/`; `.agents/skills` es compatibilidad.
+- Copicu es downstream de AOS: no copiar registry global, decisiones/tracks/memoria del kit ni inventarios; reescribir mejoras como contexto local.
 - Comandos operativos: skill/prompt corto + logica durable en topic/script/doc.
 - Ruta inicial liviana; no convertir hot context en transcript.
 - Pi compaction no es memoria durable; valor durable va a docs versionados.
-- Test Copicu en Pi: usar `copicu_computer_use`; UIA sirve poco dentro del WebView; validar foco real con screenshot de pantalla completa ademas de target screenshot.
+- Test Copicu en Pi: usar `copicu_computer_use`; UIA sirve poco dentro del WebView; validar foco real con screenshot de pantalla completa ademas de target screenshot. Para hotkey del picker, validar tambien keyboard-ready: tipear token sin llamada manual a `focus`.
 - `pi-rtk-optimizer`: recomendado `mode: "rewrite"`; mantener `readCompaction.enabled=false` y `sourceCodeFilteringEnabled=false`.
 
 ## Riesgos / Pendientes Tecnicos
@@ -58,8 +59,9 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
-- Picker stress: flow usuario real paso captura watcher -> abrir picker -> filtrar -> Enter/copy -> pegar de vuelta; riesgos pendientes en foreground real, pin/candadito y wrapper `copicu_computer_use` con errores temporales.
-- Track 012 compactada; historial en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`; auditoria bajo de 6 a 4 warnings tras compactar Working Memory.
+- Picker stress: validar foreground real, pin/candadito y wrapper `copicu_computer_use`.
+- Hotkey picker foco 2026-06-18: `Ctrl+Shift+.` abre con foco; fallback `COPICU_PICKER_NO_ACTIVATE=1`; oracle: tipear sin `focus` manual entra en search.
+- Track 012 compactada; historial en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`.
 
 ## Comandos De Contexto
 

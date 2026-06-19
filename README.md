@@ -16,12 +16,12 @@ Copicu currently ships as a Windows release.
 
 Current release:
 
-- [v0.2.1](https://github.com/jpsala/copicu/releases/tag/v0.2.1)
-- Asset: `Copicu_0.2.1_x64-setup.exe`
+- [v0.2.2](https://github.com/jpsala/copicu/releases/tag/v0.2.2)
+- Asset: `Copicu_0.2.2_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`
+- SHA256: `9284D42174582B9F8A28403036EAE58175C95CEFC82927F931FB2F499A94F2E1`
 
-`v0.2.1` includes the Windows installer fixes for `WebView2Loader.dll`, launches as a normal GUI application without opening a console window, and adds the latest picker/session, shortcut, enrichment, and synthetic demo updates.
+Windows installer for v0.2.2.
 
 Copicu is used daily as a local clipboard manager. The core picker, history capture, search, editing, tags, shortcuts, and paste workflow are in active use.
 
@@ -253,7 +253,7 @@ AI in Copicu is meant to use explicit host capabilities. It should not get raw a
 
 AI is disabled by default.
 
-When enabled, Copicu uses an OpenAI-compatible endpoint. Secrets are read from environment variables or a local `.env` file, using fixed names:
+When enabled, Copicu uses an OpenAI-compatible endpoint. You can enter the API key in Settings, or provide it through environment variables / a local `.env` file using fixed names:
 
 ```text
 COPICU_AI_ENDPOINT=https://openrouter.ai/api/v1
@@ -263,7 +263,7 @@ COPICU_AI_API_KEY=your_key_here
 
 Use [.env.example](.env.example) as the template. It includes example blocks for OpenRouter, OpenAI, and Groq.
 
-`COPICU_AI_API_KEY` is the fixed secret key name. `COPICU_AI_ENDPOINT` and `COPICU_AI_MODEL` can override Settings when present. Do not commit `.env`.
+`COPICU_AI_API_KEY` is the fixed secret key name and overrides the key saved in Settings when present. `COPICU_AI_ENDPOINT` and `COPICU_AI_MODEL` can override Settings when present. Do not commit `.env`.
 
 ## Privacy Model
 
@@ -332,6 +332,13 @@ Build the desktop app:
 
 ```powershell
 npm run tauri:build
+```
+
+Local Windows release helper:
+
+```powershell
+npm run release:windows
+# Optional: npm run release:windows -- -Bump minor -Notes "Windows installer refresh."
 ```
 
 ## Working With Coding Agents

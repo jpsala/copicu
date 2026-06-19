@@ -438,6 +438,7 @@ type AppSettings = {
     enterAction: EnterAction;
     promoteActiveOnCopy: boolean;
     pinToggleShortcut: string;
+    settingsShortcut: string;
   };
   history: {
     retentionCount: number;
@@ -454,6 +455,7 @@ type AppSettings = {
     enabled: boolean;
     endpoint: string;
     model: string;
+    apiKey: string;
   };
 };
 
@@ -620,6 +622,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enterAction: "copy",
     promoteActiveOnCopy: true,
     pinToggleShortcut: "F8",
+    settingsShortcut: "Ctrl+,",
   },
   history: {
     retentionCount: 0,
@@ -646,6 +649,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     enabled: false,
     endpoint: "https://openrouter.ai/api/v1",
     model: "openai/gpt-4.1-mini",
+    apiKey: "",
   },
 };
 
@@ -1622,6 +1626,9 @@ function App() {
       setNewClipsAvailable(false);
       setHistoryError(null);
       setSelectedIds((current) => {
+        if (resetScroll) {
+          return current.size === 0 ? current : new Set();
+        }
         const availableIds = new Set(page.items.map((item) => item.id));
         const nextSelectedIds = new Set(
           Array.from(current).filter((itemId) => availableIds.has(itemId)),
@@ -1633,7 +1640,7 @@ function App() {
           selectionAnchorItemIdRef.current = null;
           return null;
         }
-        if (currentItemId !== null && page.items.some((item) => item.id === currentItemId)) {
+        if (!resetScroll && currentItemId !== null && page.items.some((item) => item.id === currentItemId)) {
           return currentItemId;
         }
         const nextItemId = page.items[0].id;
@@ -2691,6 +2698,12 @@ function App() {
         window.setTimeout(() => searchRef.current?.focus(), 0);
         return;
       }
+      const settingsShortcut = normalizeShortcutString(settings.picker.settingsShortcut);
+      if (settingsShortcut && shortcutFromKeyboardEvent(event) === settingsShortcut) {
+        event.preventDefault();
+        void openSettingsWindow();
+        return;
+      }
       if (runLocalShortcutAction(event)) {
         return;
       }
@@ -2738,19 +2751,11 @@ function App() {
           setActionError(null);
           if (openMarkMenu !== null) {
             setOpenMarkMenu(null);
-          } else if (openItemMenu !== null) {
-            setOpenItemMenu(null);
-          } else if (selectedIds.size > 1) {
-            setSelectedIds(selectedItem ? new Set([selectedItem.id]) : new Set());
-            selectionAnchorItemIdRef.current = selectedItem?.id ?? null;
-          } else if (query.length > 0) {
-            setQuery("");
-            setSelectedItemId(null);
-            setSelectedIds(new Set());
-            selectionAnchorItemIdRef.current = null;
-          } else {
-            hidePickerWindow();
           }
+          if (openItemMenu !== null) {
+            setOpenItemMenu(null);
+          }
+          hidePickerWindow();
           break;
         case "F2":
           event.preventDefault();

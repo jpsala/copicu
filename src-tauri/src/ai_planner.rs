@@ -616,14 +616,51 @@ fn resolve_ai_runtime_settings(
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| settings.model.trim().to_string());
-    let api_key = read_env_var_or_project_dotenv(COPICU_AI_API_KEY_ENV, project_root)
-        .or_else(|_| read_legacy_ai_key(project_root))?;
+    let api_key = read_configured_ai_key(settings, project_root)?;
 
     Ok(AiRuntimeSettings {
         endpoint,
         model,
         api_key,
     })
+}
+
+fn read_configured_ai_key(
+    settings: &crate::storage::AiSettings,
+    project_root: &std::path::Path,
+) -> Result<String, String> {
+    api_key_from_sources(
+        read_env_var_or_project_dotenv(COPICU_AI_API_KEY_ENV, project_root).ok(),
+        read_legacy_ai_key(project_root).ok(),
+        &settings.api_key,
+    )
+}
+
+fn api_key_from_sources(
+    copicu_env_key: Option<String>,
+    legacy_env_key: Option<String>,
+    stored_api_key: &str,
+) -> Result<String, String> {
+    if let Some(api_key) = copicu_env_key {
+        let api_key = api_key.trim();
+        if !api_key.is_empty() {
+            return Ok(api_key.to_string());
+        }
+    }
+
+    let stored_api_key = stored_api_key.trim();
+    if !stored_api_key.is_empty() {
+        return Ok(stored_api_key.to_string());
+    }
+
+    if let Some(api_key) = legacy_env_key {
+        let api_key = api_key.trim();
+        if !api_key.is_empty() {
+            return Ok(api_key.to_string());
+        }
+    }
+
+    Err(format!("AI API key is not set: {COPICU_AI_API_KEY_ENV}"))
 }
 
 fn read_legacy_ai_key(project_root: &std::path::Path) -> Result<String, String> {
@@ -753,6 +790,28 @@ COPICU_AI_API_KEY=synthetic-active
             Some("synthetic-active")
         );
         assert_eq!(read_dotenv_value(dotenv, "LEGACY_OPENAI_KEY"), None);
+    }
+
+    #[test]
+    fn configured_ai_key_prefers_copicu_env_then_stored_then_legacy_key() {
+        assert_eq!(
+            api_key_from_sources(
+                Some(" synthetic-copicu-key ".to_string()),
+                Some("synthetic-legacy-key".to_string()),
+                "synthetic-stored-key",
+            )
+            .as_deref(),
+            Ok("synthetic-copicu-key")
+        );
+        assert_eq!(
+            api_key_from_sources(None, Some(" synthetic-legacy-key ".to_string()), "stored")
+                .as_deref(),
+            Ok("stored")
+        );
+        assert_eq!(
+            api_key_from_sources(None, Some(" synthetic-legacy-key ".to_string()), " ").as_deref(),
+            Ok("synthetic-legacy-key")
+        );
     }
 
     #[test]

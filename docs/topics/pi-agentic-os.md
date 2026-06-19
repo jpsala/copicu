@@ -31,7 +31,7 @@ primary_refs:
 
 # Pi Agentic OS
 
-Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla de fondo no cambia: la memoria durable vive en docs versionados; Pi aporta automatizacion, nudges, sesiones, labels y compaction.
+Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla de fondo no cambia: la memoria durable vive en docs versionados; Pi aporta automatizacion, nudges, sesiones, labels y compaction. Copicu es downstream AOS: el adapter Pi se mantiene local y no importa gobierno manager-only de `C:\dev\os`.
 
 ## Comandos Pi Locales
 
@@ -45,10 +45,11 @@ Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla
 | `/seguir [objetivo]` | extension command | Alias corto de `/os-continuar` para crear una nueva sesion con continuidad OS. |
 | `/os-sync` | extension command | Sincronizar el OS despues de cambios en docs, topics, tracks, skills, prompts o extensiones: asegura junction de skills, regenera context index y corre audit. |
 | `/gol [objetivo]` | extension command | Preparar un `/until-done` acotado para ejecutar una tarea Copicu completa con constraints del OS. Requiere revisar y enviar el comando prellenado. |
+| `/release-windows [tag|patch|minor|major|rc] [notas]` | prompt template | Ejecutar el release Windows completo usando `npm run release:windows`. Si no se pasa tag, el script calcula el proximo release mirando version actual, tags y GitHub releases. Confirma antes de commit, push y GitHub release/subida de assets. |
 | `/until-done <objetivo>` | package command | Loop instalado via `pi-until-done` para objetivos con contrato, presupuesto, pausa/resume y verificacion. Usar para tareas acotadas que deban completarse o bloquearse con evidencia. |
 | `/reload` | built-in Pi | Recargar extensiones, prompts y skills despues de instalar paquetes o editar `.pi/`. |
 
-Prompts equivalentes: `/cerrar`, `/continuar`, `/siguiente`, `/sigamos`, `/realinear` y `/research`.
+Prompts equivalentes: `/cerrar`, `/continuar`, `/siguiente`, `/sigamos`, `/realinear`, `/research` y `/release-windows`.
 
 ## Extensiones
 

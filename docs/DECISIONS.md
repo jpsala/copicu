@@ -2,6 +2,18 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-06-18 - El hotkey del picker debe abrir con foco
+
+Estado: accepted
+
+Decision: El hotkey global del picker debe mostrar y activar/enfocar la ventana por defecto, de modo que el search reciba teclado inmediatamente. La ruta no-activate queda solo como fallback diagnostico con `COPICU_PICKER_NO_ACTIVATE=1`, no como comportamiento normal.
+
+Motivo: Copicu es keyboard-first. El workaround no-activate de 2026-06-10 evitaba un bug visual de Codex/WebView2, pero introducia una regresion peor: el picker podia aparecer visible sin estar keyboard-ready, dejando la escritura en la app previa.
+
+Oracle: antes de aceptar cambios en hotkey/foco/show/hide del picker, enfocar una app externa, disparar el hotkey, tipear un token sin click ni llamada manual a `focus`, y confirmar que el token aparece en el search de Copicu.
+
+Proximo paso: mantener este oracle en `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md` y no promover rutas no-activate sin una alternativa que conserve input inmediato.
+
 ### 2026-06-12 - Ventanas de producto con surface registry
 
 Estado: accepted
@@ -13,6 +25,16 @@ Motivo: La documentacion oficial Tauri v2 modela ventanas por label y capabiliti
 Proximo paso: crear un surface registry host-owned que declare `label`, `route`, `kind`, `capabilities`, `lifecycle`, `boundsPolicy`, `chromeVariant` y `allowedCommands`, y usarlo como primer corte antes de crear `metadata` o `scripts`.
 
 ## Decisiones Agenticas
+
+### 2026-06-18 - Tratar Copicu como downstream de AOS
+
+Estado: accepted
+
+Decision: Copicu mantiene una instalacion AOS local adaptada al proyecto. `C:\dev\os` es upstream manager y no se copia como metasistema: no viajan registry global, working memory/tracks/decisiones del kit, inventarios personales ni docs que declaren a Copicu como canon. Las mejoras upstream solo entran si se reescriben como reglas, scripts, skills, topics o adapters utiles para Copicu.
+
+Motivo: Copicu necesita beneficiarse de AOS sin contaminar su contexto de producto ni cargar gobierno/historia de otros repos.
+
+Proximo paso: al ejecutar `actualizar aos`, seguir `docs/topics/agentic-os-operations.md` y reportar piezas aplicadas/omitidas.
 
 ### 2026-06-12 - Canonizar skills locales en `docs/skills`
 
@@ -110,9 +132,9 @@ Proximo paso: mantener `docs/ASSISTANT_RULES.md`, `docs/topics/docs-knowledge-sy
 | Tema light/dark inicial por sistema | accepted | Hasta tener settings de temas, respetar `prefers-color-scheme` para evitar fondo claro en sistemas dark. | Ajuste UI 2026-06-05 |
 | Settings core en SQLite con schema typed | accepted | Evita constantes sueltas y un archivo paralelo prematuro; Rust valida defaults/version y el formato JSON queda exportable. Primer slice usa tabla `app_settings` con `AppSettings` schema v1. | `specs/003-settings-foundation/spec.md` + implementacion 2026-06-05 |
 | Query syntax local antes de AI search | accepted | La busqueda poderosa empieza con contrato deterministico ejecutado por el host: texto/frases/negacion, filtros `tag`, `kind`, `mime`, `has` y fechas. AI futura debe traducir lenguaje natural a este contrato/plan validado antes de ejecutar. | Implementacion 2026-06-05 + `docs/topics/filtering-and-query-syntax.md` |
-| AI search primero como query planner sobre API host | accepted | El primer uso de AI debe convertir lenguaje natural en planes estructurados de busqueda/filtro, no ejecutar comandos arbitrarios. Provider OpenAI-compatible configurable via Settings y `.env`; la key usa nombre fijo `COPICU_AI_API_KEY`, con OpenRouter/OpenAI/Groq documentados en `.env.example`. No persistir la key ni payload real en docs/logs/tests. La ejecucion de series de comandos queda para Actions Foundation con capabilities explicitas. | Conversacion 2026-06-05 + `docs/topics/ai-search-and-actions.md` |
+| AI search primero como query planner sobre API host | accepted | El primer uso de AI debe convertir lenguaje natural en planes estructurados de busqueda/filtro, no ejecutar comandos arbitrarios. Provider OpenAI-compatible configurable via Settings y `.env`; la key puede guardarse localmente en Settings o venir por `COPICU_AI_API_KEY`, con OpenRouter/OpenAI/Groq documentados en `.env.example`. No persistir la key en docs/logs/tests; tratar DB/settings como almacenamiento local sensible. La ejecucion de series de comandos queda para Actions Foundation con capabilities explicitas. | Conversacion 2026-06-05 + ajuste Settings 2026-06-18 + `docs/topics/ai-search-and-actions.md` |
 | `history_search` como API reusable de busqueda | accepted | La busqueda del picker, scripts y futuro AI planner deben compartir un contrato host unico. `list_history_page` queda como wrapper compatible; `history_search(HistorySearchRequest)` es la API conceptual nueva con `mode`, `includeContent`, `explain`, `interpretedQuery`, `explanation` y `warnings`. | Implementacion 2026-06-06 + `docs/topics/filtering-and-query-syntax.md` |
-| AI con OpenRouter configurable y Vercel AI SDK + Zod como primer runtime | accepted | OpenRouter queda como provider inicial, pero endpoint, modelo y nombre de env var se configuran en Settings. Se guarda solo el nombre de la variable, no la key. `ai` + `zod` quedan instalados para el primer planner estructurado; se puede cambiar de libreria si el problema crece. | Conversacion/implementacion 2026-06-06 + `docs/topics/ai-search-and-actions.md` |
+| AI con OpenRouter configurable y Vercel AI SDK + Zod como primer runtime | accepted | OpenRouter queda como provider inicial, pero endpoint, modelo y API key se configuran en Settings con overrides `.env`/entorno. `ai` + `zod` quedan instalados para el primer planner estructurado; se puede cambiar de libreria si el problema crece. | Conversacion/implementacion 2026-06-06 + ajuste Settings 2026-06-18 + `docs/topics/ai-search-and-actions.md` |
 | Scripts como archivos editables y Actions TS/JS | accepted | Para scripting local, el source debe vivir en archivos editables desde VS Code/Git, con default `Documents/Copicu/Scripts` configurable en Settings. SQLite guarda settings, indices, diagnostics y run metadata, no el codigo fuente. CopyQ se usa como baseline de contexto, pero Copicu usa IDs estables y contrato typed. | Conversacion 2026-06-05 + `docs/topics/actions-and-scripting-api.md` |
 | Window bounds por monitor | accepted | Las ventanas persistentes no guardan solo coordenadas globales: mantienen bounds por monitor y validan contra `workArea` al restaurar. `main`, `settings` y `ai-output` son resizable/persistentes; superficies fijas opt-out. | `docs/topics/window-state-and-monitor-policy.md` + implementacion 2026-06-09 |
 | No instalar GitHub MCP por ahora | accepted | GitHub MCP puede sumar contexto y superficie de herramientas; conviene reservarlo para investigacion repetida sobre repos/issues. | Conversacion 2026-06-05 |
