@@ -19,7 +19,7 @@ Current release:
 - [v0.2.2](https://github.com/jpsala/copicu/releases/tag/v0.2.2)
 - Asset: `Copicu_0.2.2_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `9284D42174582B9F8A28403036EAE58175C95CEFC82927F931FB2F499A94F2E1`
+- SHA256: `845C2620D3CA190B4D7797BE06C2B12E6826AAE06C591C295DB01ECFB928B232`
 
 Windows installer for v0.2.2.
 
