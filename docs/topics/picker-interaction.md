@@ -170,7 +170,7 @@ Navegacion por teclado:
 - `Escape`: limpiar filtro si hay texto; si no hay filtro, ocultar/cerrar ventana segun setting.
 - `Space`: candidato para expandir/contraer preview cuando haya truncado.
 - `Delete`: dentro del search input solo edita el texto del filtro; no borra items aunque haya seleccion de historial.
-- Borrado por teclado: requiere atajo explicito futuro o foco fuera de un campo editable; por ahora usar menu/context menu para evitar borrado accidental.
+- `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible; es el atajo explicito para no pelear con el input de busqueda.
 - `P`: candidato para pin/unpin.
 
 Activacion:
@@ -183,7 +183,9 @@ Activacion:
 Mouse y acciones contextuales:
 
 - Right click o tres puntitos por item abre acciones.
-- Acciones esperadas: Copy, Paste, Paste as plain text, Pin/unpin, Delete, Open full preview/editor, Show details/formats, Move to tab.
+- El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Shift+Delete` o trash icon.
+- El item seleccionado o los items multi-seleccionados muestran un trash icon en la esquina superior derecha; click borra sin confirmacion.
+- Acciones esperadas restantes: Copy, Paste, Paste as plain text, Pin/unpin, Open full preview/editor, Show details/formats, Move to tab.
 - Click fuera/focus lost debe respetar setting de ventana.
 
 ## Comportamiento De Ventana

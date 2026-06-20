@@ -259,6 +259,14 @@ Decimonoveno corte aplicado:
 - Tradeoff observado en harness aislado: queda una WebView oculta en idle; procesos WebView2 aprox. 10 -> 13 y private MB aprox. 342 -> 405. Por ahora se considera aceptable para dogfood por el salto de latencia.
 - Recomendacion vigente: mantener `CachedHidden` + prewarm default para `metadata`; si dogfood siente el idle demasiado caro, probar prewarm por intencion antes que bundle split. Bundle split y skeleton visible quedan como segunda linea porque la mayor mejora vino de quitar el cold create/navigate.
 
+Vigesimo corte aplicado:
+
+- Decision de interaccion: `Delete` queda reservado para editar el input de busqueda; `Shift+Delete` borra sin confirmacion el item seleccionado o la seleccion multiple.
+- Se quito `Delete` de los menus contextuales de item/seleccion para evitar duplicar la accion destructive en la UI contextual.
+- El item seleccionado o multi-seleccionado muestra un trash icon en la esquina superior derecha; click borra sin confirmacion.
+- La ruta principal de hotkey en `main` ya abre con foco por defecto; el problema observado en dev venia de trabajar sobre una rama vieja donde el hotkey usaba no-activate. En `main`, `COPICU_PICKER_NO_ACTIVATE=1` queda solo como fallback diagnostico.
+- Checks: `npm run build`; dev reiniciado con watcher habilitado durante dogfood.
+
 Auditoria de ventanas existentes:
 
 - `main`: ok como picker solido frameless; pendiente split de capability y guards de comandos.

@@ -19,7 +19,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md` | UI modularizada en commits `af392f5`/`7b10504`; `NotificationsApp` ya separado; proximo split seguro: `UiHostApp`. |
 | Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.3` publicado. |
 | Dev/instalada | active | `docs/topics/windows-installer.md` | `install:current` revalidado; instalada/dev separados. |
-| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
+| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | `Shift+Delete` borra seleccion; trash icon visible en seleccion. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
 | OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
 
 ## Specs Activas
@@ -60,7 +60,8 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
 - Picker stress: validar foreground real, pin/candadito y wrapper `copicu_computer_use`.
-- Hotkey picker foco 2026-06-18: `Ctrl+Shift+.` abre con foco; fallback `COPICU_PICKER_NO_ACTIVATE=1`; oracle: tipear sin `focus` manual entra en search.
+- Hotkey picker foco 2026-06-18: `Ctrl+Shift+.` abre con foco; fallback `COPICU_PICKER_NO_ACTIVATE=1`; oracle: tipear sin `focus` manual entra en search. Incidente 2026-06-20 en rama vieja confirmo que usar no-activate como default muestra el picker sin foco.
+- Borrado picker 2026-06-20: `Delete` edita el search input; `Shift+Delete` borra seleccion sin confirmacion; trash icon aparece solo sobre item(s) seleccionados y el menu contextual no muestra Delete.
 - Track 012 compactada; historial en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md`.
 
 ## Comandos De Contexto

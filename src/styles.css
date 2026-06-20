@@ -1671,10 +1671,10 @@ button {
   object-fit: contain;
 }
 
-.item-menu-button {
+.item-menu-button,
+.item-delete-button {
   position: absolute;
   top: 7px;
-  right: 7px;
   width: 22px;
   height: 28px;
   border: 1px solid var(--line);
@@ -1687,11 +1687,38 @@ button {
   line-height: 1.2;
   opacity: 0.72;
   backdrop-filter: blur(6px);
+  transition:
+    opacity 100ms ease,
+    border-color 100ms ease,
+    background-color 100ms ease,
+    color 100ms ease;
 }
 
-.feed-item:hover + .item-menu-button,
+.item-menu-button {
+  right: 7px;
+}
+
+.item-menu-button.has-delete-action {
+  right: 35px;
+}
+
+.item-delete-button {
+  right: 7px;
+  border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+  color: var(--danger);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.item-delete-button.is-visible {
+  opacity: 0.88;
+  pointer-events: auto;
+}
+
+.history-feed li:hover .item-menu-button,
 .item-menu-button:hover,
-.item-menu-button[aria-expanded="true"] {
+.item-menu-button[aria-expanded="true"],
+.item-delete-button:hover {
   opacity: 1;
 }
 
@@ -1699,6 +1726,12 @@ button {
 .item-menu-button[aria-expanded="true"] {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.item-delete-button:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-raised));
+  color: var(--danger);
 }
 
 .item-menu {

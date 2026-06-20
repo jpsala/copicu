@@ -1725,28 +1725,6 @@ function App() {
     [ensureFullHistoryItem, focusSearch],
   );
 
-  const deleteItem = useCallback(
-    async (item: HistoryItem) => {
-      try {
-        setActionError(null);
-        setOpenItemMenu(null);
-        setOpenMarkMenu(null);
-        await invoke("delete_history_item", { id: item.id });
-        setSelectedIds((current) => {
-          const nextSelectedIds = new Set(current);
-          nextSelectedIds.delete(item.id);
-          return nextSelectedIds;
-        });
-        await refreshHistory();
-        focusSearch();
-      } catch (error) {
-        setActionError(String(error));
-        focusSearch();
-      }
-    },
-    [focusSearch, refreshHistory],
-  );
-
   const deleteItems = useCallback(
     async (items: HistoryItem[]) => {
       if (items.length === 0) {
@@ -1908,16 +1886,13 @@ function App() {
     ({
       items,
       noun,
-      count,
       onClear,
     }: {
       items: HistoryItem[];
       noun: "selected" | "checked";
-      count: number;
       onClear?: () => void;
     }) => {
       const hasItems = items.length > 0;
-      const countLabel = formatCount(count);
       const scriptActions = hasItems
         ? itemMenuScriptActions(actionDefinitions, items, items.length === 1 ? items[0] : selectedItem)
         : [];
@@ -1967,20 +1942,6 @@ function App() {
             <Plus size={14} strokeWidth={2.2} aria-hidden="true" />
             <span>Add metadata to {noun}</span>
           </UiUnstyledButton>
-          <UiUnstyledButton
-            type="button"
-            role="menuitem"
-            className="item-menu-action is-danger"
-            disabled={!hasItems}
-            onClick={() => {
-              if (hasItems) {
-                void deleteItems(items);
-              }
-            }}
-          >
-            <Trash2 size={14} strokeWidth={2.2} aria-hidden="true" />
-            <span>Delete {countLabel} {noun}</span>
-          </UiUnstyledButton>
           {onClear ? (
             <UiUnstyledButton
               type="button"
@@ -1999,7 +1960,6 @@ function App() {
       actionById,
       actionDefinitions,
       beginBatchMetadataEdit,
-      deleteItems,
       runActionDefinition,
       runBuiltinAction,
       selectedItem,
@@ -2442,6 +2402,11 @@ function App() {
         void openSettingsWindow();
         return;
       }
+      if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
+        event.preventDefault();
+        void deleteItems(effectiveSelection);
+        return;
+      }
       if (runLocalShortcutAction(event)) {
         return;
       }
@@ -2629,7 +2594,6 @@ function App() {
                     {renderBatchItemActions({
                       items: checkedActionItems,
                       noun: "checked",
-                      count: checkedActionCount,
                     })}
                   </>
                 ) : null}
@@ -2793,6 +2757,13 @@ function App() {
                   );
                 }
 
+                const itemIsSelected = item.id === selectedItemId;
+                const itemIsMultiSelected = selectedIds.has(item.id);
+                const itemDeleteTargets = itemIsMultiSelected && selectedIds.size > 0
+                  ? effectiveSelection
+                  : [item];
+                const showItemDelete = itemIsSelected || itemIsMultiSelected;
+
                 return (
                   <li
                   key={item.id}
@@ -2820,8 +2791,8 @@ function App() {
                     }}
                   />
                   <button
-                    className={`feed-item${item.id === selectedItemId ? " is-selected" : ""}${
-                      selectedIds.has(item.id) ? " is-multi-selected" : ""
+                    className={`feed-item${itemIsSelected ? " is-selected" : ""}${
+                      itemIsMultiSelected ? " is-multi-selected" : ""
                     }${
                       item.content_kind === "image" ? " is-image" : ""
                     }${
@@ -2888,9 +2859,27 @@ function App() {
                       <pre>{item.text}</pre>
                     )}
                   </button>
+                  {showItemDelete ? (
+                    <UiIconButton
+                      type="button"
+                      className="item-delete-button is-visible"
+                      aria-label={itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void deleteItems(itemDeleteTargets);
+                      }}
+                    >
+                      <Trash2 size={14} strokeWidth={2.3} aria-hidden="true" />
+                    </UiIconButton>
+                  ) : null}
                   <UiIconButton
                     type="button"
-                    className="item-menu-button"
+                    className={`item-menu-button${showItemDelete ? " has-delete-action" : ""}`}
                     aria-label="Open item actions"
                     aria-expanded={openItemMenu?.itemId === item.id}
                     onMouseDown={(event) => {
@@ -2921,7 +2910,6 @@ function App() {
                         renderBatchItemActions({
                           items: effectiveSelection,
                           noun: "selected",
-                          count: effectiveSelection.length,
                           onClear: () => {
                             setOpenItemMenu(null);
                             setSingleSelection(index);
@@ -3000,15 +2988,6 @@ function App() {
                           >
                             <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit metadata</span>
-                          </UiUnstyledButton>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            className="item-menu-action is-danger"
-                            onClick={() => void deleteItem(item)}
-                          >
-                            <Trash2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Delete</span>
                           </UiUnstyledButton>
                         </>
                       )}
