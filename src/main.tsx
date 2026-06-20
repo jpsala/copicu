@@ -637,7 +637,7 @@ const LazyUiHostApp = lazy(() =>
   import("./windows/secondaryWindows").then((module) => ({ default: module.UiHostApp })),
 );
 const LazyNotificationsApp = lazy(() =>
-  import("./windows/secondaryWindows").then((module) => ({ default: module.NotificationsApp })),
+  import("./windows/NotificationsApp").then((module) => ({ default: module.NotificationsApp })),
 );
 const LazySettingsWindowApp = lazy(() =>
   import("./windows/secondaryWindows").then((module) => ({ default: module.SettingsWindowApp })),

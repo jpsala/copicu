@@ -10,7 +10,6 @@ import {
 } from "react";
 import { Menu, Tabs } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
-import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -114,11 +113,9 @@ type MetadataEditorPayload = {
 
 const DEFAULT_TOAST_DURATION_MS = 3600;
 const STICKY_TOAST_DURATION_MS = 0;
-const NOTIFICATIONS_WINDOW_LABEL = "notifications";
 const UI_HOST_WINDOW_LABEL = "ui-host";
 const SETTINGS_WINDOW_LABEL = "settings";
 const AI_OUTPUT_WINDOW_LABEL = "ai-output";
-const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
 const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
 const METADATA_OPEN_EVENT = "copicu://metadata/open";
@@ -126,10 +123,6 @@ const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const SETTINGS_FOCUS_SECTION_EVENT = "copicu://settings/focus-section";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
-const NOTIFICATIONS_WINDOW_WIDTH = 340;
-const NOTIFICATION_ROW_HEIGHT = 78;
-const NOTIFICATIONS_WINDOW_CHROME = 10;
-const NOTIFICATIONS_WINDOW_MAX_HEIGHT = 430;
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
@@ -275,11 +268,6 @@ function closeSettingsWindow() {
   return invoke("close_settings_window");
 }
 
-function positionNotificationsWindow() {
-  return invoke("position_notifications_window");
-}
-
-
 type RendererDiagnosticMode = "off" | "errors" | "debug";
 type RendererDiagnosticLevel = "error" | "debug";
 
@@ -378,7 +366,6 @@ function currentWindowLabel() {
   }
 }
 
-const IS_NOTIFICATIONS_WINDOW = currentWindowLabel() === NOTIFICATIONS_WINDOW_LABEL;
 const IS_UI_HOST_WINDOW = currentWindowLabel() === UI_HOST_WINDOW_LABEL;
 const IS_SETTINGS_WINDOW = currentWindowLabel() === SETTINGS_WINDOW_LABEL;
 const IS_AI_OUTPUT_WINDOW = currentWindowLabel() === AI_OUTPUT_WINDOW_LABEL;
@@ -1024,76 +1011,6 @@ export function SettingsWindowApp() {
   );
 }
 
-
-export function NotificationsApp() {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const nextToastIdRef = useRef(1);
-
-  const dismissToast = useCallback((id: number) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
-  }, []);
-
-  useEffect(() => {
-    document.body.classList.add("notifications-window");
-    return () => {
-      document.body.classList.remove("notifications-window");
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isTauriRuntime()) {
-      return;
-    }
-
-    const windowHandle = getCurrentWindow();
-    if (toasts.length > 0) {
-      const nextHeight = Math.min(
-        NOTIFICATIONS_WINDOW_MAX_HEIGHT,
-        NOTIFICATIONS_WINDOW_CHROME + toasts.length * NOTIFICATION_ROW_HEIGHT,
-      );
-      void windowHandle.setSize(new LogicalSize(NOTIFICATIONS_WINDOW_WIDTH, nextHeight));
-      void windowHandle.show();
-    } else {
-      void windowHandle.hide();
-    }
-  }, [toasts.length]);
-
-  useEffect(() => {
-    if (!isTauriRuntime()) {
-      return undefined;
-    }
-
-    let active = true;
-    let unlisten: (() => void) | null = null;
-
-    void listen<ToastItem>(NOTIFICATION_TOAST_EVENT, (event: Event<ToastItem>) => {
-      if (!active) {
-        return;
-      }
-
-      const toast = {
-        ...event.payload,
-        id: event.payload.id || nextToastIdRef.current++,
-        tone: event.payload.tone ?? "info",
-        durationMs: event.payload.durationMs ?? DEFAULT_TOAST_DURATION_MS,
-      };
-
-      setToasts((current) => [...current, toast]);
-      if (toast.durationMs > 0) {
-        window.setTimeout(() => dismissToast(toast.id), toast.durationMs);
-      }
-    }).then((value) => {
-      unlisten = value;
-    });
-
-    return () => {
-      active = false;
-      unlisten?.();
-    };
-  }, [dismissToast]);
-
-  return <ToastStack toasts={toasts} onDismiss={dismissToast} />;
-}
 
 export function UiHostApp() {
   const [request, setRequest] = useState<UiHostRequest | null>(null);

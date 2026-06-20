@@ -1,7 +1,7 @@
 ---
 id: 010-ui-rethink
 status: active
-updated: 2026-06-12
+updated: 2026-06-20
 ---
 
 # 010 UI Rethink
@@ -267,6 +267,34 @@ Auditoria de ventanas existentes:
 - `notifications`: ok como toast window fixed-position; pendiente capability minima separada.
 - `whichkey`: ok como utility temporal destroy/recreate y opt-out de bounds; pendiente capability minima separada.
 - `ai-output`: ok como document window; corregido readiness con pending payload; pendiente capability minima separada.
+
+Vigesimo corte aplicado:
+
+- Refactor mecanico de contratos compartidos frontend en `src/shared/contracts.ts` y settings compartidos en `src/shared/settings.ts`; `main` y `secondaryWindows` ya usan una fuente unica para DTOs/settings comunes.
+- `ToastStack` se extrajo a `src/ui/ToastStack.tsx` y lo comparten picker y ventanas secundarias.
+- Helpers Rust chicos salieron de `src-tauri/src/lib.rs`: `src-tauri/src/markdown_output.rs` para export Markdown y `src-tauri/src/script_editor.rs` para abrir scripts en VS Code.
+- Commit: `af392f5 refactor: extract shared contracts and helpers`.
+- Checks pasados durante el corte: `npm run build`, `npm run visual:check` 86/86, `npm run capabilities:drift:test`, `npm run rust:test` 95 passed / 1 ignored, smoke manual con `copicu_computer_use` sobre picker, Settings y Metadata.
+
+Vigesimo primer corte aplicado:
+
+- `WhichKeyWindowApp` se separo de `src/windows/secondaryWindows.tsx` a `src/windows/WhichKeyWindowApp.tsx` y ahora tiene chunk propio en Vite.
+- `secondaryWindows.tsx` quedo sin los wrappers IPC y UI propios de WhichKey; `main.tsx` lazy-loads la nueva superficie directa.
+- Commit: `7b10504 refactor: split whichkey window app`.
+- Checks pasados: `npm run build`, `npm run visual:check` 86/86; `npm run dev:restart` dejo app dev viva (`copicu.exe` responding) aunque el comando queda como owner vivo y Pi lo corta por timeout.
+
+Estado operativo posterior:
+
+- `main` queda ahead 2 de `origin/main` por esos commits de producto.
+- Quedan cambios OS/.pi no mezclados en working tree; tratarlos como lote separado antes de nuevos commits de producto.
+- Proximo split UI recomendado: `NotificationsApp` o `UiHostApp`; evitar mover `SettingsPanel` hasta seguir bajando helpers/superficies chicas.
+
+Vigesimo segundo corte aplicado:
+
+- `NotificationsApp` se separo de `src/windows/secondaryWindows.tsx` a `src/windows/NotificationsApp.tsx` y ahora tiene chunk propio en Vite (`NotificationsApp-*.js`).
+- `main.tsx` lazy-loadea la superficie de notificaciones desde el archivo nuevo; `secondaryWindows.tsx` quedo sin IPC/resize/constants propios de notifications.
+- Checks pasados: `npm run build`, `npm run visual:check` 86/86, `mise run release-vite-chunk-check`; `npm run dev:restart` dejo app dev viva (`copicu.exe` responding).
+- Proximo split UI recomendado: `UiHostApp`; evitar mover `SettingsPanel` hasta seguir bajando helpers/superficies chicas.
 
 ## Diagnostico Inicial
 
