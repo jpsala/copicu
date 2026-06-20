@@ -208,13 +208,14 @@ Un contributor necesita:
 
 ### Estado 2026-06-20
 
-- Publicado release Windows estable `v0.2.3` en GitHub desde `main`.
-- Release: https://github.com/jpsala/copicu/releases/tag/v0.2.3
-- Commit: `7d46a3f662d06b1e0ee85895756efa7f5e747084`.
-- Installer: `Copicu_0.2.3_x64-setup.exe`; SHA256 `DCA1348489CB23E41B02916BE78F3F7B9ABD2EC54EFFE3C3B6EF0F7FEE74A468`.
+- Publicado release Windows estable `v0.2.4` en GitHub desde `main`.
+- Release: https://github.com/jpsala/copicu/releases/tag/v0.2.4
+- Commit: `c697ec4a55da12e8c2605c65184ce731e7f11b5d`.
+- Installer: `Copicu_0.2.4_x64-setup.exe`; SHA256 `54E8E6E2DFBA6E9861788F78CB3121E93A8A42B25BF6E65B8A8566CCB999F7E3`.
+- Contenido del corte: polish de borrado del picker (`Shift+Delete`, trash icon en seleccion, sin Delete en menu contextual) sobre la base `v0.2.3` que ya incluia splits `WhichKeyWindowApp` y `NotificationsApp`.
 - Checks del helper: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run tauri:build`, `git push`, `gh release create` con asset.
-- `main` quedo sincronizado con `origin/main`; producto reciente publicado incluye los splits `WhichKeyWindowApp` y `NotificationsApp`.
-- Gotcha: `v0.2.2` ya existia publicado; no mover ni reutilizar tags/releases publicados. Para cortes futuros, correr `git fetch --tags origin` antes de `npm run release:windows` y usar siguiente patch si hay colision.
+- `main` quedo sincronizado con `origin/main`.
+- Gotcha: `v0.2.2`/`v0.2.3` ya existen publicados; no mover ni reutilizar tags/releases publicados. Para cortes futuros, correr `git fetch --tags origin` antes de `npm run release:windows` y usar siguiente patch si hay colision.
 
 ## Launch Messages
 

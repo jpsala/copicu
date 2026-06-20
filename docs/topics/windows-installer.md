@@ -181,8 +181,8 @@ seguir representando el binario que se publico originalmente.
 
 Gotcha 2026-06-20: si el helper intenta crear un release cuyo tag ya existe en
 GitHub, detenerse y usar el siguiente tag semver; no mover el tag publicado ni
-reemplazar assets del release previo. El corte final de esa sesion fue `v0.2.3`
-porque `v0.2.2` ya estaba publicado.
+reemplazar assets del release previo. En esa fecha `v0.2.2` y `v0.2.3` ya estaban
+publicados; el corte posterior de polish de borrado fue `v0.2.4`.
 
 Promover el estado actual del repo a la app instalada:
 

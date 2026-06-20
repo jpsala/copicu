@@ -17,7 +17,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | Shortcuts de scripts: flujo manual validado; patch preview opcional. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md` | UI modularizada en commits `af392f5`/`7b10504`; `NotificationsApp` ya separado; proximo split seguro: `UiHostApp`. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.3` publicado. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.4` publicado. |
 | Dev/instalada | active | `docs/topics/windows-installer.md` | `install:current` revalidado; instalada/dev separados. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | `Shift+Delete` borra seleccion; trash icon visible en seleccion. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
 | OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
@@ -38,7 +38,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Preferir velocidad/latencia percibida; aceptar coste razonable de memoria si no es extremo.
 - Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
 - Paste-to-previous-window sigue siendo el flujo nativo mas riesgoso.
-- Release actual: Windows `v0.2.3`.
+- Release actual: Windows `v0.2.4`.
 - Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
 - `metadata` standalone queda `CachedHidden` + prewarm salvo coste extremo.
