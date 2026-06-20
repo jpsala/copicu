@@ -16,12 +16,12 @@ Copicu currently ships as a Windows release.
 
 Current release:
 
-- [v0.2.2](https://github.com/jpsala/copicu/releases/tag/v0.2.2)
-- Asset: `Copicu_0.2.2_x64-setup.exe`
+- [v0.2.3](https://github.com/jpsala/copicu/releases/tag/v0.2.3)
+- Asset: `Copicu_0.2.3_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `845C2620D3CA190B4D7797BE06C2B12E6826AAE06C591C295DB01ECFB928B232`
+- SHA256: `DCA1348489CB23E41B02916BE78F3F7B9ABD2EC54EFFE3C3B6EF0F7FEE74A468`
 
-Windows installer for v0.2.2.
+Windows installer for v0.2.3.
 
 Copicu is used daily as a local clipboard manager. The core picker, history capture, search, editing, tags, shortcuts, and paste workflow are in active use.
 
