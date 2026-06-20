@@ -16,12 +16,12 @@ Copicu currently ships as a Windows release.
 
 Current release:
 
-- [v0.2.3](https://github.com/jpsala/copicu/releases/tag/v0.2.3)
-- Asset: `Copicu_0.2.3_x64-setup.exe`
+- [v0.2.4](https://github.com/jpsala/copicu/releases/tag/v0.2.4)
+- Asset: `Copicu_0.2.4_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `DCA1348489CB23E41B02916BE78F3F7B9ABD2EC54EFFE3C3B6EF0F7FEE74A468`
+- SHA256: `54E8E6E2DFBA6E9861788F78CB3121E93A8A42B25BF6E65B8A8566CCB999F7E3`
 
-Windows installer for v0.2.3.
+Picker delete polish: Shift+Delete removes the active selection, selected items expose a trash icon, and contextual item menus no longer show Delete. Includes current Windows installer build.
 
 Copicu is used daily as a local clipboard manager. The core picker, history capture, search, editing, tags, shortcuts, and paste workflow are in active use.
 
