@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-19T02:31:58.436Z
+Generated: 2026-06-20T02:44:09.112Z
 
 ## Topics
 
@@ -85,8 +85,8 @@ Generated: 2026-06-19T02:31:58.436Z
 
 ## Pi Resources
 
-- Prompts: aos-orquestar, cerrar, checkpoint, continuar, realinear, release-windows, research, sigamos, siguiente
-- Extensions: checkpoint-nudge.ts, copicu-computer-use.ts, os-tools.ts
+- Prompts: aos-cerrar, aos-checkpoint, aos-continuar-sesion, aos-fanout, aos-gol, aos-guardar-sesion, aos-help, aos-nueva-sesion-con-gol, aos-nueva-sesion, aos-orquestar, aos-sigamos, aos-siguiente, release-windows, research
+- Extensions: aos-checkpoint-nudge.ts, aos-tools.ts, copicu-computer-use.ts
 - Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
 
 ## Aliases

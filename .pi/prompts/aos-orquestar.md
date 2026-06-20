@@ -2,13 +2,13 @@
 description: Proponer o ejecutar un fan-out controlado con threads/subagentes AOS
 ---
 
-Ejecuta `aos-orquestar` siguiendo la skill local `docs/skills/aos-orquestar/SKILL.md` y, si existe, `docs/topics/pi-agentic-os.md#orquestacion-con-threadssubagentes`.
+Ejecuta `aos-orquestar` siguiendo `docs/topics/pi-agentic-os.md#orquestacion-con-threadssubagentes`. Para maximizar paralelismo seguro de forma explicita, usar tambien `/aos-fanout`.
 
-Objetivo: usar threads/subagentes solo si aportan paralelismo real. El modelo principal sigue siendo el orquestador: planifica, pide confirmacion si JP no pidio threads explicitamente, lanza agentes con prompts autocontenidos, integra resultados, verifica y cierra agentes.
+Objetivo: usar threads/subagentes solo si aportan paralelismo real y son seguros. El modelo principal sigue siendo el orquestador: planifica, pide confirmacion si JP no pidio threads explicitamente, lanza agentes con prompts autocontenidos, integra resultados, verifica y cierra agentes.
 
 Flujo:
 
-1. Leer ruta liviana del repo actual: `docs/.generated/context-index.md` si existe, `docs/WORKING_MEMORY.md` y el topic/track/spec puntual.
+1. Leer ruta liviana: `docs/.generated/context-index.md`, `docs/WORKING_MEMORY.md` y el topic/track/spec puntual.
 2. Decidir si conviene orquestar o seguir serial.
 3. Si JP no pidio explicitamente threads/subagentes, pedir confirmacion con `ask_user` mostrando fan-out propuesto y alternativa serial.
 4. Si se aprueba o ya fue pedido, lanzar 2-4 agentes como primera tanda; preferir `agent_type: "explorer"` read-only.
@@ -20,4 +20,4 @@ Flujo:
 
 Guardrails: no secretos, no acciones destructivas, no deploy/push, no edits paralelos sobre los mismos archivos, no reemplazar decisiones humanas por subagentes, preservar cambios preexistentes.
 
-Patron probado: para `align all` multi-repo, usar un worker por repo, reservar el registry/plan compartido al orquestador, pedir a cada worker una recomendacion de integracion y consolidar al final con los checks de contexto del repo.
+Patron probado: para `align all` multi-repo, usar un worker por repo, reservar `docs/OS_PROJECTS.md` al orquestador, pedir a cada worker una recomendacion de registry y consolidar al final con `context:index` + `context:audit`.

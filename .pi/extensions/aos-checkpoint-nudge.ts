@@ -2,7 +2,7 @@ import type { ContextUsage, ExtensionAPI, ExtensionContext } from "@earendil-wor
 
 type Level = "none" | "soft" | "strong" | "critical";
 
-const STATUS_KEY = "checkpoint-nudge";
+const STATUS_KEY = "aos-guardar-sesion-nudge";
 const SOFT_PERCENT = 70;
 const STRONG_PERCENT = 85;
 const CRITICAL_PERCENT = 92;
@@ -11,7 +11,7 @@ const SAME_LEVEL_COOLDOWN_MS = 15 * 60 * 1000;
 let lastLevel: Level = "none";
 let lastNoticeAt = 0;
 let muted = false;
-let checkpointPendingLabel = false;
+let savePendingLabel = false;
 
 function classify(percent: number | null | undefined): Level {
   if (percent == null) return "none";
@@ -51,20 +51,20 @@ function noticeFor(level: Level, percent: string): { text: string; kind: "info" 
   if (level === "critical") {
     return {
       kind: "error",
-      text: `Contexto en ${percent}. Recomendado: ejecutar /checkpoint antes de seguir con trabajo grande o antes de compactar manualmente.`,
+      text: `Contexto en ${percent}. Recomendado: ejecutar /aos-guardar-sesion antes de seguir con trabajo grande o antes de compactar manualmente.`,
     };
   }
 
   if (level === "strong") {
     return {
       kind: "warning",
-      text: `Contexto en ${percent}. Si hubo decisiones o estado valioso, conviene /checkpoint pronto.`,
+      text: `Contexto en ${percent}. Si hubo decisiones o estado valioso, conviene /aos-guardar-sesion pronto.`,
     };
   }
 
   return {
     kind: "info",
-    text: `Contexto en ${percent}. No hace falta cortar sesion; solo usá /checkpoint si hubo valor durable.`,
+    text: `Contexto en ${percent}. No hace falta cortar sesion; solo usá /aos-guardar-sesion si hubo valor durable.`,
   };
 }
 
@@ -75,7 +75,7 @@ function updateStatus(ctx: ExtensionContext, usage: ContextUsage | undefined, le
   }
 
   const tokens = usage?.tokens == null ? "?" : `${Math.round(usage.tokens / 1000)}k`;
-  ctx.ui.setStatus(STATUS_KEY, `checkpoint ${formatPercent(usage?.percent)} (${tokens})`);
+  ctx.ui.setStatus(STATUS_KEY, `guardar ${formatPercent(usage?.percent)} (${tokens})`);
 }
 
 function check(ctx: ExtensionContext): void {
@@ -97,8 +97,8 @@ function check(ctx: ExtensionContext): void {
   lastLevel = level;
 }
 
-function isCheckpointInput(text: string): boolean {
-  return /^(\/checkpoint\b|checkpoint\b|persist[íi]\s+estado\b|guard[aá]\s+lo\s+valioso\b)/i.test(text.trim());
+function isSaveInput(text: string): boolean {
+  return /^(\/aos-guardar-sesion\b|aos-guardar-sesion\b|\/aos-checkpoint\b|aos-checkpoint\b|persist[íi]\s+estado\b|guard[aá]\s+lo\s+valioso\b)/i.test(text.trim());
 }
 
 function labelCurrentLeaf(pi: ExtensionAPI, ctx: ExtensionContext, label: string): void {
@@ -112,23 +112,23 @@ export default function checkpointNudge(pi: ExtensionAPI) {
     muted = false;
     lastLevel = "none";
     lastNoticeAt = 0;
-    checkpointPendingLabel = false;
-    ctx.ui.notify("Checkpoint nudge activo: avisos en 70%, 85% y 92% de contexto.", "info");
+    savePendingLabel = false;
+    ctx.ui.notify("Guardar-sesion nudge activo: avisos en 70%, 85% y 92% de contexto.", "info");
     check(ctx);
   });
 
   pi.on("input", async (event) => {
     if (event.source === "extension") return { action: "continue" as const };
-    if (isCheckpointInput(event.text)) checkpointPendingLabel = true;
+    if (isSaveInput(event.text)) savePendingLabel = true;
     return { action: "continue" as const };
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    if (checkpointPendingLabel) {
+    if (savePendingLabel) {
       const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-      labelCurrentLeaf(pi, ctx, `checkpoint ${stamp}`);
-      checkpointPendingLabel = false;
-      ctx.ui.notify("Checkpoint etiquetado en /tree.", "info");
+      labelCurrentLeaf(pi, ctx, `guardar ${stamp}`);
+      savePendingLabel = false;
+      ctx.ui.notify("Guardado etiquetado en /tree.", "info");
     }
     check(ctx);
   });
@@ -140,21 +140,21 @@ export default function checkpointNudge(pi: ExtensionAPI) {
   pi.on("session_before_compact", async (_event, ctx) => {
     if (!muted) {
       ctx.ui.notify(
-        "Pi va a compactar contexto. Si hay valor durable no persistido, recordá usar /checkpoint en el siguiente punto seguro.",
+        "Pi va a compactar contexto. Si hay valor durable no persistido, recordá usar /aos-guardar-sesion en el siguiente punto seguro.",
         "warning",
       );
     }
   });
 
-  pi.registerCommand("checkpoint-nudge", {
-    description: "Ver o controlar avisos automaticos de checkpoint por uso de contexto",
+  pi.registerCommand("aos-checkpoint-nudge", {
+    description: "Ver o controlar avisos automaticos de guardar-sesion por uso de contexto",
     handler: async (args, ctx) => {
       const action = String(args ?? "").trim().toLowerCase();
 
       if (action === "mute" || action === "off") {
         muted = true;
         ctx.ui.setStatus(STATUS_KEY, undefined);
-        ctx.ui.notify("Checkpoint nudge silenciado para esta sesion.", "info");
+        ctx.ui.notify("Guardar-sesion nudge silenciado para esta sesion.", "info");
         return;
       }
 
@@ -162,19 +162,19 @@ export default function checkpointNudge(pi: ExtensionAPI) {
         muted = false;
         lastLevel = "none";
         lastNoticeAt = 0;
-        ctx.ui.notify("Checkpoint nudge reactivado.", "info");
+        ctx.ui.notify("Guardar-sesion nudge reactivado.", "info");
         check(ctx);
         return;
       }
 
       if (action === "prefill") {
-        ctx.ui.setEditorText("/checkpoint");
-        ctx.ui.notify("Editor preparado con /checkpoint.", "info");
+        ctx.ui.setEditorText("/aos-guardar-sesion");
+        ctx.ui.notify("Editor preparado con /aos-guardar-sesion.", "info");
         return;
       }
 
       if (action === "test") {
-        ctx.ui.notify("Prueba checkpoint nudge: si esto fuera 85%, te sugeriria ejecutar /checkpoint.", "warning");
+        ctx.ui.notify("Prueba guardar-sesion nudge: si esto fuera 85%, te sugeriria ejecutar /aos-guardar-sesion.", "warning");
         return;
       }
 
@@ -182,7 +182,7 @@ export default function checkpointNudge(pi: ExtensionAPI) {
       const level = classify(usage?.percent);
       updateStatus(ctx, usage, level);
       ctx.ui.notify(
-        `Checkpoint nudge: ${muted ? "silenciado" : "activo"}. Contexto ${formatPercent(usage?.percent)} (${usage?.tokens ?? "?"}/${usage?.contextWindow ?? "?"} tokens). Nivel: ${level}. Comandos: /checkpoint-nudge prefill | mute | unmute | test`,
+        `Guardar-sesion nudge: ${muted ? "silenciado" : "activo"}. Contexto ${formatPercent(usage?.percent)} (${usage?.tokens ?? "?"}/${usage?.contextWindow ?? "?"} tokens). Nivel: ${level}. Comandos: /aos-checkpoint-nudge prefill | mute | unmute | test`,
         level === "critical" ? "error" : level === "strong" ? "warning" : "info",
       );
     },

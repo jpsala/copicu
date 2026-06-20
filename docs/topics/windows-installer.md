@@ -148,6 +148,12 @@ Release Windows local todo-en-uno:
 npm run release:windows
 ```
 
+Antes de cortar release publico, refrescar tags para evitar resolver un tag viejo si el clon local esta desactualizado:
+
+```powershell
+git fetch --tags origin
+```
+
 Sin `-Tag`, el helper calcula el proximo release mirando version actual (`package.json` + `src-tauri/tauri.conf.json`), tags locales y releases de GitHub. Default: patch estable. Si hay una linea prerelease mas nueva que el ultimo estable, pregunta con opciones entre patch, rc, promover estable, minor o major. Tambien acepta overrides explicitos:
 
 ```powershell
@@ -172,6 +178,11 @@ gh release create v0.2.0-rc.N src-tauri/target/release/bundle/nsis/Copicu_0.2.0_
 Usar siempre un tag nuevo para un corte nuevo (`rc.N+1`). No mover ni
 republicar un tag ya publicado salvo decision explicita, porque el tag debe
 seguir representando el binario que se publico originalmente.
+
+Gotcha 2026-06-20: si el helper intenta crear un release cuyo tag ya existe en
+GitHub, detenerse y usar el siguiente tag semver; no mover el tag publicado ni
+reemplazar assets del release previo. El corte final de esa sesion fue `v0.2.3`
+porque `v0.2.2` ya estaba publicado.
 
 Promover el estado actual del repo a la app instalada:
 

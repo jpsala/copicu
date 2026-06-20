@@ -9,6 +9,62 @@ type Finding = {
 const root = process.cwd();
 const findings: Finding[] = [];
 
+const requiredAosPiPrompts = [
+  "aos-cerrar.md",
+  "aos-checkpoint.md",
+  "aos-continuar-sesion.md",
+  "aos-fanout.md",
+  "aos-gol.md",
+  "aos-guardar-sesion.md",
+  "aos-help.md",
+  "aos-nueva-sesion.md",
+  "aos-nueva-sesion-con-gol.md",
+  "aos-orquestar.md",
+  "aos-sigamos.md",
+  "aos-siguiente.md",
+];
+
+const requiredAosPiExtensions = [
+  "aos-checkpoint-nudge.ts",
+  "aos-tools.ts",
+];
+
+const requiredAosToolCommands = [
+  "aos-compact",
+  "aos-continuar",
+  "aos-gol",
+  "aos-nueva-sesion",
+  "aos-nueva-sesion-con-gol",
+  "aos-skills",
+  "aos-status",
+  "aos-sync",
+];
+
+const legacyAosPiPrompts = [
+  "adopt-os.md",
+  "align-os-project.md",
+  "cerrar.md",
+  "checkpoint.md",
+  "continuar.md",
+  "gol.md",
+  "guardar-sesion.md",
+  "init-os.md",
+  "nueva-sesion.md",
+  "nueva-sesion-con-gol.md",
+  "os-help.md",
+  "perfect-os.md",
+  "realinear.md",
+  "sigamos.md",
+  "siguiente.md",
+  "threads.md",
+  "update-os.md",
+];
+
+const legacyAosPiExtensions = [
+  "checkpoint-nudge.ts",
+  "os-tools.ts",
+];
+
 function read(path: string) {
   return readFileSync(join(root, path), "utf8");
 }
@@ -120,8 +176,21 @@ function walkMarkdownFiles(dir: string): string[] {
   });
 }
 
-for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md", "docs/GLOSSARY.md", "docs/TOPICS.md"]) {
+function listFileNames(path: string, extension?: string) {
+  const fullPath = join(root, path);
+  if (!existsSync(fullPath)) return [];
+  return readdirSync(fullPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && (!extension || entry.name.endsWith(extension)))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md", "docs/TOPICS.md"]) {
   if (!exists(path)) add("error", `Missing ${path}`);
+}
+
+if (!exists("docs/GLOSSARY.md")) {
+  add("warn", "Missing docs/GLOSSARY.md; aliases will not be included in the generated context index");
 }
 
 if (!exists("docs/skills")) {
@@ -154,12 +223,14 @@ const docsKnowledge = exists("docs/topics/docs-knowledge-system.md")
   ? read("docs/topics/docs-knowledge-system.md")
   : "";
 
-if (!agents.includes("realinear os") || !agents.includes("docs/topics/agentic-os-operations.md")) {
-  add("warn", "AGENTS.md should keep a short `realinear os` pointer to docs/topics/agentic-os-operations.md");
+if ((exists("docs/topics/agentic-os-operations.md") || exists("docs/skills/aos-realinear-os"))
+  && (!agents.includes("aos-realinear-os") || !agents.includes("docs/topics/agentic-os-operations.md"))) {
+  add("warn", "AGENTS.md should keep a short `aos-realinear-os` pointer to docs/topics/agentic-os-operations.md");
 }
 
-if (!agents.includes("cerrar sesion") || !agents.includes("continuar sesion")) {
-  add("warn", "AGENTS.md should keep short pointers for `cerrar sesion` and `continuar sesion`");
+if ((exists("docs/skills/aos-cerrar-sesion") || exists("docs/skills/aos-continuar-sesion"))
+  && (!agents.includes("aos-cerrar-sesion") || !agents.includes("aos-continuar-sesion"))) {
+  add("warn", "AGENTS.md should keep short pointers for `aos-cerrar-sesion` and `aos-continuar-sesion`");
 }
 
 if (docsReadme) {
@@ -177,6 +248,10 @@ if (exists("docs/USER_GUIDE.md") && !topicsIndex.includes("USER_GUIDE.md")) {
   add("warn", "docs/USER_GUIDE.md exists but is not listed in docs/TOPICS.md");
 }
 
+if (exists("docs/OS_PROJECTS.md") && !topicsIndex.includes("OS_PROJECTS.md")) {
+  add("warn", "docs/OS_PROJECTS.md exists but is not listed in docs/TOPICS.md");
+}
+
 if (exists("docs/topics/agentic-os-operations.md") && !topicsIndex.includes("topics/agentic-os-operations.md")) {
   add("warn", "docs/topics/agentic-os-operations.md exists but is not linked from docs/TOPICS.md");
 }
@@ -185,8 +260,8 @@ if (exists("docs/topics/docs-knowledge-system.md") && !topicsIndex.includes("top
   add("warn", "docs/topics/docs-knowledge-system.md exists but is not linked from docs/TOPICS.md");
 }
 
-if (exists(".pi/extensions") && !topicsIndex.includes("topics/pi-agentic-os.md")) {
-  add("warn", ".pi/extensions exists but docs/topics/pi-agentic-os.md is not linked from docs/TOPICS.md");
+if (exists("docs/topics/pi-agentic-os.md") && !topicsIndex.includes("topics/pi-agentic-os.md")) {
+  add("warn", "docs/topics/pi-agentic-os.md exists but is not linked from docs/TOPICS.md");
 }
 
 const topicFiles = exists("docs/topics")
@@ -289,8 +364,56 @@ if (exists(".pi/prompts")) {
   }
 }
 
+const hasPiAdapter = exists(".pi") || exists(".pi/prompts") || exists(".pi/extensions");
+if (hasPiAdapter) {
+  if (!exists(".pi/prompts")) {
+    add("error", "Pi adapter exists but .pi/prompts/ is missing; slash prompt templates will not be visible");
+  } else {
+    const promptNames = new Set(listFileNames(".pi/prompts", ".md"));
+    for (const prompt of requiredAosPiPrompts) {
+      if (!promptNames.has(prompt)) {
+        add("error", `.pi/prompts/${prompt} is missing; required /${prompt.replace(/\.md$/, "")} slash prompt will not be visible`);
+      }
+    }
+
+    for (const prompt of legacyAosPiPrompts) {
+      if (promptNames.has(prompt)) {
+        const command = prompt.replace(/\.md$/, "");
+        const level: Finding["level"] = prompt === "threads.md" ? "error" : "warn";
+        add(level, `.pi/prompts/${prompt} is legacy unprefixed AOS slash command /${command}; use /aos-* prompt names to avoid slash palette drift`);
+      }
+    }
+  }
+
+  if (!exists(".pi/extensions")) {
+    add("error", "Pi adapter exists but .pi/extensions/ is missing; AOS extension commands like /aos-sync will not load");
+  } else {
+    const extensionNames = new Set(listFileNames(".pi/extensions", ".ts"));
+    for (const extension of requiredAosPiExtensions) {
+      if (!extensionNames.has(extension)) {
+        add("error", `.pi/extensions/${extension} is missing; required AOS Pi extension commands/nudges will not load`);
+      }
+    }
+
+    for (const extension of legacyAosPiExtensions) {
+      if (extensionNames.has(extension)) {
+        add("warn", `.pi/extensions/${extension} is legacy unprefixed AOS adapter; use .pi/extensions/aos-* to avoid duplicate or stale slash commands`);
+      }
+    }
+
+    if (exists(".pi/extensions/aos-tools.ts")) {
+      const aosTools = read(".pi/extensions/aos-tools.ts");
+      for (const command of requiredAosToolCommands) {
+        if (!aosTools.includes(`registerCommand("${command}"`)) {
+          add("error", `.pi/extensions/aos-tools.ts does not register /${command}`);
+        }
+      }
+    }
+  }
+}
+
 if (!exists(".agents/skills")) {
-  add("warn", "Missing .agents/skills compatibility junction");
+  // Allowed: .agents/skills is a discovery toggle. Pi sessions keep it disabled to avoid slash noise.
 } else if (exists("docs/skills")) {
   const stats = lstatSync(join(root, ".agents/skills"));
   if (!(stats.isSymbolicLink() || stats.isDirectory())) {
@@ -342,6 +465,7 @@ if (!exists("docs/.generated/context-index.md")) {
     "docs/WORKING_MEMORY.md",
     "docs/GLOSSARY.md",
     "docs/TOPICS.md",
+    "docs/OS_PROJECTS.md",
     "docs/skills/README.md",
     "docs/tracks/README.md",
     ...walkMarkdownFiles(join(root, ".pi", "prompts")).map((path) => relative(root, path).replaceAll("\\", "/")),

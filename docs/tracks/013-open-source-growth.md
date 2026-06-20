@@ -1,7 +1,7 @@
 ---
 id: open-source-growth
 status: active
-updated: 2026-06-13
+updated: 2026-06-20
 ---
 
 # Open Source Growth
@@ -205,6 +205,16 @@ Un contributor necesita:
 - `npm run install:current` genero el instalador NSIS, reemplazo la instalada real y relanzo `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`.
 - Commit `a5c38a4`, rama `codex/release-0.2.1`, release GitHub `v0.2.1` y PR `#10` publicados; PR `#10` mergeado a `main` con merge commit `2207675`.
 - SHA256: `B6CDF1A66FB61AADBC8341203BA15CF52FD1971E7EC65FA30A80BF9EC8433A9E`.
+
+### Estado 2026-06-20
+
+- Publicado release Windows estable `v0.2.3` en GitHub desde `main`.
+- Release: https://github.com/jpsala/copicu/releases/tag/v0.2.3
+- Commit: `7d46a3f662d06b1e0ee85895756efa7f5e747084`.
+- Installer: `Copicu_0.2.3_x64-setup.exe`; SHA256 `DCA1348489CB23E41B02916BE78F3F7B9ABD2EC54EFFE3C3B6EF0F7FEE74A468`.
+- Checks del helper: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run tauri:build`, `git push`, `gh release create` con asset.
+- `main` quedo sincronizado con `origin/main`; producto reciente publicado incluye los splits `WhichKeyWindowApp` y `NotificationsApp`.
+- Gotcha: `v0.2.2` ya existia publicado; no mover ni reutilizar tags/releases publicados. Para cortes futuros, correr `git fetch --tags origin` antes de `npm run release:windows` y usar siguiente patch si hay colision.
 
 ## Launch Messages
 
