@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ClipboardProbe {
     pub platform: &'static str,
     pub sequence_number: Option<u32>,
@@ -14,7 +14,7 @@ pub struct ClipboardProbe {
     pub formats: Vec<ClipboardFormatProbe>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ClipboardFormatProbe {
     pub id: u32,
     pub name: String,
@@ -22,7 +22,7 @@ pub struct ClipboardFormatProbe {
     pub handle_size_bytes: Option<usize>,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClipboardFormatKind {
     Text,

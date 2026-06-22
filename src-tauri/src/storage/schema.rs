@@ -309,5 +309,44 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
     JOIN tags ON tags.slug = normalized.slug;
     "##,
     ),
+    M::up(
+        r#"
+    ALTER TABLE clipboard_items ADD COLUMN context_search_text TEXT;
+
+    CREATE TABLE clipboard_item_capture_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        captured_at_unix_ms INTEGER NOT NULL,
+        source_kind TEXT NOT NULL,
+        source_app_name TEXT,
+        source_app_path TEXT,
+        source_process_id INTEGER,
+        source_window_id INTEGER,
+        source_window_title TEXT,
+        content_kind TEXT NOT NULL,
+        mime_primary TEXT,
+        clipboard_platform TEXT,
+        clipboard_sequence_number INTEGER,
+        clipboard_format_count INTEGER,
+        clipboard_formats_text TEXT,
+        clipboard_formats_json TEXT,
+        byte_size INTEGER,
+        text_char_count INTEGER,
+        line_count INTEGER,
+        domain TEXT,
+        event_json TEXT NOT NULL,
+        FOREIGN KEY (item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX idx_clipboard_item_capture_events_item
+        ON clipboard_item_capture_events(item_id, captured_at_unix_ms DESC);
+
+    CREATE INDEX idx_clipboard_item_capture_events_app
+        ON clipboard_item_capture_events(source_app_name, captured_at_unix_ms DESC);
+
+    CREATE INDEX idx_clipboard_item_capture_events_domain
+        ON clipboard_item_capture_events(domain, captured_at_unix_ms DESC);
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

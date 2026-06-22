@@ -1,3 +1,4 @@
+use crate::storage::{CaptureContext, CaptureFormatContext};
 use clipboard_rs::{
     Clipboard, ClipboardContext, ClipboardHandler, ClipboardWatcher, ClipboardWatcherContext,
 };
@@ -198,13 +199,18 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
         let outcome = record_candidate(
             &self.state,
             hash.clone(),
-            probe_result,
+            probe_result.clone(),
             Some(preview),
             CaptureOutcome::CapturedText,
         );
         match outcome {
             CaptureOutcome::CapturedText => {
-                match self.storage.insert_text(&normalized, &hash) {
+                let capture_context = capture_context_from_probe("clipboard", &probe_result);
+                match self.storage.insert_text_with_context(
+                    &normalized,
+                    &hash,
+                    Some(capture_context),
+                ) {
                     Ok(item_id) => {
                         self.apply_builtin_enrichment(item_id, &normalized);
                         self.emit_history_changed(item_id, "text");
@@ -250,13 +256,17 @@ impl<R: Runtime> TextClipboardHandler<R> {
         let outcome = record_candidate(
             &self.state,
             image.normalized_hash.clone(),
-            probe_result,
+            probe_result.clone(),
             None,
             CaptureOutcome::CapturedImage,
         );
         match outcome {
             CaptureOutcome::CapturedImage => {
-                match self.storage.insert_image(&image) {
+                let capture_context = capture_context_from_probe("clipboard", &probe_result);
+                match self
+                    .storage
+                    .insert_image_with_context(&image, Some(capture_context))
+                {
                     Ok(item_id) => {
                         self.emit_history_changed(item_id, "image");
                         self.run_clipboard_change_actions(item_id);
@@ -461,6 +471,45 @@ where
     }
 
     operation()
+}
+
+fn capture_context_from_probe(
+    source_kind: &str,
+    probe_result: &Result<crate::clipboard_probe::ClipboardProbe, String>,
+) -> CaptureContext {
+    let foreground = crate::window_focus::foreground_window_snapshot();
+    let probe = probe_result.as_ref().ok();
+    CaptureContext {
+        source_kind: source_kind.to_string(),
+        source_app_name: foreground
+            .as_ref()
+            .and_then(|window| window.process_name.clone()),
+        source_app_path: foreground
+            .as_ref()
+            .and_then(|window| window.process_path.clone()),
+        source_process_id: foreground
+            .as_ref()
+            .and_then(|window| window.process_id.map(i64::from)),
+        source_window_id: foreground.as_ref().map(|window| window.window_id as i64),
+        source_window_title: foreground.as_ref().and_then(|window| window.title.clone()),
+        clipboard_platform: probe.map(|probe| probe.platform.to_string()),
+        clipboard_sequence_number: probe.and_then(|probe| probe.sequence_number.map(i64::from)),
+        clipboard_format_count: probe.map(|probe| i64::from(probe.format_count)),
+        clipboard_formats: probe
+            .map(|probe| {
+                probe
+                    .formats
+                    .iter()
+                    .map(|format| CaptureFormatContext {
+                        id: format.id,
+                        name: format.name.clone(),
+                        kind: format!("{:?}", format.kind).to_ascii_lowercase(),
+                        handle_size_bytes: format.handle_size_bytes.map(|value| value as i64),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
 }
 
 fn record_candidate(

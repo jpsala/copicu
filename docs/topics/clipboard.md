@@ -121,6 +121,7 @@ Esta decision debe validarse temprano en scaffold antes de invertir en picker UI
 - Probe Win32: detecta metadata de formatos, incluyendo `CF_BITMAP`, `CF_DIB`, `CF_DIBV5`, HTML, RTF y file-list sin leer payload ni rutas.
 - UI diagnostics: muestra si el clipboard actual tiene imagen (`has_image`) y cantidad/tipos de formatos.
 - Persistencia: SQLite guarda `content_kind='text'` o `content_kind='image'`, texto/label seguro, hash, timestamps y metadata opcional de imagen. Imagenes usan blob store bajo app data para PNG principal y thumbnail.
+- Contexto oculto de captura 2026-06-22: cada captura/recaptura registra un evento en `clipboard_item_capture_events` con app/proceso foreground, ruta de exe, titulo de ventana, hwnd, PID, plataforma/sequence/formatos del clipboard, tamanos aproximados, line count y dominio detectado para URLs. `clipboard_items.context_search_text` denormaliza ese contexto para busqueda plain sin contaminar `title`/`notes`/`tags`.
 - Write-back: el host escribe texto con `tauri-plugin-clipboard-manager` e imagenes con `clipboard-rs`.
 
 ## Estado De Imagenes

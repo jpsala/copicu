@@ -103,7 +103,8 @@ Texto plain busca en:
 - `notes`;
 - `tags`;
 - `mime_primary`;
-- `content_kind`.
+- `content_kind`;
+- `context_search_text` oculto, generado desde eventos de captura (app, ventana, ruta de exe, formatos, dominio, source).
 
 Operadores soportados:
 
@@ -119,6 +120,11 @@ Operadores soportados:
 | `kind:image` | filtra por `content_kind = image` |
 | `mime:image/*` | filtra MIME primario por prefijo |
 | `mime:text/plain` | filtra MIME primario exacto por LIKE |
+| `app:code` | filtra por app/proceso/ruta de exe capturada |
+| `window:github` | filtra por titulo de ventana capturado |
+| `domain:openai.com` | filtra por dominio detectado en URLs capturadas |
+| `source:clipboard` | filtra por fuente de captura (`clipboard`, `manual`, futuro import/action) |
+| `format:html` | filtra por formatos publicados en el clipboard |
 | `has:notes` | requiere notes no vacias |
 | `has:title` | requiere title no vacio |
 | `has:tags` | requiere tags no vacios |
@@ -171,7 +177,7 @@ Las operaciones `All results` / `None results` llaman `set_history_query_marked`
 
 - Usa `LIKE`, no SQLite FTS5 todavia.
 - Tags siguen como string en `clipboard_items.tags`; no hay tablas `tags`/`item_tags`.
-- No existe `app:` porque todavia no se captura source process/window.
+- `app:`, `window:`, `domain:`, `source:` y `format:` dependen de eventos de captura nuevos; items historicos previos a la migracion solo matchean si se recapturan o se rellenan por migracion futura.
 - Fechas se interpretan como bounds de dia UTC; falta semantica local fina.
 - No hay parser publico/serializable completo de `ParsedHistoryQuery`; vive interno en Rust. `history_search(..., explain: true)` solo devuelve summary inicial.
 - No hay UI de chips/facets para editar la query visualmente.

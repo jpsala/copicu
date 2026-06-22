@@ -5,6 +5,15 @@ use std::{
     time::Duration,
 };
 
+#[derive(Clone, Debug, Default)]
+pub struct ForegroundWindowSnapshot {
+    pub window_id: isize,
+    pub title: Option<String>,
+    pub process_id: Option<u32>,
+    pub process_name: Option<String>,
+    pub process_path: Option<String>,
+}
+
 #[derive(Clone, Default)]
 pub struct PreviousWindow {
     hwnd: Arc<Mutex<Option<NativeWindowId>>>,
@@ -160,6 +169,10 @@ pub fn is_tauri_window_foreground<R: tauri::Runtime>(window: &tauri::WebviewWind
         .unwrap_or(false)
 }
 
+pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {
+    platform::foreground_window_snapshot()
+}
+
 #[cfg(not(target_os = "windows"))]
 #[cfg(not(test))]
 pub fn focus_tauri_window<R: tauri::Runtime>(
@@ -194,7 +207,7 @@ fn own_window_id<R: tauri::Runtime>(_window: &tauri::WebviewWindow<R>) -> Option
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::{dev_log, NativeWindowId};
+    use super::{dev_log, ForegroundWindowSnapshot, NativeWindowId};
     use crate::host::PasteShortcut;
     use std::{
         mem::size_of,
@@ -214,10 +227,10 @@ mod platform {
                 KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_SHIFT,
             },
             WindowsAndMessaging::{
-                BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsWindow,
-                IsWindowVisible, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_NOTOPMOST,
-                HWND_TOPMOST, SHOW_WINDOW_CMD, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-                SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
+                BringWindowToTop, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
+                GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetForegroundWindow,
+                SetWindowPos, ShowWindow, HWND_NOTOPMOST, HWND_TOPMOST, SHOW_WINDOW_CMD,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
             },
         },
     };
@@ -301,8 +314,31 @@ mod platform {
         (thread_id != 0 && process_id != 0).then_some(process_id)
     }
 
+    pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {
+        let window_id = foreground_window_id()?;
+        let process_id = window_process_id(window_id);
+        let process_path = process_id.and_then(process_path_from_id);
+        let process_name = process_path
+            .as_deref()
+            .and_then(process_name_from_path)
+            .or_else(|| process_id.map(|id| id.to_string()));
+        Some(ForegroundWindowSnapshot {
+            window_id,
+            title: window_title(window_id),
+            process_id,
+            process_name,
+            process_path,
+        })
+    }
+
     fn window_process_name(window_id: NativeWindowId) -> Option<String> {
         let process_id = window_process_id(window_id)?;
+        process_path_from_id(process_id)
+            .as_deref()
+            .and_then(process_name_from_path)
+    }
+
+    fn process_path_from_id(process_id: u32) -> Option<String> {
         let process =
             unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id) }.ok()?;
 
@@ -324,11 +360,30 @@ mod platform {
             return None;
         }
 
-        let path = String::from_utf16_lossy(&buffer[..length as usize]);
-        Path::new(&path)
+        Some(String::from_utf16_lossy(&buffer[..length as usize]))
+    }
+
+    fn process_name_from_path(path: &str) -> Option<String> {
+        Path::new(path)
             .file_name()
             .and_then(|name| name.to_str())
             .map(|name| name.to_ascii_lowercase())
+    }
+
+    fn window_title(window_id: NativeWindowId) -> Option<String> {
+        let hwnd = hwnd_from_id(window_id);
+        let len = unsafe { GetWindowTextLengthW(hwnd) };
+        if len <= 0 {
+            return None;
+        }
+        let mut buffer = vec![0u16; len as usize + 1];
+        let copied = unsafe { GetWindowTextW(hwnd, &mut buffer) };
+        if copied <= 0 {
+            return None;
+        }
+        let title = String::from_utf16_lossy(&buffer[..copied as usize]);
+        let trimmed = title.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
     }
 
     pub fn send_paste_shortcut(
@@ -514,7 +569,7 @@ mod platform {
 
 #[cfg(not(target_os = "windows"))]
 mod platform {
-    use super::NativeWindowId;
+    use super::{ForegroundWindowSnapshot, NativeWindowId};
     use crate::host::PasteShortcut;
 
     pub fn foreground_window_id() -> Option<NativeWindowId> {
@@ -533,6 +588,10 @@ mod platform {
     }
 
     pub fn window_process_id(_window_id: NativeWindowId) -> Option<u32> {
+        None
+    }
+
+    pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {
         None
     }
 }

@@ -19,7 +19,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md` | UI modularizada en commits `af392f5`/`7b10504`; `NotificationsApp` ya separado; proximo split seguro: `UiHostApp`. |
 | Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.5` publicado con auto-update firmado y `latest.json`. |
 | Dev/instalada | active | `docs/topics/windows-installer.md` | `v0.2.5` instalada; dev reiniciado con New item + fix de Pin/Stay on top. Instalada/dev separados. |
-| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | WIP New item + Pin: crear item manual funciona sin tocar clipboard; metadata no roba foco; el boton Pin vuelve a cambiar TOPMOST real. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
+| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | New item + Pin commiteados en `3826de1`; WIP actual captura contexto oculto de app/ventana/formatos para busqueda. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
 | OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
 
 ## Specs Activas
@@ -82,9 +82,9 @@ Comandos conversacionales y Pi locales estan documentados en `docs/topics/docs-k
 
 Proximo lote recomendado:
 
-1. Cerrar WIP picker/New item/Pin: revisar diff mezclado con hover/delete previo y decidir commit separado o integrar con picker WIP.
-2. Antes de commitear, correr `npm run visual:check` completo; ya pasaron checks focalizados de New item/Pin, build, cargo check y Rust tests.
-3. Si se quiere publicar otro corte, preparar `v0.2.6` para probar auto-update real desde la instalada `v0.2.5`; no perder/rotar la clave de updater.
+1. Cerrar WIP captura de contexto oculto: validar dogfood copiando desde apps externas y buscando por `app:`, `window:`, dominio y texto plain de contexto.
+2. Si se va a commitear, correr `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run rust:test` y visual focalizado/full segun riesgo.
+3. Release `v0.2.6` queda despues de cerrar este WIP; no perder/rotar la clave de updater.
 
 ## Promocion De Memoria
 

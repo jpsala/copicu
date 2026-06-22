@@ -55,6 +55,22 @@ pub struct SearchPlanFiltersV1 {
     pub marked: Option<bool>,
     #[serde(default)]
     pub date: Vec<SearchPlanDateFilterV1>,
+    #[serde(default)]
+    pub source_app: Vec<String>,
+    #[serde(default)]
+    pub not_source_app: Vec<String>,
+    #[serde(default)]
+    pub window_title: Vec<String>,
+    #[serde(default)]
+    pub not_window_title: Vec<String>,
+    #[serde(default)]
+    pub domain: Vec<String>,
+    #[serde(default)]
+    pub not_domain: Vec<String>,
+    #[serde(default)]
+    pub source_kind: Vec<String>,
+    #[serde(default)]
+    pub clipboard_format: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -175,6 +191,14 @@ pub(super) struct ParsedHistoryQuery {
     pub(super) marked_filters: Vec<bool>,
     pub(super) after_unix_ms: Option<i64>,
     pub(super) before_unix_ms: Option<i64>,
+    pub(super) source_apps: Vec<String>,
+    pub(super) excluded_source_apps: Vec<String>,
+    pub(super) window_titles: Vec<String>,
+    pub(super) excluded_window_titles: Vec<String>,
+    pub(super) domains: Vec<String>,
+    pub(super) excluded_domains: Vec<String>,
+    pub(super) source_kinds: Vec<String>,
+    pub(super) clipboard_formats: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -233,6 +257,54 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
             "has" => {
                 for value in split_filter_values(value) {
                     push_has_filter(&mut parsed, value, negated);
+                }
+            }
+            "app" | "program" | "process" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.source_apps,
+                        &mut parsed.excluded_source_apps,
+                        value,
+                        negated,
+                    );
+                }
+            }
+            "window" | "title" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.window_titles,
+                        &mut parsed.excluded_window_titles,
+                        value,
+                        negated,
+                    );
+                }
+            }
+            "domain" | "site" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.domains,
+                        &mut parsed.excluded_domains,
+                        value,
+                        negated,
+                    );
+                }
+            }
+            "source" => {
+                if negated {
+                    push_text_filter(&mut parsed, raw_token, negated);
+                } else {
+                    for value in split_filter_values(value) {
+                        push_include_capture_value_filter(&mut parsed.source_kinds, value);
+                    }
+                }
+            }
+            "format" | "fmt" => {
+                if negated {
+                    push_text_filter(&mut parsed, raw_token, negated);
+                } else {
+                    for value in split_filter_values(value) {
+                        push_include_capture_value_filter(&mut parsed.clipboard_formats, value);
+                    }
                 }
             }
             "after" | "since" => {
@@ -374,6 +446,30 @@ fn push_mime_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool)
     }
 }
 
+fn push_capture_value_filter(
+    include: &mut Vec<String>,
+    exclude: &mut Vec<String>,
+    value: &str,
+    negated: bool,
+) {
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    if negated {
+        exclude.push(value.to_string());
+    } else {
+        include.push(value.to_string());
+    }
+}
+
+fn push_include_capture_value_filter(include: &mut Vec<String>, value: &str) {
+    let value = value.trim();
+    if !value.is_empty() {
+        include.push(value.to_string());
+    }
+}
+
 fn push_has_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool) {
     let Some(filter) = parse_has_filter(value) else {
         push_text_filter(parsed, &format!("has:{value}"), negated);
@@ -441,6 +537,14 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
     if let Some(marked) = query.marked_filters.last() {
         filters.marked = Some(*marked);
     }
+    filters.source_app = query.source_apps;
+    filters.not_source_app = query.excluded_source_apps;
+    filters.window_title = query.window_titles;
+    filters.not_window_title = query.excluded_window_titles;
+    filters.domain = query.domains;
+    filters.not_domain = query.excluded_domains;
+    filters.source_kind = query.source_kinds;
+    filters.clipboard_format = query.clipboard_formats;
     if let Some(after_unix_ms) = query.after_unix_ms {
         filters.date.push(SearchPlanDateFilterV1 {
             field: SearchPlanDateFieldV1::Created,
@@ -486,6 +590,14 @@ impl SearchPlanFiltersV1 {
             && self.missing.is_empty()
             && self.marked.is_none()
             && self.date.is_empty()
+            && self.source_app.is_empty()
+            && self.not_source_app.is_empty()
+            && self.window_title.is_empty()
+            && self.not_window_title.is_empty()
+            && self.domain.is_empty()
+            && self.not_domain.is_empty()
+            && self.source_kind.is_empty()
+            && self.clipboard_format.is_empty()
     }
 }
 
@@ -559,6 +671,66 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
         }
         for date_filter in &filters.date {
             compile_date_filter(date_filter, &mut clauses, &mut params)?;
+        }
+        for app in clean_values(&filters.source_app) {
+            push_capture_event_clause(
+                &mut clauses,
+                &mut params,
+                &["source_app_name", "source_app_path"],
+                app,
+                false,
+            );
+        }
+        for app in clean_values(&filters.not_source_app) {
+            push_capture_event_clause(
+                &mut clauses,
+                &mut params,
+                &["source_app_name", "source_app_path"],
+                app,
+                true,
+            );
+        }
+        for title in clean_values(&filters.window_title) {
+            push_capture_event_clause(
+                &mut clauses,
+                &mut params,
+                &["source_window_title"],
+                title,
+                false,
+            );
+        }
+        for title in clean_values(&filters.not_window_title) {
+            push_capture_event_clause(
+                &mut clauses,
+                &mut params,
+                &["source_window_title"],
+                title,
+                true,
+            );
+        }
+        for domain in clean_values(&filters.domain) {
+            push_capture_event_clause(&mut clauses, &mut params, &["domain"], domain, false);
+        }
+        for domain in clean_values(&filters.not_domain) {
+            push_capture_event_clause(&mut clauses, &mut params, &["domain"], domain, true);
+        }
+        for source_kind in clean_values(&filters.source_kind) {
+            push_capture_event_clause(
+                &mut clauses,
+                &mut params,
+                &["source_kind"],
+                source_kind,
+                false,
+            );
+        }
+        for format in clean_values(&filters.clipboard_format) {
+            push_capture_event_clause(
+                &mut clauses,
+                &mut params,
+                &["clipboard_formats_text"],
+                format,
+                false,
+            );
         }
     }
 
@@ -893,6 +1065,7 @@ fn push_text_like_clause(
         "COALESCE(tags, '')",
         "COALESCE(mime_primary, '')",
         "content_kind",
+        "COALESCE(context_search_text, '')",
     ];
     let joined = fields
         .iter()
@@ -936,6 +1109,37 @@ fn push_tag_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, value: &s
     }
     params.push(Value::Text(like_contains_pattern(&slug)));
     params.push(Value::Text(like_contains_pattern(value)));
+}
+
+fn push_capture_event_clause(
+    clauses: &mut Vec<String>,
+    params: &mut Vec<Value>,
+    fields: &[&str],
+    value: &str,
+    negated: bool,
+) {
+    let field_sql = fields
+        .iter()
+        .map(|field| format!("COALESCE({field}, '') LIKE ? ESCAPE '\\'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let exists = format!(
+        "EXISTS (
+            SELECT 1
+            FROM clipboard_item_capture_events capture_events
+            WHERE capture_events.item_id = clipboard_items.id
+                AND ({field_sql})
+         )"
+    );
+    clauses.push(if negated {
+        format!("NOT {exists}")
+    } else {
+        exists
+    });
+    let pattern = like_contains_pattern(value);
+    for _ in fields {
+        params.push(Value::Text(pattern.clone()));
+    }
 }
 
 fn push_mime_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, mime: &str, negated: bool) {

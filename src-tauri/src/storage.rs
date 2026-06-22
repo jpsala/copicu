@@ -134,6 +134,31 @@ pub struct CreateHistoryItemResult {
     pub created: bool,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureContext {
+    pub source_kind: String,
+    pub source_app_name: Option<String>,
+    pub source_app_path: Option<String>,
+    pub source_process_id: Option<i64>,
+    pub source_window_id: Option<i64>,
+    pub source_window_title: Option<String>,
+    pub clipboard_platform: Option<String>,
+    pub clipboard_sequence_number: Option<i64>,
+    pub clipboard_format_count: Option<i64>,
+    #[serde(default)]
+    pub clipboard_formats: Vec<CaptureFormatContext>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureFormatContext {
+    pub id: u32,
+    pub name: String,
+    pub kind: String,
+    pub handle_size_bytes: Option<i64>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetHistoryItemsMarkedRequest {
@@ -526,19 +551,31 @@ impl AppStorage {
     }
 
     pub fn insert_text(&self, text: &str, normalized_hash: &str) -> Result<i64, String> {
+        self.insert_text_with_context(text, normalized_hash, None)
+    }
+
+    pub fn insert_text_with_context(
+        &self,
+        text: &str,
+        normalized_hash: &str,
+        capture_context: Option<CaptureContext>,
+    ) -> Result<i64, String> {
         let now = now_unix_ms();
+        let text_char_count = text.chars().count() as i64;
+        let line_count = text.lines().count().max(1) as i64;
+        let domain = first_url_domain(text);
         let (item_id, pruned_blobs) = {
             let conn = self
                 .conn
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
 
-            if let Some(existing_id) = bump_existing_capture(&conn, normalized_hash, now)? {
-                let pruned_blobs = prune_history_from_conn(&conn)?;
-                (existing_id, pruned_blobs)
-            } else {
-                conn.execute(
-                    "INSERT INTO clipboard_items (
+            let item_id =
+                if let Some(existing_id) = bump_existing_capture(&conn, normalized_hash, now)? {
+                    existing_id
+                } else {
+                    conn.execute(
+                        "INSERT INTO clipboard_items (
                         content_kind,
                         text,
                         normalized_hash,
@@ -547,14 +584,27 @@ impl AppStorage {
                         last_copied_at_unix_ms,
                         copy_count
                     ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1)",
-                    params![text, normalized_hash, now],
-                )
-                .map_err(|error| format!("failed to insert clipboard text item: {error}"))?;
+                        params![text, normalized_hash, now],
+                    )
+                    .map_err(|error| format!("failed to insert clipboard text item: {error}"))?;
 
-                let item_id = conn.last_insert_rowid();
-                let pruned_blobs = prune_history_from_conn(&conn)?;
-                (item_id, pruned_blobs)
-            }
+                    conn.last_insert_rowid()
+                };
+
+            record_capture_event(
+                &conn,
+                item_id,
+                now,
+                "text",
+                Some("text/plain"),
+                None,
+                Some(text_char_count),
+                Some(line_count),
+                domain.as_deref(),
+                capture_context.as_ref(),
+            )?;
+            let pruned_blobs = prune_history_from_conn(&conn)?;
+            (item_id, pruned_blobs)
         };
 
         self.remove_blob_paths(pruned_blobs);
@@ -576,6 +626,13 @@ impl AppStorage {
         let mime_primary = normalize_optional_text(request.mime_primary)
             .or_else(|| Some("text/plain".to_string()));
         let normalized_hash = hash_text(&text);
+        let text_char_count = text.chars().count() as i64;
+        let line_count = text.lines().count().max(1) as i64;
+        let domain = first_url_domain(&text);
+        let manual_context = CaptureContext {
+            source_kind: "manual".to_string(),
+            ..CaptureContext::default()
+        };
         let now = now_unix_ms();
         let (result, pruned_blobs) = {
             let conn = self
@@ -614,6 +671,7 @@ impl AppStorage {
                 let next_notes = append_optional_notes(existing_notes, notes);
                 let next_tags = merge_optional_tags(existing_tags, tags);
                 let next_mime = mime_primary.or(existing_mime);
+                let event_mime = next_mime.clone();
                 conn.execute(
                     "UPDATE clipboard_items
                      SET last_copied_at_unix_ms = ?1,
@@ -634,6 +692,18 @@ impl AppStorage {
                 )
                 .map_err(|error| format!("failed to update existing manual item: {error}"))?;
 
+                record_capture_event(
+                    &conn,
+                    existing_id,
+                    now,
+                    "text",
+                    event_mime.as_deref(),
+                    None,
+                    Some(text_char_count),
+                    Some(line_count),
+                    domain.as_deref(),
+                    Some(&manual_context),
+                )?;
                 let pruned_blobs = prune_history_from_conn(&conn)?;
                 (
                     CreateHistoryItemResult {
@@ -662,6 +732,18 @@ impl AppStorage {
                 .map_err(|error| format!("failed to create manual text item: {error}"))?;
 
                 let item_id = conn.last_insert_rowid();
+                record_capture_event(
+                    &conn,
+                    item_id,
+                    now,
+                    "text",
+                    mime_primary.as_deref(),
+                    None,
+                    Some(text_char_count),
+                    Some(line_count),
+                    domain.as_deref(),
+                    Some(&manual_context),
+                )?;
                 let pruned_blobs = prune_history_from_conn(&conn)?;
                 (
                     CreateHistoryItemResult {
@@ -678,6 +760,14 @@ impl AppStorage {
     }
 
     pub fn insert_image(&self, image: &crate::image_capture::CapturedImage) -> Result<i64, String> {
+        self.insert_image_with_context(image, None)
+    }
+
+    pub fn insert_image_with_context(
+        &self,
+        image: &crate::image_capture::CapturedImage,
+        capture_context: Option<CaptureContext>,
+    ) -> Result<i64, String> {
         let image_relative_path = relative_blob_path(IMAGE_BLOB_DIR, &image.normalized_hash);
         let thumbnail_relative_path =
             relative_blob_path(THUMBNAIL_BLOB_DIR, &image.normalized_hash);
@@ -696,9 +786,10 @@ impl AppStorage {
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
 
-            if let Some(existing_id) = bump_existing_capture(&conn, &image.normalized_hash, now)? {
-                let pruned_blobs = prune_history_from_conn(&conn)?;
-                (existing_id, pruned_blobs)
+            let item_id = if let Some(existing_id) =
+                bump_existing_capture(&conn, &image.normalized_hash, now)?
+            {
+                existing_id
             } else {
                 write_blob(&image_path, &image.png_bytes)?;
                 write_blob(&thumbnail_path, &image.thumbnail_png_bytes)?;
@@ -731,10 +822,23 @@ impl AppStorage {
                 )
                 .map_err(|error| format!("failed to insert clipboard image item: {error}"))?;
 
-                let item_id = conn.last_insert_rowid();
-                let pruned_blobs = prune_history_from_conn(&conn)?;
-                (item_id, pruned_blobs)
-            }
+                conn.last_insert_rowid()
+            };
+
+            record_capture_event(
+                &conn,
+                item_id,
+                now,
+                "image",
+                Some("image/png"),
+                Some(image.png_bytes.len() as i64),
+                None,
+                None,
+                None,
+                capture_context.as_ref(),
+            )?;
+            let pruned_blobs = prune_history_from_conn(&conn)?;
+            (item_id, pruned_blobs)
         };
 
         self.remove_blob_paths(pruned_blobs);
@@ -1971,6 +2075,189 @@ fn sync_legacy_tags_for_tag(conn: &Connection, tag_id: i64) -> Result<(), String
     Ok(())
 }
 
+fn record_capture_event(
+    conn: &Connection,
+    item_id: i64,
+    captured_at_unix_ms: i64,
+    content_kind: &str,
+    mime_primary: Option<&str>,
+    byte_size: Option<i64>,
+    text_char_count: Option<i64>,
+    line_count: Option<i64>,
+    domain: Option<&str>,
+    capture_context: Option<&CaptureContext>,
+) -> Result<(), String> {
+    let fallback_context;
+    let context = if let Some(context) = capture_context {
+        context
+    } else {
+        fallback_context = CaptureContext {
+            source_kind: "clipboard".to_string(),
+            ..CaptureContext::default()
+        };
+        &fallback_context
+    };
+    let source_kind = normalize_source_kind(&context.source_kind);
+    let formats_text = clipboard_formats_text(&context.clipboard_formats);
+    let formats_json =
+        serde_json::to_string(&context.clipboard_formats).unwrap_or_else(|_| "[]".to_string());
+    let event_json = serde_json::to_string(context)
+        .map_err(|error| format!("failed to serialize capture context: {error}"))?;
+
+    conn.execute(
+        "INSERT INTO clipboard_item_capture_events (
+            item_id,
+            captured_at_unix_ms,
+            source_kind,
+            source_app_name,
+            source_app_path,
+            source_process_id,
+            source_window_id,
+            source_window_title,
+            content_kind,
+            mime_primary,
+            clipboard_platform,
+            clipboard_sequence_number,
+            clipboard_format_count,
+            clipboard_formats_text,
+            clipboard_formats_json,
+            byte_size,
+            text_char_count,
+            line_count,
+            domain,
+            event_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+        params![
+            item_id,
+            captured_at_unix_ms,
+            source_kind,
+            context.source_app_name.as_deref(),
+            context.source_app_path.as_deref(),
+            context.source_process_id,
+            context.source_window_id,
+            context.source_window_title.as_deref(),
+            content_kind,
+            mime_primary,
+            context.clipboard_platform.as_deref(),
+            context.clipboard_sequence_number,
+            context.clipboard_format_count,
+            formats_text.as_str(),
+            formats_json.as_str(),
+            byte_size,
+            text_char_count,
+            line_count,
+            domain,
+            event_json.as_str()
+        ],
+    )
+    .map_err(|error| format!("failed to insert capture context: {error}"))?;
+
+    let next_context_text = capture_context_search_text(
+        captured_at_unix_ms,
+        content_kind,
+        mime_primary,
+        byte_size,
+        text_char_count,
+        line_count,
+        domain,
+        context,
+        &formats_text,
+    );
+    conn.execute(
+        "UPDATE clipboard_items
+         SET context_search_text = TRIM(COALESCE(context_search_text, '') || ' ' || ?1)
+         WHERE id = ?2",
+        params![next_context_text, item_id],
+    )
+    .map_err(|error| format!("failed to update capture context search text: {error}"))?;
+
+    Ok(())
+}
+
+fn normalize_source_kind(source_kind: &str) -> &str {
+    match source_kind.trim() {
+        "" => "clipboard",
+        value => value,
+    }
+}
+
+fn clipboard_formats_text(formats: &[CaptureFormatContext]) -> String {
+    formats
+        .iter()
+        .flat_map(|format| [format.name.as_str(), format.kind.as_str()])
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn capture_context_search_text(
+    captured_at_unix_ms: i64,
+    content_kind: &str,
+    mime_primary: Option<&str>,
+    byte_size: Option<i64>,
+    text_char_count: Option<i64>,
+    line_count: Option<i64>,
+    domain: Option<&str>,
+    context: &CaptureContext,
+    formats_text: &str,
+) -> String {
+    let mut parts = vec![
+        normalize_source_kind(&context.source_kind).to_string(),
+        content_kind.to_string(),
+        captured_at_unix_ms.to_string(),
+    ];
+    parts.extend(context.source_app_name.clone());
+    parts.extend(context.source_app_path.clone());
+    parts.extend(context.source_process_id.map(|value| value.to_string()));
+    parts.extend(context.source_window_id.map(|value| value.to_string()));
+    parts.extend(context.source_window_title.clone());
+    parts.extend(context.clipboard_platform.clone());
+    parts.extend(
+        context
+            .clipboard_sequence_number
+            .map(|value| value.to_string()),
+    );
+    parts.extend(
+        context
+            .clipboard_format_count
+            .map(|value| value.to_string()),
+    );
+    parts.extend(mime_primary.map(str::to_string));
+    parts.extend(byte_size.map(|value| value.to_string()));
+    parts.extend(text_char_count.map(|value| value.to_string()));
+    parts.extend(line_count.map(|value| value.to_string()));
+    parts.extend(domain.map(str::to_string));
+    if !formats_text.trim().is_empty() {
+        parts.push(formats_text.to_string());
+    }
+    parts.join(" ")
+}
+
+fn first_url_domain(text: &str) -> Option<String> {
+    text.split_whitespace().find_map(|token| {
+        token_domain(token.trim_matches(|ch: char| {
+            matches!(
+                ch,
+                '<' | '>' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\'' | ',' | ';'
+            )
+        }))
+    })
+}
+
+fn token_domain(token: &str) -> Option<String> {
+    let rest = token
+        .strip_prefix("https://")
+        .or_else(|| token.strip_prefix("http://"))?;
+    let domain = rest
+        .split(['/', '?', '#', ':'])
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    (!domain.is_empty()).then_some(domain)
+}
+
 fn bump_existing_capture(
     conn: &Connection,
     normalized_hash: &str,
@@ -2674,6 +2961,120 @@ mod tests {
         assert_eq!(page.items[0].created_at_unix_ms, 10_001);
         assert!(page.items[0].last_copied_at_unix_ms >= page.items[1].last_copied_at_unix_ms);
         assert_eq!(page.items[0].copy_count, 2);
+    }
+
+    #[test]
+    fn capture_context_is_hidden_but_plain_searchable() {
+        let storage = test_storage_with_migrations();
+        let text = "https://example.com/path copied from an editor";
+        let context = CaptureContext {
+            source_kind: "clipboard".to_string(),
+            source_app_name: Some("code.exe".to_string()),
+            source_app_path: Some(r"C:\Tools\VS Code\Code.exe".to_string()),
+            source_process_id: Some(4242),
+            source_window_id: Some(9001),
+            source_window_title: Some("main.rs - Copicu".to_string()),
+            clipboard_platform: Some("windows".to_string()),
+            clipboard_sequence_number: Some(123),
+            clipboard_format_count: Some(2),
+            clipboard_formats: vec![CaptureFormatContext {
+                id: 13,
+                name: "CF_UNICODETEXT".to_string(),
+                kind: "text".to_string(),
+                handle_size_bytes: Some(128),
+            }],
+        };
+
+        let item_id = storage
+            .insert_text_with_context(text, &hash_text(text), Some(context))
+            .expect("text with context should insert");
+
+        for query in [
+            "code.exe",
+            "main.rs",
+            "example.com",
+            "app:code",
+            "window:copicu",
+            "domain:example.com",
+            "source:clipboard",
+            "format:unicode",
+        ] {
+            let page = storage
+                .history_search(HistorySearchRequest {
+                    query: query.to_string(),
+                    cursor: None,
+                    limit: Some(10),
+                    plan: None,
+                    mode: HistorySearchMode::Structured,
+                    include_content: true,
+                    include_counts: true,
+                    explain: false,
+                    ai_context: None,
+                })
+                .unwrap_or_else(|error| panic!("query {query} should search context: {error}"));
+            assert_eq!(
+                ids(&page.items),
+                vec![item_id],
+                "query {query} should match capture context"
+            );
+        }
+
+        let item = storage.get_item(item_id).expect("item should load");
+        assert_eq!(item.title, None);
+        assert_eq!(item.notes, None);
+        assert_eq!(item.tags, None);
+    }
+
+    #[test]
+    fn recapture_appends_capture_event_without_duplicate_item() {
+        let storage = test_storage_with_migrations();
+        let text = "same payload";
+        let hash = hash_text(text);
+
+        let first_id = storage
+            .insert_text_with_context(
+                text,
+                &hash,
+                Some(CaptureContext {
+                    source_kind: "clipboard".to_string(),
+                    source_app_name: Some("first.exe".to_string()),
+                    ..CaptureContext::default()
+                }),
+            )
+            .expect("first capture should insert");
+        let second_id = storage
+            .insert_text_with_context(
+                text,
+                &hash,
+                Some(CaptureContext {
+                    source_kind: "clipboard".to_string(),
+                    source_app_name: Some("second.exe".to_string()),
+                    ..CaptureContext::default()
+                }),
+            )
+            .expect("recapture should bump existing item");
+
+        assert_eq!(first_id, second_id);
+        let conn = storage.conn.lock().expect("sqlite lock should work");
+        let event_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_item_capture_events WHERE item_id = ?1",
+                params![first_id],
+                |row| row.get(0),
+            )
+            .expect("capture events should be counted");
+        assert_eq!(event_count, 2);
+        drop(conn);
+
+        let page = storage
+            .list_page(HistoryPageRequest {
+                query: "app:second".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("second app should be searchable after recapture");
+        assert_eq!(ids(&page.items), vec![first_id]);
+        assert_eq!(page.total_count, Some(1));
     }
 
     #[test]
