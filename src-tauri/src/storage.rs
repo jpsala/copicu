@@ -268,6 +268,8 @@ pub enum HistoryMovePosition {
 pub struct AppSettings {
     pub schema_version: u32,
     pub general: GeneralSettings,
+    #[serde(default)]
+    pub auto_update: AutoUpdateSettings,
     pub picker: PickerSettings,
     pub history: HistorySettings,
     pub appearance: AppearanceSettings,
@@ -287,6 +289,24 @@ pub struct GeneralSettings {
     pub global_shortcut: String,
     #[serde(default)]
     pub launch_on_startup: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoUpdateSettings {
+    #[serde(default = "default_auto_update_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_auto_update_check_interval_minutes")]
+    pub check_interval_minutes: i64,
+}
+
+impl Default for AutoUpdateSettings {
+    fn default() -> Self {
+        Self {
+            enabled: default_auto_update_enabled(),
+            check_interval_minutes: default_auto_update_check_interval_minutes(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -406,6 +426,7 @@ impl Default for AppSettings {
                 global_shortcut: default_global_shortcut(),
                 launch_on_startup: false,
             },
+            auto_update: AutoUpdateSettings::default(),
             picker: PickerSettings {
                 hide_on_focus_lost: true,
                 enter_action: EnterAction::Copy,
@@ -426,6 +447,14 @@ impl Default for AppSettings {
             ai: AiSettings::default(),
         }
     }
+}
+
+fn default_auto_update_enabled() -> bool {
+    true
+}
+
+fn default_auto_update_check_interval_minutes() -> i64 {
+    60
 }
 
 fn default_promote_active_on_copy() -> bool {
@@ -2042,6 +2071,9 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     if settings.general.global_shortcut.trim().is_empty() {
         return Err("global shortcut cannot be empty".to_string());
     }
+    if !(15..=1440).contains(&settings.auto_update.check_interval_minutes) {
+        return Err("auto-update check interval must be between 15 and 1440 minutes".to_string());
+    }
     if contains_hotkey_sequence_delimiter(&settings.picker.pin_toggle_shortcut) {
         return Err("pin toggle shortcut must be a single shortcut".to_string());
     }
@@ -2176,6 +2208,7 @@ mod tests {
 
         assert_eq!(settings.tray, TraySettings::default());
         assert_eq!(settings.scripts, ScriptsSettings::default());
+        assert_eq!(settings.auto_update, AutoUpdateSettings::default());
         assert_eq!(
             settings.enrichment,
             crate::enrichment::EnrichmentSettings::default()

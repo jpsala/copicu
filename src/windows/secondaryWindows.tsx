@@ -1256,6 +1256,13 @@ function SettingsPanel({
       ].join(" "),
     )
     .join(" ");
+  const generalSearchText = [
+    "launch on windows startup",
+    "start copicu when windows starts",
+    "automatic updates",
+    "auto update",
+    "check hourly download install signed github release",
+  ].join(" ");
   const hotkeySearchText = [
     draft.general.globalShortcut,
     draft.picker.pinToggleShortcut,
@@ -1335,6 +1342,7 @@ function SettingsPanel({
   const sectionMatches = (section: SettingSectionDefinition) =>
     normalizedQuery.length === 0 ||
     `${section.id} ${section.label} ${section.description}`.toLocaleLowerCase().includes(normalizedQuery) ||
+    (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "scripts" && scriptSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery));
@@ -1411,6 +1419,7 @@ function SettingsPanel({
           <UiBadge className="settings-summary-badge" variant="light">{draft.picker.enterAction === "copy" ? "Enter copies" : "Enter pastes"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.enrichment.enabled ? "Enrichment on" : "Enrichment off"}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{draft.autoUpdate.enabled ? "Auto-update on" : "Auto-update off"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{tags.length} tags</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{actionSummary.scriptCount} scripts</UiBadge>
         </div>
@@ -1457,6 +1466,23 @@ function SettingsPanel({
                           general: {
                             ...draft.general,
                             launchOnStartup: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("general", "Automatic updates", "Check hourly download install signed GitHub release") ? (
+                  <SettingRow label="Automatic updates" description="Checks every hour, downloads signed releases, installs them, and relaunches Copicu. Enabled by default.">
+                    <UiSwitch
+                      label="Automatic updates"
+                      checked={draft.autoUpdate.enabled}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          autoUpdate: {
+                            ...draft.autoUpdate,
+                            enabled: checked,
                           },
                         })
                       }

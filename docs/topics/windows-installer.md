@@ -108,7 +108,24 @@ No dejar herramientas de benchmark bajo `src-tauri/src/bin` si no deben distribu
 
 ## Updater
 
-Para updates futuros con Tauri Updater:
+Decision vigente: usar **Tauri Updater + GitHub Releases** para auto-update in-app.
+
+Politica inicial:
+
+- setting `autoUpdate.enabled` prendido por defecto;
+- check automatico al iniciar la app instalada y luego cada 60 minutos;
+- canal unico `stable`;
+- endpoint publico: `https://github.com/jpsala/copicu/releases/latest/download/latest.json`;
+- Windows `installMode: "passive"` para instalar sin interaccion;
+- si hay update, Copicu descarga, verifica firma Tauri, instala y relanza.
+
+Config base en `src-tauri/tauri.conf.json` mantiene `plugins.updater.pubkey`, endpoint y modo pasivo. Los artifacts de updater se habilitan solo en release con config mergeada:
+
+```powershell
+npm run tauri:build -- --config src-tauri/tauri.updater-artifacts.conf.json
+```
+
+Ese config agrega:
 
 ```json
 {
@@ -118,7 +135,9 @@ Para updates futuros con Tauri Updater:
 }
 ```
 
-En Windows, Tauri genera instalador NSIS y firma `.sig` cuando hay key de updater. No activar todavia hasta decidir canal de releases, endpoints y manejo de claves. Las claves privadas deben venir por variables de entorno, no por `.env`.
+El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_PRIVATE_KEY` o `TAURI_SIGNING_PRIVATE_KEY_PATH`, lee `Copicu_<version>_x64-setup.exe.sig`, genera `latest.json` y sube ambos assets al GitHub Release.
+
+Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
 ## Signing
 

@@ -71,6 +71,7 @@ import type {
   WhichKeyEntry,
   WhichKeyState,
 } from "./shared/contracts";
+import { setupAutomaticUpdates, type AutoUpdateStatus } from "./autoUpdate";
 import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "./shared/settings";
 import {
   UiBadge,
@@ -453,6 +454,31 @@ function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
 
 function setHistoryQueryMarked(request: SetHistoryQueryMarkedRequest) {
   return invoke("set_history_query_marked", { request });
+}
+
+function autoUpdateStatusToast(status: AutoUpdateStatus): ToastOptions | null {
+  if (status.phase === "available") {
+    return {
+      title: "Copicu update found",
+      message: `Version ${status.version} is available. Downloading automatically…`,
+      tone: "info",
+    };
+  }
+  if (status.phase === "installing") {
+    return {
+      title: "Installing Copicu update",
+      message: `Version ${status.version} downloaded. Copicu will restart when ready.`,
+      tone: "success",
+    };
+  }
+  if (status.phase === "relaunching") {
+    return {
+      title: "Restarting Copicu",
+      message: `Launching version ${status.version}.`,
+      tone: "success",
+    };
+  }
+  return null;
 }
 
 function listActions() {
@@ -2110,6 +2136,21 @@ function App() {
       unlisten?.();
     };
   }, []);
+
+
+  useEffect(() => {
+    return setupAutomaticUpdates(settings.autoUpdate, {
+      onStatus: (status) => {
+        const toast = autoUpdateStatusToast(status);
+        if (toast) {
+          pushToast(toast);
+        }
+      },
+      onError: (message) => {
+        console.warn("automatic update check failed", message);
+      },
+    });
+  }, [pushToast, settings.autoUpdate]);
 
   useEffect(() => {
     applyAppearance(settings.appearance);

@@ -55,5 +55,16 @@
         "installerHooks": "nsis-hooks.nsh"
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM1QkI0MkNBOUMxRERCNzUKUldSMTJ4MmN5a0s3eFVOTU81ZDRFbUwxRmJ3bTgyZVFpTFlWeWU4OFQ3dGw5VjIxaE1OS1VocVUK",
+      "endpoints": [
+        "https://github.com/jpsala/copicu/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

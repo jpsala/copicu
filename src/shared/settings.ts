@@ -7,6 +7,10 @@ export type AppSettings = {
     globalShortcut: string;
     launchOnStartup: boolean;
   };
+  autoUpdate: {
+    enabled: boolean;
+    checkIntervalMinutes: number;
+  };
   picker: {
     hideOnFocusLost: boolean;
     enterAction: EnterAction;
@@ -39,6 +43,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   general: {
     globalShortcut: "Ctrl+Shift+,",
     launchOnStartup: false,
+  },
+  autoUpdate: {
+    enabled: true,
+    checkIntervalMinutes: 60,
   },
   picker: {
     hideOnFocusLost: true,
@@ -82,6 +90,7 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
     ...DEFAULT_SETTINGS,
     ...settings,
     general: { ...DEFAULT_SETTINGS.general, ...settings.general },
+    autoUpdate: { ...DEFAULT_SETTINGS.autoUpdate, ...settings.autoUpdate },
     picker: { ...DEFAULT_SETTINGS.picker, ...settings.picker },
     history: { ...DEFAULT_SETTINGS.history, ...settings.history },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...settings.appearance },

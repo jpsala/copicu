@@ -80,6 +80,53 @@ function Get-Sha256($Path) {
   }
 }
 
+function Assert-UpdaterSigningConfigured() {
+  if ($DryRun -or $SkipBuild) {
+    return
+  }
+
+  if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+    return
+  }
+
+  if ($env:TAURI_SIGNING_PRIVATE_KEY_PATH) {
+    $signingKeyPath = (Resolve-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY_PATH).Path
+    $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content -LiteralPath $signingKeyPath -Raw).Trim()
+    return
+  }
+
+  throw "Auto-update releases require TAURI_SIGNING_PRIVATE_KEY or TAURI_SIGNING_PRIVATE_KEY_PATH so Tauri can create .sig artifacts. Example: `$env:TAURI_SIGNING_PRIVATE_KEY_PATH='.codex-run\\secrets\\copicu-updater.key'"
+}
+
+function New-UpdaterManifest(
+  [string] $OutputPath,
+  [string] $Version,
+  [string] $ReleaseTag,
+  [string] $AssetName,
+  [string] $Signature,
+  [string] $Summary
+) {
+  $assetUrl = "https://github.com/jpsala/copicu/releases/download/$ReleaseTag/$AssetName"
+  $manifest = [ordered]@{
+    version = $Version
+    notes = $Summary
+    pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    platforms = [ordered]@{
+      "windows-x86_64" = [ordered]@{
+        signature = $Signature
+        url = $assetUrl
+      }
+    }
+  }
+
+  if ($DryRun) {
+    Write-Step "latest.json would be written to: $OutputPath"
+    return
+  }
+
+  $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath
+}
+
 function ConvertTo-Semver($Value) {
   if (-not $Value) {
     return $null
@@ -414,7 +461,8 @@ try {
   }
 
   if (-not $SkipBuild) {
-    Invoke-Checked "npm.cmd" @("run", "tauri:build")
+    Assert-UpdaterSigningConfigured
+    Invoke-Checked "npm.cmd" @("run", "tauri:build", "--", "--config", "src-tauri/tauri.updater-artifacts.conf.json")
   }
 
   if (Test-Path -LiteralPath $installer) {
@@ -429,6 +477,9 @@ try {
   Write-Step "installer: $installer"
   Write-Step "sha256: $hash"
 
+  $signaturePath = "$installer.sig"
+  $latestJsonPath = Join-Path (Split-Path $installer -Parent) "latest.json"
+
   $releaseSummary = "``$Tag`` updates the Windows installer and current release notes for this cut."
   if ($Notes) {
     $releaseSummary = (($Notes -replace '<filled after build>', $hash) -split "`r?`n" | Select-Object -First 1)
@@ -436,6 +487,18 @@ try {
       $releaseSummary = "``$Tag`` updates the Windows installer and current release notes for this cut."
     }
   }
+
+  if (Test-Path -LiteralPath $signaturePath) {
+    $signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
+  } elseif ($DryRun -or $SkipBuild) {
+    $signature = "DRYRUN-SIGNATURE"
+    Write-Step "updater signature would be read from: $signaturePath"
+  } else {
+    throw "Updater signature not found: $signaturePath"
+  }
+
+  New-UpdaterManifest -OutputPath $latestJsonPath -Version $version -ReleaseTag $Tag -AssetName $assetName -Signature $signature -Summary $releaseSummary
+  Write-Step "updater manifest: $latestJsonPath"
 
   if (-not $SkipReadme) {
     Update-ReadmeReleaseBlock -ReadmePath $readmePath -ReleaseTag $Tag -AssetName $assetName -Sha256 $hash -Summary $releaseSummary
@@ -488,7 +551,7 @@ try {
       }
     }
 
-    $releaseArgs = @("release", "create", $Tag, $installer, "--target", $head, "--title", $Title, "--notes-file", $NotesFile)
+    $releaseArgs = @("release", "create", $Tag, $installer, $latestJsonPath, "--target", $head, "--title", $Title, "--notes-file", $NotesFile)
     if ($PreRelease) {
       $releaseArgs += "--prerelease"
     }
