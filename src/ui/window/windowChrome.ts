@@ -48,7 +48,9 @@ export async function readWindowPinState(defaultValue = false): Promise<boolean>
   if (!isTauriRuntime()) {
     return defaultValue;
   }
-  return getCurrentWindow().isAlwaysOnTop().catch(() => defaultValue);
+  return invoke<boolean>("get_main_window_pin_state").catch(() =>
+    getCurrentWindow().isAlwaysOnTop().catch(() => defaultValue),
+  );
 }
 
 export async function readWindowMaximizedState(defaultValue = false): Promise<boolean> {
@@ -58,17 +60,21 @@ export async function readWindowMaximizedState(defaultValue = false): Promise<bo
   return getCurrentWindow().isMaximized().catch(() => defaultValue);
 }
 
-export async function setWindowPinned(pinned: boolean): Promise<void> {
+export async function setWindowPinned(pinned: boolean): Promise<boolean> {
   const testWindow = window as Window & { __copicuTestWindowPinned?: boolean };
   if (typeof testWindow.__copicuTestWindowPinned === "boolean") {
     testWindow.__copicuTestWindowPinned = pinned;
-    return;
+    return pinned;
   }
   if (!isTauriRuntime()) {
-    return;
+    return pinned;
   }
-  await getCurrentWindow().setAlwaysOnTop(pinned);
-  await emitTo(MAIN_WINDOW_LABEL, PICKER_PIN_STATE_EVENT, pinned).catch(() => undefined);
+  const actualPinned = await invoke<boolean>("set_main_window_pin_state", { pinned }).catch(async () => {
+    await getCurrentWindow().setAlwaysOnTop(pinned);
+    await emitTo(MAIN_WINDOW_LABEL, PICKER_PIN_STATE_EVENT, pinned).catch(() => undefined);
+    return pinned;
+  });
+  return actualPinned;
 }
 
 export async function minimizeCurrentWindow(): Promise<void> {

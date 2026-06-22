@@ -200,6 +200,19 @@ export type UpdateHistoryItemRequest = {
   marked?: boolean | null;
 };
 
+export type CreateHistoryItemRequest = {
+  text: string;
+  title: string | null;
+  notes: string | null;
+  tags: string | null;
+  mimePrimary: string | null;
+};
+
+export type CreateHistoryItemResult = {
+  id: number;
+  created: boolean;
+};
+
 export type SetHistoryItemsMarkedRequest = {
   ids: number[];
   marked: boolean;

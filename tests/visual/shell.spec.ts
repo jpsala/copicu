@@ -545,6 +545,49 @@ async function mockTauriInvoke(
             const query = args?.query?.toLocaleLowerCase() ?? "";
             return items.filter((item) => item.text.toLocaleLowerCase().includes(query));
           }
+          case "create_history_item": {
+            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
+            const request = args.request;
+            const normalizedText = request.text.replace(/\r\n/g, "\n").trim();
+            if (!normalizedText) {
+              throw new Error("new item content cannot be empty");
+            }
+            const existing = sourceItems.find((item: any) => item.text.trim() === normalizedText);
+            if (existing) {
+              existing.notes = request.notes ?? existing.notes ?? null;
+              existing.tags = [existing.tags, request.tags].filter(Boolean).join(" ") || null;
+              existing.last_copied_at_unix_ms = Date.now();
+              existing.copy_count = (existing.copy_count ?? 1) + 1;
+              (window as any).__copicuTestHistoryItems = [
+                existing,
+                ...sourceItems.filter((item: any) => item.id !== existing.id),
+              ];
+              return { id: existing.id, created: false };
+            }
+            const nextId = Math.max(...sourceItems.map((item: any) => item.id), 0) + 1;
+            const nextItem = {
+              id: nextId,
+              content_kind: "text",
+              text: normalizedText,
+              normalized_hash: `manual-${nextId}`,
+              created_at_unix_ms: Date.now(),
+              last_used_at_unix_ms: Date.now(),
+              last_copied_at_unix_ms: Date.now(),
+              copy_count: 1,
+              mime_primary: request.mimePrimary ?? "text/plain",
+              blob_path: null,
+              thumbnail_path: null,
+              byte_size: null,
+              width: null,
+              height: null,
+              thumbnail_data_url: null,
+              title: request.title ?? null,
+              notes: request.notes ?? null,
+              tags: request.tags ?? null,
+            };
+            (window as any).__copicuTestHistoryItems = [nextItem, ...sourceItems];
+            return { id: nextId, created: true };
+          }
           case "hide_picker":
           case "hide_whichkey_window":
           case "open_settings_window":
@@ -642,6 +685,89 @@ test("shell loads without horizontal overflow", async ({ page }) => {
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   expect(hasHorizontalOverflow).toBe(false);
+});
+
+test("new item dialog creates a manual history item", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").press("Control+N");
+  const dialog = page.getByRole("dialog", { name: "Create new item" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Content" })).toBeFocused();
+
+  const contentInput = dialog.getByRole("textbox", { name: "Content" });
+  const metadataInput = dialog.getByRole("textbox", { name: "Metadata" });
+  await contentInput.fill("COPICU_SYNTH_MANUAL_ITEM");
+  await metadataInput.focus();
+  await page.keyboard.type("#manual created from Copicu");
+  await expect(metadataInput).toBeFocused();
+  await expect(contentInput).toHaveValue("COPICU_SYNTH_MANUAL_ITEM");
+  await dialog.getByRole("button", { name: "Create" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MANUAL_ITEM/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MANUAL_ITEM/ })).toHaveClass(/is-selected/);
+  const createCall = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "create_history_item"),
+  );
+  expect(createCall.args.request).toMatchObject({
+    text: "COPICU_SYNTH_MANUAL_ITEM",
+    notes: "#manual created from Copicu",
+    tags: "#manual",
+    mimePrimary: "text/plain",
+  });
+});
+
+test("new item duplicate promotes the existing history item", async ({ page }) => {
+  const existing = {
+    ...syntheticLongHistory[1],
+    id: 9001,
+    text: "COPICU_SYNTH_DUPLICATE_MANUAL_ITEM",
+    normalized_hash: "synthetic-duplicate-manual-item",
+    notes: "#first",
+    tags: "#first",
+    last_copied_at_unix_ms: 1_700_000_000_000,
+  };
+  const newer = {
+    ...syntheticLongHistory[2],
+    id: 9002,
+    text: "COPICU_SYNTH_NEWER_ITEM",
+    normalized_hash: "synthetic-newer-item",
+    last_copied_at_unix_ms: 1_800_000_000_000,
+  };
+  await mockTauriInvoke(page, [newer, existing]);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").press("Control+N");
+  const dialog = page.getByRole("dialog", { name: "Create new item" });
+  await dialog.getByRole("textbox", { name: "Content" }).fill("COPICU_SYNTH_DUPLICATE_MANUAL_ITEM");
+  await dialog.getByRole("textbox", { name: "Metadata" }).fill("#second duplicate metadata");
+  await dialog.getByRole("button", { name: "Create" }).click();
+
+  await expect(dialog).toBeHidden();
+  const historyState = await page.evaluate(() => (window as any).__copicuTestHistoryItems);
+  expect(historyState[0]).toMatchObject({
+    id: 9001,
+    text: "COPICU_SYNTH_DUPLICATE_MANUAL_ITEM",
+    copy_count: 2,
+  });
+  expect(historyState[0].tags).toContain("#first");
+  expect(historyState[0].tags).toContain("#second");
+});
+
+test("command palette exposes new item action", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect(palette).toBeVisible();
+  await expect(palette.getByRole("option", { name: /New item/ })).toBeVisible();
+  await page.getByLabel("Search commands").fill("new");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("dialog", { name: "Create new item" })).toBeVisible();
 });
 
 test("WhichKey overlay reveals pending compound shortcuts", async ({ page }) => {
@@ -876,7 +1002,7 @@ test("mark menu shows global marked count and checkbox states", async ({ page })
   await expect(menu.getByRole("menuitem", { name: "Join checked" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Add metadata to checked" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Delete 4 checked" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Delete 4 checked" })).toHaveCount(0);
 });
 
 test("long synthetic history stays contained", async ({ page }) => {
@@ -1250,17 +1376,40 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit metadata" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
 
   await menu.getByRole("menuitem", { name: "Paste", exact: true }).click();
   await expect(menu).toBeHidden();
+});
+
+test("item hover actions appear only while hovering row", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const firstRow = page.locator(".history-feed.has-items > li").first();
+  const menuButton = firstRow.locator(".item-menu-button");
+  const deleteButton = firstRow.locator(".item-delete-button");
+
+  await page.mouse.move(1, 1);
+  await expect(menuButton).toHaveCSS("opacity", "0");
+  await expect(deleteButton).toHaveCSS("opacity", "0");
+
+  await firstRow.hover();
+  await expect(menuButton).toHaveCSS("opacity", "1");
+  await expect(deleteButton).toHaveCSS("opacity", "1");
+
+  await page.mouse.move(1, 1);
+  await expect(menuButton).toHaveCSS("opacity", "0");
+  await expect(deleteButton).toHaveCSS("opacity", "0");
 });
 
 test("dots menu uses pointer position too", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const menuButton = page.locator(".item-menu-button").first();
+  const firstRow = page.locator(".history-feed.has-items > li").first();
+  const menuButton = firstRow.locator(".item-menu-button");
+  await firstRow.hover();
   const box = await menuButton.boundingBox();
   expect(box).not.toBeNull();
   const pointer = {
@@ -1301,7 +1450,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   await expect(menu.getByRole("menuitem", { name: "Join selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Add metadata to selected" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Delete 2 selected" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Delete 2 selected" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Clear selection" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Activate" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Paste" })).toHaveCount(0);
@@ -1548,7 +1697,7 @@ test("ctrl+a in search input replaces query text", async ({ page }) => {
   await expect(page.locator(".feed-item.is-multi-selected")).toHaveCount(0);
 });
 
-test("multi selection menu deletes selected items", async ({ page }) => {
+test("multi selection trash button deletes selected items", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
@@ -1556,10 +1705,35 @@ test("multi selection menu deletes selected items", async ({ page }) => {
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     modifiers: ["Control"],
   });
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    button: "right",
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).hover();
+  const deleteButtons = page.getByRole("button", { name: "Delete 2 selected items" });
+  await expect(deleteButtons).toHaveCount(2);
+  await expect(deleteButtons.first()).toHaveCSS("opacity", "1");
+  await deleteButtons.first().click();
+
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.filter((call: any) => call.cmd === "delete_history_item").length >= 2;
   });
-  await page.getByRole("menuitem", { name: "Delete 2 selected" }).click();
+  const deletedIds = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "delete_history_item")
+      .map((call: any) => call.args.id),
+  );
+  expect(deletedIds).toEqual([101, 102]);
+});
+
+test("shift delete deletes selected items", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
+    modifiers: ["Control"],
+  });
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await page.keyboard.press("Shift+Delete");
 
   await page.waitForFunction(() => {
     const calls = (window as any).__copicuTestInvocations;
@@ -1650,6 +1824,8 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
 
   await gotoShell(page, "/?window=settings");
   await expect(page.getByLabel("Search settings")).toBeVisible();
+  await page.getByLabel("Search settings").fill("automatic updates");
+  await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeChecked();
   await page.getByLabel("Search settings").fill("scripts");
   await expect(page.getByLabel("Discovered actions summary")).toContainText("3 built-in");
   await expect(page.getByLabel("Discovered actions summary")).toContainText("7 scripts");

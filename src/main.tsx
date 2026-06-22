@@ -55,6 +55,8 @@ import type {
   ActivationOptions,
   ClipKind,
   CompoundHotkeyPendingEvent,
+  CreateHistoryItemRequest,
+  CreateHistoryItemResult,
   CreateTagRequest,
   EnterAction,
   MarkdownOutputPayload,
@@ -270,6 +272,11 @@ type EditDraft = {
   mimePrimary: string;
 };
 
+type CreateItemDraft = {
+  text: string;
+  metadata: string;
+};
+
 type BatchMetadataDraft = {
   ids: number[];
   metadata: string;
@@ -369,10 +376,32 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
 ]);
 
 const BUILTIN_ACTIONS = {
+  newItem: "builtin.newItem",
   pastePlain: "builtin.pastePlain",
   joinSelected: "builtin.joinSelected",
   openUrl: "builtin.openUrl",
 } as const;
+
+const NEW_ITEM_ACTION: ActionDefinition = {
+  id: BUILTIN_ACTIONS.newItem,
+  title: "New item",
+  description: "Create a clipboard history item without touching the clipboard.",
+  shortcut: "Ctrl+N",
+  triggers: ["commandPalette"],
+  input: {
+    source: "none",
+    selection: "optional",
+    kinds: null,
+    mime: null,
+    query: null,
+  },
+  capabilities: ["history:write"],
+  builtin: true,
+  source: "builtin",
+  script: null,
+  diagnostics: [],
+  logging: null,
+};
 
 const COPY_AND_HIDE_ACTIVATION: ActivationOptions = {
   copy: true,
@@ -454,6 +483,10 @@ function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
 
 function setHistoryQueryMarked(request: SetHistoryQueryMarkedRequest) {
   return invoke("set_history_query_marked", { request });
+}
+
+function createHistoryItem(request: CreateHistoryItemRequest) {
+  return invoke<CreateHistoryItemResult>("create_history_item", { request });
 }
 
 function autoUpdateStatusToast(status: AutoUpdateStatus): ToastOptions | null {
@@ -756,6 +789,7 @@ function App() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [createItemDraft, setCreateItemDraft] = useState<CreateItemDraft | null>(null);
   const [batchMetadataDraft, setBatchMetadataDraft] = useState<BatchMetadataDraft | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [openMarkMenu, setOpenMarkMenu] = useState<MarkMenuAnchor | null>(null);
@@ -912,6 +946,7 @@ function App() {
 
   const closeTransientEditors = useCallback(() => {
     setEditDraft(null);
+    setCreateItemDraft(null);
     setBatchMetadataDraft(null);
     setOpenItemMenu(null);
     setEditError(null);
@@ -1164,11 +1199,13 @@ function App() {
     [actionDefinitions],
   );
   const commandPaletteActions = useMemo(
-    () =>
-      actionDefinitions.filter((action) =>
+    () => [
+      NEW_ITEM_ACTION,
+      ...actionDefinitions.filter((action) =>
         actionRunnableForTrigger(action, "commandPalette", itemsForActionContext(action, effectiveSelection, selectedItem)),
       ),
-    [actionDefinitions, effectiveSelection],
+    ],
+    [actionDefinitions, effectiveSelection, selectedItem],
   );
 
   const actionContext = useCallback(
@@ -1908,6 +1945,18 @@ function App() {
     window.setTimeout(() => editTextRef.current?.focus(), 0);
   }, []);
 
+  const beginCreateItem = useCallback(() => {
+    setEditError(null);
+    setActionError(null);
+    setOpenItemMenu(null);
+    setOpenMarkMenu(null);
+    setCommandPalette(null);
+    setEditDraft(null);
+    setBatchMetadataDraft(null);
+    setCreateItemDraft({ text: "", metadata: "" });
+    window.setTimeout(() => editTextRef.current?.focus(), 0);
+  }, []);
+
   const renderBatchItemActions = useCallback(
     ({
       items,
@@ -2028,6 +2077,42 @@ function App() {
     }
   }, [editDraft, focusSearch, refreshHistory]);
 
+  const saveCreateItem = useCallback(async () => {
+    if (!createItemDraft) {
+      return;
+    }
+
+    const request: CreateHistoryItemRequest = {
+      text: createItemDraft.text,
+      title: null,
+      notes: nullableTrim(createItemDraft.metadata),
+      tags: metadataTags(createItemDraft.metadata),
+      mimePrimary: "text/plain",
+    };
+
+    try {
+      setEditError(null);
+      const result = await createHistoryItem(request);
+      setCreateItemDraft(null);
+      setAiComposerMode(false);
+      setSearchInterpretation(null);
+      setQuery("");
+      setSelectedIds(new Set());
+      await refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
+      setSelectedItemId(result.id);
+      selectionAnchorItemIdRef.current = result.id;
+      pushToast({
+        title: result.created ? "Item created" : "Item already existed",
+        message: result.created ? "Added to clipboard history." : "Moved existing item to the top and merged metadata.",
+        tone: result.created ? "success" : "info",
+      });
+      focusSearch();
+    } catch (error) {
+      setEditError(String(error));
+      window.setTimeout(() => editTextRef.current?.focus(), 0);
+    }
+  }, [createItemDraft, focusSearch, pushToast, refreshHistory]);
+
   const saveBatchMetadata = useCallback(async () => {
     if (!batchMetadataDraft) {
       return;
@@ -2137,7 +2222,6 @@ function App() {
     };
   }, []);
 
-
   useEffect(() => {
     return setupAutomaticUpdates(settings.autoUpdate, {
       onStatus: (status) => {
@@ -2151,6 +2235,14 @@ function App() {
       },
     });
   }, [pushToast, settings.autoUpdate]);
+
+  useEffect(() => {
+    if (!createItemDraft) {
+      return;
+    }
+
+    window.setTimeout(() => editTextRef.current?.focus(), 0);
+  }, [createItemDraft !== null]);
 
   useEffect(() => {
     applyAppearance(settings.appearance);
@@ -2430,6 +2522,11 @@ function App() {
         openCommandPalette();
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "n") {
+        event.preventDefault();
+        beginCreateItem();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "i") {
         event.preventDefault();
         setAiComposerMode((current) => !current);
@@ -2662,6 +2759,25 @@ function App() {
           <UiTooltip
             label={(
               <span className="tooltip-shortcut-label">
+                <span>New item</span>
+                <ShortcutBadge shortcut="Ctrl+N" />
+              </span>
+            )}
+          >
+            <UiIconButton
+              type="button"
+              className="new-item-button"
+              variant="default"
+              aria-label="New item"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={beginCreateItem}
+            >
+              <Plus size={15} strokeWidth={2.3} aria-hidden="true" />
+            </UiIconButton>
+          </UiTooltip>
+          <UiTooltip
+            label={(
+              <span className="tooltip-shortcut-label">
                 <span>{aiComposerMode ? "AI mode, switch to search" : "Search mode, switch to AI"}</span>
                 <ShortcutBadge shortcut="Ctrl+I" />
               </span>
@@ -2720,6 +2836,13 @@ function App() {
               </UiIconButton>
             </Menu.Target>
             <Menu.Dropdown aria-label="Picker menu">
+              <Menu.Item
+                leftSection={<Plus size={14} strokeWidth={2.2} />}
+                rightSection={<UiKbd>Ctrl N</UiKbd>}
+                onClick={beginCreateItem}
+              >
+                New item
+              </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
                 rightSection={<UiKbd>Ctrl K</UiKbd>}
@@ -2803,7 +2926,6 @@ function App() {
                 const itemDeleteTargets = itemIsMultiSelected && selectedIds.size > 0
                   ? effectiveSelection
                   : [item];
-                const showItemDelete = itemIsSelected || itemIsMultiSelected;
 
                 return (
                   <li
@@ -2900,27 +3022,25 @@ function App() {
                       <pre>{item.text}</pre>
                     )}
                   </button>
-                  {showItemDelete ? (
-                    <UiIconButton
-                      type="button"
-                      className="item-delete-button is-visible"
-                      aria-label={itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void deleteItems(itemDeleteTargets);
-                      }}
-                    >
-                      <Trash2 size={14} strokeWidth={2.3} aria-hidden="true" />
-                    </UiIconButton>
-                  ) : null}
                   <UiIconButton
                     type="button"
-                    className={`item-menu-button${showItemDelete ? " has-delete-action" : ""}`}
+                    className="item-delete-button"
+                    aria-label={itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void deleteItems(itemDeleteTargets);
+                    }}
+                  >
+                    <Trash2 size={14} strokeWidth={2.3} aria-hidden="true" />
+                  </UiIconButton>
+                  <UiIconButton
+                    type="button"
+                    className="item-menu-button has-delete-action"
                     aria-label="Open item actions"
                     aria-expanded={openItemMenu?.itemId === item.id}
                     onMouseDown={(event) => {
@@ -3061,8 +3181,97 @@ function App() {
               setCommandPalette(null);
               focusSearch();
             }}
-            onRun={(action) => void runActionDefinition(action, effectiveSelection, "commandPalette")}
+            onRun={(action) => {
+              if (action.id === BUILTIN_ACTIONS.newItem) {
+                beginCreateItem();
+                return;
+              }
+              void runActionDefinition(action, effectiveSelection, "commandPalette");
+            }}
           />
+        ) : null}
+        {createItemDraft ? (
+          <div
+            className="edit-backdrop"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create new item"
+          >
+            <UiPaper
+              component="form"
+              className="edit-panel"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveCreateItem();
+              }}
+            >
+              <label>
+                <span>Content</span>
+                <UiTextarea
+                  ref={editTextRef}
+                  value={createItemDraft.text}
+                  placeholder="Text, snippet, prompt, URL, command…"
+                  onChange={(event) => {
+                    const nextText = event.currentTarget.value;
+                    setCreateItemDraft((draft) => draft ? { ...draft, text: nextText } : draft);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setCreateItemDraft(null);
+                      focusSearch();
+                    }
+                    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      void saveCreateItem();
+                    }
+                  }}
+                  autosize={false}
+                />
+              </label>
+              <label>
+                <span>Metadata</span>
+                <UiTextarea
+                  className="notes-input"
+                  value={createItemDraft.metadata}
+                  placeholder="#work&#10;Optional Markdown notes"
+                  onChange={(event) => {
+                    const nextMetadata = event.currentTarget.value;
+                    setCreateItemDraft((draft) => draft ? { ...draft, metadata: nextMetadata } : draft);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setCreateItemDraft(null);
+                      focusSearch();
+                    }
+                    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                      event.preventDefault();
+                      void saveCreateItem();
+                    }
+                  }}
+                  autosize={false}
+                />
+              </label>
+              {editError ? <UiAlert className="error-text" color="red" variant="light">{editError}</UiAlert> : null}
+              <div className="edit-buttons">
+                <UiButton type="button" variant="default" onClick={() => {
+                  setCreateItemDraft(null);
+                  focusSearch();
+                }}>
+                  Cancel
+                </UiButton>
+                <UiButton
+                  type="button"
+                  variant="filled"
+                  disabled={!createItemDraft.text.trim()}
+                  onClick={() => void saveCreateItem()}
+                >
+                  Create
+                </UiButton>
+              </div>
+            </UiPaper>
+          </div>
         ) : null}
         {editDraft ? (
           <div

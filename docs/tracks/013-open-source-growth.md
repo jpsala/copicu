@@ -1,7 +1,7 @@
 ---
 id: open-source-growth
 status: active
-updated: 2026-06-20
+updated: 2026-06-22
 ---
 
 # Open Source Growth
@@ -216,6 +216,17 @@ Un contributor necesita:
 - Checks del helper: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run tauri:build`, `git push`, `gh release create` con asset.
 - `main` quedo sincronizado con `origin/main`.
 - Gotcha: `v0.2.2`/`v0.2.3` ya existen publicados; no mover ni reutilizar tags/releases publicados. Para cortes futuros, correr `git fetch --tags origin` antes de `npm run release:windows` y usar siguiente patch si hay colision.
+
+### Estado 2026-06-22
+
+- Publicado release Windows estable `v0.2.5` en GitHub desde `main`.
+- Release: https://github.com/jpsala/copicu/releases/tag/v0.2.5
+- Commit: `ceef10b37d3555c06b79a6ba99f41f75b2bffb6d`.
+- Assets: `Copicu_0.2.5_x64-setup.exe` y `latest.json`; SHA256 `267CE41E28F5CD52E2B96F9ED3E2557E939901FFECBF130482628D5ABF4955FE`.
+- Contenido del corte: auto-update firmado con Tauri Updater + GitHub Releases; setting prendido por defecto con chequeo horario.
+- Checks del helper: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run tauri:build -- --config src-tauri/tauri.updater-artifacts.conf.json`, `git push`, `gh release create` con installer y manifest.
+- Se instalo localmente `v0.2.5`; el proximo release `v0.2.6` deberia validar el ciclo real de update automatico desde esta version.
+- Riesgo operativo: la private key/password del updater deben respaldarse fuera del repo; perderlos corta la continuidad de auto-update para instalaciones ya distribuidas.
 
 ## Launch Messages
 

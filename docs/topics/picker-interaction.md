@@ -172,6 +172,17 @@ Navegacion por teclado:
 - `Delete`: dentro del search input solo edita el texto del filtro; no borra items aunque haya seleccion de historial.
 - `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible; es el atajo explicito para no pelear con el input de busqueda.
 - `P`: candidato para pin/unpin.
+- `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
+
+Crear item manual:
+
+- entrada first-class del picker, no hack de clipboard;
+- superficies actuales: atajo `Ctrl+N`, boton `+`, menu del picker y command palette;
+- dialog con `Content` obligatorio y `Metadata` opcional; `Ctrl+Enter` crea;
+- crear no escribe ni modifica el portapapeles;
+- dedupe por hash del texto normalizado: si ya existe, se promueve arriba y se mergean metadata/tags;
+- gotcha 2026-06-22: el autofocus del dialog debe correr solo al abrir; si depende del draft completo, escribir en `Metadata` re-enfoca `Content` en cada tecla.
+- validacion 2026-06-22: `Ctrl+N` + escribir `Content` + `Tab` + escribir `Metadata` mantuvo foco en metadata; `Create` agrego item arriba y el clipboard sentinel no cambio. El submit quedo robustecido con `onClick` directo y updates funcionales del draft. Dedupe/promocion queda cubierto por tests Rust y Playwright; la validacion manual via Computer Use puede ser ruidosa si una automatizacion deja un dialog stale.
 
 Activacion:
 
@@ -184,15 +195,16 @@ Mouse y acciones contextuales:
 
 - Right click o tres puntitos por item abre acciones.
 - El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Shift+Delete` o trash icon.
-- El item seleccionado o los items multi-seleccionados muestran un trash icon en la esquina superior derecha; click borra sin confirmacion.
+- Las acciones hover por item aparecen al pasar por la fila; el trash icon borra sin confirmacion el item bajo hover o, si hay multiseleccion activa, los items seleccionados.
 - Acciones esperadas restantes: Copy, Paste, Paste as plain text, Pin/unpin, Open full preview/editor, Show details/formats, Move to tab.
 - Click fuera/focus lost debe respetar setting de ventana.
 
 ## Comportamiento De Ventana
 
-Estado actual 2026-06-05:
+Estado actual 2026-06-22:
 
-- la ventana se configura always-on-top desde Rust al setup y cada vez que se muestra;
+- `Pin` es el control explicito de always-on-top. El shortcut nativo `Alt+P` y el boton de la barra deben cambiar el estado real `TOPMOST` de Windows y sincronizar la UI via evento `copicu://picker/pin-state`.
+- Fix 2026-06-22: el boton de Pin no debe depender solo de `getCurrentWindow().setAlwaysOnTop()` desde WebView, porque puede cambiar la UI sin cambiar el flag real. Debe usar comandos host-owned (`get_main_window_pin_state` / `set_main_window_pin_state`) y verificar/devuelve el estado real despues de setear. Oracle manual: antes `topmost=False`; click pin => `topmost=True`; click otra vez => `topmost=False`.
 - la UI respeta `prefers-color-scheme` con tema inicial light/dark;
 - hide-on-focus-lost no debe ocultar inmediatamente en `Focused(false)`;
 - politica actual: `Focused(false)` agenda ocultar tras 320 ms; `Focused(true)`, `Moved` o `Resized` cancelan la accion pendiente para no romper mover/redimensionar;

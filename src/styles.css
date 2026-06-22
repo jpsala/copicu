@@ -478,7 +478,7 @@ button {
 
 .search-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--line);
@@ -655,6 +655,7 @@ button {
   font-weight: 850;
 }
 
+.new-item-button,
 .composer-mode-button {
   width: 30px;
   height: 28px;
@@ -671,11 +672,13 @@ button {
     transform 160ms ease;
 }
 
+.new-item-button:hover,
 .composer-mode-button:hover {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
   color: var(--accent);
 }
 
+.new-item-button:active,
 .composer-mode-button:active {
   transform: translateY(1px);
 }
@@ -692,6 +695,7 @@ button {
   color: var(--accent);
 }
 
+.new-item-button:focus-visible,
 .composer-mode-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
   outline-offset: 2px;
@@ -720,10 +724,12 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .new-item-button,
   .composer-mode-button {
     transition: none;
   }
 
+  .new-item-button:active,
   .composer-mode-button:active {
     transform: none;
   }
@@ -1696,6 +1702,8 @@ button {
 
 .item-menu-button {
   right: 7px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .item-menu-button.has-delete-action {
@@ -1710,25 +1718,35 @@ button {
   pointer-events: none;
 }
 
-.item-delete-button.is-visible {
-  opacity: 0.88;
-  pointer-events: auto;
-}
-
 .history-feed li:hover .item-menu-button,
+.history-feed li:hover .item-delete-button,
 .item-menu-button:hover,
-.item-menu-button[aria-expanded="true"],
-.item-delete-button:hover {
+.item-delete-button:hover,
+.item-menu-button:focus-visible,
+.item-delete-button:focus-visible,
+.item-menu-button[aria-expanded="true"] {
   opacity: 1;
 }
 
+.history-feed li:hover .item-menu-button,
+.history-feed li:hover .item-delete-button,
 .item-menu-button:hover,
+.item-delete-button:hover,
+.item-menu-button:focus-visible,
+.item-delete-button:focus-visible,
+.item-menu-button[aria-expanded="true"] {
+  pointer-events: auto;
+}
+
+.item-menu-button:hover,
+.item-menu-button:focus-visible,
 .item-menu-button[aria-expanded="true"] {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.item-delete-button:hover {
+.item-delete-button:hover,
+.item-delete-button:focus-visible {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 12%, var(--surface-raised));
   color: var(--danger);

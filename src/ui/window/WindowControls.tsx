@@ -94,6 +94,10 @@ export function WindowControls({
     setIsPinned(nextPinned);
     onPinChange?.(nextPinned);
     setWindowPinned(nextPinned)
+      .then((actualPinned) => {
+        setIsPinned(actualPinned);
+        onPinChange?.(actualPinned);
+      })
       .catch((error) => {
         setIsPinned(isPinned);
         onPinChange?.(isPinned);

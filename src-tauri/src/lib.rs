@@ -23,7 +23,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        mpsc, Arc, Mutex,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -66,6 +66,8 @@ const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
 const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
 const PICKER_PIN_STATE_EVENT: &str = "copicu://picker/pin-state";
+#[cfg(not(test))]
+const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
 #[cfg(not(test))]
 const METADATA_OPEN_EVENT: &str = "copicu://metadata/open";
 #[cfg(not(test))]
@@ -572,6 +574,53 @@ fn get_capture_snapshot<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> clipboar
 #[tauri::command]
 fn get_clipboard_probe() -> Result<clipboard_probe::ClipboardProbe, String> {
     clipboard_probe::probe_clipboard()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_main_window_pin_state<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<bool, String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "main window not available".to_string())?;
+    window
+        .is_always_on_top()
+        .map_err(|error| format!("failed to read main window pin state: {error}"))
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn set_main_window_pin_state<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    pinned: bool,
+) -> Result<bool, String> {
+    let (tx, rx) = mpsc::channel();
+    let app_for_main_thread = app.clone();
+    app.run_on_main_thread(move || {
+        let result = set_main_window_pin_state_on_main_thread(&app_for_main_thread, pinned);
+        let _ = tx.send(result);
+    })
+    .map_err(|error| format!("main window pin dispatch failed: {error}"))?;
+
+    rx.recv_timeout(Duration::from_secs(2))
+        .map_err(|error| format!("main window pin dispatch did not complete: {error}"))?
+}
+
+#[cfg(not(test))]
+fn set_main_window_pin_state_on_main_thread<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    pinned: bool,
+) -> Result<bool, String> {
+    let window = app
+        .get_webview_window(MAIN_WINDOW_LABEL)
+        .ok_or_else(|| "main window not available".to_string())?;
+    window
+        .set_always_on_top(pinned)
+        .map_err(|error| format!("failed to set main window pin state: {error}"))?;
+    let actual_pinned = window
+        .is_always_on_top()
+        .map_err(|error| format!("failed to read main window pin state after set: {error}"))?;
+    emit_picker_pin_state(app, actual_pinned);
+    Ok(actual_pinned)
 }
 
 #[cfg(not(test))]
@@ -1329,6 +1378,28 @@ fn update_history_item(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn create_history_item(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::CreateHistoryItemRequest,
+) -> Result<storage::CreateHistoryItemResult, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_history_item")?;
+    let result = storage.create_text_item(request)?;
+    if let Err(error) = app.emit(
+        HISTORY_CHANGED_EVENT,
+        serde_json::json!({
+            "itemId": result.id,
+            "contentKind": "text",
+        }),
+    ) {
+        eprintln!("history changed emit failed: {error}");
+    }
+    Ok(result)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn delete_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
@@ -1921,6 +1992,8 @@ pub fn run() {
             get_capture_stats,
             get_capture_snapshot,
             get_clipboard_probe,
+            get_main_window_pin_state,
+            set_main_window_pin_state,
             get_app_shortcut_status,
             list_recent_items,
             search_items,
@@ -1951,6 +2024,7 @@ pub fn run() {
             clear_marked_history_items,
             count_marked_history_items,
             update_history_item,
+            create_history_item,
             delete_history_item,
             get_history_item,
             get_settings,

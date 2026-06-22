@@ -3,6 +3,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -114,6 +115,23 @@ pub struct UpdateHistoryItemRequest {
     pub tags: Option<String>,
     pub mime_primary: Option<String>,
     pub marked: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateHistoryItemRequest {
+    pub text: String,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Option<String>,
+    pub mime_primary: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateHistoryItemResult {
+    pub id: i64,
+    pub created: bool,
 }
 
 #[derive(Deserialize)]
@@ -541,6 +559,122 @@ impl AppStorage {
 
         self.remove_blob_paths(pruned_blobs);
         Ok(item_id)
+    }
+
+    pub fn create_text_item(
+        &self,
+        request: CreateHistoryItemRequest,
+    ) -> Result<CreateHistoryItemResult, String> {
+        let text = normalize_text_for_storage(&request.text);
+        if text.is_empty() {
+            return Err("new item content cannot be empty".to_string());
+        }
+
+        let title = normalize_optional_text(request.title);
+        let notes = normalize_optional_text(request.notes);
+        let tags = normalize_optional_text(request.tags);
+        let mime_primary = normalize_optional_text(request.mime_primary)
+            .or_else(|| Some("text/plain".to_string()));
+        let normalized_hash = hash_text(&text);
+        let now = now_unix_ms();
+        let (result, pruned_blobs) = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+
+            let existing = conn
+                .query_row(
+                    "SELECT id, title, notes, tags, mime_primary
+                     FROM clipboard_items
+                     WHERE normalized_hash = ?1",
+                    params![normalized_hash],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|error| format!("failed to inspect existing manual item: {error}"))?;
+
+            if let Some((
+                existing_id,
+                existing_title,
+                existing_notes,
+                existing_tags,
+                existing_mime,
+            )) = existing
+            {
+                let next_title = title.or(existing_title);
+                let next_notes = append_optional_notes(existing_notes, notes);
+                let next_tags = merge_optional_tags(existing_tags, tags);
+                let next_mime = mime_primary.or(existing_mime);
+                conn.execute(
+                    "UPDATE clipboard_items
+                     SET last_copied_at_unix_ms = ?1,
+                         copy_count = COALESCE(copy_count, 1) + 1,
+                         title = ?2,
+                         notes = ?3,
+                         tags = ?4,
+                         mime_primary = ?5
+                     WHERE id = ?6",
+                    params![
+                        now,
+                        next_title,
+                        next_notes,
+                        next_tags,
+                        next_mime,
+                        existing_id
+                    ],
+                )
+                .map_err(|error| format!("failed to update existing manual item: {error}"))?;
+
+                let pruned_blobs = prune_history_from_conn(&conn)?;
+                (
+                    CreateHistoryItemResult {
+                        id: existing_id,
+                        created: false,
+                    },
+                    pruned_blobs,
+                )
+            } else {
+                conn.execute(
+                    "INSERT INTO clipboard_items (
+                        content_kind,
+                        text,
+                        normalized_hash,
+                        created_at_unix_ms,
+                        last_used_at_unix_ms,
+                        last_copied_at_unix_ms,
+                        copy_count,
+                        mime_primary,
+                        title,
+                        notes,
+                        tags
+                    ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1, ?4, ?5, ?6, ?7)",
+                    params![text, normalized_hash, now, mime_primary, title, notes, tags],
+                )
+                .map_err(|error| format!("failed to create manual text item: {error}"))?;
+
+                let item_id = conn.last_insert_rowid();
+                let pruned_blobs = prune_history_from_conn(&conn)?;
+                (
+                    CreateHistoryItemResult {
+                        id: item_id,
+                        created: true,
+                    },
+                    pruned_blobs,
+                )
+            }
+        };
+
+        self.remove_blob_paths(pruned_blobs);
+        Ok(result)
     }
 
     pub fn insert_image(&self, image: &crate::image_capture::CapturedImage) -> Result<i64, String> {
@@ -1894,6 +2028,38 @@ fn normalize_optional_text(text: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn append_optional_notes(existing: Option<String>, addition: Option<String>) -> Option<String> {
+    match (existing, addition) {
+        (None, None) => None,
+        (Some(existing), None) | (None, Some(existing)) => Some(existing),
+        (Some(existing), Some(addition)) => {
+            if existing.lines().any(|line| line.trim() == addition.trim()) {
+                Some(existing)
+            } else {
+                Some(format!("{existing}\n{addition}"))
+            }
+        }
+    }
+}
+
+fn merge_optional_tags(existing: Option<String>, addition: Option<String>) -> Option<String> {
+    let mut tags = BTreeSet::new();
+    for value in [existing, addition].into_iter().flatten() {
+        for tag in value.split_whitespace() {
+            let trimmed = tag.trim();
+            if !trimmed.is_empty() {
+                tags.insert(trimmed.to_string());
+            }
+        }
+    }
+
+    if tags.is_empty() {
+        None
+    } else {
+        Some(tags.into_iter().collect::<Vec<_>>().join(" "))
+    }
+}
+
 pub(crate) fn hash_text(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -2507,6 +2673,69 @@ mod tests {
         assert_eq!(page.total_count, Some(2));
         assert_eq!(page.items[0].created_at_unix_ms, 10_001);
         assert!(page.items[0].last_copied_at_unix_ms >= page.items[1].last_copied_at_unix_ms);
+        assert_eq!(page.items[0].copy_count, 2);
+    }
+
+    #[test]
+    fn create_text_item_adds_manual_item_without_clipboard_write() {
+        let storage = test_storage_with_migrations();
+
+        let result = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "  Manual note  ".to_string(),
+                title: None,
+                notes: Some("#manual from keyboard".to_string()),
+                tags: Some("#manual".to_string()),
+                mime_primary: None,
+            })
+            .expect("manual text item should be created");
+
+        assert!(result.created);
+        let item = storage
+            .get_item(result.id)
+            .expect("created item should load");
+        assert_eq!(item.text, "Manual note");
+        assert_eq!(item.mime_primary.as_deref(), Some("text/plain"));
+        assert_eq!(item.notes.as_deref(), Some("#manual from keyboard"));
+        assert_eq!(item.tags.as_deref(), Some("#manual"));
+    }
+
+    #[test]
+    fn create_text_item_dedupes_and_merges_metadata() {
+        let storage = test_storage_with_migrations();
+
+        let first = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "Manual note".to_string(),
+                title: None,
+                notes: Some("#first".to_string()),
+                tags: Some("#first".to_string()),
+                mime_primary: None,
+            })
+            .expect("first manual item should be created");
+        let second = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: " Manual note ".to_string(),
+                title: Some("Manual".to_string()),
+                notes: Some("#second".to_string()),
+                tags: Some("#second #first".to_string()),
+                mime_primary: None,
+            })
+            .expect("duplicate manual item should update existing item");
+
+        assert_eq!(second.id, first.id);
+        assert!(!second.created);
+        let page = storage
+            .list_page(HistoryPageRequest {
+                query: String::new(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("history should load");
+        assert_eq!(ids(&page.items), vec![first.id]);
+        assert_eq!(page.items[0].title.as_deref(), Some("Manual"));
+        assert_eq!(page.items[0].notes.as_deref(), Some("#first\n#second"));
+        assert_eq!(page.items[0].tags.as_deref(), Some("#first #second"));
         assert_eq!(page.items[0].copy_count, 2);
     }
 
