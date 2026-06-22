@@ -505,6 +505,28 @@ async function mockTauriInvoke(
           case "pending_metadata_editor":
             return {
               item: withHistoryPreview(((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0], true),
+              captureContextEvents: [
+                {
+                  id: 1,
+                  capturedAtUnixMs: 1782154403281,
+                  sourceKind: "clipboard",
+                  sourceAppName: "code.exe",
+                  sourceAppPath: "C:\\Tools\\VS Code\\Code.exe",
+                  sourceProcessId: 4242,
+                  sourceWindowId: 9001,
+                  sourceWindowTitle: "main.rs - Copicu",
+                  contentKind: "text",
+                  mimePrimary: "text/plain",
+                  clipboardPlatform: "windows",
+                  clipboardSequenceNumber: 597,
+                  clipboardFormatCount: 4,
+                  clipboardFormatsText: "CF_UNICODETEXT text HTML Format registered",
+                  byteSize: 82,
+                  textCharCount: 64,
+                  lineCount: 1,
+                  domain: "example.com",
+                },
+              ],
             };
           case "create_tag": {
             const label = args.request.label.trim();

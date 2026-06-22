@@ -150,6 +150,29 @@ pub struct CaptureContext {
     pub clipboard_formats: Vec<CaptureFormatContext>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureContextEvent {
+    pub id: i64,
+    pub captured_at_unix_ms: i64,
+    pub source_kind: String,
+    pub source_app_name: Option<String>,
+    pub source_app_path: Option<String>,
+    pub source_process_id: Option<i64>,
+    pub source_window_id: Option<i64>,
+    pub source_window_title: Option<String>,
+    pub content_kind: String,
+    pub mime_primary: Option<String>,
+    pub clipboard_platform: Option<String>,
+    pub clipboard_sequence_number: Option<i64>,
+    pub clipboard_format_count: Option<i64>,
+    pub clipboard_formats_text: Option<String>,
+    pub byte_size: Option<i64>,
+    pub text_char_count: Option<i64>,
+    pub line_count: Option<i64>,
+    pub domain: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureFormatContext {
@@ -609,6 +632,72 @@ impl AppStorage {
 
         self.remove_blob_paths(pruned_blobs);
         Ok(item_id)
+    }
+
+    pub fn list_capture_context_events(
+        &self,
+        item_id: i64,
+        limit: i64,
+    ) -> Result<Vec<CaptureContextEvent>, String> {
+        let limit = limit.clamp(1, 50);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let mut statement = conn
+            .prepare(
+                "SELECT
+                    id,
+                    captured_at_unix_ms,
+                    source_kind,
+                    source_app_name,
+                    source_app_path,
+                    source_process_id,
+                    source_window_id,
+                    source_window_title,
+                    content_kind,
+                    mime_primary,
+                    clipboard_platform,
+                    clipboard_sequence_number,
+                    clipboard_format_count,
+                    clipboard_formats_text,
+                    byte_size,
+                    text_char_count,
+                    line_count,
+                    domain
+                 FROM clipboard_item_capture_events
+                 WHERE item_id = ?1
+                 ORDER BY captured_at_unix_ms DESC, id DESC
+                 LIMIT ?2",
+            )
+            .map_err(|error| format!("failed to prepare capture context query: {error}"))?;
+        let rows = statement
+            .query_map(params![item_id, limit], |row| {
+                Ok(CaptureContextEvent {
+                    id: row.get(0)?,
+                    captured_at_unix_ms: row.get(1)?,
+                    source_kind: row.get(2)?,
+                    source_app_name: row.get(3)?,
+                    source_app_path: row.get(4)?,
+                    source_process_id: row.get(5)?,
+                    source_window_id: row.get(6)?,
+                    source_window_title: row.get(7)?,
+                    content_kind: row.get(8)?,
+                    mime_primary: row.get(9)?,
+                    clipboard_platform: row.get(10)?,
+                    clipboard_sequence_number: row.get(11)?,
+                    clipboard_format_count: row.get(12)?,
+                    clipboard_formats_text: row.get(13)?,
+                    byte_size: row.get(14)?,
+                    text_char_count: row.get(15)?,
+                    line_count: row.get(16)?,
+                    domain: row.get(17)?,
+                })
+            })
+            .map_err(|error| format!("failed to query capture context: {error}"))?;
+
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to read capture context row: {error}"))
     }
 
     pub fn create_text_item(
@@ -3018,6 +3107,17 @@ mod tests {
                 "query {query} should match capture context"
             );
         }
+
+        let events = storage
+            .list_capture_context_events(item_id, 10)
+            .expect("capture context should be readable for metadata inspector");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].source_app_name.as_deref(), Some("code.exe"));
+        assert_eq!(
+            events[0].source_window_title.as_deref(),
+            Some("main.rs - Copicu")
+        );
+        assert_eq!(events[0].domain.as_deref(), Some("example.com"));
 
         let item = storage.get_item(item_id).expect("item should load");
         assert_eq!(item.title, None);

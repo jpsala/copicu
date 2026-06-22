@@ -2072,8 +2072,8 @@ kbd {
 
 .metadata-window-form {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 14px;
+  grid-template-rows: auto minmax(90px, 0.55fr) auto minmax(125px, 1fr) auto;
+  gap: 8px;
   min-height: 0;
 }
 
@@ -2088,7 +2088,7 @@ kbd {
 }
 
 .metadata-window-form .notes-input textarea {
-  min-height: 210px;
+  min-height: 90px;
   height: 100%;
   line-height: 1.5;
 }
@@ -2098,7 +2098,7 @@ kbd {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--surface-3) 64%, transparent);
@@ -2113,6 +2113,122 @@ kbd {
   color: var(--text);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.metadata-capture-context {
+  display: grid;
+  gap: 8px;
+  min-height: 125px;
+  max-height: 190px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, var(--accent) 20%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 86%, var(--accent) 8%);
+  color: var(--text);
+}
+
+.metadata-capture-context-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metadata-capture-context-heading span,
+.metadata-capture-context dt,
+.metadata-capture-context-events span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.metadata-capture-context-heading strong,
+.metadata-capture-context summary {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.metadata-capture-context details {
+  display: grid;
+  gap: 10px;
+}
+
+.metadata-capture-context summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.metadata-capture-context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.metadata-capture-context-grid div {
+  min-width: 0;
+}
+
+.metadata-capture-context-grid dt,
+.metadata-capture-context-grid dd {
+  margin: 0;
+}
+
+.metadata-capture-context-grid dd {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.metadata-capture-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.metadata-capture-context-chips code {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-3) 80%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.metadata-capture-context-events {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.metadata-capture-context-events li {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.metadata-capture-context-events strong,
+.metadata-capture-context-events em {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.metadata-capture-context-events em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.metadata-capture-context p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .metadata-window-buttons {

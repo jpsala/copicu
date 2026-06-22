@@ -633,9 +633,13 @@ fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
     let app = app.clone();
     app.clone()
         .run_on_main_thread(move || {
-            if let Err(error) =
-                crate::open_metadata_editor_window(&app, crate::MetadataEditorPayload { item })
-            {
+            if let Err(error) = crate::open_metadata_editor_window(
+                &app,
+                crate::MetadataEditorPayload {
+                    item,
+                    capture_context_events: Vec::new(),
+                },
+            ) {
                 eprintln!("script metadata editor failed: {error}");
             }
         })

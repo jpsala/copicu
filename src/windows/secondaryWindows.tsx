@@ -89,6 +89,27 @@ type HistoryItem = {
   is_marked: boolean;
 };
 
+type CaptureContextEvent = {
+  id: number;
+  capturedAtUnixMs: number;
+  sourceKind: string;
+  sourceAppName: string | null;
+  sourceAppPath: string | null;
+  sourceProcessId: number | null;
+  sourceWindowId: number | null;
+  sourceWindowTitle: string | null;
+  contentKind: string;
+  mimePrimary: string | null;
+  clipboardPlatform: string | null;
+  clipboardSequenceNumber: number | null;
+  clipboardFormatCount: number | null;
+  clipboardFormatsText: string | null;
+  byteSize: number | null;
+  textCharCount: number | null;
+  lineCount: number | null;
+  domain: string | null;
+};
+
 type HotkeyNormalizationResult = {
   normalized: string | null;
   valid: boolean;
@@ -109,6 +130,7 @@ type AppShortcutStatus = {
 
 type MetadataEditorPayload = {
   item: HistoryItem;
+  captureContextEvents: CaptureContextEvent[];
 };
 
 const DEFAULT_TOAST_DURATION_MS = 3600;
@@ -182,6 +204,47 @@ function metadataTags(value: string | null) {
     Array.from(value?.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu) ?? [], (match) => `#${match[2]}`),
   );
   return tags.size === 0 ? null : Array.from(tags).join(" ");
+}
+
+function formatCaptureTimestamp(value: number) {
+  return new Date(value).toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function formatOptionalNumber(value: number | null, suffix = "") {
+  return value === null ? "—" : `${value.toLocaleString()}${suffix}`;
+}
+
+function captureContextRows(event: CaptureContextEvent) {
+  return [
+    ["Captured", formatCaptureTimestamp(event.capturedAtUnixMs)],
+    ["Source", event.sourceKind],
+    ["App", event.sourceAppName ?? "—"],
+    ["Window", event.sourceWindowTitle ?? "—"],
+    ["Domain", event.domain ?? "—"],
+    ["MIME", event.mimePrimary ?? "—"],
+    ["Formats", event.clipboardFormatsText ?? "—"],
+    ["App path", event.sourceAppPath ?? "—"],
+    ["PID / HWND", `${formatOptionalNumber(event.sourceProcessId)} / ${formatOptionalNumber(event.sourceWindowId)}`],
+    ["Clipboard", `${event.clipboardPlatform ?? "—"} · seq ${formatOptionalNumber(event.clipboardSequenceNumber)} · ${formatOptionalNumber(event.clipboardFormatCount)} formats`],
+    ["Size", `${formatOptionalNumber(event.byteSize, " bytes")} · ${formatOptionalNumber(event.textCharCount, " chars")} · ${formatOptionalNumber(event.lineCount, " lines")}`],
+  ];
+}
+
+function captureSearchChips(event: CaptureContextEvent) {
+  return [
+    event.sourceAppName ? `app:${event.sourceAppName}` : null,
+    event.sourceWindowTitle ? `window:${event.sourceWindowTitle}` : null,
+    event.domain ? `domain:${event.domain}` : null,
+    event.sourceKind ? `source:${event.sourceKind}` : null,
+    event.clipboardFormatsText ? "format:<format>" : null,
+  ].filter(Boolean) as string[];
 }
 
 function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
@@ -412,6 +475,7 @@ export function MetadataWindowApp() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const latestCaptureContext = payload?.captureContextEvents[0] ?? null;
 
   useEffect(() => {
     document.body.classList.add("metadata-window");
@@ -572,6 +636,55 @@ export function MetadataWindowApp() {
             <section className="metadata-window-preview" aria-label="Metadata preview">
               <span>Tags</span>
               <strong>{metadataTags(notes) ?? "No tags"}</strong>
+            </section>
+            <section className="metadata-capture-context" aria-label="Capture context">
+              <div className="metadata-capture-context-heading">
+                <div>
+                  <span>Capture context</span>
+                  <strong>Read-only searchable metadata</strong>
+                </div>
+                <UiBadge variant="light">
+                  {payload.captureContextEvents.length === 1
+                    ? "1 event"
+                    : `${payload.captureContextEvents.length} events`}
+                </UiBadge>
+              </div>
+              {latestCaptureContext ? (
+                <details open>
+                  <summary>
+                    Latest: {latestCaptureContext.sourceAppName ?? latestCaptureContext.sourceKind}
+                    {latestCaptureContext.sourceWindowTitle
+                      ? ` · ${latestCaptureContext.sourceWindowTitle}`
+                      : ""}
+                  </summary>
+                  <dl className="metadata-capture-context-grid">
+                    {captureContextRows(latestCaptureContext).map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="metadata-capture-context-chips" aria-label="Search filters">
+                    {captureSearchChips(latestCaptureContext).map((chip) => (
+                      <code key={chip}>{chip}</code>
+                    ))}
+                  </div>
+                  {payload.captureContextEvents.length > 1 ? (
+                    <ol className="metadata-capture-context-events">
+                      {payload.captureContextEvents.slice(1).map((event) => (
+                        <li key={event.id}>
+                          <span>{formatCaptureTimestamp(event.capturedAtUnixMs)}</span>
+                          <strong>{event.sourceAppName ?? event.sourceKind}</strong>
+                          <em>{event.sourceWindowTitle ?? event.domain ?? event.mimePrimary ?? "No window"}</em>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
+                </details>
+              ) : (
+                <p>No capture context recorded yet. Older items will show it after they are recaptured.</p>
+              )}
             </section>
             {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
             <div className="metadata-window-buttons">

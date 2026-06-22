@@ -1078,6 +1078,7 @@ struct OpenMetadataWindowRequest {
 #[serde(rename_all = "camelCase")]
 struct MetadataEditorPayload {
     item: storage::HistoryItem,
+    capture_context_events: Vec<storage::CaptureContextEvent>,
 }
 
 #[cfg(not(test))]
@@ -1134,6 +1135,7 @@ fn open_metadata_window(
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_metadata_window")?;
     let fetch_started_at = Instant::now();
     let item = storage.get_item(request.item_id)?;
+    let capture_context_events = storage.list_capture_context_events(request.item_id, 12)?;
     diag_log(
         "metadata.open.item-fetch.done",
         format!(
@@ -1147,9 +1149,13 @@ fn open_metadata_window(
     thread::spawn(move || {
         let app_for_main_thread = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
-            if let Err(error) =
-                open_metadata_editor_window(&app_for_main_thread, MetadataEditorPayload { item })
-            {
+            if let Err(error) = open_metadata_editor_window(
+                &app_for_main_thread,
+                MetadataEditorPayload {
+                    item,
+                    capture_context_events,
+                },
+            ) {
                 eprintln!("metadata window open failed: {error}");
             }
         }) {
