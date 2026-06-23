@@ -1,6 +1,6 @@
 [package]
 name = "copicu"
-version = "0.2.6"
+version = "0.2.7"
 description = "A local keyboard-first clipboard manager inspired by CopyQ."
 authors = ["JP"]
 edition = "2021"
