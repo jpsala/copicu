@@ -92,3 +92,9 @@ For clipboard, paste, shortcut, tray, or focus changes, describe the Windows app
 Before starting a large feature, open an issue or discussion first. Features that affect product direction, native behavior, storage, scripts/actions, AI, privacy, or compatibility expectations should be planned before implementation.
 
 For work with coding agents, start from `AGENTS.md` and the docs listed there. Durable decisions live in `docs/`; current tracks live in `docs/tracks/`; larger feature plans live in `specs/`.
+
+## Agentic Tooling In This Repo
+
+Copicu includes a small amount of versioned agentic tooling for maintainers, such as `.pi/prompts/`, `.pi/extensions/`, and local skills under `docs/skills/`. These files are optional for normal contributors: you do not need Pi or the local agentic workflow to build, test, or contribute to Copicu.
+
+They are kept in the repo because they document repeatable project operations such as release prep, context indexing, dogfood checks, and Copicu-specific desktop automation. Local caches and private agent state remain ignored by `.gitignore`.

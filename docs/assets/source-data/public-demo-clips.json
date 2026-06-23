@@ -1,0 +1,38 @@
+[
+  {
+    "title": "Auth retry loop note",
+    "kind": "text",
+    "tags": ["alpha", "bug", "synthetic"],
+    "body": "Investigate synthetic auth retry loop in the fixture app. Expected: one retry. Actual: retry counter keeps increasing after timeout."
+  },
+  {
+    "title": "Tracked docs URL",
+    "kind": "url",
+    "tags": ["research", "cleanup", "synthetic"],
+    "body": "https://example.test/docs/copicu-alpha?utm_source=newsletter&utm_medium=demo&fbclid=synthetic123#install"
+  },
+  {
+    "title": "Release checklist",
+    "kind": "markdown",
+    "tags": ["release", "checklist", "synthetic"],
+    "body": "## Release Checklist Draft\n\n- [ ] Verify installer SHA256.\n- [ ] Smoke-test picker open/search/paste.\n- [ ] Confirm AI is disabled by default.\n- [ ] Review screenshots for private data."
+  },
+  {
+    "title": "Build command",
+    "kind": "code",
+    "tags": ["dev", "synthetic"],
+    "body": "npm run build && npm run visual:check"
+  },
+  {
+    "title": "Synthetic stack trace",
+    "kind": "text",
+    "tags": ["logs", "debug", "synthetic"],
+    "body": "Error: SyntheticPaymentGatewayTimeout\n    at chargeDemoCard (C:\\demo\\checkout\\payment-fixture.ts:42:11)\n    at async submitDemoOrder (C:\\demo\\checkout\\order-fixture.ts:88:5)"
+  },
+  {
+    "title": "JSON event",
+    "kind": "json",
+    "tags": ["format", "synthetic"],
+    "body": "{\"event\":\"demo_clip_captured\",\"kind\":\"text\",\"tags\":[\"alpha\",\"synthetic\"],\"source\":\"fixture\"}"
+  }
+]

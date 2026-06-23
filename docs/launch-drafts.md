@@ -2,61 +2,74 @@
 
 Drafts only. Do not publish yet.
 
+Current launch angle:
+
+> Copicu is a local-first, scriptable clipboard manager for Windows power users.
+
+Do not lead with AI. AI is optional and disabled by default. Lead with Windows clipboard/focus behavior, search, metadata, local scripts/actions, and privacy.
+
+Current release link for drafts: https://github.com/jpsala/copicu/releases/tag/v0.2.8
+
 ## Show HN
 
 Title:
 
 ```text
-Show HN: Copicu, a local-first clipboard workbench built with Tauri and Rust
+Show HN: Copicu, a local-first scriptable clipboard manager for Windows
 ```
 
-Body:
+Body draft, keep under 350 words:
 
 ```text
-Hi HN, I am building Copicu, a Windows-first local clipboard workbench for people who reuse snippets, links, prompts, code, screenshots, and notes all day.
+Hi HN, I am building Copicu, a Windows-first local clipboard manager for people who reuse snippets, links, prompts, code, screenshots, notes, logs, and terminal commands all day.
 
-It is inspired by CopyQ, but it is not a CopyQ-compatible clone. I am using CopyQ as a product baseline and rebuilding the workflow around Tauri 2, Rust, TypeScript, SQLite, a compact keyboard-first picker, structured metadata, local scripts, and optional AI commands.
+The idea is clipboard history as working memory: search it quickly, preview it, organize it with tags/notes/titles, run local actions over selected items, then copy or paste useful fragments back into the app you came from.
 
-The current alpha can capture text and image-only clipboard items, persist history locally, search from a picker, copy or paste into the previous Windows app, edit items and metadata, run local TypeScript/JavaScript actions, and produce Markdown output from selected items through optional AI.
+Copicu is built with Tauri 2, Rust, TypeScript/React, and SQLite. It has a compact keyboard-first picker, local text/image history, paste-to-previous-window on Windows, local metadata, and trusted TypeScript/JavaScript actions.
 
-The large-history design is intentionally boring: SQLite pagination plus TanStack Virtual, so the picker does not render the entire clipboard history in React. I am not claiming infinite history or benchmarked million-item performance yet.
+The current alpha is used daily by me, but it is still early. APIs and script contracts can change, rich clipboard formats are still evolving, and Windows focus/paste behavior depends on the target app. I am especially looking for feedback on clipboard edge cases, paste targets, shortcut/tray behavior, and script workflows that would save real daily effort.
 
-AI is disabled by default. Scripts are trusted local automation. Clipboard data is sensitive, so tests, examples, and screenshots use synthetic content.
-
-I am looking for feedback on Windows clipboard edge cases, paste-to-previous-window reliability, script workflows, and whether the picker model feels useful.
+Clipboard data is sensitive, so Copicu is local-first. AI features are optional and disabled by default; selected-content actions only send content when explicitly configured and invoked. Tests, screenshots, and issues should use synthetic content.
 
 Repo: https://github.com/jpsala/copicu
-Alpha release: https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.1
+Release: https://github.com/jpsala/copicu/releases/tag/v0.2.8
 ```
 
-## Reddit: r/rust Or r/tauri
+First comment notes to prepare:
+
+- Why not just CopyQ/Ditto? Mature tools are great; Copicu explores a Windows-first TS/Rust local-actions model, not compatibility.
+- Is it signed? Young/unsigned alpha may trigger SmartScreen; release includes SHA256; code signing/distribution are being evaluated.
+- Is clipboard content uploaded? No by default; AI off by default; selected-content actions require explicit configuration/invocation.
+- Why Windows-first? Paste-to-previous-window/focus/shortcuts are native-risk areas; harden one platform before pretending cross-platform parity.
+
+## Reddit: r/tauri / r/rust
 
 ```text
-I am building Copicu, a Windows-first clipboard manager/workbench with Tauri 2, Rust, TypeScript, React, SQLite, global shortcuts, tray behavior, paste-to-previous-window, virtualized history, local scripts, and optional AI commands.
+I am building Copicu, a Windows-first local clipboard manager with Tauri 2, Rust, TypeScript/React, and SQLite.
 
-It is early alpha and CopyQ-inspired, not CopyQ-compatible. The goal is not to clone CopyQ internals or run CopyQ scripts, but to rebuild the power-user clipboard workflow around a small native core and explicit host APIs.
+The product angle is clipboard history as working memory: searchable picker, local text/image history, tags/notes/titles, paste-to-previous-window, and trusted local TypeScript/JavaScript actions over selected clips.
 
-The performance story is SQLite pagination plus TanStack Virtual: the picker does not render thousands of rows in React at once. I am avoiding stronger claims until I have public benchmarks.
+I am not trying to clone CopyQ or run CopyQ scripts. CopyQ/Ditto are mature references; Copicu is an experiment in a smaller Tauri/Rust native core with explicit host APIs for clipboard, picker, metadata, paste, and scripts.
 
-I would especially value feedback on native Windows edge cases: clipboard formats, focus restoration, paste targets, tray behavior, and packaging.
+I would especially value technical feedback on Windows clipboard/focus edge cases, Tauri packaging, shortcut/tray behavior, and the action API shape.
 
 Repo: https://github.com/jpsala/copicu
-Release: https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.1
+Release: https://github.com/jpsala/copicu/releases/tag/v0.2.8
 ```
 
-## Reddit: CopyQ / Productivity Audience
+## Reddit: Windows / Productivity Audience
 
 ```text
-I am building Copicu, a local-first clipboard workbench inspired by CopyQ.
+I am building Copicu, an open-source local clipboard manager for Windows power users.
 
-Important caveat: it is not CopyQ-compatible. It does not run CopyQ scripts and does not aim for full parity. CopyQ is the product reference; Copicu is a separate Tauri/Rust/TypeScript app focused on a compact keyboard-first picker, SQLite-backed history, structured metadata, trusted local scripts, and optional privacy-aware AI commands.
+It is for the kind of workflow where you copy code snippets, URLs, commands, prompts, logs, screenshots, and temporary notes all day, then need to find, tag, transform, and paste them again quickly.
 
-Current Windows alpha features include searchable history, text and image-only capture, copy/paste-to-previous-window, item editing, tags, local actions/scripts, and Markdown output from selected items.
+Current alpha features include local text/image history, searchable keyboard-first picker, paste-to-previous-window, item editing, tags/notes/titles, and trusted local TypeScript/JavaScript actions. AI is optional and disabled by default.
 
-I am looking for real feedback on clipboard manager workflows: what should be fast, what breaks paste behavior, what scripts are actually useful, and where alpha limitations are painful.
+It is early and Windows-first. I am looking for real feedback on clipboard capture, paste behavior in different apps, shortcut/tray behavior, and what actions/scripts would actually save time.
 
 Repo: https://github.com/jpsala/copicu
-Release: https://github.com/jpsala/copicu/releases/tag/v0.1.0-alpha.1
+Release: https://github.com/jpsala/copicu/releases/tag/v0.2.8
 ```
 
 ## Technical Post Outline: Paste-To-Previous-Window
@@ -70,11 +83,11 @@ Building paste-to-previous-window in a Tauri clipboard manager
 Outline:
 
 1. Why clipboard managers need more than copy: selecting from history should optionally paste into the app you came from.
-2. Constraints on Windows: foreground window tracking, focus timing, shortcuts, browsers vs traditional editors.
+2. Constraints on Windows: foreground window tracking, focus timing, shortcuts, browsers vs traditional editors, elevated windows.
 3. Copicu's current model: remember previous non-Copicu window, write selected item, hide picker, focus previous, send paste shortcut.
-4. Target-aware shortcut rule: browsers use `Ctrl+V`; other targets default to `Shift+Insert`.
+4. Target-aware shortcut rules and why browsers/editors differ.
 5. Reliability caveats: synthetic key injection does not equal physical global shortcut validation; targets differ.
-6. Testing approach: Notepad, browser textarea, editor-like WinForms target, synthetic payloads only.
+6. Testing approach: Notepad, browser textarea, VS Code/editor, terminal, synthetic payloads only.
 7. Open questions: timing, accessibility, elevated windows, alternate paste commands, cross-platform behavior.
 
 ## Technical Post Outline: Clipboard History As Working Memory
@@ -91,7 +104,84 @@ Outline:
 2. Copicu's framing: search, organize, automate, command.
 3. Local-first storage: SQLite metadata, blob files for large payloads, retention policies.
 4. Large histories: SQLite pagination plus TanStack Virtual, not rendering the full history in React.
-5. Actions/scripts: local trusted workflows over selected items.
-6. Optional AI: disabled by default, explicit selected-content operations, Markdown output review.
-7. Why CopyQ-inspired, not CopyQ-compatible.
+5. Metadata: titles, tags, notes, MIME hints.
+6. Actions/scripts: local trusted workflows over selected items.
+7. Optional AI: disabled by default, explicit selected-content operations, Markdown output review.
+8. Why CopyQ-inspired, not CopyQ-compatible.
 
+## Code-Level Good First Issues
+
+JP approved creating these public GitHub issues on 2026-06-23.
+
+Created issues:
+
+- #11 Add sample action to clean URL tracking parameters — implemented locally, pending commit/release.
+- #12 Add sample action to format selected JSON — implemented locally, pending commit/release.
+- #13 Add tests for URL tracking cleanup helper — implemented locally, pending commit/release.
+- #14 Improve scripts/actions empty-state onboarding — implemented locally, pending commit/release.
+- #15 Add synthetic fixture set for public demos — implemented locally, pending commit/release.
+
+### Add a sample action that removes URL tracking parameters
+
+GitHub: https://github.com/jpsala/copicu/issues/11
+
+Labels: `good first issue`, `scripts`, `privacy`
+
+Scope:
+
+- Add `scripts/examples/028-clean-url-tracking-copy.ts`.
+- Read the active/selected text item.
+- Remove common tracking params such as `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `fbclid`, `gclid`.
+- Copy the cleaned URL to clipboard.
+- Log only item ID, input length, output length, and removed parameter count.
+- Add the script to `scripts/examples/README.md`.
+
+### Add a sample action that formats JSON
+
+GitHub: https://github.com/jpsala/copicu/issues/12
+
+Labels: `good first issue`, `scripts`
+
+Scope:
+
+- Add `scripts/examples/029-format-json-copy.ts`.
+- Read one selected text item.
+- Try `JSON.parse`; on success copy pretty JSON with 2-space indentation.
+- On failure show a warning toast without logging payload content.
+- Add docs entry to `scripts/examples/README.md`.
+
+### Add tests for tracking-param cleanup helper
+
+GitHub: https://github.com/jpsala/copicu/issues/13
+
+Labels: `good first issue`, `privacy`
+
+Scope:
+
+- Extract a pure helper for URL cleanup if needed.
+- Add unit tests using synthetic URLs only.
+- Include cases for no query string, repeated params, hash fragments, and non-tracking params.
+
+### Improve empty-state copy for scripts
+
+GitHub: https://github.com/jpsala/copicu/issues/14
+
+Labels: `good first issue`, `docs`, `scripts`
+
+Scope:
+
+- Find the scripts/actions empty state in Settings or command palette.
+- Add short copy explaining where scripts live and link to `docs/user/scripts.md`.
+- Keep wording concise and avoid showing local private paths in screenshots/tests.
+
+### Add a synthetic fixture set for public demos
+
+GitHub: https://github.com/jpsala/copicu/issues/15
+
+Labels: `good first issue`, `assets`, `privacy`
+
+Scope:
+
+- Add a small JSON/Markdown fixture file under `docs/assets/source-data/`.
+- Include fake stack traces, fake URLs, fake commands, fake Markdown notes, and fake code snippets.
+- No real secrets, usernames, tokens, customer names, or private paths.

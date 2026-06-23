@@ -1,18 +1,27 @@
 # Copicu
 
-**Copicu is a local-first clipboard workbench for search, reuse, automation, and AI-assisted workflows.**
+**Copicu is a local-first, scriptable clipboard manager for Windows power users.**
 
-Copicu started as a CopyQ-inspired clipboard manager, but the goal is not to clone CopyQ feature by feature. CopyQ proves that clipboard history, commands, shortcuts, menus, paste workflows, and scripting are useful. Copicu takes that idea and rebuilds it around a smaller native core, a modern keyboard-first UI, structured metadata, local scripts, and a path toward privacy-aware AI commands.
+It turns clipboard history into working memory: search it, preview it, organize it with metadata, run local actions over it, and paste useful fragments back into the app you came from.
 
-The clipboard is usually treated as a passive list of things you copied. Copicu treats it as working memory: searchable, previewable, editable, taggable, scriptable, and reusable.
+Copicu is Windows-first today. It is inspired by advanced clipboard tools like CopyQ, but it is not a CopyQ-compatible clone and does not try to run CopyQ scripts.
 
-## Install Windows Release
+## Demo
 
-Copicu currently ships as a Windows release.
+This demo uses generated synthetic clipboard data only.
 
-1. Download the latest Windows installer from [Releases](https://github.com/jpsala/copicu/releases).
+![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
+
+Static poster: [docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png](docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png)  
+Video: [docs/assets/videos/copicu-synthetic-picker-demo.mp4](docs/assets/videos/copicu-synthetic-picker-demo.mp4)
+
+More real-looking synthetic screenshots and short workflow demos are planned before the next public feedback push.
+
+## Install The Windows Alpha
+
+1. Download the latest Windows installer from [GitHub Releases](https://github.com/jpsala/copicu/releases).
 2. Run the `Copicu_*_x64-setup.exe` installer.
-3. Open Copicu and use the picker to search, copy, edit, tag, or paste synthetic/test clipboard items first.
+3. Open Copicu, copy a few non-sensitive test clips, then use the picker to search, copy, edit, tag, or paste them.
 
 Current release:
 
@@ -21,22 +30,134 @@ Current release:
 - Windows x64 NSIS installer
 - SHA256: `B72C466D5A39A677630D2C4653F6E2F1B26077FAEB8419857B375B3DD977B300`
 
-Windows installer for v0.2.8.
+Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
-Copicu is used daily as a local clipboard manager. The core picker, history capture, search, editing, tags, shortcuts, and paste workflow are in active use.
+## Why Use It?
 
-## Synthetic Demo
+Power users copy useful fragments all day:
 
-This demo uses generated synthetic clipboard data only.
+- code snippets and terminal commands;
+- URLs, research links, prompts, and partial answers;
+- error messages, stack traces, and logs;
+- Markdown fragments, chat drafts, and notes;
+- screenshots and image-only clipboard items;
+- text that needs cleanup, tagging, formatting, or reuse.
 
-![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
+Most clipboard managers help you remember those fragments. Copicu is meant to help you **do something with them**.
 
-Static poster: [docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png](docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png)
-Video: [docs/assets/videos/copicu-synthetic-picker-demo.mp4](docs/assets/videos/copicu-synthetic-picker-demo.mp4)
+The long-term direction:
+
+> Search your clipboard like a history, organize it like a workspace, automate it like a tool, and command it like an assistant.
+
+## What It Can Do Today
+
+Copicu is early-stage, but the core is functional:
+
+- capture clipboard history for text;
+- capture image-only clipboard items as normalized PNG blobs;
+- store history and metadata locally with SQLite;
+- store image/blob payloads outside SQLite;
+- deduplicate content by hash;
+- open a compact searchable picker;
+- navigate primarily with the keyboard;
+- copy the selected item;
+- paste the selected item into the previous Windows app;
+- edit item content and metadata;
+- add titles, tags, notes, and MIME hints;
+- open tag-filtered picker routes;
+- run built-in actions and trusted local TypeScript/JavaScript scripts;
+- use a command palette and local/global shortcut routes;
+- optionally use AI-assisted search/actions when configured by the user;
+- show Markdown output windows for generated summaries, reports, drafts, or script results.
+
+## Core Flows
+
+### 1. Search And Paste
+
+Open the picker, type a few characters, select a previous clip, then copy it or paste it into the app you were using before opening Copicu.
+
+Paste-to-previous-window is intentionally Windows-first and depends on native focus behavior, target app timing, and paste shortcuts. Please report target-specific failures with synthetic reproduction data.
+
+### 2. Organize Clipboard Working Memory
+
+Copicu clips can carry structured metadata:
+
+- title;
+- tags;
+- notes;
+- MIME hints;
+- generated or edited content.
+
+This makes the clipboard useful for recurring snippets, links, prompts, code, screenshots, and temporary project notes instead of being just a flat list.
+
+### 3. Run Local Actions And Scripts
+
+Copicu has a shared concept called an **Action**. Actions can be built in or provided by local TypeScript/JavaScript scripts.
+
+Example workflows:
+
+- clean tracking parameters from URLs;
+- format JSON before pasting;
+- normalize whitespace;
+- join checked clips into Markdown;
+- extract URLs from selected clips;
+- tag selected clips;
+- paste transformed content into the previous app;
+- create a Markdown summary from checked items.
+
+The repo already includes runnable examples under [scripts/examples/](scripts/examples/):
+
+- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts);
+- [copy a Markdown link from a selected URL](scripts/examples/011-copy-markdown-link.ts);
+- [join selected clips](scripts/examples/003-join-selected-with-log-name.ts);
+- [tag selected items and add a note](scripts/examples/006-tag-selected-and-note.ts);
+- [paste current item to the previous window](scripts/examples/013-paste-current-to-previous.ts).
+
+Scripts are trusted local automation, not a secure sandbox or marketplace. Treat scripts like code you choose to run on your own machine.
+
+Read the scripting guide: [docs/user/scripts.md](docs/user/scripts.md)
+
+## Privacy Model
+
+Clipboard history is sensitive. Copicu is local-first by design:
+
+- clipboard history metadata lives in local SQLite;
+- image and blob payloads live in local files;
+- scripts are local files;
+- examples, screenshots, tests, and issues should use synthetic data;
+- real clipboard dumps, local databases, `.env` files, secrets, and private logs should never be committed.
+
+AI features are optional and disabled by default. Some AI operations, such as search planning, can work without sending clipboard payloads. Other operations, such as summarizing selected clips, necessarily send selected content to the configured provider and should remain explicit, capability-based, and reviewable.
+
+Use [.env.example](.env.example) if you want to test OpenAI-compatible providers locally.
+
+## How It Compares
+
+This table is intentionally conservative. Copicu is much younger than the established tools.
+
+| Area | Copicu | CopyQ | Ditto | PasteBar |
+| --- | --- | --- | --- | --- |
+| Primary focus today | Windows-first local clipboard working memory | Mature cross-platform power-user clipboard manager | Mature Windows clipboard history | Modern organized clipboard manager |
+| Maturity | Alpha, active development | Mature | Mature | More mature than Copicu |
+| Storage model | Local SQLite metadata + local blob files | Local app storage | Local database | Local app storage |
+| Keyboard-first picker | Core product surface | Supported | Supported | Supported |
+| Paste to previous Windows app | Core Windows flow, still being hardened | Supported via mature app behavior | Supported | Supported |
+| Metadata | Titles, tags, notes, MIME hints | Rich item organization | Simpler history model | Collections/organization |
+| Scripting/actions | Trusted local TS/JS actions and host APIs | Powerful CopyQ scripting | Limited/plugin-oriented | App-specific automation/features |
+| AI | Optional, disabled by default, explicit selected-content actions | Not the core pitch | Not the core pitch | Depends on app features |
+| Compatibility stance | Inspired by CopyQ, not script-compatible | Canonical CopyQ behavior | Ditto ecosystem | PasteBar ecosystem |
+
+If you already love CopyQ or Ditto, you may not need Copicu. Copicu is for people who want a modern Windows-first clipboard tool with structured metadata, local scripts/actions, and a privacy-aware path toward optional AI operations.
+
+## Large Histories
+
+Copicu is designed so the picker does not become a giant React DOM list.
+
+The current architecture uses SQLite for local history/metadata and paginated queries, while `@tanstack/react-virtual` renders only visible rows plus a small overscan buffer.
+
+This is a design direction, not an unlimited-history benchmark claim. Storage size, indexes, blob payloads, thumbnails, retention policy, preview generation, and query shape still matter. Public benchmarks are planned before making stronger performance claims.
 
 ## Current Limitations
-
-Copicu is reliable enough for daily Windows use, but some areas are still evolving.
 
 Known limitations:
 
@@ -46,9 +167,12 @@ Known limitations:
 - Scripts are trusted local automation, not a secure sandbox or marketplace.
 - AI is optional and disabled by default; selected-content AI actions may send selected clipboard content to the configured provider.
 - Rich clipboard formats are still evolving. Text and image-only capture exist, but full HTML/RTF/custom-format fidelity is not a compatibility promise.
-- Copicu is CopyQ-inspired, not CopyQ-compatible. It does not run CopyQ scripts or promise full CopyQ parity.
+- Copicu does not run CopyQ scripts or promise full CopyQ parity.
+- Windows code signing and package-manager distribution are still being improved.
 
 Good feedback includes Windows version, target app, install method, Copicu version or commit, exact steps, and synthetic reproduction data.
+
+Please do not paste real clipboard payloads into issues. Reduce examples to synthetic data.
 
 ## What To Test And Report
 
@@ -59,247 +183,26 @@ The most useful reports are narrow and reproducible:
 - shortcut, tray, hide/show, and focus behavior;
 - picker search, keyboard navigation, and preview readability;
 - script/action ideas that would save real daily effort;
-- AI command mode friction, using only synthetic or non-sensitive clips;
+- optional AI command mode friction, using only synthetic or non-sensitive clips;
 - performance symptoms with large synthetic histories.
 
-Please do not paste real clipboard payloads into issues. Reduce examples to synthetic data.
-
-## Why Copicu Exists
-
-Power users copy useful fragments all day:
-
-- code snippets;
-- URLs and research links;
-- prompts and partial answers;
-- error messages and stack traces;
-- terminal commands;
-- Markdown fragments;
-- chat and email drafts;
-- screenshots;
-- temporary notes;
-- text that needs to be cleaned, summarized, tagged, transformed, or pasted somewhere else.
-
-Most clipboard managers help you remember those fragments. Copicu is meant to help you **do something with them**.
-
-The long-term direction is simple:
-
-> Search your clipboard like a history, organize it like a workspace, automate it like a tool, and command it like an assistant.
-
-## Inspired By CopyQ, Not A CopyQ Clone
-
-Copicu is strongly inspired by [CopyQ](https://hluk.github.io/CopyQ/). CopyQ is one of the best references for what an advanced clipboard manager can become: history, commands, shortcuts, scripting, menus, tabs, and deep customization.
-
-Copicu is not trying to be CopyQ-compatible. It does not aim to run CopyQ scripts, match CopyQ internals, or promise full feature parity.
-
-Instead, Copicu uses CopyQ as a baseline and explores a different product shape:
-
-- a small native core in Rust;
-- a Tauri 2 desktop shell;
-- TypeScript/React UI;
-- SQLite-backed structured metadata;
-- local blob storage for large payloads and images;
-- a compact keyboard-first picker;
-- explicit host APIs for copy, paste, window focus, search, metadata, and actions;
-- trusted local TypeScript/JavaScript scripts;
-- AI-assisted search, summaries, and command planning as an action layer.
-
-## What It Can Do Today
-
-Copicu is early-stage, but the core is already functional.
-
-Current capabilities include:
-
-- clipboard history capture for text;
-- image-only clipboard capture with normalized PNG blobs;
-- SQLite persistence for history and metadata;
-- blob storage outside SQLite for image and large payload data;
-- hash-based deduplication;
-- searchable picker;
-- keyboard navigation;
-- copy selected item;
-- paste selected item into the previous window on Windows;
-- target-aware paste shortcuts on Windows;
-- item editing;
-- item metadata: title, tags, notes, MIME hints;
-- tag management and tag-filtered picker routes;
-- built-in actions;
-- trusted local TypeScript/JavaScript scripts;
-- command palette;
-- local and global shortcut routes;
-- AI-assisted search mode;
-- temporary AI-generated script actions;
-- Markdown output windows for AI/script-generated summaries, drafts, reports, and compilations.
-
-## The Picker Is The Product
-
-Copicu is designed as a desktop utility, not a web app wrapped in a marketing shell.
-
-The main surface is the picker:
-
-- open it with a shortcut;
-- type to search;
-- navigate with the keyboard;
-- preview content;
-- copy or paste the selected item;
-- edit content or metadata;
-- run actions from item menus or the command palette.
-
-The UI should feel fast, discreet, precise, and useful immediately. Motion and polish are used to clarify state and focus, not to decorate the app.
-
-## Large Histories
-
-Copicu is designed for large clipboard histories without treating the picker like a giant DOM list.
-
-The current architecture uses SQLite for local history/metadata and paginated queries, while `@tanstack/react-virtual` keeps the picker from rendering thousands of rows in React at once. The UI renders only the visible rows plus a small overscan buffer.
-
-This is a design direction, not an unlimited-history benchmark claim. Storage size, indexes, blob payloads, thumbnails, retention policy, preview generation, and query shape still matter. Copicu should handle thousands of items more gracefully than a fully rendered React list, but public benchmarks are still needed before making stronger claims.
-
-Current local synthetic benchmark work measures paged search over generated test data, not real clipboard payloads. On one 10k-item synthetic dataset, skipping result-count recalculation for incremental page loads roughly halved some query timings. That is useful engineering evidence, but it is not a broad performance guarantee.
-
-## Scripts And Actions
-
-Copicu has a shared concept called an **Action**.
-
-An action can be built into the app or defined by a local script. Actions can run from the picker, item menus, command palette, local shortcuts, global shortcuts, clipboard-change triggers, and future surfaces.
-
-Scripts are local TypeScript or JavaScript files. By default, Copicu looks for them in:
-
-```text
-Documents/Copicu/Scripts
-```
-
-Scripts use `defineAction({...})` metadata to describe:
-
-- id;
-- name;
-- description;
-- triggers;
-- input requirements;
-- local/global shortcuts;
-- capabilities;
-- logging behavior.
-
-This makes scripts discoverable before they run. Copicu can show diagnostics, decide when a script is valid, and route it through the same host APIs used by the native UI.
-
-Example script ideas:
-
-- tag the selected clipboard item;
-- normalize whitespace and copy the result;
-- join selected snippets;
-- extract URLs from selected clips;
-- filter the picker to a useful query;
-- paste a transformed item into the previous app;
-- open copied URLs;
-- create a Markdown summary from checked items;
-- react to clipboard changes;
-- build small personal workflows around your clipboard history.
-
-Scripts are currently trusted local automation, not a sandboxed marketplace model. Treat them like code you choose to run on your own machine.
-
-Read the scripting guide: [docs/user/scripts.md](docs/user/scripts.md)
-
-## AI Command Mode
-
-Copicu is not limited to traditional search.
-
-Instead of only typing a keyword like `docker`, `invoice`, or `meeting`, the goal is to let you write intent:
-
-```text
-show me the clips about the auth bug
-summarize the checked items
-tag these as work
-find the command I copied yesterday
-clean this text and copy the result
-turn these snippets into Markdown
-extract the URLs from the selected clips
-show only long text clips
-take the checked items and make a short report
-find things that look like error logs
-prepare this for pasting into Slack
-mark three more items related to this one
-```
-
-The idea is not "AI chat bolted onto a clipboard manager." The idea is a local clipboard workspace where natural-language commands can become concrete operations.
-
-A command can become:
-
-- a structured local search;
-- a filtered picker view;
-- a set of selected or marked items;
-- metadata updates;
-- tags or notes;
-- a text transformation;
-- a Markdown output;
-- a copied result;
-- a temporary script executed through the same action runner as normal scripts.
-
-For example:
-
-```text
-take the checked clips and make a concise project summary
-```
-
-can become:
-
-1. read only the checked item IDs;
-2. fetch the required item content;
-3. ask the configured AI provider for Markdown;
-4. show the result in a review window;
-5. let the user copy it, export it, or add it back to history.
-
-AI in Copicu is meant to use explicit host capabilities. It should not get raw access to SQLite, the filesystem, the shell, native input, or the whole clipboard history by default.
-
-## AI Provider Configuration
-
-AI is disabled by default.
-
-When enabled, Copicu uses an OpenAI-compatible endpoint. You can enter the API key in Settings, or provide it through environment variables / a local `.env` file using fixed names:
-
-```text
-COPICU_AI_ENDPOINT=https://openrouter.ai/api/v1
-COPICU_AI_MODEL=openai/gpt-4.1-mini
-COPICU_AI_API_KEY=your_key_here
-```
-
-Use [.env.example](.env.example) as the template. It includes example blocks for OpenRouter, OpenAI, and Groq.
-
-`COPICU_AI_API_KEY` is the fixed secret key name and overrides the key saved in Settings when present. `COPICU_AI_ENDPOINT` and `COPICU_AI_MODEL` can override Settings when present. Do not commit `.env`.
-
-## Privacy Model
-
-Clipboard history is sensitive.
-
-Copicu is local-first by design:
-
-- history metadata is stored locally in SQLite;
-- image and blob payloads are stored locally as files;
-- scripts are local files;
-- script source code is not stored in SQLite;
-- script logs should record IDs, kinds, counts, lengths, and outcomes, not clipboard payloads;
-- tests and examples use synthetic data;
-- real clipboard dumps, local databases, `.env` files, secrets, and private logs should never be committed.
-
-AI features are designed as explicit actions. Some AI operations, such as simple AI search planning, can work without sending clipboard content. Other operations, such as summarizing selected items, necessarily send selected content to the configured provider and should remain intentional, capability-based, and reviewable.
+Open an issue using the templates in this repo and include synthetic reproduction data whenever possible.
 
 ## Roadmap
 
-The direction is a fast, private, keyboard-first clipboard workbench with:
+Near-term priorities:
 
-- richer previews for text, code, URLs, HTML, Markdown, and images;
-- robust paste-to-previous-window behavior;
-- stronger tags, saved filters, and smart collections;
-- more built-in actions;
+- more real-looking public screenshots and GIFs with synthetic data;
+- stronger paste-to-previous-window validation across target apps;
+- more built-in actions and sample scripts;
 - a stable script/action API;
-- AI-assisted search, tagging, extraction, cleanup, and summaries;
-- privacy gates for AI and scripts;
-- better packaging and releases;
-- cross-platform support where native behavior can be made reliable.
+- richer previews for text, code, URLs, HTML, Markdown, and images;
+- better tags, saved filters, and smart collections;
+- public benchmark plan for large histories;
+- clearer Windows packaging and distribution;
+- cross-platform support only where native behavior can be made reliable.
 
-## Status
-
-Copicu is active release-candidate software.
-
-It is already used daily as a local clipboard manager, while APIs and advanced workflows are still evolving. The current priority is to keep the native core reliable while growing the product around search, metadata, scripts, and AI-assisted actions.
+See also: [docs/tracks/018-public-launch-readiness.md](docs/tracks/018-public-launch-readiness.md)
 
 ## Development
 
@@ -316,9 +219,14 @@ Common commands:
 npm install
 npm run build
 npm run visual:check
-npm run perf:history -- 10000
 npm run rust:test
 npm run tauri:dev
+```
+
+Build the desktop app:
+
+```powershell
+npm run tauri:build
 ```
 
 AI setup for local development:
@@ -328,12 +236,6 @@ Copy-Item .env.example .env
 # then edit .env and set COPICU_AI_API_KEY
 ```
 
-Build the desktop app:
-
-```powershell
-npm run tauri:build
-```
-
 Local Windows release helper:
 
 ```powershell
@@ -341,35 +243,21 @@ npm run release:windows
 # Optional: npm run release:windows -- -Bump minor -Notes "Windows installer refresh."
 ```
 
-## Working With Coding Agents
+## Contributing
 
-Copicu is intentionally documented for agent-assisted development.
+Contributions are welcome, especially around:
 
-The repository includes an [AGENTS.md](AGENTS.md) file and a layered documentation system under [docs/](docs/). This means a contributor can clone the repo, open it with a coding agent, and give the agent enough project context without replaying the whole history of the project.
+- clipboard capture reliability;
+- Windows focus and paste behavior;
+- built-in actions and script examples;
+- rich MIME, HTML, RTF, and image handling;
+- picker UX and accessibility;
+- search, filtering, tags, and metadata;
+- public screenshots/GIFs with synthetic data;
+- packaging, release notes, and distribution;
+- tests and documentation.
 
-Recommended agent bootstrap:
-
-```text
-Read AGENTS.md first.
-Then read docs/README.md, docs/WORKING_MEMORY.md, docs/PROJECT.md,
-docs/ASSISTANT_RULES.md and docs/DEVELOPMENT.md.
-For specific work, use docs/TOPICS.md as the router and open only the relevant topic.
-```
-
-The goal is to make agents useful without turning every session into archaeology. Durable decisions live in stable docs, live work lives in `docs/tracks/`, feature plans live in `specs/`, and topic-specific context lives in `docs/topics/`.
-
-This helps with:
-
-- preserving product direction across sessions;
-- avoiding accidental CopyQ parity creep;
-- keeping privacy rules visible;
-- giving agents the native-risk map for clipboard, focus, shortcuts, tray, paste, and storage;
-- making larger changes start from specs instead of ad hoc edits;
-- letting external contributors understand why the app is shaped this way.
-
-There is no separate `CLOG.md` in the current repo. The equivalent "current log" is [docs/WORKING_MEMORY.md](docs/WORKING_MEMORY.md), supported by [docs/tracks/](docs/tracks/) and [docs/TOPICS.md](docs/TOPICS.md).
-
-Local tool caches such as `.agents/` are intentionally not committed. The portable project context is the Markdown documentation that ships with the repo.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Before starting a large feature, open an issue or discussion.
 
 ## Documentation
 
@@ -378,33 +266,14 @@ User-facing docs:
 - [docs/user/README.md](docs/user/README.md)
 - [docs/user/scripts.md](docs/user/scripts.md)
 
-Internal project docs:
+Project and contributor docs:
 
+- [CONTRIBUTING.md](CONTRIBUTING.md)
 - [docs/README.md](docs/README.md)
 - [docs/PROJECT.md](docs/PROJECT.md)
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 - [docs/TOPICS.md](docs/TOPICS.md)
 
-## Contributing
-
-Contributions are welcome, especially around:
-
-- public screenshots and gifs with synthetic data;
-- clipboard capture reliability;
-- Windows focus and paste behavior;
-- rich MIME, HTML, RTF, and image handling;
-- picker UX and accessibility;
-- search and filtering;
-- tag workflows;
-- built-in actions;
-- scripting API design;
-- AI-assisted workflows;
-- privacy and safety boundaries;
-- packaging and releases;
-- docs, tests, and examples.
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Before starting a large feature, open an issue or discussion. Copicu is CopyQ-inspired, but not aiming for full CopyQ parity by default.
-
 ## Name
 
-The name **Copicu** comes from the CopyQ inspiration without claiming compatibility. It is a separate project with its own product direction: local clipboard intelligence, structured metadata, personal automation, and AI-assisted workflows.
+The name **Copicu** comes from the CopyQ inspiration without claiming compatibility. It is a separate project with its own product direction: local clipboard intelligence, structured metadata, personal automation, and optional AI-assisted actions.

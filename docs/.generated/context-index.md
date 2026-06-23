@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-23T13:19:53.519Z
+Generated: 2026-06-23T16:57:31.303Z
 
 ## Topics
 
@@ -59,6 +59,7 @@ Generated: 2026-06-23T13:19:53.519Z
 - parked: [015 macOS Port Spike](../tracks/015-macos-port-spike.md)
 - complete: [Architecture Hardening](../tracks/016-architecture-hardening.md)
 - active: [Actions Modularization](../tracks/017-actions-modularization.md)
+- active: [Public Launch Readiness](../tracks/018-public-launch-readiness.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)

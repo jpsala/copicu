@@ -26,6 +26,7 @@ Suggested filenames:
 - `videos/copicu-picker-search-paste-real.mp4`
 - `videos/copicu-install-first-run.mp4`
 - `source-data/synthetic-clips.md`
+- `source-data/public-demo-clips.json`
 
 ## Required Assets
 
@@ -80,6 +81,11 @@ Current Windows capture note:
 - Do not publish failed `gdigrab` outputs. The script deletes real-demo outputs unless validation succeeds.
 - Use `-UseExistingApp` when Copicu has already been started manually and visually confirmed to be rendered/usable.
 - Next capture attempt should use OBS, Windows Graphics Capture/desktop duplication, or another capturer that can see WebView2 surfaces.
+
+Current source data:
+
+- `source-data/synthetic-clips.md`: human-readable synthetic snippets for screenshots, docs and manual seeding.
+- `source-data/public-demo-clips.json`: structured fake clips suitable for generated demos or future seed scripts.
 
 Current generated demo:
 

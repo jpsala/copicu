@@ -21,6 +21,7 @@
     "context:audit": "bun scripts/agent-context-audit.ts",
     "rust:test": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/manual/run-rust-tests.ps1",
     "capabilities:drift:test": "node --test tests/script-capabilities-drift.test.mjs",
+    "scripts:examples:test": "node --test tests/script-clean-url-helper.test.mjs",
     "ai:planner:test": "node --test tests/ai-query-planner.test.mjs",
     "image:sources": "powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File tests/manual/validate-image-sources.ps1",
     "dogfood:battery": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-dogfood-battery.ps1",

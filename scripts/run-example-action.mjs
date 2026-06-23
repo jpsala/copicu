@@ -10,12 +10,15 @@ const actionFile = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.join(scriptsFolder, "001-toast-hello.ts");
 
+const primaryMockText = process.env.COPICU_MOCK_ITEM_TEXT ?? "https://example.test/path?source=synthetic";
+const primaryMockTitle = process.env.COPICU_MOCK_ITEM_TITLE ?? "Synthetic URL clip";
+
 const mockItems = [
   {
     id: "mock-1",
     kind: "text",
-    text: "https://example.test/path?source=synthetic",
-    title: "Synthetic URL clip",
+    text: primaryMockText,
+    title: primaryMockTitle,
     notes: "",
     tags: ["#synthetic"],
     mimePrimary: "text/plain",

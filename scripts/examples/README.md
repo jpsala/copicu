@@ -33,7 +33,7 @@ npm run scripts:run-example -- "$env:USERPROFILE\Documents\Copicu\Scripts\001-to
 npm run scripts:run-example -- "$env:USERPROFILE\Documents\Copicu\Scripts\005-triage-clipboard-batch.ts"
 ```
 
-The mock runner provides a synthetic `copicu` API, auto-confirms prompts, writes synthetic clipboard output to stdout, and writes logs to the same `.logs` folder the real runner uses.
+The mock runner provides a synthetic `copicu` API, auto-confirms prompts, writes synthetic clipboard output to stdout, and writes logs to the same `.logs` folder the real runner uses. Override the primary mock item with `COPICU_MOCK_ITEM_TEXT` / `COPICU_MOCK_ITEM_TITLE` when validating transform scripts against specific synthetic input.
 
 Recommended test order:
 
@@ -57,6 +57,8 @@ Recommended test order:
 18. `024-open-prompt-filtered.ts`: free-form query wrapper for `#prompt`.
 19. `026-inspect-enrichment-active.ts`: inspect deterministic enrichment results for the active text item and optionally apply missing rule tags.
 20. `027-toast-path-clipboard-change.ts`: `clipboardChange` script that toasts when the captured text item matches deterministic enrichment detectors, making `autoApply` vs `suggestOnly` visible during dogfood.
+21. `028-clean-url-tracking-copy.ts`: removes common tracking parameters from the selected URL and copies the cleaned URL.
+22. `029-format-json-copy.ts`: parses the selected text clip as JSON and copies a pretty-printed version.
 
 Logging contract:
 

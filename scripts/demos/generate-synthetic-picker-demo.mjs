@@ -22,23 +22,28 @@ const totalFrames = fps * durationSeconds;
 const clips = [
   {
     title: "Auth retry loop note",
-    meta: "text · tag:alpha · 3 min ago",
+    meta: "text · tags: alpha, bug · 3 min ago",
     body: "Investigate synthetic auth retry loop in the fixture app. Expected: one retry. Actual: retry counter keeps increasing after timeout.",
   },
   {
+    title: "Tracked docs URL",
+    meta: "url · tags: research, cleanup · 8 min ago",
+    body: "https://example.test/docs/copicu-alpha?utm_source=newsletter&utm_medium=demo&fbclid=synthetic123#install",
+  },
+  {
+    title: "Release checklist",
+    meta: "markdown · tags: release, synthetic · 14 min ago",
+    body: "- Verify installer SHA256  - Smoke-test picker search/paste  - Confirm AI is disabled by default",
+  },
+  {
     title: "Build command",
-    meta: "code · tag:dev · 8 min ago",
-    body: "npm run build && npm run visual:check",
+    meta: "code · tags: dev, test · 19 min ago",
+    body: "npm run build && npm run visual:check && npm run rust:test",
   },
   {
-    title: "Docs URL",
-    meta: "url · tag:research · 14 min ago",
-    body: "https://example.test/docs/copicu-alpha",
-  },
-  {
-    title: "SQL snippet",
-    meta: "sql · tag:demo · 22 min ago",
-    body: "select id, title, kind from demo_clipboard_items where tags like '%alpha%' order by last_used_at desc limit 20;",
+    title: "JSON event",
+    meta: "json · tags: format, synthetic · 22 min ago",
+    body: '{"event":"demo_clip_captured","kind":"text","tags":["alpha","synthetic"],"source":"fixture"}',
   },
 ];
 
@@ -80,7 +85,7 @@ function frameState(frame) {
 
 function renderHtml(frame) {
   const state = frameState(frame);
-  const filtered = state.query.length > 0 ? [clips[0], clips[2], clips[3]] : clips;
+  const filtered = state.query.length > 0 ? [clips[0], clips[1], clips[3]] : clips;
   const list = filtered
     .map((clip, index) => {
       const active = state.selected === index;
@@ -96,7 +101,7 @@ function renderHtml(frame) {
     .join("");
 
   const copiedToast = state.copied
-    ? `<div class="toast">Copied synthetic clip</div>`
+    ? `<div class="toast">Selected clip ready to paste</div>`
     : "";
 
   const markdownOutput = state.outputVisible

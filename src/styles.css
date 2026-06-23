@@ -3086,6 +3086,30 @@ kbd {
   font-weight: 750;
 }
 
+.script-empty-rich {
+  display: grid;
+  gap: 7px;
+  line-height: 1.35;
+}
+
+.script-empty-rich strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.script-empty-rich span {
+  font-weight: 650;
+}
+
+.script-empty-rich code {
+  margin: 0 3px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 1px 4px;
+  color: var(--ink-soft);
+}
+
 .script-registry-list {
   display: grid;
   max-height: 230px;

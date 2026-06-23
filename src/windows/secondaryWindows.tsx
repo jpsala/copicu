@@ -2148,7 +2148,7 @@ function SettingsPanel({
                   `Discovered script files diagnostics source hash triggers capabilities ${scriptSearchText}`,
                 ) ? (
                   <SettingRow label="Script registry" description="Debug view for discovered local actions and parse diagnostics." wide>
-                    <ScriptRegistryList actions={scriptActions} onRunScript={onRunScript} />
+                    <ScriptRegistryList actions={scriptActions} onRunScript={onRunScript} onEditScripts={onEditScripts} />
                   </SettingRow>
                 ) : null}
               </SettingsSection>
@@ -3011,15 +3011,25 @@ function TagSettingsList({
 function ScriptRegistryList({
   actions,
   onRunScript,
+  onEditScripts,
 }: {
   actions: ActionDefinition[];
   onRunScript: (action: ActionDefinition) => void;
+  onEditScripts: () => void;
 }) {
   if (actions.length === 0) {
     return (
-      <p className="script-empty" aria-label="Script registry empty">
-        No scripts discovered.
-      </p>
+      <div className="script-empty script-empty-rich" aria-label="Script registry empty">
+        <strong>No local scripts discovered yet.</strong>
+        <span>
+          Scripts are trusted local TypeScript/JavaScript actions. Put files in your Copicu
+          Scripts folder, then refresh discovery. See <code>docs/user/scripts.md</code> and
+          <code>scripts/examples/</code> for copyable examples.
+        </span>
+        <UiButton type="button" variant="default" size="xs" onClick={onEditScripts}>
+          Open scripts folder
+        </UiButton>
+      </div>
     );
   }
 
