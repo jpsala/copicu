@@ -393,12 +393,11 @@ Hecho en el primer lote:
   - agregado showcase de ejemplos versionados en `scripts/examples/`.
 - `docs/launch-drafts.md` reescrito con angulo nuevo, links a `v0.2.8`, drafts Show HN/Reddit y borradores de issues de codigo reales.
 - JP decidio mantener y explicar `.pi/*` / `docs/skills/aos-*` como tooling durable del proyecto, sin destacarlo en README; agregado bloque breve en `CONTRIBUTING.md` aclarando que es opcional para contributors normales.
-- JP autorizo crear issues publicos de codigo; creados:
-  - #11 Add sample action to clean URL tracking parameters
-  - #12 Add sample action to format selected JSON
-  - #13 Add tests for URL tracking cleanup helper
-  - #14 Improve scripts/actions empty-state onboarding
-  - #15 Add synthetic fixture set for public demos
+- JP autorizo crear issues publicos de codigo; creados #11-#15, implementados en `6ed2525` y cerrados tras push a `main`.
+- Para mantener contributor funnel abierto, creados reemplazos:
+  - #16 Add sample action to extract URLs from selected text
+  - #17 Add tests for JSON formatting sample action
+  - #18 Add README-ready synthetic picker screenshot
 - Implementado localmente para el proximo commit/release:
   - `scripts/examples/028-clean-url-tracking-copy.ts` (#11)
   - `scripts/examples/029-format-json-copy.ts` (#12)

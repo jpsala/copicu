@@ -113,13 +113,19 @@ Outline:
 
 JP approved creating these public GitHub issues on 2026-06-23.
 
-Created issues:
+Created and closed after implementation in `6ed2525`:
 
-- #11 Add sample action to clean URL tracking parameters — implemented locally, pending commit/release.
-- #12 Add sample action to format selected JSON — implemented locally, pending commit/release.
-- #13 Add tests for URL tracking cleanup helper — implemented locally, pending commit/release.
-- #14 Improve scripts/actions empty-state onboarding — implemented locally, pending commit/release.
-- #15 Add synthetic fixture set for public demos — implemented locally, pending commit/release.
+- #11 Add sample action to clean URL tracking parameters.
+- #12 Add sample action to format selected JSON.
+- #13 Add tests for URL tracking cleanup helper.
+- #14 Improve scripts/actions empty-state onboarding.
+- #15 Add synthetic fixture set for public demos.
+
+Replacement good-first issues created for the contributor funnel:
+
+- #16 Add sample action to extract URLs from selected text.
+- #17 Add tests for JSON formatting sample action.
+- #18 Add README-ready synthetic picker screenshot.
 
 ### Add a sample action that removes URL tracking parameters
 
