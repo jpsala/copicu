@@ -199,7 +199,8 @@ function Get-GithubReleaseTags() {
   }
 
   try {
-    return @($json | ConvertFrom-Json | ForEach-Object { [string] $_.tagName })
+    $items = $json | ConvertFrom-Json
+    return @($items | ForEach-Object { [string] $_.tagName })
   } catch {
     Write-Step "failed to parse gh release list; auto tag will use local version + git tags only"
     return @()

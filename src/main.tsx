@@ -593,6 +593,7 @@ function positionNotificationsWindow() {
 
 type RendererDiagnosticMode = "off" | "errors" | "debug";
 type RendererDiagnosticLevel = "error" | "debug";
+const RENDERER_HEARTBEAT_INTERVAL_MS = 30_000;
 
 function rendererDiagnosticMode(): RendererDiagnosticMode {
   const rawOverride =
@@ -628,6 +629,13 @@ function recordRendererDiagnostic(
   if (mode === "off" || (mode === "errors" && level !== "error")) {
     return Promise.resolve();
   }
+  return recordPersistentRendererDiagnostic(event, detail);
+}
+
+function recordPersistentRendererDiagnostic(event: string, detail?: string) {
+  if (!isTauriRuntime()) {
+    return Promise.resolve();
+  }
   return invoke("record_renderer_diagnostic", {
     event,
     detail: detail ?? null,
@@ -635,6 +643,30 @@ function recordRendererDiagnostic(
     console.warn("renderer diagnostic failed", error);
   });
 }
+
+function setupRendererHeartbeat() {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  const state = window as Window & { __copicuRendererHeartbeatStarted?: boolean };
+  if (state.__copicuRendererHeartbeatStarted) {
+    return;
+  }
+  state.__copicuRendererHeartbeatStarted = true;
+  const startedAt = Date.now();
+  const emitHeartbeat = () => {
+    const activeElement = document.activeElement;
+    const activeTag = activeElement instanceof HTMLElement ? activeElement.tagName : "none";
+    void recordPersistentRendererDiagnostic(
+      "renderer.heartbeat",
+      `label=${currentWindowLabel()} visibility=${document.visibilityState} focused=${document.hasFocus()} active=${activeTag} uptime_ms=${Date.now() - startedAt}`,
+    );
+  };
+  window.setTimeout(emitHeartbeat, 5_000);
+  window.setInterval(emitHeartbeat, RENDERER_HEARTBEAT_INTERVAL_MS);
+}
+
+setupRendererHeartbeat();
 
 function resolveUiHostRequest(id: string, value: unknown) {
   return invoke("resolve_ui_host_request", {

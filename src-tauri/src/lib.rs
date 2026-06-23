@@ -4,6 +4,7 @@ mod actions;
 pub mod ai_planner;
 mod clipboard;
 mod clipboard_probe;
+mod diagnostics;
 mod enrichment;
 mod host;
 mod hotkeys;
@@ -257,14 +258,16 @@ fn dev_log(args: std::fmt::Arguments<'_>) {
 fn dev_log(_args: std::fmt::Arguments<'_>) {}
 
 #[cfg(not(test))]
-fn diag_log(_event: &str, _detail: impl AsRef<str>) {
+fn diag_log(event: &str, detail: impl AsRef<str>) {
+    let detail = detail.as_ref();
+    diagnostics::log_event(event, detail);
     #[cfg(debug_assertions)]
     {
         let unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_millis())
             .unwrap_or_default();
-        eprintln!("[diag {unix_ms}] {_event}: {}", _detail.as_ref());
+        eprintln!("[diag {unix_ms}] {event}: {detail}");
     }
 }
 
@@ -980,10 +983,12 @@ fn ai_script_run(
 #[cfg(not(test))]
 #[tauri::command]
 fn record_renderer_diagnostic(event: String, detail: Option<String>) {
-    diag_log(
-        "renderer",
-        format!("{event} {}", detail.unwrap_or_default()),
-    );
+    let event_name = if event.starts_with("renderer.") || event.starts_with("updater.") {
+        event
+    } else {
+        format!("renderer.{event}")
+    };
+    diag_log(&event_name, detail.unwrap_or_default());
 }
 
 #[cfg(not(test))]
@@ -2093,12 +2098,29 @@ pub fn run() {
                         .app_data_dir()
                         .map_err(|error| tauri::Error::Anyhow(error.into()))
                 })?;
+            diagnostics::init(&app_data_dir);
+            diag_log(
+                "app.startup",
+                format!(
+                    "app_data_dir={} profile_kind={}",
+                    app_data_dir.display(),
+                    if std::env::var_os("COPICU_APP_DATA_DIR").is_some() {
+                        "dev_or_override"
+                    } else {
+                        "installed"
+                    }
+                ),
+            );
             let storage = storage::AppStorage::open(&app_data_dir)
                 .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?;
             dev_log(format_args!(
                 "sqlite storage ready: {}",
                 storage.db_path().display()
             ));
+            diag_log(
+                "storage.ready",
+                format!("db_path={}", storage.db_path().display()),
+            );
             let window_registry = window_state::WindowStateRegistry::open(app_data_dir.clone());
 
             app.manage(PickerFocusPolicy::default());

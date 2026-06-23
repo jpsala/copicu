@@ -33,6 +33,18 @@ fn dev_log(args: std::fmt::Arguments<'_>) {
 #[cfg(not(debug_assertions))]
 fn dev_log(_args: std::fmt::Arguments<'_>) {}
 
+#[cfg(not(test))]
+fn persistent_log(event: &str, detail: impl AsRef<str>) {
+    crate::diag_log(event, detail);
+}
+
+#[cfg(test)]
+fn persistent_log(_event: &str, _detail: impl AsRef<str>) {}
+
+fn elapsed_ms(started_at: Instant) -> u128 {
+    started_at.elapsed().as_millis()
+}
+
 #[derive(Clone, Default, Serialize)]
 pub struct CaptureStats {
     captured_count: u64,
@@ -140,6 +152,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
 
 impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
     fn on_clipboard_change(&mut self) {
+        let started_at = Instant::now();
         let probe_result = crate::clipboard_probe::probe_clipboard();
         let has_image_without_text = probe_result
             .as_ref()
@@ -147,9 +160,16 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
         let has_image_with_text = probe_result
             .as_ref()
             .is_ok_and(|probe| probe.has_image && probe.has_text);
+        persistent_log(
+            "clipboard.event.start",
+            format!(
+                "has_image_without_text={has_image_without_text} has_image_with_text={has_image_with_text} probe_ok={}",
+                probe_result.is_ok()
+            ),
+        );
 
         if has_image_without_text {
-            self.capture_image(probe_result);
+            self.capture_image(probe_result, started_at);
             return;
         }
 
@@ -157,6 +177,13 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             Ok(text) => text,
             Err(error) => {
                 record_event(&self.state, CaptureOutcome::ReadError, probe_result, None);
+                persistent_log(
+                    "clipboard.event.end",
+                    format!(
+                        "outcome=read_error kind=text duration_ms={} error={error}",
+                        elapsed_ms(started_at)
+                    ),
+                );
                 dev_log(format_args!("clipboard read skipped: {error}"));
                 return;
             }
@@ -169,6 +196,13 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                 CaptureOutcome::IgnoredEmpty,
                 probe_result,
                 None,
+            );
+            persistent_log(
+                "clipboard.event.end",
+                format!(
+                    "outcome=ignored_empty kind=text duration_ms={}",
+                    elapsed_ms(started_at)
+                ),
             );
             dev_log(format_args!("clipboard text ignored: empty"));
             return;
@@ -186,6 +220,13 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                 CaptureOutcome::SelfWriteSuppressed,
                 probe_result,
                 Some(preview),
+            );
+            persistent_log(
+                "clipboard.event.end",
+                format!(
+                    "outcome=self_write_suppressed kind=text chars={text_char_count} duration_ms={}",
+                    elapsed_ms(started_at)
+                ),
             );
             dev_log(format_args!("clipboard text ignored: self_write"));
             return;
@@ -215,14 +256,39 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                         self.apply_builtin_enrichment(item_id, &normalized);
                         self.emit_history_changed(item_id, "text");
                         self.run_clipboard_change_actions(item_id);
+                        persistent_log(
+                            "clipboard.event.end",
+                            format!(
+                                "outcome=captured_text item_id={item_id} chars={text_char_count} image_with_text_skipped={has_image_with_text} duration_ms={}",
+                                elapsed_ms(started_at)
+                            ),
+                        );
                     }
-                    Err(error) => eprintln!("clipboard storage insert failed: {error}"),
+                    Err(error) => {
+                        persistent_log(
+                            "clipboard.event.end",
+                            format!(
+                                "outcome=storage_error kind=text chars={text_char_count} duration_ms={} error={error}",
+                                elapsed_ms(started_at)
+                            ),
+                        );
+                        eprintln!("clipboard storage insert failed: {error}");
+                    }
                 }
                 dev_log(format_args!("clipboard text captured"));
             }
-            CaptureOutcome::IgnoredDuplicateOrCoalesced => dev_log(format_args!(
-                "clipboard text ignored: duplicate_or_coalesced"
-            )),
+            CaptureOutcome::IgnoredDuplicateOrCoalesced => {
+                persistent_log(
+                    "clipboard.event.end",
+                    format!(
+                        "outcome=ignored_duplicate_or_coalesced kind=text chars={text_char_count} duration_ms={}",
+                        elapsed_ms(started_at)
+                    ),
+                );
+                dev_log(format_args!(
+                    "clipboard text ignored: duplicate_or_coalesced"
+                ));
+            }
             CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::CapturedImage
             | CaptureOutcome::SelfWriteSuppressed
@@ -232,11 +298,22 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
 }
 
 impl<R: Runtime> TextClipboardHandler<R> {
-    fn capture_image(&self, probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>) {
+    fn capture_image(
+        &self,
+        probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>,
+        started_at: Instant,
+    ) {
         let image = match crate::image_capture::read_clipboard_image() {
             Ok(image) => image,
             Err(error) => {
                 record_event(&self.state, CaptureOutcome::ReadError, probe_result, None);
+                persistent_log(
+                    "clipboard.event.end",
+                    format!(
+                        "outcome=read_error kind=image duration_ms={} error={error}",
+                        elapsed_ms(started_at)
+                    ),
+                );
                 dev_log(format_args!("clipboard image read skipped: {error}"));
                 return;
             }
@@ -248,6 +325,14 @@ impl<R: Runtime> TextClipboardHandler<R> {
                 CaptureOutcome::SelfWriteSuppressed,
                 probe_result,
                 None,
+            );
+            persistent_log(
+                "clipboard.event.end",
+                format!(
+                    "outcome=self_write_suppressed kind=image bytes={} duration_ms={}",
+                    image.png_bytes.len(),
+                    elapsed_ms(started_at)
+                ),
             );
             dev_log(format_args!("clipboard image ignored: self_write"));
             return;
@@ -270,8 +355,28 @@ impl<R: Runtime> TextClipboardHandler<R> {
                     Ok(item_id) => {
                         self.emit_history_changed(item_id, "image");
                         self.run_clipboard_change_actions(item_id);
+                        persistent_log(
+                            "clipboard.event.end",
+                            format!(
+                                "outcome=captured_image item_id={item_id} width={} height={} bytes={} duration_ms={}",
+                                image.width,
+                                image.height,
+                                image.png_bytes.len(),
+                                elapsed_ms(started_at)
+                            ),
+                        );
                     }
-                    Err(error) => eprintln!("clipboard image storage insert failed: {error}"),
+                    Err(error) => {
+                        persistent_log(
+                            "clipboard.event.end",
+                            format!(
+                                "outcome=storage_error kind=image bytes={} duration_ms={} error={error}",
+                                image.png_bytes.len(),
+                                elapsed_ms(started_at)
+                            ),
+                        );
+                        eprintln!("clipboard image storage insert failed: {error}");
+                    }
                 }
                 dev_log(format_args!(
                     "clipboard image captured: {}x{} {} bytes",
@@ -280,9 +385,19 @@ impl<R: Runtime> TextClipboardHandler<R> {
                     image.png_bytes.len()
                 ));
             }
-            CaptureOutcome::IgnoredDuplicateOrCoalesced => dev_log(format_args!(
-                "clipboard image ignored: duplicate_or_coalesced"
-            )),
+            CaptureOutcome::IgnoredDuplicateOrCoalesced => {
+                persistent_log(
+                    "clipboard.event.end",
+                    format!(
+                        "outcome=ignored_duplicate_or_coalesced kind=image bytes={} duration_ms={}",
+                        image.png_bytes.len(),
+                        elapsed_ms(started_at)
+                    ),
+                );
+                dev_log(format_args!(
+                    "clipboard image ignored: duplicate_or_coalesced"
+                ));
+            }
             CaptureOutcome::CapturedText
             | CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::SelfWriteSuppressed

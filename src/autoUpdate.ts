@@ -1,5 +1,6 @@
-import { check, type DownloadEvent } from "@tauri-apps/plugin-updater";
+import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import type { AppSettings } from "./shared/settings";
 
 type AutoUpdateSettings = AppSettings["autoUpdate"];
@@ -22,16 +23,34 @@ const STARTUP_CHECK_DELAY_MS = 20 * 1000;
 const MIN_AUTO_UPDATE_INTERVAL_MS = 15 * 60 * 1000;
 let autoUpdateInFlight = false;
 
+function recordAutoUpdateDiagnostic(event: string, detail?: string) {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  void invoke("record_renderer_diagnostic", {
+    event,
+    detail: detail ?? null,
+  }).catch(() => undefined);
+}
+
 export function setupAutomaticUpdates(
   settings: AutoUpdateSettings,
   callbacks: AutoUpdateCallbacks = {},
 ) {
   if (!settings.enabled || !shouldRunUpdater()) {
+    recordAutoUpdateDiagnostic(
+      "updater.setup.skip",
+      `enabled=${settings.enabled} should_run=${shouldRunUpdater()}`,
+    );
     return () => undefined;
   }
 
   let disposed = false;
   const intervalMs = normalizeIntervalMs(settings.checkIntervalMinutes);
+  recordAutoUpdateDiagnostic(
+    "updater.setup",
+    `startup_delay_ms=${STARTUP_CHECK_DELAY_MS} interval_ms=${intervalMs}`,
+  );
 
   const run = () => {
     if (disposed) {
@@ -53,25 +72,54 @@ export function setupAutomaticUpdates(
 }
 
 export async function checkForAvailableUpdate(callbacks: AutoUpdateCallbacks = {}) {
+  const startedAt = performance.now();
   callbacks.onStatus?.({ phase: "checking" });
-  const update = await check({ timeout: 30_000 });
-  if (!update) {
-    callbacks.onStatus?.({ phase: "idle", message: "Copicu is up to date." });
-    return null;
+  recordAutoUpdateDiagnostic("updater.check.start", "timeout_ms=30000");
+  try {
+    const update = await check({ timeout: 30_000 });
+    if (!update) {
+      callbacks.onStatus?.({ phase: "idle", message: "Copicu is up to date." });
+      recordAutoUpdateDiagnostic(
+        "updater.check.end",
+        `outcome=up_to_date duration_ms=${Math.round(performance.now() - startedAt)}`,
+      );
+      return null;
+    }
+    callbacks.onStatus?.({ phase: "available", version: update.version });
+    recordAutoUpdateDiagnostic(
+      "updater.check.end",
+      `outcome=available version=${update.version} duration_ms=${Math.round(
+        performance.now() - startedAt,
+      )}`,
+    );
+    return update;
+  } catch (error) {
+    recordAutoUpdateDiagnostic(
+      "updater.check.end",
+      `outcome=error duration_ms=${Math.round(performance.now() - startedAt)} error=${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    throw error;
   }
-  callbacks.onStatus?.({ phase: "available", version: update.version });
-  return update;
 }
 
 export async function checkDownloadInstallAndRelaunch(callbacks: AutoUpdateCallbacks = {}) {
   if (autoUpdateInFlight) {
+    recordAutoUpdateDiagnostic("updater.run.skip", "reason=in_flight");
     return;
   }
 
+  const startedAt = performance.now();
   autoUpdateInFlight = true;
+  recordAutoUpdateDiagnostic("updater.run.start");
   try {
     const update = await checkForAvailableUpdate(callbacks);
     if (!update) {
+      recordAutoUpdateDiagnostic(
+        "updater.run.end",
+        `outcome=no_update duration_ms=${Math.round(performance.now() - startedAt)}`,
+      );
       return;
     }
     let downloadedBytes = 0;
@@ -81,6 +129,10 @@ export async function checkDownloadInstallAndRelaunch(callbacks: AutoUpdateCallb
       if (event.event === "Started") {
         downloadedBytes = 0;
         contentLength = event.data.contentLength ?? null;
+        recordAutoUpdateDiagnostic(
+          "updater.download.start",
+          `version=${update.version} content_length=${contentLength ?? "unknown"}`,
+        );
         callbacks.onStatus?.({
           phase: "downloading",
           version: update.version,
@@ -100,19 +152,36 @@ export async function checkDownloadInstallAndRelaunch(callbacks: AutoUpdateCallb
         return;
       }
       if (event.event === "Finished") {
+        recordAutoUpdateDiagnostic(
+          "updater.download.end",
+          `version=${update.version} downloaded_bytes=${downloadedBytes}`,
+        );
         callbacks.onStatus?.({ phase: "installing", version: update.version });
       }
     });
 
     callbacks.onStatus?.({ phase: "relaunching", version: update.version });
+    recordAutoUpdateDiagnostic("updater.relaunch.start", `version=${update.version}`);
     await relaunch();
+  } catch (error) {
+    recordAutoUpdateDiagnostic(
+      "updater.run.end",
+      `outcome=error duration_ms=${Math.round(performance.now() - startedAt)} error=${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    throw error;
   } finally {
     autoUpdateInFlight = false;
   }
 }
 
 function shouldRunUpdater() {
-  return Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) && import.meta.env.PROD;
+  return isTauriRuntime() && import.meta.env.PROD;
+}
+
+function isTauriRuntime() {
+  return Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 }
 
 function normalizeIntervalMs(minutes: number) {

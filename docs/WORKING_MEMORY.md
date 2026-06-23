@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-06-22.
+Ultima actualizacion manual: 2026-06-23.
 
 Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
@@ -17,9 +17,9 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | Shortcuts de scripts: flujo manual validado; patch preview opcional. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md` | UI modularizada en commits `af392f5`/`7b10504`; `NotificationsApp` ya separado; proximo split seguro: `UiHostApp`. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.5` publicado con auto-update firmado y `latest.json`. |
-| Dev/instalada | active | `docs/topics/windows-installer.md` | `v0.2.5` instalada; dev reiniciado con New item + fix de Pin/Stay on top. Instalada/dev separados. |
-| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | New item + Pin commiteados en `3826de1`; WIP actual captura contexto oculto de app/ventana/formatos para busqueda. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
+| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.7` publicado con auto-update firmado y `latest.json`. |
+| Dev/instalada | active | `docs/topics/windows-installer.md` | `v0.2.7` publicado; dev e instalada relanzados. Instalada/dev separados; validar ciclo real de updater desde una instalada anterior cuando haga falta. |
+| Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | New item + Pin commiteados en `3826de1`; captura contexto oculto commiteada en `c94cf25`; panel About + Check now commiteado en `031ec5a`. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
 | OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
 
 ## Specs Activas
@@ -38,7 +38,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Preferir velocidad/latencia percibida; aceptar coste razonable de memoria si no es extremo.
 - Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
 - Paste-to-previous-window sigue siendo el flujo nativo mas riesgoso.
-- Release actual: Windows `v0.2.5` con auto-update firmado via Tauri Updater/GitHub Releases.
+- Release actual: Windows `v0.2.7` con auto-update firmado via Tauri Updater/GitHub Releases.
 - Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
 - `metadata` standalone queda `CachedHidden` + prewarm salvo coste extremo.
@@ -55,7 +55,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 - Chunk gate: build actual sin warning; `mise run release-vite-chunk-check` protege regresion.
 - Infra local: si `visual:check`/Rust focalizados fallan, contrastar con `cargo check`, build y dogfood.
-- GitHub auth en Pi esta OK y `main` esta sincronizado con `origin/main` en commit `ceef10b` (`v0.2.5`). Working tree actual esta sucio por WIP producto: New item + cambios picker hover/delete previos en `src/main.tsx`, `src/styles.css`, `tests/visual/shell.spec.ts`, backend/contracts de New item y fix de Pin/Stay-on-top en `src-tauri/src/lib.rs`, `src/ui/window/windowChrome.ts`, `src/ui/window/WindowControls.tsx`.
+- GitHub auth en Pi esta OK y `main` esta sincronizado con `origin/main` en commit `600bf67` (`v0.2.7`). Worktree limpio al guardar sesion.
 - Updater: respaldar fuera del repo `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; perderlos impide firmar updates para instalaciones `v0.2.5+`.
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
@@ -82,9 +82,9 @@ Comandos conversacionales y Pi locales estan documentados en `docs/topics/docs-k
 
 Proximo lote recomendado:
 
-1. Cerrar WIP captura de contexto oculto: validar dogfood copiando desde apps externas y buscando por `app:`, `window:`, dominio y texto plain de contexto.
-2. Si se va a commitear, correr `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run rust:test` y visual focalizado/full segun riesgo.
-3. Release `v0.2.6` queda despues de cerrar este WIP; no perder/rotar la clave de updater.
+1. Validar ciclo real de updater instalado: desde una instalada anterior (`v0.2.6` si esta disponible) usar Settings -> About -> `Check now` y confirmar que detecta/instala `v0.2.7`, o documentar el resultado si la instalada ya quedo actualizada.
+2. Si se toca producto, correr `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run rust:test` y visual focalizado/full segun riesgo.
+3. No perder/rotar la clave de updater; seguir usando `npm run release:windows` sin `-Yes` salvo pedido explicito.
 
 ## Promocion De Memoria
 
