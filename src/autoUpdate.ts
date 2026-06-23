@@ -52,6 +52,17 @@ export function setupAutomaticUpdates(
   };
 }
 
+export async function checkForAvailableUpdate(callbacks: AutoUpdateCallbacks = {}) {
+  callbacks.onStatus?.({ phase: "checking" });
+  const update = await check({ timeout: 30_000 });
+  if (!update) {
+    callbacks.onStatus?.({ phase: "idle", message: "Copicu is up to date." });
+    return null;
+  }
+  callbacks.onStatus?.({ phase: "available", version: update.version });
+  return update;
+}
+
 export async function checkDownloadInstallAndRelaunch(callbacks: AutoUpdateCallbacks = {}) {
   if (autoUpdateInFlight) {
     return;
@@ -59,14 +70,10 @@ export async function checkDownloadInstallAndRelaunch(callbacks: AutoUpdateCallb
 
   autoUpdateInFlight = true;
   try {
-    callbacks.onStatus?.({ phase: "checking" });
-    const update = await check({ timeout: 30_000 });
+    const update = await checkForAvailableUpdate(callbacks);
     if (!update) {
-      callbacks.onStatus?.({ phase: "idle", message: "Copicu is up to date." });
       return;
     }
-
-    callbacks.onStatus?.({ phase: "available", version: update.version });
     let downloadedBytes = 0;
     let contentLength: number | null = null;
 

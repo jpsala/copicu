@@ -2866,6 +2866,56 @@ kbd {
   text-transform: none;
 }
 
+.about-card,
+.about-update-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+}
+
+.about-card-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.about-card-main strong,
+.about-update-panel strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.about-card-main p,
+.about-update-panel p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.about-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.about-update-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .about-update-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
 .tag-create-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;

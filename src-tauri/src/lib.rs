@@ -625,6 +625,17 @@ fn set_main_window_pin_state_on_main_thread<R: tauri::Runtime>(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn get_app_about_info() -> AppAboutInfo {
+    AppAboutInfo {
+        name: "Copicu",
+        version: env!("CARGO_PKG_VERSION"),
+        description: "A fast local clipboard manager inspired by CopyQ, built for keyboard-first Windows workflows.",
+        target: if cfg!(debug_assertions) { "debug" } else { "release" },
+    }
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppShortcutStatus {
     let picker = app
         .try_state::<CurrentPickerShortcut>()
@@ -1028,6 +1039,16 @@ fn close_settings_window(window: tauri::WebviewWindow) -> Result<(), String> {
     window
         .hide()
         .map_err(|error| format!("settings window hide failed: {error}"))
+}
+
+#[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppAboutInfo {
+    name: &'static str,
+    version: &'static str,
+    description: &'static str,
+    target: &'static str,
 }
 
 #[cfg(not(test))]
@@ -2000,6 +2021,7 @@ pub fn run() {
             get_clipboard_probe,
             get_main_window_pin_state,
             set_main_window_pin_state,
+            get_app_about_info,
             get_app_shortcut_status,
             list_recent_items,
             search_items,

@@ -69,6 +69,7 @@ import {
 import { ShortcutBadge } from "../ui/ShortcutBadge";
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
+import { checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
 
 
 type HistoryItem = {
@@ -131,6 +132,13 @@ type AppShortcutStatus = {
 type MetadataEditorPayload = {
   item: HistoryItem;
   captureContextEvents: CaptureContextEvent[];
+};
+
+type AppAboutInfo = {
+  name: string;
+  version: string;
+  description: string;
+  target: string;
 };
 
 const DEFAULT_TOAST_DURATION_MS = 3600;
@@ -237,6 +245,28 @@ function captureContextRows(event: CaptureContextEvent) {
   ];
 }
 
+function updateStatusMessage(status: AutoUpdateStatus | null) {
+  if (!status) {
+    return "No update check has run in this window.";
+  }
+  switch (status.phase) {
+    case "checking":
+      return "Checking GitHub Releases for a signed update…";
+    case "idle":
+      return status.message;
+    case "available":
+      return `Version ${status.version} is available.`;
+    case "downloading": {
+      const total = status.contentLength ? ` / ${Math.round(status.contentLength / 1024)} KB` : "";
+      return `Downloading ${status.version}: ${Math.round(status.downloadedBytes / 1024)} KB${total}.`;
+    }
+    case "installing":
+      return `Installing version ${status.version}…`;
+    case "relaunching":
+      return `Relaunching into version ${status.version}…`;
+  }
+}
+
 function captureSearchChips(event: CaptureContextEvent) {
   return [
     event.sourceAppName ? `app:${event.sourceAppName}` : null,
@@ -257,6 +287,10 @@ function setHistoryQueryMarked(request: SetHistoryQueryMarkedRequest) {
 
 function listActions() {
   return invoke<ActionDefinition[]>("list_actions");
+}
+
+function getAppAboutInfo() {
+  return invoke<AppAboutInfo>("get_app_about_info");
 }
 
 function getAppShortcutStatus() {
@@ -714,6 +748,9 @@ export function SettingsWindowApp() {
   const [error, setError] = useState<string | null>(null);
   const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
   const [shortcutStatus, setShortcutStatus] = useState<AppShortcutStatus | null>(null);
+  const [appInfo, setAppInfo] = useState<AppAboutInfo | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<AutoUpdateStatus | null>(null);
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [tags, setTags] = useState<TagSummary[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -843,6 +880,44 @@ export function SettingsWindowApp() {
     },
     [pushToast],
   );
+
+  const checkForUpdatesNow = useCallback(async () => {
+    if (checkingForUpdates) {
+      return;
+    }
+    setCheckingForUpdates(true);
+    setError(null);
+    try {
+      const update = await checkForAvailableUpdate({
+        onStatus: (status) => setUpdateStatus(status),
+      });
+      pushToast(
+        update
+          ? {
+              title: "Update available",
+              message: `Version ${update.version} is available. Automatic updates can install it if enabled.`,
+              tone: "success",
+            }
+          : {
+              title: "Copicu is up to date",
+              message: appInfo ? `Current version: ${appInfo.version}` : "No update is available.",
+              tone: "success",
+            },
+      );
+    } catch (updateError) {
+      const message = String(updateError);
+      setError(message);
+      setUpdateStatus({ phase: "idle", message });
+      pushToast({
+        title: "Update check failed",
+        message,
+        tone: "danger",
+        durationMs: STICKY_TOAST_DURATION_MS,
+      });
+    } finally {
+      setCheckingForUpdates(false);
+    }
+  }, [appInfo, checkingForUpdates, pushToast]);
 
   const refreshTags = useCallback(async () => {
     setTagsLoading(true);
@@ -1047,6 +1122,18 @@ export function SettingsWindowApp() {
         }
       });
 
+    getAppAboutInfo()
+      .then((info) => {
+        if (active) {
+          setAppInfo(info);
+        }
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(String(loadError));
+        }
+      });
+
     getAppShortcutStatus()
       .then((status) => {
         if (active) {
@@ -1105,6 +1192,9 @@ export function SettingsWindowApp() {
           tagsLoading={tagsLoading}
           tagSummary={tagSummary}
           shortcutStatus={shortcutStatus}
+          appInfo={appInfo}
+          updateStatus={updateStatus}
+          checkingForUpdates={checkingForUpdates}
           onDraftChange={setDraft}
           onQueryChange={setQuery}
           onRunScript={runStandaloneScriptAction}
@@ -1115,6 +1205,7 @@ export function SettingsWindowApp() {
           onEditScript={(action) => void openScriptInEditor(action)}
           onRefreshScripts={() => void refreshScriptActions()}
           onBrowseVscodePath={() => void browseVscodePath()}
+          onCheckUpdates={() => void checkForUpdatesNow()}
           onCancel={closeWindow}
           onSave={() => void saveSettings()}
         />
@@ -1284,6 +1375,9 @@ type SettingsPanelProps = {
     itemCount: number;
   };
   shortcutStatus: AppShortcutStatus | null;
+  appInfo: AppAboutInfo | null;
+  updateStatus: AutoUpdateStatus | null;
+  checkingForUpdates: boolean;
   onDraftChange: (settings: AppSettings) => void;
   onQueryChange: (query: string) => void;
   onRunScript: (action: ActionDefinition) => void;
@@ -1297,6 +1391,7 @@ type SettingsPanelProps = {
   onEditScript: (action: ActionDefinition) => void;
   onRefreshScripts: () => void;
   onBrowseVscodePath: () => void;
+  onCheckUpdates: () => void;
   onCancel: () => void;
   onSave: () => void;
 };
@@ -1310,7 +1405,8 @@ type SettingSection =
   | "enrichment"
   | "tags"
   | "scripts"
-  | "ai";
+  | "ai"
+  | "about";
 
 type SettingSectionDefinition = {
   id: SettingSection;
@@ -1328,6 +1424,9 @@ function SettingsPanel({
   tagsLoading,
   tagSummary,
   shortcutStatus,
+  appInfo,
+  updateStatus,
+  checkingForUpdates,
   onDraftChange,
   onQueryChange,
   onRunScript,
@@ -1338,6 +1437,7 @@ function SettingsPanel({
   onEditScript,
   onRefreshScripts,
   onBrowseVscodePath,
+  onCheckUpdates,
   onCancel,
   onSave,
 }: SettingsPanelProps) {
@@ -1395,6 +1495,14 @@ function SettingsPanel({
     "Shift+F2",
     scriptHotkeySearchText,
   ].join(" ");
+  const aboutSearchText = [
+    appInfo?.name ?? "Copicu",
+    appInfo?.version ?? "",
+    appInfo?.description ?? "",
+    appInfo?.target ?? "",
+    "about version update release github latest check signed installer",
+    updateStatusMessage(updateStatus),
+  ].join(" ");
   const tagSearchText = tags
     .map((tag) =>
       [
@@ -1451,6 +1559,11 @@ function SettingsPanel({
       label: "AI",
       description: "Provider endpoint and model for AI-assisted search",
     },
+    {
+      id: "about",
+      label: "About",
+      description: "Version, release and updater status",
+    },
   ];
   const sectionMatches = (section: SettingSectionDefinition) =>
     normalizedQuery.length === 0 ||
@@ -1458,7 +1571,8 @@ function SettingsPanel({
     (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "scripts" && scriptSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
-    (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery));
+    (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "about" && aboutSearchText.toLocaleLowerCase().includes(normalizedQuery));
   const displayedSections =
     normalizedQuery.length === 0
       ? settingSections.filter((section) => section.id === activeSection)
@@ -2114,6 +2228,49 @@ function SettingsPanel({
                         })
                       }
                     />
+                  </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "about") ? (
+              <SettingsSection title="About" description="Version, release channel and manual update checks.">
+                {visible("about", "Copicu", aboutSearchText) ? (
+                  <SettingRow label="Application" description="Local build identity and product summary." wide>
+                    <div className="about-card" aria-label="About Copicu">
+                      <div className="about-card-main">
+                        <strong>{appInfo?.name ?? "Copicu"}</strong>
+                        <p>{appInfo?.description ?? "Fast local clipboard manager."}</p>
+                      </div>
+                      <div className="about-facts">
+                        <UiBadge className="settings-summary-badge" variant="light">
+                          Version {appInfo?.version ?? "unknown"}
+                        </UiBadge>
+                        <UiBadge className="settings-summary-badge" variant="light">
+                          {appInfo?.target ?? "runtime"}
+                        </UiBadge>
+                        <UiBadge className="settings-summary-badge" variant="light">
+                          {draft.autoUpdate.enabled ? "Auto-update on" : "Auto-update off"}
+                        </UiBadge>
+                      </div>
+                    </div>
+                  </SettingRow>
+                ) : null}
+                {visible("about", "Check for updates", "manual update check latest GitHub release signed updater") ? (
+                  <SettingRow
+                    label="Check for updates"
+                    description="Checks the signed GitHub updater manifest and reports whether a newer version is available. Automatic updates can still install in the background when enabled."
+                    wide
+                  >
+                    <div className="about-update-panel" aria-label="Update status">
+                      <div>
+                        <strong>{checkingForUpdates ? "Checking…" : "Updater status"}</strong>
+                        <p>{updateStatusMessage(updateStatus)}</p>
+                      </div>
+                      <UiButton type="button" variant="default" loading={checkingForUpdates} onClick={onCheckUpdates}>
+                        Check now
+                      </UiButton>
+                    </div>
                   </SettingRow>
                 ) : null}
               </SettingsSection>

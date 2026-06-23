@@ -213,6 +213,13 @@ async function mockTauriInvoke(
             return null;
           case "get_compound_hotkey_pending":
             return (window as any).__copicuTestCompoundPending;
+          case "get_app_about_info":
+            return {
+              name: "Copicu",
+              version: "0.2.6",
+              description: "A fast local clipboard manager inspired by CopyQ, built for keyboard-first Windows workflows.",
+              target: "test",
+            };
           case "get_app_shortcut_status":
             return {
               picker: {
@@ -1906,6 +1913,16 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByLabel("AI endpoint")).toBeVisible();
   await expect(page.getByLabel("AI model")).toBeVisible();
   await expect(page.getByLabel("AI API key")).toBeVisible();
+});
+
+test("settings about section shows version and updater status", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=settings");
+
+  await page.getByLabel("Search settings").fill("about");
+  await expect(page.getByLabel("About Copicu")).toContainText("Version 0.2.6");
+  await expect(page.getByLabel("Update status")).toContainText("No update check has run");
+  await expect(page.getByRole("button", { name: "Check now" })).toBeVisible();
 });
 
 test("ui-host input prompt fits compact window", async ({ page }) => {

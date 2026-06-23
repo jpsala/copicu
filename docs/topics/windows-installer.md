@@ -139,7 +139,9 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-06-22: release `v0.2.5` publicado como primer corte con auto-update firmado. Assets: `Copicu_0.2.5_x64-setup.exe` y `latest.json`; commit `ceef10b37d3555c06b79a6ba99f41f75b2bffb6d`; SHA256 `267CE41E28F5CD52E2B96F9ED3E2557E939901FFECBF130482628D5ABF4955FE`. La instalada local quedo en `0.2.5`; el proximo corte `v0.2.6` sirve para validar el ciclo real de update desde `v0.2.5`.
+Estado 2026-06-22: release `v0.2.5` publicado como primer corte con auto-update firmado. Assets: `Copicu_0.2.5_x64-setup.exe` y `latest.json`; commit `ceef10b37d3555c06b79a6ba99f41f75b2bffb6d`; SHA256 `267CE41E28F5CD52E2B96F9ED3E2557E939901FFECBF130482628D5ABF4955FE`. La instalada local quedo en `0.2.5`; el corte `v0.2.6` fue publicado despues con `latest.json` para validar el ciclo real de update desde `v0.2.5`.
+
+La ventana Settings incluye seccion `About` con descripcion, version local, target, estado de auto-update y boton manual `Check now`. Ese check consulta el manifest firmado/latest via Tauri Updater y solo reporta disponibilidad; la instalacion automatica sigue controlada por `autoUpdate.enabled`.
 
 Gotcha 2026-06-22: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script ya carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH` hacia `TAURI_SIGNING_PRIVATE_KEY`, pero el password sigue siendo necesario si la clave esta cifrada. Para esta linea de releases, la clave/password local estan en `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; deben respaldarse fuera del repo.
 
