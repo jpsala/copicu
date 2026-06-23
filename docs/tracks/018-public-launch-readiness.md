@@ -398,6 +398,7 @@ Hecho en el primer lote:
   - #16 Add sample action to extract URLs from selected text
   - #17 Add tests for JSON formatting sample action
   - #18 Add README-ready synthetic picker screenshot
+- #16/#17 implementados en `19a1ba7` y cerrados tras push a `origin/main`.
 - #18 implementado en `fc47d7a` y cerrado tras push a `origin/main`.
 - Commit documental `35677ca` (`Persist release and import notes`) pusheado a `origin/main`; `main` quedo sincronizado y limpio.
 - Implementado y pusheado para el proximo commit/release:
@@ -428,12 +429,13 @@ Avance siguiente sesion:
 - Validado borrador Scoop a nivel JSON con `python -m json.tool .tmp/scoop/copicu.json`; instalacion/extraccion no probadas para no mutar sistema local.
 - Commit `fc47d7a` pusheado a `origin/main`; `main` quedo sincronizado con GitHub.
 
-Avance local #16/#17:
+Avance #16/#17:
 
 - Agregado `scripts/examples/030-extract-urls-copy.ts`: extrae URLs `http(s)` de un clip seleccionado, copia una por linea y loguea solo ID/longitudes/conteo.
 - `scripts/examples/029-format-json-copy.ts` ahora exporta helper puro `formatJson` que reporta errores sin payload.
 - Agregados tests `tests/script-format-json-helper.test.mjs` y `tests/script-extract-urls-helper.test.mjs`; `npm run scripts:examples:test` ahora cubre URL cleanup, JSON formatting y URL extraction.
-- Validado `npm run scripts:examples:test`, `npm run build`, y `npm run scripts:run-example` con inputs sinteticos para `029`/`030`.
+- Validado `npm run scripts:examples:test`, `npm run build`, `npm run capabilities:drift:test`, `npm run ai:planner:test` y `npm run scripts:run-example` con inputs sinteticos para `029`/`030`.
+- Commit `19a1ba7` pusheado a `origin/main`; #16/#17 cerrados.
 
 Research de distribucion/confianza 2026-06-23:
 
@@ -449,9 +451,6 @@ Research de distribucion/confianza 2026-06-23:
 
 Pendiente inmediato:
 
-1. Revisar/commitear implementacion local de #16/#17:
-   - `scripts/examples/030-extract-urls-copy.ts`;
-   - helper exportado en `029-format-json-copy.ts`;
-   - tests `tests/script-format-json-helper.test.mjs` y `tests/script-extract-urls-helper.test.mjs`.
-2. Preparar `v0.3.0` cuando README/assets/scripts/issues esten listos.
+1. Preparar `v0.3.0` cuando README/assets/scripts/issues esten listos.
+2. Si se prefiere mantener funnel abierto, crear nuevos issues chicos antes/despues del corte.
 3. Si se crea release/tag o se pushea otro commit, pedir aprobacion explicita antes.

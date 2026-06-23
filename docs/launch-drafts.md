@@ -261,7 +261,7 @@ Replacement good-first issues created for the contributor funnel:
 Implementation status:
 
 - #18 closed in `fc47d7a`.
-- #16/#17 implemented locally in the current launch batch; close after push if validation remains green.
+- #16/#17 closed in `19a1ba7`.
 
 ### Add a sample action that removes URL tracking parameters
 
