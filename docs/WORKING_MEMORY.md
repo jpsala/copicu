@@ -17,7 +17,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | Shortcuts de scripts: flujo manual validado; patch preview opcional. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md` | UI modularizada en commits `af392f5`/`7b10504`; `NotificationsApp` ya separado; proximo split seguro: `UiHostApp`. |
-| Open source growth | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md` | Launch readiness y notas release/import pusheadas hasta `35677ca`. Avance local: screenshot #18, drafts WinGet/Scoop/code-signing y validacion winget/json; proximo decidir push/v0.3.0. |
+| Open source growth | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md` | Launch readiness, screenshot #18 y drafts WinGet/Scoop/code-signing pusheados hasta `fc47d7a`; #18 cerrado. Proximo: decidir `v0.3.0` o resolver #16/#17. |
 | Dev/instalada | active | `docs/topics/windows-installer.md` | `v0.2.8` publicado e instalado localmente; dev/instalada separados; release trae diagnostics persistente para investigar hangs. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | New item + Pin commiteados en `3826de1`; captura contexto oculto commiteada en `c94cf25`; panel About + Check now commiteado en `031ec5a`. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
 | OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
@@ -55,7 +55,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 - Chunk gate: build actual sin warning; `mise run release-vite-chunk-check` protege regresion.
 - Infra local: si `visual:check`/Rust focalizados fallan, contrastar con `cargo check`, build y dogfood.
-- GitHub auth en Pi esta OK. `main` y `origin/main` estan sincronizados en `35677ca` (`Persist release and import notes`). Release Windows vigente `v0.2.8` fue cortado desde `3905b6e`.
+- GitHub auth en Pi esta OK. `main` y `origin/main` estan sincronizados en `fc47d7a` (`Add synthetic README picker screenshot`). Release Windows vigente `v0.2.8` fue cortado desde `3905b6e`.
 - Updater: respaldar fuera del repo `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; perderlos impide firmar updates para instalaciones `v0.2.5+`.
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
