@@ -1,8 +1,19 @@
 /// <reference path="./copicu-action.d.ts" />
 
-function formatJson(text: string) {
-  const parsed = JSON.parse(text);
-  return JSON.stringify(parsed, null, 2);
+export type JsonFormatResult =
+  | { ok: true; formatted: string }
+  | { ok: false; errorName: string };
+
+export function formatJson(text: string): JsonFormatResult {
+  try {
+    const parsed = JSON.parse(text);
+    return { ok: true, formatted: JSON.stringify(parsed, null, 2) };
+  } catch (error) {
+    return {
+      ok: false,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    };
+  }
 }
 
 export default defineAction({
@@ -33,14 +44,12 @@ export default defineAction({
     const item = await copicu.history.get(itemId, { content: true });
     const input = item.text ?? "";
 
-    let formatted = "";
-    try {
-      formatted = formatJson(input);
-    } catch (error) {
+    const result = formatJson(input);
+    if (!result.ok) {
       await copicu.log.warn("json formatting failed", {
         itemId: item.id,
         inputLength: input.length,
-        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorName: result.errorName,
       });
       await copicu.ui.toast({
         title: "JSON format failed",
@@ -50,11 +59,11 @@ export default defineAction({
       return;
     }
 
-    await copicu.clipboard.writeText(formatted);
+    await copicu.clipboard.writeText(result.formatted);
     await copicu.log.info("formatted json copied", {
       itemId: item.id,
       inputLength: input.length,
-      outputLength: formatted.length,
+      outputLength: result.formatted.length,
     });
     await copicu.ui.toast({
       title: "Copied formatted JSON",

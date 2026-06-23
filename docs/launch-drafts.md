@@ -258,6 +258,11 @@ Replacement good-first issues created for the contributor funnel:
 - #17 Add tests for JSON formatting sample action.
 - #18 Add README-ready synthetic picker screenshot.
 
+Implementation status:
+
+- #18 closed in `fc47d7a`.
+- #16/#17 implemented locally in the current launch batch; close after push if validation remains green.
+
 ### Add a sample action that removes URL tracking parameters
 
 GitHub: https://github.com/jpsala/copicu/issues/11

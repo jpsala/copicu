@@ -111,10 +111,11 @@ Example workflows:
 
 The repo already includes runnable examples under [scripts/examples/](scripts/examples/):
 
+- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts);
+- [format selected JSON](scripts/examples/029-format-json-copy.ts);
+- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts);
 - [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts);
-- [copy a Markdown link from a selected URL](scripts/examples/011-copy-markdown-link.ts);
 - [join selected clips](scripts/examples/003-join-selected-with-log-name.ts);
-- [tag selected items and add a note](scripts/examples/006-tag-selected-and-note.ts);
 - [paste current item to the previous window](scripts/examples/013-paste-current-to-previous.ts).
 
 Scripts are trusted local automation, not a secure sandbox or marketplace. Treat scripts like code you choose to run on your own machine.

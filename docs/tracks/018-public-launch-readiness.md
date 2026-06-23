@@ -428,6 +428,13 @@ Avance siguiente sesion:
 - Validado borrador Scoop a nivel JSON con `python -m json.tool .tmp/scoop/copicu.json`; instalacion/extraccion no probadas para no mutar sistema local.
 - Commit `fc47d7a` pusheado a `origin/main`; `main` quedo sincronizado con GitHub.
 
+Avance local #16/#17:
+
+- Agregado `scripts/examples/030-extract-urls-copy.ts`: extrae URLs `http(s)` de un clip seleccionado, copia una por linea y loguea solo ID/longitudes/conteo.
+- `scripts/examples/029-format-json-copy.ts` ahora exporta helper puro `formatJson` que reporta errores sin payload.
+- Agregados tests `tests/script-format-json-helper.test.mjs` y `tests/script-extract-urls-helper.test.mjs`; `npm run scripts:examples:test` ahora cubre URL cleanup, JSON formatting y URL extraction.
+- Validado `npm run scripts:examples:test`, `npm run build`, y `npm run scripts:run-example` con inputs sinteticos para `029`/`030`.
+
 Research de distribucion/confianza 2026-06-23:
 
 - Microsoft Learn indica que para apps fuera de Microsoft Store conviene firmar los archivos, pero la reputacion SmartScreen se construye con descargas/uso; EV ya no debe asumirse como bypass instantaneo desde la documentacion 2024+.
@@ -442,6 +449,9 @@ Research de distribucion/confianza 2026-06-23:
 
 Pendiente inmediato:
 
-1. Decidir si el proximo lote es `v0.3.0`, #16/#17 o una prueba real de packaging Scoop/WinGet con artefacto final.
+1. Revisar/commitear implementacion local de #16/#17:
+   - `scripts/examples/030-extract-urls-copy.ts`;
+   - helper exportado en `029-format-json-copy.ts`;
+   - tests `tests/script-format-json-helper.test.mjs` y `tests/script-extract-urls-helper.test.mjs`.
 2. Preparar `v0.3.0` cuando README/assets/scripts/issues esten listos.
 3. Si se crea release/tag o se pushea otro commit, pedir aprobacion explicita antes.

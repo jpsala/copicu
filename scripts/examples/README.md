@@ -59,6 +59,7 @@ Recommended test order:
 20. `027-toast-path-clipboard-change.ts`: `clipboardChange` script that toasts when the captured text item matches deterministic enrichment detectors, making `autoApply` vs `suggestOnly` visible during dogfood.
 21. `028-clean-url-tracking-copy.ts`: removes common tracking parameters from the selected URL and copies the cleaned URL.
 22. `029-format-json-copy.ts`: parses the selected text clip as JSON and copies a pretty-printed version.
+23. `030-extract-urls-copy.ts`: extracts http(s) URLs from the selected text clip and copies one URL per line.
 
 Logging contract:
 
