@@ -17,8 +17,8 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | Shortcuts de scripts: flujo manual validado; patch preview opcional. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md` | UI modularizada en commits `af392f5`/`7b10504`; `NotificationsApp` ya separado; proximo split seguro: `UiHostApp`. |
-| Open source growth | active | `docs/tracks/013-open-source-growth.md` | `main` esta sincronizado con `origin/main`; Windows release actual `v0.2.7` publicado con auto-update firmado y `latest.json`. |
-| Dev/instalada | active | `docs/topics/windows-installer.md` | `v0.2.7` publicado; dev e instalada relanzados. Instalada/dev separados; validar ciclo real de updater desde una instalada anterior cuando haga falta. |
+| Open source growth | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md` | Launch readiness pusheado hasta `9c32c51`; queda commit local `a316456` con notas de release/import pendiente de push. Proximo: decidir `v0.3.0` o assets/winget. |
+| Dev/instalada | active | `docs/topics/windows-installer.md` | `v0.2.8` publicado e instalado localmente; dev/instalada separados; release trae diagnostics persistente para investigar hangs. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md`, `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md`, `docs/topics/picker-interaction.md` | New item + Pin commiteados en `3826de1`; captura contexto oculto commiteada en `c94cf25`; panel About + Check now commiteado en `031ec5a`. Mantener oracle C0: app externa -> hotkey -> type sin focus manual debe escribir en search. |
 | OS / sistema agentico | active | `docs/topics/agentic-os-operations.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md` | Copicu es downstream AOS: solo piezas locales aplicables, sin manager-only del upstream. Quedan warnings de TOPICS/topics grandes. |
 
@@ -38,7 +38,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Preferir velocidad/latencia percibida; aceptar coste razonable de memoria si no es extremo.
 - Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
 - Paste-to-previous-window sigue siendo el flujo nativo mas riesgoso.
-- Release actual: Windows `v0.2.7` con auto-update firmado via Tauri Updater/GitHub Releases.
+- Release actual: Windows `v0.2.8` con auto-update firmado via Tauri Updater/GitHub Releases.
 - Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
 - `metadata` standalone queda `CachedHidden` + prewarm salvo coste extremo.
@@ -55,10 +55,11 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 - Chunk gate: build actual sin warning; `mise run release-vite-chunk-check` protege regresion.
 - Infra local: si `visual:check`/Rust focalizados fallan, contrastar con `cargo check`, build y dogfood.
-- GitHub auth en Pi esta OK y `main` esta sincronizado con `origin/main` en commit `600bf67` (`v0.2.7`). Worktree limpio al guardar sesion.
+- GitHub auth en Pi esta OK. `origin/main` esta en `9c32c51`; local `main` esta 1 commit adelante en `a316456` (`Persist release and import notes`), pendiente de push si JP lo quiere. Release Windows vigente `v0.2.8` fue cortado desde `3905b6e`.
 - Updater: respaldar fuera del repo `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; perderlos impide firmar updates para instalaciones `v0.2.5+`.
 - Shortcuts globales: evitar colisiones instalada/dev y preferir ruta nativa para hotkeys criticas.
 - Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
+- Hang instalada 2026-06-23: si vuelve a pasar, revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl`; dump previo guardado en `.codex-run\hang-dumps\copicu-installed-hung-20260623-113818.dmp` (local/no versionado).
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
 - Picker stress: validar foreground real, pin/candadito y wrapper `copicu_computer_use`.
 - Hotkey picker foco 2026-06-18: `Ctrl+Shift+.` abre con foco; fallback `COPICU_PICKER_NO_ACTIVATE=1`; oracle: tipear sin `focus` manual entra en search. Incidente 2026-06-20 en rama vieja confirmo que usar no-activate como default muestra el picker sin foco.
@@ -82,9 +83,9 @@ Comandos conversacionales y Pi locales estan documentados en `docs/topics/docs-k
 
 Proximo lote recomendado:
 
-1. Validar ciclo real de updater instalado: desde una instalada anterior (`v0.2.6` si esta disponible) usar Settings -> About -> `Check now` y confirmar que detecta/instala `v0.2.7`, o documentar el resultado si la instalada ya quedo actualizada.
-2. Si se toca producto, correr `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run rust:test` y visual focalizado/full segun riesgo.
-3. No perder/rotar la clave de updater; seguir usando `npm run release:windows` sin `-Yes` salvo pedido explicito.
+1. Si reaparece un hang, comparar ultimo `renderer.heartbeat`, `updater.*`, `clipboard.event.*` y `window.event` en `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar.
+2. Validar ciclo real de updater desde una instalada anterior cuando haya oportunidad; la instalada local ya quedo en `v0.2.8` por `npm run install:current`, no por updater.
+3. Si se toca producto, correr `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `npm run rust:test` y visual focalizado/full segun riesgo.
 
 ## Promocion De Memoria
 

@@ -1,7 +1,7 @@
 ---
 id: 007-copyq-import
 status: imported
-updated: 2026-06-05
+updated: 2026-06-23
 ---
 
 # 007 CopyQ Import
@@ -31,6 +31,8 @@ Reimport incremental ejecutado el 2026-06-14 contra `C:\tools\copyq`, sin imprim
 Limpieza de duplicados ejecutada el 2026-06-14 despues del reimport. Se hizo backup previo `copicu.sqlite3.backup-before-dedupe-20260614-211025`, se consolidaron tags/notas/copy metadata cuando aplicaba y se eliminaron 34 filas duplicadas por contenido exacto. Resultado final: 2209 items totales (`1937` text, `272` image) y `0` grupos duplicados remanentes por contenido exacto.
 
 Ajuste posterior el 2026-06-14: tras probar captura real, Copicu si estaba capturando, pero 17 items importados desde CopyQ quedaron con `created_at_unix_ms` en el futuro respecto del reloj local, por lo que las capturas nuevas no aparecian arriba en el picker. Se hizo backup `copicu.sqlite3.backup-before-future-timestamp-clamp-20260614-212830`, se acotaron esos timestamps al pasado inmediato preservando orden relativo, se reinicio la app instalada y una captura nueva quedo primera en la lista.
+
+Import dev aislado ejecutado el 2026-06-23 por pedido de tener CopyQ dentro del modo dev. Destino `.codex-run\dev-isolated\app-data\copicu.sqlite3`; backups locales `copicu.sqlite3.backup-before-copyq-import-dev-20260623-103649` y `copicu.sqlite3.backup-after-copyq-import-dev-20260623-105018`. Resultado final dev: 963 items (`760` text, `203` image), 123 con tags, `history.retentionCount = 0`. Dry-run posterior contra `C:\tools\copyq`: `imported=0` para text/tabs ya importadas, pero todavia marco 121 imagenes importables desde `&clipboard` por diferencia entre hash de import y dedupe nativo de imagen; no reimportar sin revisar esa politica.
 
 La fuente completa no es `C:\tools\copyq\data\copyq_data.db`; esa base es un mirror parcial creado por un script previo. La fuente completa esta en la instancia viva de CopyQ y sus archivos nativos:
 

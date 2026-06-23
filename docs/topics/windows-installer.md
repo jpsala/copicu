@@ -139,11 +139,15 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-06-23: release actual `v0.2.7` publicado con auto-update firmado. Assets: `Copicu_0.2.7_x64-setup.exe` y `latest.json`; commit `600bf67da2ca0e72654c2be3cd74f3cdc6acc9d0`; SHA256 `BD5B7014264D95957299113F67575DCE1C169EA3E60EE9674A3C04303FBFDC42`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6` y `v0.2.7` sirven para validar ciclos reales de update desde instalaciones previas.
+Estado 2026-06-23: release actual `v0.2.8` publicado con auto-update firmado. Assets: `Copicu_0.2.8_x64-setup.exe` y `latest.json`; commit `3905b6ebfacc9edcc4aa7ac3d217437cceece18e`; SHA256 `B72C466D5A39A677630D2C4653F6E2F1B26077FAEB8419857B375B3DD977B300`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7` y `v0.2.8` sirven para validar ciclos reales de update desde instalaciones previas.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target, estado de auto-update y boton manual `Check now`. Ese check consulta el manifest firmado/latest via Tauri Updater y solo reporta disponibilidad; la instalacion automatica sigue controlada por `autoUpdate.enabled`.
 
+`v0.2.8` agrego diagnostics persistente para release/instalada en `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` con rotacion simple a `diagnostics.previous.jsonl` al pasar ~5 MB. Registra eventos sin payloads: `app.startup`, `storage.ready`, `window.*`, `updater.*`, `clipboard.event.*` con duracion/outcome/tamano y `renderer.heartbeat` cada ~30 s. Si una instancia instalada vuelve a quedar `Hung=True`, revisar el ultimo heartbeat/evento antes de reiniciar; el dump local del incidente previo quedo en `.codex-run\hang-dumps\copicu-installed-hung-20260623-113818.dmp`.
+
 Gotcha 2026-06-22: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script ya carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH` hacia `TAURI_SIGNING_PRIVATE_KEY`, pero el password sigue siendo necesario si la clave esta cifrada. Para esta linea de releases, la clave/password local estan en `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; deben respaldarse fuera del repo.
+
+Gotcha 2026-06-23: en PowerShell, `@($json | ConvertFrom-Json | ForEach-Object { $_.tagName })` puede envolver el array de releases como un solo item y hacer que el auto-tag ignore GitHub releases recientes. El helper `scripts/dev/release-windows.ps1` debe primero asignar `$items = $json | ConvertFrom-Json` y luego enumerar `$items | ForEach-Object`; esto evita repetir un tag ya publicado cuando el clon local no tiene tags frescos.
 
 ## Signing
 
