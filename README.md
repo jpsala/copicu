@@ -8,14 +8,18 @@ Copicu is Windows-first today. It is inspired by advanced clipboard tools like C
 
 ## Demo
 
-This demo uses generated synthetic clipboard data only.
+These assets use generated synthetic clipboard data only.
+
+![Copicu synthetic picker screenshot](docs/assets/screenshots/picker-synthetic-history.png)
+
+Short generated flow:
 
 ![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
 
 Static poster: [docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png](docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png)  
 Video: [docs/assets/videos/copicu-synthetic-picker-demo.mp4](docs/assets/videos/copicu-synthetic-picker-demo.mp4)
 
-More real-looking synthetic screenshots and short workflow demos are planned before the next public feedback push.
+More real-looking synthetic workflow demos are planned before the next public feedback push.
 
 ## Install The Windows Alpha
 

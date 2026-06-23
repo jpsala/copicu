@@ -93,6 +93,12 @@ order by last_used_at desc
 limit 20;
 ```
 
+## Image-Like Placeholder
+
+```text
+SYNTHETIC SCREENSHOT · placeholder image clip for public README demos, no real desktop content
+```
+
 ## JSON
 
 ```json

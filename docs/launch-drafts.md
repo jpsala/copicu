@@ -10,6 +10,137 @@ Do not lead with AI. AI is optional and disabled by default. Lead with Windows c
 
 Current release link for drafts: https://github.com/jpsala/copicu/releases/tag/v0.2.8
 
+## Distribution Drafts
+
+Drafts only. Do not submit package-manager PRs or buy/request certificates without explicit JP approval.
+
+### WinGet Candidate
+
+Recommended timing: prepare after `v0.3.0` exists and the installer name/version/SHA256 are final. Use GitHub Releases as the `InstallerUrl` source.
+
+Open questions before submission:
+
+- final package identifier: likely `JPSala.Copicu` or `jpsala.Copicu`; choose once and keep stable;
+- whether WinGet accepts the current per-user NSIS install behavior cleanly;
+- exact silent switches detected by WinGet validation for Tauri NSIS;
+- whether the unsigned alpha causes policy or user-trust friction.
+
+Draft manifest shape for `v0.3.0`:
+
+```yaml
+# manifests/j/JPSala/Copicu/0.3.0/JPSala.Copicu.yaml
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.10.0.schema.json
+PackageIdentifier: JPSala.Copicu
+PackageVersion: 0.3.0
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.10.0
+```
+
+```yaml
+# manifests/j/JPSala/Copicu/0.3.0/JPSala.Copicu.locale.en-US.yaml
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+PackageIdentifier: JPSala.Copicu
+PackageVersion: 0.3.0
+PackageLocale: en-US
+Publisher: JP Sala
+PackageName: Copicu
+License: MIT
+ShortDescription: Local-first, scriptable clipboard manager for Windows power users.
+Description: Copicu is a Windows-first clipboard manager that stores history locally, supports search and metadata, and runs trusted local TypeScript/JavaScript actions.
+Moniker: copicu
+Tags:
+  - clipboard
+  - clipboard-manager
+  - local-first
+  - productivity
+  - scripting
+  - tauri
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
+```
+
+```yaml
+# manifests/j/JPSala/Copicu/0.3.0/JPSala.Copicu.installer.yaml
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+PackageIdentifier: JPSala.Copicu
+PackageVersion: 0.3.0
+InstallerType: nullsoft
+Scope: user
+UpgradeBehavior: install
+ReleaseDate: YYYY-MM-DD
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/jpsala/copicu/releases/download/v0.3.0/Copicu_0.3.0_x64-setup.exe
+    InstallerSha256: <SHA256_FROM_RELEASE>
+ManifestType: installer
+ManifestVersion: 1.10.0
+```
+
+For current `v0.2.8`, the asset URL is `https://github.com/jpsala/copicu/releases/download/v0.2.8/Copicu_0.2.8_x64-setup.exe` and SHA256 is `B72C466D5A39A677630D2C4653F6E2F1B26077FAEB8419857B375B3DD977B300`.
+
+Validation note: substituting current `v0.2.8` values into the same manifest shape passed `winget validate .tmp/winget-v0.2.8` after adding the schema headers above.
+
+### Scoop Candidate
+
+Recommended timing: after `v0.3.0`, if direct GitHub Releases install is stable and JP wants a lower-friction package-manager path before WinGet.
+
+Open questions before submission:
+
+- target bucket: a personal bucket first, then an external bucket only after validation;
+- whether Copicu's current per-user installer should be treated as `installer.script`/`uninstaller.script` or whether a portable ZIP should be produced for Scoop;
+- whether auto-update via Tauri updater should be disabled/documented for Scoop installs.
+
+Draft manifest shape:
+
+```json
+{
+  "version": "0.3.0",
+  "description": "Local-first, scriptable clipboard manager for Windows power users.",
+  "homepage": "https://github.com/jpsala/copicu",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/jpsala/copicu/releases/download/v0.3.0/Copicu_0.3.0_x64-setup.exe#/dl.7z",
+      "hash": "<sha256>"
+    }
+  },
+  "shortcuts": [
+    ["Copicu.exe", "Copicu"]
+  ],
+  "checkver": {
+    "github": "https://github.com/jpsala/copicu"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/jpsala/copicu/releases/download/v$version/Copicu_$version_x64-setup.exe#/dl.7z"
+      }
+    }
+  }
+}
+```
+
+Validation note: substituting current `v0.2.8` values into this shape passed JSON syntax validation with `python -m json.tool .tmp/scoop/copicu.json`; install/extraction was not tested because that would mutate the local system. If Scoop cannot reliably extract/run the NSIS artifact as expected, prefer adding a portable ZIP artifact in a future release rather than forcing a fragile manifest.
+
+### Code Signing Candidate
+
+Recommendation for `v0.3.0`: do not buy OV/EV yet. Keep GitHub Releases + SHA256 + transparent SmartScreen warning while collecting installer feedback.
+
+Decision gates before paying or submitting identity paperwork:
+
+1. Confirm installer/update flow for at least one public feedback release.
+2. Estimate expected download volume and SmartScreen complaint rate.
+3. Price OV/EV options and renewal cost.
+4. Verify certificate storage workflow that does not expose private keys in the repo or CI logs.
+5. Decide whether Microsoft Store/MSIX is worth exploring separately from NSIS.
+
+Draft public wording:
+
+```text
+Copicu's Windows alpha installer is distributed through GitHub Releases. The app is not Windows code-signed yet, so SmartScreen or Defender may warn on first install. Verify the release URL and SHA256 before running it. Copicu's auto-update metadata is signed for Tauri updater integrity, but that is separate from Windows Authenticode code signing.
+```
+
 ## Show HN
 
 Title:

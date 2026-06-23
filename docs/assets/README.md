@@ -89,6 +89,7 @@ Current source data:
 
 Current generated demo:
 
+- `screenshots/picker-synthetic-history.png`
 - `videos/copicu-synthetic-picker-demo.mp4`
 - `gifs/copicu-synthetic-picker-demo.gif`
 - `screenshots/copicu-synthetic-picker-demo-poster.png`

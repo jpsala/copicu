@@ -24,6 +24,12 @@
     "body": "npm run build && npm run visual:check"
   },
   {
+    "title": "Synthetic screenshot placeholder",
+    "kind": "image",
+    "tags": ["screenshot", "synthetic"],
+    "body": "SYNTHETIC SCREENSHOT · placeholder image clip for public README demos, no real desktop content"
+  },
+  {
     "title": "Synthetic stack trace",
     "kind": "text",
     "tags": ["logs", "debug", "synthetic"],

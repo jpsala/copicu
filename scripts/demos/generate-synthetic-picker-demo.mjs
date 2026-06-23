@@ -1,6 +1,6 @@
 import { chromium } from "@playwright/test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,9 +9,11 @@ const root = path.resolve(__dirname, "..", "..");
 const framesDir = path.join(root, ".tmp", "demo-frames", "synthetic-picker");
 const videoDir = path.join(root, "docs", "assets", "videos");
 const gifDir = path.join(root, "docs", "assets", "gifs");
+const screenshotDir = path.join(root, "docs", "assets", "screenshots");
 const mp4Path = path.join(videoDir, "copicu-synthetic-picker-demo.mp4");
 const gifPath = path.join(gifDir, "copicu-synthetic-picker-demo.gif");
-const posterPath = path.join(root, "docs", "assets", "screenshots", "copicu-synthetic-picker-demo-poster.png");
+const posterPath = path.join(screenshotDir, "copicu-synthetic-picker-demo-poster.png");
+const pickerScreenshotPath = path.join(screenshotDir, "picker-synthetic-history.png");
 
 const width = 1280;
 const height = 720;
@@ -19,33 +21,20 @@ const fps = 20;
 const durationSeconds = 6;
 const totalFrames = fps * durationSeconds;
 
-const clips = [
-  {
-    title: "Auth retry loop note",
-    meta: "text · tags: alpha, bug · 3 min ago",
-    body: "Investigate synthetic auth retry loop in the fixture app. Expected: one retry. Actual: retry counter keeps increasing after timeout.",
-  },
-  {
-    title: "Tracked docs URL",
-    meta: "url · tags: research, cleanup · 8 min ago",
-    body: "https://example.test/docs/copicu-alpha?utm_source=newsletter&utm_medium=demo&fbclid=synthetic123#install",
-  },
-  {
-    title: "Release checklist",
-    meta: "markdown · tags: release, synthetic · 14 min ago",
-    body: "- Verify installer SHA256  - Smoke-test picker search/paste  - Confirm AI is disabled by default",
-  },
-  {
-    title: "Build command",
-    meta: "code · tags: dev, test · 19 min ago",
-    body: "npm run build && npm run visual:check && npm run rust:test",
-  },
-  {
-    title: "JSON event",
-    meta: "json · tags: format, synthetic · 22 min ago",
-    body: '{"event":"demo_clip_captured","kind":"text","tags":["alpha","synthetic"],"source":"fixture"}',
-  },
-];
+const demoClips = JSON.parse(
+  readFileSync(path.join(root, "docs", "assets", "source-data", "public-demo-clips.json"), "utf8"),
+);
+
+function summarizeBody(value) {
+  return value.replaceAll("\r\n", " ").replaceAll("\n", "  ").slice(0, 170);
+}
+
+const ageLabels = ["3 min ago", "8 min ago", "14 min ago", "19 min ago", "23 min ago", "29 min ago", "34 min ago"];
+const clips = demoClips.map((clip, index) => ({
+  title: clip.title,
+  meta: `${clip.kind} · tags: ${clip.tags.filter((tag) => tag !== "synthetic").join(", ")} · ${ageLabels[index] ?? "now"}`,
+  body: summarizeBody(clip.body),
+}));
 
 function interpolate(from, to, t) {
   return from + (to - from) * t;
@@ -154,7 +143,7 @@ function renderHtml(frame) {
       left: 110px;
       top: 72px;
       width: 760px;
-      height: 562px;
+      height: 610px;
       border: 1px solid #29323b;
       background: #161b20;
       box-shadow: 0 18px 60px rgba(0,0,0,.38);
@@ -190,9 +179,9 @@ function renderHtml(frame) {
       border: 1px solid #2b343d;
       background: #1c2228;
       border-radius: 7px;
-      padding: 13px 14px;
-      margin-bottom: 10px;
-      min-height: 88px;
+      padding: 11px 14px;
+      margin-bottom: 8px;
+      min-height: 80px;
       transition: border-color .15s, background .15s, transform .15s;
     }
     .item.active {
@@ -303,6 +292,7 @@ async function main() {
   mkdirSync(framesDir, { recursive: true });
   mkdirSync(videoDir, { recursive: true });
   mkdirSync(gifDir, { recursive: true });
+  mkdirSync(screenshotDir, { recursive: true });
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
@@ -316,6 +306,8 @@ async function main() {
   }
 
   await page.screenshot({ path: posterPath, animations: "disabled" });
+  await page.setContent(renderHtml(0), { waitUntil: "load" });
+  await page.screenshot({ path: pickerScreenshotPath, animations: "disabled" });
   await browser.close();
 
   run("ffmpeg", [
@@ -350,6 +342,7 @@ async function main() {
   console.log(`MP4: ${mp4Path}`);
   console.log(`GIF: ${gifPath}`);
   console.log(`Poster: ${posterPath}`);
+  console.log(`Picker screenshot: ${pickerScreenshotPath}`);
 }
 
 main().catch((error) => {

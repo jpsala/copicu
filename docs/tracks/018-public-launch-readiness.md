@@ -398,7 +398,8 @@ Hecho en el primer lote:
   - #16 Add sample action to extract URLs from selected text
   - #17 Add tests for JSON formatting sample action
   - #18 Add README-ready synthetic picker screenshot
-- Implementado localmente para el proximo commit/release:
+- Commit documental `35677ca` (`Persist release and import notes`) pusheado a `origin/main`; `main` quedo sincronizado y limpio.
+- Implementado y pusheado para el proximo commit/release:
   - `scripts/examples/028-clean-url-tracking-copy.ts` (#11)
   - `scripts/examples/029-format-json-copy.ts` (#12)
   - `scripts/run-example-action.mjs` ahora permite `COPICU_MOCK_ITEM_TEXT` / `COPICU_MOCK_ITEM_TITLE` para validar transform scripts con inputs sinteticos especificos
@@ -415,6 +416,16 @@ Hecho en el primer lote:
   - validado `npm run visual:check`
   - app dev reiniciada con `npm run dev:restart`; el tool timeout reporto 120s, pero el log `.codex-run/dev-restart/logs/restart-20260623-135502.log` confirma startup hidden a +80.1s y `copicu.exe` responding=True
 
+Avance local siguiente sesion:
+
+- Empezado #18 con `docs/assets/screenshots/picker-synthetic-history.png`, screenshot README-ready generado con datos sinteticos.
+- `README.md` ahora muestra el screenshot estatico antes del GIF; `docs/assets/README.md` lista el asset.
+- `scripts/demos/generate-synthetic-picker-demo.mjs` ahora consume `docs/assets/source-data/public-demo-clips.json` y regenera screenshot/poster/MP4/GIF desde la misma fuente sintetica.
+- `docs/launch-drafts.md` ahora contiene borradores WinGet, Scoop y code-signing para `v0.3.0` con limites de no submission/no compra.
+- Validado `node scripts/demos/generate-synthetic-picker-demo.mjs`.
+- Validado borrador WinGet sustituyendo valores `v0.2.8`: `winget validate .tmp/winget-v0.2.8` paso tras agregar schema headers.
+- Validado borrador Scoop a nivel JSON con `python -m json.tool .tmp/scoop/copicu.json`; instalacion/extraccion no probadas para no mutar sistema local.
+
 Research de distribucion/confianza 2026-06-23:
 
 - Microsoft Learn indica que para apps fuera de Microsoft Store conviene firmar los archivos, pero la reputacion SmartScreen se construye con descargas/uso; EV ya no debe asumirse como bypass instantaneo desde la documentacion 2024+.
@@ -429,6 +440,6 @@ Research de distribucion/confianza 2026-06-23:
 
 Pendiente inmediato:
 
-1. Crear assets real-looking con datos sinteticos.
-2. Preparar borradores de winget/Scoop/code signing, sin iniciar compras ni submissions.
+1. Revisar si hace falta iterar `docs/assets/screenshots/picker-synthetic-history.png`; si se acepta, cerrar #18 despues de push.
+2. Decidir si el proximo lote es `v0.3.0` o una prueba real de packaging Scoop/WinGet con artefacto final.
 3. Preparar `v0.3.0` cuando README/assets/scripts/issues esten listos.
