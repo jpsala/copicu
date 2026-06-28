@@ -63,9 +63,8 @@ for (const path of markdownFiles("docs/topics")) {
   const content = read(path);
   const fm = frontmatter(content);
   const status = scalar(fm, "status") || "unknown";
-  const triggers = list(fm, "triggers").slice(0, 8).join(", ");
   const label = path.replace("docs/topics/", "").replace(/\.md$/, "");
-  lines.push(`- ${status}: [${label}](../${path.replace("docs/", "")})${triggers ? ` - ${triggers}` : ""}`);
+  lines.push(`- ${status}: [${label}](../${path.replace("docs/", "")})`);
 }
 lines.push("");
 
@@ -106,14 +105,25 @@ const skillDirs = exists("docs/skills")
     .sort()
   : [];
 if (skillDirs.length) {
-  const operationalSkills = [
-    "sigamos",
+  const nonCommandSkills = new Set(["impeccable"]);
+  const legacyAliasSkills = new Set([
     "checkpoint",
     "cerrar-sesion",
     "continuar-sesion",
     "continuar-sesion-con-gol",
+    "evaluar-skills",
     "realinear-os",
-  ].filter((skill) => skillDirs.includes(skill));
+    "repo-commit-push",
+    "sigamos",
+    "aos-checkpoint",
+    "aos-cerrar-sesion",
+    "aos-continuar-sesion",
+    "aos-continuar-sesion-con-gol",
+  ]);
+  const operationalSkills = skillDirs
+    .filter((skill) => !skill.startsWith("speckit-") && !skill.startsWith("aos-speckit-"))
+    .filter((skill) => !nonCommandSkills.has(skill) && !legacyAliasSkills.has(skill))
+    .filter((skill) => exists(`docs/skills/${skill}/SKILL.md`));
   lines.push("- Canon: [docs/skills/](../skills/)");
   if (operationalSkills.length) lines.push(`- Operational commands: ${operationalSkills.join(", ")}`);
   lines.push("- Guidance: [local-codex-skills](../topics/local-codex-skills.md)");
@@ -131,7 +141,7 @@ const piExtensions = exists(".pi/extensions")
     .map((entry) => entry.name)
     .sort()
   : [];
-if (piPrompts.length) lines.push(`- Prompts: ${piPrompts.join(", ")}`);
+if (piPrompts.length) lines.push(`- Prompts: ${piPrompts.length} in [.pi/prompts/](../../.pi/prompts/)`);
 if (piExtensions.length) lines.push(`- Extensions: ${piExtensions.join(", ")}`);
 if (!piPrompts.length && !piExtensions.length) lines.push("- No project Pi resources found.");
 lines.push("- Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)");
@@ -141,10 +151,13 @@ lines.push("## Aliases");
 lines.push("");
 if (exists("docs/GLOSSARY.md")) {
   const glossary = read("docs/GLOSSARY.md");
-  const tableLines = glossary
+  const aliases = glossary
     .split(/\r?\n/)
-    .filter((line) => line.startsWith("|") && !line.includes("---"));
-  lines.push(...tableLines);
+    .filter((line) => line.startsWith("|") && !line.includes("---"))
+    .slice(1)
+    .map((line) => line.split("|")[1]?.trim())
+    .filter(Boolean);
+  lines.push(`- See [GLOSSARY.md](../GLOSSARY.md) for ${aliases.length} alias definitions.`);
 } else {
   lines.push("- No glossary found.");
 }

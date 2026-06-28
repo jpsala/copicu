@@ -27,7 +27,7 @@ primary_refs:
   - docs/tracks/
   - .pi/extensions/
   - .pi/prompts/
-  - scripts/ensure-skills-link.ps1
+  - scripts/toggle-skills-link.ps1
   - scripts/context-index.ts
   - scripts/agent-context-audit.ts
 ---
@@ -73,7 +73,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Ruta caliente: `AGENTS.md`, indice generado, `WORKING_MEMORY.md`, `TOPICS.md` y tracks activos siguen chicos y no son transcript.
 - Routing: topics relevantes existen, tienen triggers utiles y estan linkeados desde `docs/TOPICS.md`.
 - Continuidad: track activo tiene estado, next step y refs que existen.
-- Skills: `docs/skills/` existe, `.agents/skills` apunta ahi por junction y no hay duplicacion real.
+- Skills: `docs/skills/` existe; `.agents/skills` es toggle de discovery y debe estar disabled en Pi salvo uso explicito.
 - Pi: `.pi/prompts/` y `.pi/extensions/` estan documentados en `docs/topics/pi-agentic-os.md` cuando afectan el OS.
 - Decisiones: lo durable esta en `docs/DECISIONS.md` o topic estable, no enterrado en tracks.
 - Specs: specs activas estan indexadas, no tienen prefijos duplicados y tienen `spec.md`.
@@ -122,7 +122,7 @@ bun run context:audit
 6. Omitir piezas manager-only de AOS: registry global, decisiones/tracks/memoria del kit, inventarios personales y docs meta.
 7. Reescribir cualquier mejora del upstream como contexto local de Copicu antes de incorporarla.
 8. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
-9. Preservar `docs/skills/` como fuente canonica y regenerar `.agents/skills` con `scripts/ensure-skills-link.ps1`.
+9. Preservar `docs/skills/` como fuente canonica; usar `scripts/toggle-skills-link.ps1 status|on|off` para discovery bajo demanda.
 10. Regenerar indice y correr audit antes de reportar.
 
 ## Criterio De Exito

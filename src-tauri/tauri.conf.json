@@ -36,7 +36,9 @@
       "nsis"
     ],
     "resources": {
-      "target/release/WebView2Loader.dll": "WebView2Loader.dll"
+      "target/release/WebView2Loader.dll": "WebView2Loader.dll",
+      "../scripts/copicu-script-runner.mjs": "scripts/copicu-script-runner.mjs",
+      "../node_modules/typescript": "node_modules/typescript"
     },
     "icon": [
       "icons/32x32.png",

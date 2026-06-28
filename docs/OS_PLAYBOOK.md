@@ -68,14 +68,14 @@ These are Pi commands available in this repo.
 
 | Command | Use when | Notes |
 | --- | --- | --- |
-| `/checkpoint` | Persist durable value without ending the session | Prompt template version of `checkpoint`. |
-| `/os-status [audit]` | You need operational status | Shows session/git/context state. With `audit`, runs the context audit. |
-| `/os-compact [focus]` | Context is high after checkpointing | Manual OS-aware compaction. Do checkpoint first if there is durable value. |
-| `/os-continuar [objective]` | You want a clean Pi session | Creates a new session with handoff from live docs. Confirms checkpoint first. |
-| `/os-sync` | You changed the OS layer | Ensures the skills link, regenerates the context index, and runs the context audit. |
-| `/gol [objective]` | You want to execute a bounded task to completion | Prefills a safe `/until-done` command. Review before sending. |
+| `/aos-guardar-sesion` | Persist durable value without ending the session | Prompt template for durable save; `/aos-checkpoint` is the legacy alias. |
+| `/aos-status [audit]` | You need operational status | Shows session/git/context state. With `audit`, runs the context audit. |
+| `/aos-compact [focus]` | Context is high after checkpointing | Manual OS-aware compaction. Run `/aos-guardar-sesion` first if there is durable value. |
+| `/aos-continuar [objective]` | You want a clean Pi session | Creates a new session with handoff from live docs. Confirms checkpoint first. |
+| `/aos-sync` | You changed the OS layer | Keeps Pi skills discovery off, regenerates the context index, and runs the context audit. |
+| `/aos-gol [objective]` | You want to execute a bounded task to completion | Prefills a safe `/until-done` command. Review before sending. |
 | `/until-done <objective>` | You want a continuation loop | Provided by `pi-until-done`; use for bounded goals with verification. |
-| `/checkpoint-nudge` | You want to inspect or control context nudges | Subcommands: `prefill`, `mute`, `unmute`, `test`. |
+| `/aos-checkpoint-nudge` | You want to inspect or control context nudges | Subcommands: `prefill`, `mute`, `unmute`, `test`. |
 | `/reload` | You changed/installed Pi resources | Reloads extensions, prompts, skills, and package resources. |
 
 ## Best Workflow By Situation
@@ -116,7 +116,7 @@ Use checkpoint when the session produced durable value:
 Command:
 
 ```text
-/checkpoint
+/aos-guardar-sesion
 ```
 
 or:
@@ -138,28 +138,28 @@ Best practice:
 Use this when context is large or you are changing fronts.
 
 ```text
-/os-continuar continue actions modularization
+/aos-continuar continue actions modularization
 ```
 
 Best practice:
 
-1. Run `/checkpoint` first if there is new durable value.
-2. Use `/os-continuar <objective>`.
+1. Run `/aos-guardar-sesion` first if there is new durable value.
+2. Use `/aos-continuar <objective>`.
 3. In the new session, send the prepared `sigamos`.
 
 This keeps the new session grounded in docs instead of the old transcript.
 
 ### 4. Execute A Task Completely And Safely
 
-Use `/gol` for a bounded implementation task that should continue until done or blocked.
+Use `/aos-gol` for a bounded implementation task that should continue until done or blocked.
 
 Example:
 
 ```text
-/gol implement the next bounded task from docs/tracks/017-actions-modularization.md
+/aos-gol implement the next bounded task from docs/tracks/017-actions-modularization.md
 ```
 
-`/gol` does not immediately run the loop. It fills the editor with a safe `/until-done` prompt. Review it, adjust the objective if needed, then send.
+`/aos-gol` does not immediately run the loop. It fills the editor with a safe `/until-done` prompt. Review it, adjust the objective if needed, then send.
 
 Best use cases:
 
@@ -168,7 +168,7 @@ Best use cases:
 - doing a contained refactor with tests;
 - fixing a reproducible bug with verification.
 
-Avoid `/gol` for:
+Avoid `/aos-gol` for:
 
 - vague goals like "make Copicu better";
 - broad roadmap work;
@@ -184,31 +184,31 @@ Use compaction only after durable value is saved.
 Recommended flow:
 
 ```text
-/checkpoint
-/os-compact focus on the current implementation task and verification state
+/aos-guardar-sesion
+/aos-compact focus on the current implementation task and verification state
 ```
 
 Do not compact as a substitute for documentation. Compaction helps the model; docs preserve the project.
 
 ### 6. Sync, Audit, Or Repair The OS
 
-Use `/os-sync` after you or the agent change the OS layer:
+Use `/aos-sync` after you or the agent change the OS layer:
 
 - `docs/topics/` frontmatter or triggers;
 - `docs/tracks/` state;
-- `docs/skills/` or `.agents/skills`;
+- `docs/skills/` or `.agents/skills` discovery toggle;
 - `.pi/prompts/`;
 - `.pi/extensions/`;
 - aliases or generated context index inputs.
 
 ```text
-/os-sync
+/aos-sync
 ```
 
 It runs the normal hygiene sequence and prints the result into the session:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
+powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
 bun run context:index
 bun run context:audit
 ```
@@ -228,7 +228,7 @@ realinear os
 For status only:
 
 ```text
-/os-status audit
+/aos-status audit
 ```
 
 Best practice:
@@ -264,46 +264,46 @@ Best practice:
 | Goal | Best tool |
 | --- | --- |
 | Keep momentum in same session | `sigamos` |
-| Save durable state | `/checkpoint` or `checkpoint` |
-| Reduce context after saving state | `/os-compact` |
-| Start clean with docs-based handoff | `/os-continuar` |
-| Sync OS docs/index/audit after OS changes | `/os-sync` |
-| Execute a bounded task until done/blocked | `/gol` -> review -> `/until-done` |
+| Save durable state | `/aos-guardar-sesion` or `checkpoint` (`/aos-checkpoint` alias) |
+| Reduce context after saving state | `/aos-compact` |
+| Start clean with docs-based handoff | `/aos-continuar` |
+| Sync OS docs/index/audit after OS changes | `/aos-sync` |
+| Execute a bounded task until done/blocked | `/aos-gol` -> review -> `/until-done` |
 | Repair docs/OS drift | `realinear os` |
-| Inspect operational health | `/os-status audit` |
+| Inspect operational health | `/aos-status audit` |
 | Dogfood Copicu UI | `copicu_computer_use` |
 | Commit and push safely | `repo commit push` |
 
-## Good `/gol` Objectives
+## Good `/aos-gol` Objectives
 
 Good objectives are narrow, verifiable, and tied to existing docs.
 
 Good:
 
 ```text
-/gol extract one mechanical module from the actions runner according to docs/tracks/017-actions-modularization.md, with tests/checks
+/aos-gol extract one mechanical module from the actions runner according to docs/tracks/017-actions-modularization.md, with tests/checks
 ```
 
 ```text
-/gol fix the Vite chunk warning only if a safe code split can be restored without breaking WebView startup
+/aos-gol fix the Vite chunk warning only if a safe code split can be restored without breaking WebView startup
 ```
 
 ```text
-/gol implement one pending task from specs/006-tags-and-hotkeys/tasks.md and verify keyboard behavior where possible
+/aos-gol implement one pending task from specs/006-tags-and-hotkeys/tasks.md and verify keyboard behavior where possible
 ```
 
 Too broad:
 
 ```text
-/gol finish the whole roadmap
+/aos-gol finish the whole roadmap
 ```
 
 ```text
-/gol make the UI perfect
+/aos-gol make the UI perfect
 ```
 
 ```text
-/gol implement all CopyQ features
+/aos-gol implement all CopyQ features
 ```
 
 ## Definition Of Done For Agent Work
@@ -326,7 +326,7 @@ Avoid these:
 - turning `WORKING_MEMORY.md` into a transcript;
 - adding every small thought to `AGENTS.md`;
 - opening long docs by default;
-- using `/gol` for vague or multi-week work;
+- using `/aos-gol` for vague or multi-week work;
 - compacting before checkpointing valuable state;
 - declaring native Windows behavior done without dogfood evidence;
 - changing installed/dev data separation;
@@ -337,7 +337,7 @@ Avoid these:
 Use this safe sequence:
 
 ```text
-/os-status audit
+/aos-status audit
 ```
 
 Then ask:
@@ -349,7 +349,7 @@ Recommend the next bounded task using the lightweight OS route. Do not implement
 If the recommendation is good:
 
 ```text
-/gol <that bounded task>
+/aos-gol <that bounded task>
 ```
 
 Review the prefilled `/until-done` command, then send it.
@@ -357,6 +357,6 @@ Review the prefilled `/until-done` command, then send it.
 If the work changed the OS layer, finish with:
 
 ```text
-/os-sync
+/aos-sync
 /reload
 ```

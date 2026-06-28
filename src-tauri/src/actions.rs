@@ -20,7 +20,7 @@ use std::{
 };
 
 #[cfg(not(test))]
-use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
+use tauri::{path::BaseDirectory, AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 #[cfg(not(test))]
 use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(not(test))]
@@ -1642,7 +1642,7 @@ fn run_node_script_runner<R: Runtime>(
     previous_window: &crate::window_focus::PreviousWindow,
     request: &ScriptRunnerRequest,
 ) -> Result<ScriptRunnerResult, String> {
-    let runner_path = find_script_runner_path()?;
+    let runner_path = find_script_runner_path(app)?;
     let project_root = runner_path
         .parent()
         .and_then(Path::parent)
@@ -1826,7 +1826,16 @@ fn kill_timed_out_child(child: &mut Child, timeout: Duration) -> String {
 }
 
 #[cfg(not(test))]
-fn find_script_runner_path() -> Result<PathBuf, String> {
+fn find_script_runner_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    if let Ok(candidate) = app
+        .path()
+        .resolve("scripts/copicu-script-runner.mjs", BaseDirectory::Resource)
+    {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
     let mut roots = Vec::new();
     if let Ok(current_dir) = std::env::current_dir() {
         roots.push(current_dir);

@@ -27,9 +27,11 @@ triggers:
   - docs/skills
   - .agents/skills
   - pi os
-  - os-status
-  - os-compact
-  - os-continuar
+  - aos-status
+  - aos-compact
+  - aos-continuar
+  - aos-sync
+  - aos-gol
   - context bloat
   - contaminacion de contexto
 primary_refs:
@@ -54,10 +56,10 @@ Este repo usa una version local de Agentic OS (AOS) adaptada a Copicu. La regla 
 ## Ruta Caliente
 
 ```text
-AGENTS.md -> docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/TOPICS.md -> topic/track/spec puntual
+AGENTS.md -> consultar docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/TOPICS.md -> topic/track/spec puntual
 ```
 
-`docs/PROJECT.md`, `docs/ASSISTANT_RULES.md`, `docs/DEVELOPMENT.md`, specs completas y referencias historicas son fuentes profundas, no lectura inicial obligatoria.
+`docs/.generated/context-index.md` es indice para elegir ruta; no hace falta arrastrarlo completo si el pedido ya apunta a un area. `docs/PROJECT.md`, `docs/ASSISTANT_RULES.md`, `docs/DEVELOPMENT.md`, specs completas y referencias historicas son fuentes profundas, no lectura inicial obligatoria.
 
 ## Convenciones Locales
 
@@ -96,13 +98,13 @@ AGENTS.md -> docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/
 
 ## Gol Y Memoria
 
-`gol` no es memoria durable del sistema agentico. En estos flujos solo aparece como instruccion para que una sesion nueva arranque el proximo lote con control de ejecucion.
+`aos-gol` no es memoria durable del sistema agentico. En estos flujos solo aparece como instruccion para que una sesion nueva arranque el proximo lote con control de ejecucion.
 
 La memoria automatica de Pi, como `pi-observational-memory`, es ayuda de continuidad entre compacciones y sesiones largas. No es fuente de verdad del proyecto. Si una observacion automatica contradice `AGENTS.md`, `docs/WORKING_MEMORY.md`, topics, tracks, specs o decisiones versionadas, prevalece la documentacion del repo. Cuando una observacion resulte durable, promoverla al destino correcto en esta capa agentica.
 
 Si durante ese lote aparece conocimiento durable, promoverlo al destino correcto: decision, topic, working memory, track o spec.
 
-`continuar sesion con gol` hace `continuar sesion` y ademas pide que el thread nuevo arranque con `gol` para el proximo lote acordado.
+`continuar sesion con gol` / `aos-nueva-sesion-con-gol` hace `continuar sesion` y ademas pide que el thread nuevo arranque con `aos-gol` para el proximo lote acordado.
 
 `continuar con gol` es alias de `continuar sesion con gol`; no existe una variante que siga en la misma sesion.
 
@@ -127,9 +129,9 @@ Flujo:
 
 Si no hay valor durable nuevo, no tocar docs por tocar: decir que no habia checkpoint necesario y seguir.
 
-Hay una extension Pi local en `.pi/extensions/checkpoint-nudge.ts` que no ejecuta checkpoints automaticamente: solo avisa por uso de contexto en 70%, 85% y 92%, mantiene status de footer, etiqueta checkpoints en `/tree` y ofrece `/checkpoint-nudge prefill|mute|unmute|test`.
+Hay una extension Pi local en `.pi/extensions/aos-checkpoint-nudge.ts` que no ejecuta checkpoints automaticamente: solo avisa por uso de contexto en 70%, 85% y 92%, mantiene status de footer, etiqueta checkpoints en `/tree` y ofrece `/aos-checkpoint-nudge prefill|mute|unmute|test`.
 
-Para comandos Pi adicionales (`/os-status`, `/os-compact`, `/os-continuar`) abrir `docs/topics/pi-agentic-os.md`.
+Para comandos Pi adicionales (`/aos-status`, `/aos-compact`, `/aos-continuar`, `/aos-sync`, `/aos-gol`) abrir `docs/topics/pi-agentic-os.md`.
 
 ## Cierre Y Continuacion De Sesion
 
@@ -146,7 +148,7 @@ La diferencia:
 
 - `cerrar sesion`: solo persiste valor y cierra.
 - `continuar sesion`: persiste valor y abre una sesion visible nueva con handoff compacto cuando la herramienta de la plataforma existe; si no existe, devuelve un prompt pegable.
-- `continuar sesion con gol`: persiste valor, abre una sesion visible nueva y pide arrancar con `gol` para el proximo lote acordado.
+- `continuar sesion con gol`: persiste valor, abre una sesion visible nueva y pide arrancar con `aos-gol` para el proximo lote acordado.
 - `continuar con gol`: alias de `continuar sesion con gol`.
 - `siguiente`: alias de `continuar sesion con gol`.
 
@@ -178,4 +180,4 @@ Primer paso:
 
 ## Auditoria
 
-Si JP pide `realinear os`, abrir `docs/topics/agentic-os-operations.md` y limitar el cambio a la capa agentica salvo pedido explicito.
+Si JP pide `aos-realinear-os`, `realinear os` o `perfect os`, abrir `docs/topics/agentic-os-operations.md` o `docs/topics/os-quality.md` y limitar el cambio a la capa agentica salvo pedido explicito.

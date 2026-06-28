@@ -69,10 +69,22 @@ function readRepoFile(cwd: string, path: string): string | undefined {
   return readFileSync(full, "utf8");
 }
 
+function normalizeHeading(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function section(content: string | undefined, heading: string, maxChars = 1800): string {
   if (!content) return "";
+  const expected = normalizeHeading(heading);
   const lines = content.split(/\r?\n/);
-  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
+  const start = lines.findIndex((line) => {
+    const match = line.match(/^##\s+(.+?)\s*$/);
+    return match ? normalizeHeading(match[1]) === expected : false;
+  });
   if (start < 0) return "";
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i += 1) {
@@ -83,6 +95,14 @@ function section(content: string | undefined, heading: string, maxChars = 1800):
   }
   const text = lines.slice(start, end).join("\n").trim();
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n...` : text;
+}
+
+function sectionAny(content: string | undefined, headings: string[], maxChars = 1800): string {
+  for (const heading of headings) {
+    const found = section(content, heading, maxChars);
+    if (found) return found;
+  }
+  return "";
 }
 
 function formatUsage(usage: ContextUsage | undefined): string {
@@ -106,13 +126,17 @@ async function gitSummary(pi: ExtensionAPI): Promise<{ branch: string; dirty: st
 
 function buildDocsSnapshot(cwd: string): string {
   const wm = readRepoFile(cwd, "docs/WORKING_MEMORY.md");
-  const topic = readRepoFile(cwd, "docs/topics/docs-knowledge-system.md");
-  const next = section(wm, "Proximo Paso Probable", 1200);
-  const decisions = section(wm, "Decisiones Recientes", 1400) || section(wm, "Decisiones Vigentes", 1400);
-  const commands = section(wm, "Comandos De Contexto", 1000);
-  const guardarSesion = section(topic, "Guardar Sesion", 1200) || section(topic, "Guardado, Gol Y Sesiones", 1200);
+  const topic = readRepoFile(cwd, "docs/topics/docs-knowledge-system.md")
+    || readRepoFile(cwd, "docs/topics/agentic-os-local.md")
+    || readRepoFile(cwd, "docs/OS_PLAYBOOK.md");
+  const current = sectionAny(wm, ["Estado Actual", "Estado actual"], 1200);
+  const next = sectionAny(wm, ["Proximo Paso Probable", "Próximo paso probable", "Proximo Paso", "Próximo paso"], 1200);
+  const decisions = sectionAny(wm, ["Decisiones Recientes", "Decisiones Vigentes"], 1400);
+  const risks = sectionAny(wm, ["Riesgos", "Riesgos Que No Hay Que Olvidar"], 1000);
+  const commands = sectionAny(wm, ["Comandos De Contexto", "Comandos de contexto"], 1000);
+  const guardarSesion = sectionAny(topic, ["Guardar Sesion", "Guardar sesión", "Guardado, Gol Y Sesiones", "Comandos Pi Locales"], 1200);
 
-  return [next, decisions, commands, guardarSesion].filter(Boolean).join("\n\n");
+  return [current, next, decisions, risks, commands, guardarSesion].filter(Boolean).join("\n\n");
 }
 
 function hasPackageScript(cwd: string, scriptName: string): boolean {
@@ -145,15 +169,9 @@ async function runOsSync(pi: ExtensionAPI, cwd: string): Promise<{ markdown: str
   const blocks: string[] = [];
   let ok = true;
 
-  if (existsSync(join(cwd, "scripts", "ensure-skills-link.ps1"))) {
-    const ensure = await pi.exec(
-      "powershell.exe",
-      ["-ExecutionPolicy", "Bypass", "-File", "scripts/ensure-skills-link.ps1"],
-      { timeout: 120000 },
-    );
-    ok = ok && ensure.code === 0;
-    blocks.push(formatCommandResult("ensure-skills-link", ensure));
-  }
+  const skillsStatus = setSkillsDiscovery(cwd, "off");
+  ok = ok && skillsStatus.state !== "unsafe";
+  blocks.push(`### skills-discovery\n\nExit: ${skillsStatus.state === "unsafe" ? 1 : 0}\n\n\`\`\`text\n${skillsStatus.state}: ${skillsStatus.detail}\n\`\`\``);
 
   const indexCommand = hasPackageScript(cwd, "context:index")
     ? ["bun", ["run", "context:index"]] as const
@@ -171,7 +189,7 @@ async function runOsSync(pi: ExtensionAPI, cwd: string): Promise<{ markdown: str
 
   return {
     ok,
-    markdown: `## OS Sync\n\nSincronizacion de la capa agentica despues de cambios en docs, tracks, topics, skills, prompts o extensiones.\n\n${blocks.join("\n\n")}`,
+    markdown: `## OS Sync\n\nSincronizacion de la capa agentica despues de cambios en docs, tracks, topics, skills, prompts o extensiones. Mantiene discovery de skills deshabilitado en Pi para reducir slash/context noise; usar /aos-skills on solo bajo demanda.\n\n${blocks.join("\n\n")}`,
   };
 }
 
@@ -342,7 +360,7 @@ export default function osTools(pi: ExtensionAPI) {
   pi.registerCommand("aos-sync", {
     description: "Sincronizar la capa agentica despues de cambios del OS",
     handler: async (_args, ctx) => {
-      ctx.ui.notify("Sincronizando OS: skills link, context:index y context:audit...", "info");
+      ctx.ui.notify("Sincronizando OS: skills discovery off, context:index y context:audit...", "info");
       const result = await runOsSync(pi, ctx.cwd);
       pi.sendMessage({ customType: "aos-sync", content: result.markdown, display: true, details: { ok: result.ok } });
       ctx.ui.notify(result.ok ? "OS sincronizado." : "OS sync termino con fallos; revisar salida.", result.ok ? "info" : "error");
@@ -409,23 +427,42 @@ export default function osTools(pi: ExtensionAPI) {
     },
   });
 
+  async function saveAndCreateNewSession(args: string, ctx: ExtensionCommandContext) {
+    const goal = args.trim();
+    await runGuardarSesionBeforeContinuation(pi, ctx, goal);
+    await createContinuationSession(pi, ctx, goal, null);
+  }
+
+  async function saveAndCreateNewSessionWithGol(args: string, ctx: ExtensionCommandContext) {
+    const goal = args.trim();
+    await runGuardarSesionBeforeContinuation(pi, ctx, goal);
+    const kickoff = `aos-gol${goal ? ` ${goal}` : ""}`;
+    await createContinuationSession(pi, ctx, goal, kickoff);
+  }
+
   pi.registerCommand("aos-nueva-sesion", {
     description: "Guardar valor durable y crear una nueva sesion Pi con handoff compacto",
-    handler: async (args, ctx) => {
-      const goal = args.trim();
-      await runGuardarSesionBeforeContinuation(pi, ctx, goal);
-      await createContinuationSession(pi, ctx, goal, null);
-    },
+    handler: saveAndCreateNewSession,
+  });
+
+  pi.registerCommand("aos-continuar-sesion", {
+    description: "Alias legado de /aos-nueva-sesion: guardar valor durable y crear una nueva sesion Pi",
+    handler: saveAndCreateNewSession,
   });
 
   pi.registerCommand("aos-nueva-sesion-con-gol", {
     description: "Guardar valor durable, crear una nueva sesion Pi y arrancarla con aos-gol",
-    handler: async (args, ctx) => {
-      const goal = args.trim();
-      await runGuardarSesionBeforeContinuation(pi, ctx, goal);
-      const kickoff = `aos-gol${goal ? ` ${goal}` : ""}`;
-      await createContinuationSession(pi, ctx, goal, kickoff);
-    },
+    handler: saveAndCreateNewSessionWithGol,
+  });
+
+  pi.registerCommand("aos-continuar-con-gol", {
+    description: "Alias legado de /aos-nueva-sesion-con-gol",
+    handler: saveAndCreateNewSessionWithGol,
+  });
+
+  pi.registerCommand("aos-siguiente", {
+    description: "Alias corto de /aos-nueva-sesion-con-gol",
+    handler: saveAndCreateNewSessionWithGol,
   });
 
   pi.on("session_before_compact", async (_event, ctx) => {

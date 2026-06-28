@@ -30,7 +30,7 @@ Para entender el estado actual sin inflar contexto:
 - `user/README.md`: guia clara de que es Copicu, que hace y como se usa.
 - `user/scripts.md`: guia exhaustiva de scripts, metadata, API host, capabilities y ejemplos.
 - `USER_GUIDE.md`: guia breve para humanos sobre como usar la capa agentica.
-- `OS_PLAYBOOK.md`: playbook humano para elegir entre checkpoint, continuidad, compaction, `/gol`, `/until-done`, dogfood y auditoria.
+- `OS_PLAYBOOK.md`: playbook humano para elegir entre checkpoint, continuidad, compaction, `/aos-gol`, `/until-done`, dogfood y auditoria.
 
 ## Contexto Inicial
 
@@ -52,19 +52,19 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 - `WORKING_MEMORY.md`: memoria operativa actual.
 - `tracks/`: trabajos vivos retomables.
 - `skills/`: skills locales portables; fuente canonica.
-- `.agents/skills`: compatibilidad tecnica por junction hacia `docs/skills/`.
+- `.agents/skills`: toggle de compatibilidad hacia `docs/skills/`; disabled por defecto en Pi.
 - `.generated/context-index.md`: cache generado; no editar a mano.
 
 ## Skills Locales
 
 - `docs/skills/` es la fuente canonica de skills locales portables.
-- `.agents/skills` es una junction de compatibilidad para descubrimiento de Codex.
-- Si la junction falta o apunta mal, recrearla con `powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1`.
+- `.agents/skills` es un toggle de compatibilidad para descubrimiento de Codex/Pi.
+- En Pi queda deshabilitado por defecto para bajar ruido; activarlo solo bajo demanda con `/aos-skills on` o `scripts/toggle-skills-link.ps1 on`.
 
 ## Audit De Contexto
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
+powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
 bun run context:index
 bun run context:audit
 ```

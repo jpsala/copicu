@@ -32,7 +32,7 @@ primary_refs:
   - docs/skills/
   - AGENTS.md
   - docs/WORKING_MEMORY.md
-  - scripts/ensure-skills-link.ps1
+  - scripts/toggle-skills-link.ps1
   - scripts/agent-context-audit.ts
 ---
 
@@ -48,7 +48,7 @@ No abrirlo durante trabajo normal del repo ni durante `cerrar sesion`/`continuar
 
 `docs/skills/` es la fuente de verdad de las skills locales del repo.
 
-`.agents/skills` existe solo como compatibilidad tecnica y debe apuntar por junction o symlink a `docs/skills/`.
+`.agents/skills` existe solo como compatibilidad tecnica: puede apuntar por junction/symlink a `docs/skills/` cuando se necesita discovery, pero en Pi queda deshabilitado por defecto para reducir ruido de slash/contexto.
 
 No duplicar la misma skill en dos carpetas reales.
 
@@ -98,7 +98,7 @@ Si la respuesta fuerte es "si" en 3 o mas puntos, crear skill. Si no, dejarlo co
 
 Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
 
-1. Usar la skill `evaluar-skills`.
+1. Usar la skill `aos-evaluar-skills`.
 2. Leer ruta liviana: indice, working memory y topics.
 3. Buscar candidatos en `AGENTS.md`, `docs/TOPICS.md`, `docs/topics/`, `docs/tracks/` y `docs/skills/README.md`.
 4. Proponer shortlist con recomendacion: `skill`, `skill hibrida`, `topic`, `regla activa`, `track` o `no promover`.
@@ -108,16 +108,16 @@ Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
 
 | Comando conversacional | Skill | Fuente canonica | Resultado esperado |
 | --- | --- | --- | --- |
-| `sigamos` | `docs/skills/sigamos/` | `AGENTS.md`, `docs/topics/docs-knowledge-system.md` | Continuar en la misma sesion sin cierre ni handoff. |
-| `checkpoint` / `persistir estado` | `docs/skills/checkpoint/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable sin cerrar, handoff, thread nuevo ni compactar. |
-| `cerrar sesion` | `docs/skills/cerrar-sesion/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable, regenerar indice, correr audit y responder compacto. |
-| `continuar sesion` | `docs/skills/continuar-sesion/` | `docs/topics/docs-knowledge-system.md` | Hacer cierre de valor y preparar handoff compacto para sesion nueva. |
-| `continuar sesion con gol` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Handoff para sesion nueva que debe arrancar con `gol`. |
-| `continuar con gol` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias de `continuar sesion con gol`. |
-| `siguiente` | `docs/skills/continuar-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias corto de continuidad con `gol`, no "seguir aqui". |
-| `realinear os` | `docs/skills/realinear-os/` | `docs/topics/agentic-os-operations.md` | Auditar/reparar la capa agentica sin tocar producto salvo pedido explicito. |
-| `evaluar skills` / `pasar a skills` | `docs/skills/evaluar-skills/` | Este topic | Auditar candidatos para promoverlos a skills hibridas. |
-| `hacer commits` / `push` / `publicar cambios` / `repo commit push` | `docs/skills/repo-commit-push/` | `docs/skills/repo-commit-push/SKILL.md` | Revisar inclusion, validar, commitear y pushear el batch del repo. |
+| `aos-sigamos` / `sigamos` | `docs/skills/aos-sigamos/` | `AGENTS.md`, `docs/topics/docs-knowledge-system.md` | Continuar en la misma sesion sin cierre ni handoff. |
+| `aos-guardar-sesion` / `checkpoint` / `persistir estado` | `docs/skills/aos-guardar-sesion/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable sin cerrar, handoff, thread nuevo ni compactar. |
+| `aos-cerrar-sesion` / `cerrar sesion` | `docs/skills/aos-cerrar-sesion/` | `docs/topics/docs-knowledge-system.md` | Persistir valor durable, regenerar indice, correr audit y responder compacto. |
+| `aos-nueva-sesion` / `continuar sesion` | `docs/skills/aos-nueva-sesion/` | `docs/topics/docs-knowledge-system.md` | Hacer cierre de valor y preparar handoff compacto para sesion nueva. |
+| `aos-nueva-sesion-con-gol` / `continuar sesion con gol` | `docs/skills/aos-nueva-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Handoff para sesion nueva que debe arrancar con `aos-gol`. |
+| `continuar con gol` | `docs/skills/aos-nueva-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias de `continuar sesion con gol`. |
+| `siguiente` | `docs/skills/aos-nueva-sesion-con-gol/` | `docs/topics/docs-knowledge-system.md` | Alias corto de continuidad con `aos-gol`, no "seguir aqui". |
+| `aos-realinear-os` / `realinear os` | `docs/skills/aos-realinear-os/` | `docs/topics/agentic-os-operations.md` | Auditar/reparar la capa agentica sin tocar producto salvo pedido explicito. |
+| `aos-evaluar-skills` / `evaluar skills` / `pasar a skills` | `docs/skills/aos-evaluar-skills/` | Este topic | Auditar candidatos para promoverlos a skills hibridas. |
+| `repo commit push` / `hacer commits` / `push` / `publicar cambios` | `docs/skills/aos-repo-commit-push/` | `docs/skills/aos-repo-commit-push/SKILL.md` | Revisar inclusion, validar, commitear y pushear el batch del repo. |
 | `/release-windows [tag|patch|minor|major|rc] [notas]` en Pi | prompt template `.pi/prompts/release-windows.md` | `docs/topics/windows-installer.md`, `docs/topics/open-source-github.md`, `scripts/dev/release-windows.ps1` | Release Windows completo; sin tag calcula proximo release automaticamente y confirma antes de efectos externos. |
 
 Regla de precedencia: si una skill y su topic divergen, corregir la skill para que vuelva a apuntar al topic; no duplicar procedimiento largo dentro de `SKILL.md`.
@@ -125,7 +125,7 @@ Regla de precedencia: si una skill y su topic divergen, corregir la skill para q
 ## Validacion
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
+powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
 bun run context:index
 bun run context:audit
 ```
