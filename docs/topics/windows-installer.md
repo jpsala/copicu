@@ -139,7 +139,7 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-06-23: release actual `v0.2.8` publicado con auto-update firmado. Assets: `Copicu_0.2.8_x64-setup.exe` y `latest.json`; commit `3905b6ebfacc9edcc4aa7ac3d217437cceece18e`; SHA256 `B72C466D5A39A677630D2C4653F6E2F1B26077FAEB8419857B375B3DD977B300`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7` y `v0.2.8` sirven para validar ciclos reales de update desde instalaciones previas.
+Estado 2026-06-29: release actual `v0.3.0` publicado con auto-update firmado. Assets: `Copicu_0.3.0_x64-setup.exe` y `latest.json`; commit `ef4192a6ffbde51fee59d4bee68a847adb745667`; SHA256 `05B077A3416A65A7979BEFE1DF35AC3951AAD42B92304F7FDB6E938EEBB0F2A6`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7`, `v0.2.8` y `v0.3.0` sirven para validar ciclos reales de update desde instalaciones previas.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target, estado de auto-update y boton manual `Check now`. Ese check consulta el manifest firmado/latest via Tauri Updater y solo reporta disponibilidad; la instalacion automatica sigue controlada por `autoUpdate.enabled`.
 
