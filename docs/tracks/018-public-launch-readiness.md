@@ -198,23 +198,19 @@ Criterio:
 
 ### E. Contributor Funnel
 
-Objetivo: convertir interes en contribuciones pequeñas y seguras.
+Objetivo: convertir interes en contribuciones pequeñas y seguras sin que el repo parezca artificial.
 
 Tareas:
 
-1. Crear 3-5 issues `good first issue` de codigo real:
-   - una action built-in chica;
-   - test de parser/action;
-   - preview de un tipo de clip;
-   - mejora de empty state;
-   - fixture sintetico adicional.
-2. Mantener 2-3 issues docs/assets, pero no todos.
-3. Agregar seccion `Contribute in 15 minutes`:
+1. No sembrar issues placeholder solo para mostrar actividad; JP decidio borrar los issues generados porque sonaban falsos.
+2. Crear issues publicos solo cuando representen feedback real, bug reproducible o tarea curada con owner/contexto concreto.
+3. Si hace falta un `good first issue`, escribirlo como trabajo real y verificable, no como backlog promocional.
+4. Agregar seccion `Contribute in 15 minutes` cuando exista un flujo de contribucion claro:
    - instalar deps;
    - correr checks;
-   - elegir issue;
+   - elegir issue real;
    - reglas de privacidad para fixtures.
-4. Asegurar `CONTRIBUTING.md` no obliga a leer la capa agentica completa.
+5. Asegurar `CONTRIBUTING.md` no obliga a leer la capa agentica completa.
 
 Validacion:
 
@@ -449,8 +445,15 @@ Research de distribucion/confianza 2026-06-23:
   - https://learn.microsoft.com/en-us/windows/package-manager/package/windows-package-manager-policies
 - Recomendacion actual: para `v0.3.0`, mantener GitHub Releases + SHA256 + warning transparente; preparar winget/Scoop despues del corte si el instalador y naming quedan estables; no comprar OV/EV todavia sin validar costos/requisitos y beneficio real.
 
+Checkpoint 2026-06-29 post `v0.3.0`:
+
+- `v0.3.0` publicado en GitHub con assets `Copicu_0.3.0_x64-setup.exe` y `latest.json`; release/tag apunta a `ef4192a6ffbde51fee59d4bee68a847adb745667`; SHA256 `05B077A3416A65A7979BEFE1DF35AC3951AAD42B92304F7FDB6E938EEBB0F2A6`.
+- Checks del corte: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run`, `npm run rust:test`, `npm run scripts:examples:test`, `npm run capabilities:drift:test`, `node --test tests/ai-query-planner.test.mjs` y `npm run visual:check` (98 tests) pasaron.
+- JP decidio borrar todos los issues publicos sembrados porque sonaban falsos/no reales; se eliminaron #1-#8 y #11-#18 con `gh issue delete`, y `gh issue list --state all` quedo vacío.
+- `main`/`origin/main` quedaron en `7b9dda4` con docs post-release. El siguiente cambio publico debe ser feedback real, bug/repro o tarea curada.
+
 Pendiente inmediato:
 
-1. Preparar `v0.3.0` cuando README/assets/scripts/issues esten listos.
-2. Si se prefiere mantener funnel abierto, crear nuevos issues chicos antes/despues del corte.
+1. Dogfood instalada/update de `v0.3.0` y revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` si aparece hang/lentitud.
+2. Si se quiere abrir contributor funnel, crear solo issues reales/curados; evitar issues de relleno.
 3. Si se crea release/tag o se pushea otro commit, pedir aprobacion explicita antes.

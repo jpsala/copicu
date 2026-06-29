@@ -18,7 +18,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | `Ctrl+Shift+C` de metadata ahora es atajo nativo del picker; scripts activos siguen para automatizaciones. Patch preview opcional. |
 | Search / AI / metadata | active/validated | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Scoped search `meta:/title:/notes:/ctx:`, ayuda in-app y trigger modes validados en instalada. Proximo: chips/explain UI o whole-word search si JP lo prioriza. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`. Revisar `LastMonitor` si importa restaurar exactamente en ultimo monitor. |
-| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md`, `docs/topics/windows-installer.md` | `v0.3.0` publicado en GitHub con installer + `latest.json`; proximo: dogfood instalada/update y feedback publico. |
+| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md`, `docs/topics/windows-installer.md` | `v0.3.0` publicado; issues sembrados borrados de GitHub. Proximo: dogfood instalada/update y feedback real. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md`, `docs/topics/agentic-os-operations.md` | Copicu es downstream AOS; mantener ruta caliente corta. Pendiente: compactar TOPICS/topics grandes cuando molesten. |
 
@@ -37,7 +37,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Stack vigente: Tauri 2, React/Vite/TypeScript, Rust, SQLite, Mantine donde aporta.
 - Priorizar velocidad/latencia percibida; aceptar coste razonable de memoria si evita romper el picker caliente.
 - Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
-- Release Windows vigente: `v0.3.0`; `main`/`origin/main` apuntan al release commit `ef4192a` antes del checkpoint docs post-release.
+- Release Windows vigente: `v0.3.0`; release/tag apunta a `ef4192a`, `main`/`origin/main` a `7b9dda4` tras docs post-release.
 - Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
 - `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia de coste extremo.
@@ -71,10 +71,11 @@ Checks de producto de referencia: `npm run build`, `cargo check --manifest-path 
 
 ## Proximo Paso Probable
 
-1. Si JP sigue con UX del picker/search: discutir o implementar el siguiente corte chico (chips/explain UI, whole-word search o polish visual de ayuda) sin tocar el runner Node.
-2. Si reaparece un hang/lentitud real de la app: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo.
-3. Si el problema es Pi/contexto: compactar ruta caliente, usar `map/search` scoped y evitar `docs/skills/impeccable/` salvo UI/impeccable.
-4. Si se toca producto: correr build/checks focalizados y relanzar app dev/instalada segun corresponda.
+1. Dogfood instalada/update de `v0.3.0`; si JP quiere, ejecutar `npm run install:current` o validar updater desde instalada.
+2. Si JP sigue con UX del picker/search: discutir o implementar el siguiente corte chico (chips/explain UI, whole-word search o polish visual de ayuda) sin tocar el runner Node.
+3. Si reaparece un hang/lentitud real de la app: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo.
+4. Si el problema es Pi/contexto: compactar ruta caliente, usar `map/search` scoped y evitar `docs/skills/impeccable/` salvo UI/impeccable.
+5. Si se toca producto: correr build/checks focalizados y relanzar app dev/instalada segun corresponda.
 
 ## Promocion De Memoria
 

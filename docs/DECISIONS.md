@@ -2,6 +2,16 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-06-29 - Issues publicos solo si son reales o curados
+
+Estado: accepted
+
+Decision: No mantener issues publicos sembrados solo para aparentar actividad o contributor funnel. Los issues de GitHub deben venir de feedback real, bugs reproducibles o tareas curadas con contexto y verificacion concreta. Los issues generados para launch (#1-#8 y #11-#18) se borraron despues de publicar `v0.3.0` porque sonaban artificiales.
+
+Motivo: Un repo publico temprano transmite mas confianza con pocos issues reales que con backlog promocional fabricado.
+
+Proximo paso: si hace falta abrir `good first issue`, escribirlo como tarea real y verificable, preferentemente derivada de dogfood o feedback externo.
+
 ### 2026-06-29 - Metadata y search como flujo core del picker
 
 Estado: accepted

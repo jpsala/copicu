@@ -375,6 +375,10 @@ Notas:
 - Windows es la plataforma primaria testeada para este release;
 - no presentarlo todavia como estable.
 
+## Issue Policy
+
+Desde `v0.3.0`, evitar issues sembrados para aparentar actividad. GitHub Issues debe reflejar feedback real, bugs reproducibles o tareas curadas con contexto y verificacion concreta. Los issues generados para launch (#1-#8 y #11-#18) se borraron el 2026-06-29; el repo quedo sin issues abiertos/cerrados para empezar desde feedback real.
+
 ## Public-Ready Audit
 
 Checklist antes de consolidar el repo publico:
@@ -397,7 +401,7 @@ Checklist antes de consolidar el repo publico:
 - GitHub Pages si/no para primer corte publico.
 - Ubicacion final de screenshots/gifs.
 - Si publicar primero sin release binaria o esperar installer Windows alpha.
-- Politica de issues para CopyQ parity requests.
+- Politica de issues para CopyQ parity requests especificos; la politica general es no sembrar issues artificiales.
 - Politica de scripts externos: ejemplos personales vs contribuciones oficiales.
 - Politica de AI providers recomendados en docs publicas.
 
