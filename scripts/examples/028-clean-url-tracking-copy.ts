@@ -56,7 +56,8 @@ export default defineAction({
   id: "examples.cleanUrlTrackingCopy",
   title: "Clean URL tracking params",
   description: "Removes common tracking parameters from the selected URL and copies the cleaned URL.",
-  triggers: ["itemMenu", "commandPalette"],
+  triggers: ["itemMenu", "commandPalette", "localShortcut"],
+  shortcut: "Ctrl+Alt+U",
   input: {
     source: "pickerSelection",
     selection: "one",

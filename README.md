@@ -29,12 +29,12 @@ More real-looking synthetic workflow demos are planned before the next public fe
 
 Current release:
 
-- [v0.3.0](https://github.com/jpsala/copicu/releases/tag/v0.3.0)
-- Asset: `Copicu_0.3.0_x64-setup.exe`
+- [v0.3.1](https://github.com/jpsala/copicu/releases/tag/v0.3.1)
+- Asset: `Copicu_0.3.1_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `05B077A3416A65A7979BEFE1DF35AC3951AAD42B92304F7FDB6E938EEBB0F2A6`
+- SHA256: `754DBA71FC9C38D27566982902F92C5774AD6E6F99410EBC99D1A9195D986426`
 
-Public feedback refresh: scoped picker search, configurable search trigger modes, native metadata editing, README/onboarding, synthetic demo data, sample scripts, helper tests, and script onboarding polish.
+Public feedback refresh with scripts showcase, hotkeys docs, and UI polish.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -126,14 +126,15 @@ Example workflows:
 - paste transformed content into the previous app;
 - create a Markdown summary from checked items.
 
-The repo already includes runnable examples under [scripts/examples/](scripts/examples/):
+The repo already includes runnable showcase examples under [scripts/examples/](scripts/examples/). Copy them to your Copicu scripts folder, refresh diagnostics in Settings, then run them from the item menu, command palette, or local shortcuts while the picker is focused:
 
-- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts);
-- [format selected JSON](scripts/examples/029-format-json-copy.ts);
-- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts);
-- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts);
-- [join selected clips](scripts/examples/003-join-selected-with-log-name.ts);
-- [paste current item to the previous window](scripts/examples/013-paste-current-to-previous.ts).
+- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts) — `Ctrl+Alt+U`;
+- [format selected JSON](scripts/examples/029-format-json-copy.ts) — `Ctrl+Alt+F`;
+- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts) — `Ctrl+Alt+N`;
+- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) — `Ctrl+Alt+L`;
+- [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) — `Ctrl+Alt+M`.
+
+Press `Ctrl+Alt+Q` in the picker to open **Quick Actions**, a context-aware action picker that shows runnable scripts/actions for the current selection so you do not need to memorize every shortcut.
 
 Scripts are trusted local automation, not a secure sandbox or marketplace. Treat scripts like code you choose to run on your own machine.
 

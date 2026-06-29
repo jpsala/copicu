@@ -52,6 +52,18 @@ Por lo tanto:
 3. Contextual futuro:
    - desde picker, command palette, tags o scripts, mostrar comandos disponibles para el contexto actual.
 
+## Quick Actions Dentro Del Picker
+
+Actualizacion 2026-06-29: se agrego un primer slice seguro como overlay dentro de `main`, no como ventana secundaria WhichKey. `Ctrl+Alt+Q` abre **Quick Actions** cuando el search del picker tiene foco; `Alt+Q` se descarto porque Windows/dev reporto `HotKey already registered` y `Ctrl+Shift+Q` porque mutea en el entorno de JP. La lista se calcula desde el registry de actions/scripts y muestra solo acciones compatibles con el contexto actual:
+
+- seleccion activa o multiple;
+- `kinds`/MIME compatibles;
+- diagnostics sin errores;
+- capabilities soportadas;
+- triggers declarados en prioridad `localShortcut` -> `itemMenu` -> `commandPalette`.
+
+El overlay permite buscar, ejecutar con Enter o pulsar `1`-`9` para las primeras acciones. Esto reduce la necesidad de asignar un shortcut global/local a cada script y evita por ahora el problema abierto de composicion de la ventana secundaria `whichkey`.
+
 ## UI Recomendada
 
 - Ventana compacta dedicada o modo dedicado de una superficie existente.

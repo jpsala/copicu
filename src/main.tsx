@@ -315,6 +315,17 @@ type CommandPaletteState = {
   activeIndex: number;
 };
 
+type ActionPickerState = {
+  query: string;
+  activeIndex: number;
+};
+
+type ActionPickerEntry = {
+  action: ActionDefinition;
+  trigger: ActionTrigger;
+  contextLabel: string;
+};
+
 const outcomeLabel: Record<CaptureEvent["outcome"], string> = {
   captured_text: "Captured",
   captured_image: "Image",
@@ -344,6 +355,7 @@ const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
 const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
 const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
+const QUICK_ACTIONS_OPEN_EVENT = "copicu://quick-actions/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
@@ -408,6 +420,14 @@ const NEW_ITEM_ACTION: ActionDefinition = {
   script: null,
   diagnostics: [],
   logging: null,
+};
+
+const NULL_ACTION: ActionDefinition = {
+  ...NEW_ITEM_ACTION,
+  id: "builtin.none",
+  title: "",
+  triggers: [],
+  capabilities: [],
 };
 
 const COPY_AND_HIDE_ACTIVATION: ActivationOptions = {
@@ -836,6 +856,7 @@ function App() {
   const [markedActionItemsLoading, setMarkedActionItemsLoading] = useState(false);
   const [openItemMenu, setOpenItemMenu] = useState<ItemMenuAnchor | null>(null);
   const [commandPalette, setCommandPalette] = useState<CommandPaletteState | null>(null);
+  const [actionPicker, setActionPicker] = useState<ActionPickerState | null>(null);
   const [searchHelpOpen, setSearchHelpOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -990,12 +1011,14 @@ function App() {
     setCreateItemDraft(null);
     setBatchMetadataDraft(null);
     setOpenItemMenu(null);
+    setActionPicker(null);
     setEditError(null);
   }, []);
 
   const resetPickerSession = useCallback(() => {
     closeTransientEditors();
     setCommandPalette(null);
+    setActionPicker(null);
     setSearchHelpOpen(false);
     setOpenMarkMenu(null);
     setActionError(null);
@@ -1018,12 +1041,20 @@ function App() {
   const openSettingsPanel = useCallback(() => {
     setSettingsError(null);
     setCommandPalette(null);
+    setActionPicker(null);
     void openSettingsWindow().catch((error) => setSettingsError(String(error)));
   }, []);
 
   const openCommandPalette = useCallback(() => {
     closeTransientEditors();
     setCommandPalette({ query: "", activeIndex: 0 });
+    setActionPicker(null);
+  }, [closeTransientEditors]);
+
+  const openActionPicker = useCallback(() => {
+    closeTransientEditors();
+    setCommandPalette(null);
+    setActionPicker({ query: "", activeIndex: 0 });
   }, [closeTransientEditors]);
 
   const hidePickerWindow = useCallback(() => {
@@ -1188,6 +1219,62 @@ function App() {
       return undefined;
     }
 
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen(QUICK_ACTIONS_OPEN_EVENT, () => {
+      if (active) {
+        openActionPicker();
+      }
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [openActionPicker]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.ctrlKey &&
+        event.altKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        event.key.toLocaleLowerCase() === "q" &&
+        !commandPalette &&
+        !actionPicker &&
+        !editDraft &&
+        !createItemDraft &&
+        !batchMetadataDraft &&
+        !searchHelpOpen
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openActionPicker();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, { capture: true });
+    };
+  }, [
+    actionPicker,
+    batchMetadataDraft,
+    commandPalette,
+    createItemDraft,
+    editDraft,
+    openActionPicker,
+    searchHelpOpen,
+  ]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!compoundHotkeyPendingRef.current) {
         return;
@@ -1255,6 +1342,16 @@ function App() {
         actionRunnableForTrigger(action, "commandPalette", itemsForActionContext(action, effectiveSelection, selectedItem)),
       ),
     ],
+    [actionDefinitions, effectiveSelection, selectedItem],
+  );
+  const actionPickerEntries = useMemo(
+    () => actionDefinitions.flatMap((action): ActionPickerEntry[] => {
+      if (isSupersededMetadataEditAction(action)) {
+        return [];
+      }
+      const trigger = actionPickerTriggerForAction(action, effectiveSelection, selectedItem);
+      return trigger ? [{ action, trigger, contextLabel: actionPickerContextLabel(trigger) }] : [];
+    }),
     [actionDefinitions, effectiveSelection, selectedItem],
   );
 
@@ -1714,6 +1811,7 @@ function App() {
         setOpenItemMenu(null);
         setOpenMarkMenu(null);
         setCommandPalette(null);
+        setActionPicker(null);
         const result = await runHostAction({
           actionId: action.id,
           context: actionContext(contextItems, trigger, shortcut, selectedContextItems),
@@ -2603,6 +2701,11 @@ function App() {
       selectionAnchorItemIdRef.current = null;
     },
     onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "q") {
+        event.preventDefault();
+        openActionPicker();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
         event.preventDefault();
         openCommandPalette();
@@ -2956,6 +3059,13 @@ function App() {
               </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
+                rightSection={<UiKbd>Ctrl Alt Q</UiKbd>}
+                onClick={openActionPicker}
+              >
+                Quick Actions
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<Command size={14} strokeWidth={2.2} />}
                 rightSection={<UiKbd>Ctrl K</UiKbd>}
                 onClick={openCommandPalette}
               >
@@ -3221,7 +3331,11 @@ function App() {
                             <ClipboardPaste size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Paste</span>
                           </UiUnstyledButton>
-                          {actionById.has(BUILTIN_ACTIONS.pastePlain) ? (
+                          {actionRunnableForTrigger(
+                            actionById.get(BUILTIN_ACTIONS.pastePlain) ?? NULL_ACTION,
+                            "itemMenu",
+                            [item],
+                          ) ? (
                             <UiUnstyledButton
                               type="button"
                               role="menuitem"
@@ -3232,7 +3346,11 @@ function App() {
                               <span>Paste plain</span>
                             </UiUnstyledButton>
                           ) : null}
-                          {actionById.has(BUILTIN_ACTIONS.openUrl) ? (
+                          {actionRunnableForTrigger(
+                            actionById.get(BUILTIN_ACTIONS.openUrl) ?? NULL_ACTION,
+                            "itemMenu",
+                            [item],
+                          ) ? (
                             <UiUnstyledButton
                               type="button"
                               role="menuitem"
@@ -3312,6 +3430,33 @@ function App() {
                 return;
               }
               void runActionDefinition(action, effectiveSelection, "commandPalette");
+            }}
+          />
+        ) : null}
+        {actionPicker ? (
+          <ActionPicker
+            query={actionPicker.query}
+            activeIndex={actionPicker.activeIndex}
+            entries={actionPickerEntries}
+            onQueryChange={(nextQuery) =>
+              setActionPicker((current) =>
+                current ? { query: nextQuery, activeIndex: 0 } : current,
+              )
+            }
+            onActiveIndexChange={(activeIndex) =>
+              setActionPicker((current) =>
+                current ? { ...current, activeIndex } : current,
+              )
+            }
+            onCancel={() => {
+              setActionPicker(null);
+              focusSearch();
+            }}
+            onRun={(entry) => {
+              const shortcut = entry.trigger === "localShortcut"
+                ? normalizeShortcutString(entry.action.shortcut ?? "")
+                : null;
+              void runActionDefinition(entry.action, effectiveSelection, entry.trigger, shortcut);
             }}
           />
         ) : null}
@@ -3901,6 +4046,160 @@ function CommandPalette({
   );
 }
 
+function ActionPicker({
+  query,
+  activeIndex,
+  entries,
+  onQueryChange,
+  onActiveIndexChange,
+  onCancel,
+  onRun,
+}: {
+  query: string;
+  activeIndex: number;
+  entries: ActionPickerEntry[];
+  onQueryChange: (query: string) => void;
+  onActiveIndexChange: (index: number) => void;
+  onCancel: () => void;
+  onRun: (entry: ActionPickerEntry) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredEntries = entries.filter((entry) =>
+    `${actionSearchText(entry.action)} ${entry.contextLabel}`.includes(normalizedQuery),
+  );
+  const safeActiveIndex = filteredEntries.length === 0
+    ? -1
+    : clamp(activeIndex, 0, filteredEntries.length - 1);
+
+  useEffect(() => {
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  useEffect(() => {
+    if (safeActiveIndex !== activeIndex) {
+      onActiveIndexChange(Math.max(0, safeActiveIndex));
+    }
+  }, [activeIndex, onActiveIndexChange, safeActiveIndex]);
+
+  const runEntry = (entry: ActionPickerEntry | undefined) => {
+    if (entry) {
+      onRun(entry);
+    }
+  };
+
+  return (
+    <div
+      className="command-palette-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Quick Actions"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
+      <UiPaper className="command-palette-panel action-picker-panel">
+        <div className="action-picker-header">
+          <strong>Quick Actions</strong>
+          <span>Context-aware scripts and actions · Ctrl Alt Q</span>
+        </div>
+        <UiTextInput
+          ref={inputRef}
+          className="command-palette-input"
+          aria-label="Search quick actions"
+          role="combobox"
+          aria-controls="action-picker-results"
+          aria-expanded="true"
+          aria-activedescendant={
+            safeActiveIndex >= 0 ? `action-picker-action-${filteredEntries[safeActiveIndex].action.id}` : undefined
+          }
+          value={query}
+          placeholder="Press 1-9 to run, or search actions"
+          onChange={(event) => onQueryChange(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (!event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
+              const quickIndex = Number(event.key) - 1;
+              if (quickIndex < filteredEntries.length) {
+                event.preventDefault();
+                runEntry(filteredEntries[quickIndex]);
+                return;
+              }
+            }
+
+            switch (event.key) {
+              case "Escape":
+                event.preventDefault();
+                onCancel();
+                break;
+              case "ArrowDown":
+                event.preventDefault();
+                if (filteredEntries.length > 0) {
+                  onActiveIndexChange((safeActiveIndex + 1) % filteredEntries.length);
+                }
+                break;
+              case "ArrowUp":
+                event.preventDefault();
+                if (filteredEntries.length > 0) {
+                  onActiveIndexChange(
+                    (safeActiveIndex - 1 + filteredEntries.length) % filteredEntries.length,
+                  );
+                }
+                break;
+              case "Enter":
+                event.preventDefault();
+                runEntry(filteredEntries[safeActiveIndex]);
+                break;
+            }
+          }}
+        />
+        <ol id="action-picker-results" className="command-palette-results" role="listbox">
+          {filteredEntries.length === 0 ? (
+            <li>
+              <UiAlert className="command-empty" variant="light">
+                No ready actions match this context.
+              </UiAlert>
+            </li>
+          ) : (
+            filteredEntries.map((entry, index) => (
+              <li
+                key={`${entry.action.id}-${entry.trigger}`}
+                id={`action-picker-action-${entry.action.id}`}
+                role="option"
+                aria-selected={index === safeActiveIndex}
+              >
+                <UiUnstyledButton
+                  component="button"
+                  type="button"
+                  className={index === safeActiveIndex ? "is-active" : ""}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => onRun(entry)}
+                >
+                  <span>
+                    <strong>{entry.action.title}</strong>
+                    {entry.action.description ? <small>{entry.action.description}</small> : null}
+                  </span>
+                  <span className="action-badges">
+                    {index < 9 ? <UiKbd>{index + 1}</UiKbd> : null}
+                    <ShortcutBadge shortcut={normalizeShortcutString(entry.action.shortcut)} />
+                    <UiBadge className="action-source-badge" variant="default">
+                      {entry.contextLabel}
+                    </UiBadge>
+                    <UiBadge className="action-source-badge" variant="default">
+                      {entry.action.source === "script" ? "Script" : "Built-in"}
+                    </UiBadge>
+                  </span>
+                </UiUnstyledButton>
+              </li>
+            ))
+          )}
+        </ol>
+      </UiPaper>
+    </div>
+  );
+}
+
 function isSubmitShortcut(event: ReactKeyboardEvent<HTMLElement>) {
   return (event.ctrlKey || event.metaKey) && event.key === "Enter";
 }
@@ -3924,8 +4223,39 @@ function actionRunnableForTrigger(
     unsupportedCapabilities(action).length === 0 &&
     actionMatchesSelection(action, items) &&
     actionMatchesKinds(action, items) &&
-    actionMatchesMime(action, items)
+    actionMatchesMime(action, items) &&
+    actionMatchesContent(action, items)
   );
+}
+
+function actionPickerTriggerForAction(
+  action: ActionDefinition,
+  items: HistoryItem[],
+  activeItem: HistoryItem | null,
+): ActionTrigger | null {
+  const triggers: ActionTrigger[] = ["localShortcut", "itemMenu", "commandPalette"];
+
+  for (const trigger of triggers) {
+    const contextItems = itemsForActionContext(action, items, activeItem);
+    if (actionRunnableForTrigger(action, trigger, contextItems)) {
+      return trigger;
+    }
+  }
+
+  return null;
+}
+
+function actionPickerContextLabel(trigger: ActionTrigger) {
+  switch (trigger) {
+    case "localShortcut":
+      return "Local";
+    case "itemMenu":
+      return "Selection";
+    case "commandPalette":
+      return "Command";
+    default:
+      return trigger;
+  }
 }
 
 function itemMenuScriptActions(
@@ -4005,8 +4335,29 @@ function actionMatchesMime(action: ActionDefinition, items: HistoryItem[]) {
     return true;
   }
   return items.every((item) =>
-    action.input.mime?.some((pattern) => mimePatternMatches(pattern, item.mime_primary ?? "")),
+    action.input.mime?.some((pattern) => mimePatternMatches(pattern, effectiveMimeForItem(item))),
   );
+}
+
+function actionMatchesContent(action: ActionDefinition, items: HistoryItem[]) {
+  if (action.id === "builtin.openUrl") {
+    return items.length === 1 && itemContainsHttpUrl(items[0]);
+  }
+  return true;
+}
+
+function effectiveMimeForItem(item: HistoryItem) {
+  if (item.mime_primary) {
+    return item.mime_primary;
+  }
+  if (item.content_kind === "text") {
+    return "text/plain";
+  }
+  return "";
+}
+
+function itemContainsHttpUrl(item: HistoryItem | undefined) {
+  return typeof item?.text === "string" && /\bhttps?:\/\/\S+/i.test(item.text);
 }
 
 function clipKindForItem(item: HistoryItem): ClipKind {

@@ -569,7 +569,7 @@ dependencies = [
 
 [[package]]
 name = "copicu"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "base64 0.22.1",
  "clipboard-rs",

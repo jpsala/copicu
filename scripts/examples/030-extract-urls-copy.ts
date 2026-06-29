@@ -23,7 +23,8 @@ export default defineAction({
   id: "examples.extractUrlsCopy",
   title: "Extract URLs and copy",
   description: "Extracts http(s) URLs from the selected text clip and copies one URL per line.",
-  triggers: ["itemMenu", "commandPalette"],
+  triggers: ["itemMenu", "commandPalette", "localShortcut"],
+  shortcut: "Ctrl+Alt+L",
   input: {
     source: "pickerSelection",
     selection: "one",

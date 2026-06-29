@@ -171,6 +171,8 @@ Criterio:
 
 Objetivo: que `scriptable` sea visible a los 5 minutos.
 
+Estado 2026-06-29: first slice shipped as copyable sample scripts, not built-ins. `028`-`031` plus `010` form the public showcase set; README, `docs/user/scripts.md`, and `scripts/examples/README.md` list shortcuts and synthetic try-it inputs. `031-join-selected-markdown-copy.ts` adds the missing Markdown join example. Helper tests cover the transform examples via `npm run scripts:examples:test`.
+
 Tareas:
 
 1. Agregar 5 scripts/acciones ejemplo documentadas:

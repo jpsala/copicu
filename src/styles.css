@@ -1950,6 +1950,25 @@ button {
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
+.action-picker-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px 2px;
+}
+
+.action-picker-header strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.action-picker-header span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
 .command-palette-results {
   display: grid;
   max-height: min(360px, calc(100vh - 120px));

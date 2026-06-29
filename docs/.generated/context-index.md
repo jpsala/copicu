@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-29T18:23:56.432Z
+Generated: 2026-06-29T23:08:33.357Z
 
 ## Topics
 
@@ -61,6 +61,8 @@ Generated: 2026-06-29T18:23:56.432Z
 - complete: [Architecture Hardening](../tracks/016-architecture-hardening.md)
 - active: [Actions Modularization](../tracks/017-actions-modularization.md)
 - active: [Public Launch Readiness](../tracks/018-public-launch-readiness.md)
+- parked: [Paste Queue](../tracks/019-paste-queue.md)
+- parked: [Secure Clips / Password Metadata](../tracks/020-secure-clips-password.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)

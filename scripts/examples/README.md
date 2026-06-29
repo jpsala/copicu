@@ -10,6 +10,18 @@ C:\Users\jpsal\Documents\Copicu\Scripts
 
 The examples should live there when testing script discovery. The repo copy under `scripts/examples/` is the versionable source/reference copy.
 
+## First Five Showcase Scripts
+
+These examples are the launch-readiness path for showing that Copicu is more than clipboard storage. Copy them to the user scripts folder, refresh script diagnostics in Settings, open the picker, select matching text clips, then run from the item menu, command palette, or the listed local shortcut while the picker is focused.
+
+| Script | Shortcut | Try it on | Result |
+| --- | --- | --- | --- |
+| `028-clean-url-tracking-copy.ts` | `Ctrl+Alt+U` | `https://example.test/?utm_source=newsletter&keep=1` | Copies `https://example.test/?keep=1`. |
+| `029-format-json-copy.ts` | `Ctrl+Alt+F` | Minified JSON like `{"ok":true,"items":[1,2]}` | Copies pretty-printed JSON. |
+| `010-normalize-whitespace-copy.ts` | `Ctrl+Alt+N` | Messy pasted text with extra spaces and blank lines | Copies cleaned text with trimmed lines. |
+| `030-extract-urls-copy.ts` | `Ctrl+Alt+L` | Notes containing one or more `http(s)` URLs | Copies one URL per line. |
+| `031-join-selected-markdown-copy.ts` | `Ctrl+Alt+M` | Multiple selected text clips with titles/tags | Copies one Markdown document with headings and tag metadata. |
+
 Copicu can execute ready scripts manually from Settings with the `Run` button when the script declares `devRun` or `commandPalette`. The current real bridge supports:
 
 - `copicu.log.*`;
@@ -60,6 +72,7 @@ Recommended test order:
 21. `028-clean-url-tracking-copy.ts`: removes common tracking parameters from the selected URL and copies the cleaned URL.
 22. `029-format-json-copy.ts`: parses the selected text clip as JSON and copies a pretty-printed version.
 23. `030-extract-urls-copy.ts`: extracts http(s) URLs from the selected text clip and copies one URL per line.
+24. `031-join-selected-markdown-copy.ts`: joins selected text clips as one Markdown document with headings and tags.
 
 Logging contract:
 

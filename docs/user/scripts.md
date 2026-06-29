@@ -612,6 +612,22 @@ console.log("debug detail", { selectedCount: ctx.selectedItemIds.length });
 
 Prefer `copicu.log.*` for structured script diagnostics.
 
+## Showcase Scripts To Try First
+
+The repo includes a launch-ready set of scripts under [`scripts/examples/`](../../scripts/examples/) that demonstrate the daily value of local actions. Copy them to your Copicu scripts folder, refresh diagnostics in Settings, then run them from the item menu, command palette, or the listed local shortcut while the picker is focused.
+
+| Script | Shortcut | What it demonstrates |
+| --- | --- | --- |
+| `028-clean-url-tracking-copy.ts` | `Ctrl+Alt+U` | Remove common tracking parameters and copy the cleaned URL. |
+| `029-format-json-copy.ts` | `Ctrl+Alt+F` | Pretty-print selected JSON before pasting. |
+| `010-normalize-whitespace-copy.ts` | `Ctrl+Alt+N` | Normalize messy pasted text. |
+| `030-extract-urls-copy.ts` | `Ctrl+Alt+L` | Extract every `http(s)` URL from a note or log. |
+| `031-join-selected-markdown-copy.ts` | `Ctrl+Alt+M` | Turn multiple selected clips into one Markdown document with headings and tags. |
+
+Use synthetic data when sharing screenshots, issues, or demos. Do not paste real clipboard payloads or private logs into public examples.
+
+Tip: when the picker search box is focused, press `Ctrl+Alt+Q` to open **Quick Actions**. It shows only scripts/actions that match the active selection and lets you search, press Enter, or press `1`-`9` to run one without memorizing every shortcut.
+
 ## Examples
 
 ### 1. Item Menu: Tag Selected Clip
@@ -773,6 +789,12 @@ Typecheck repo examples:
 ```powershell
 $files = Get-ChildItem scripts/examples -Filter *.ts | ForEach-Object { $_.FullName }
 npx tsc --ignoreConfig --noEmit --target ES2022 --module ESNext --moduleResolution Bundler --strict @files
+```
+
+Run helper tests for the showcase transforms:
+
+```powershell
+npm run scripts:examples:test
 ```
 
 Run a synthetic mock example from the repo:

@@ -20,7 +20,8 @@ export default defineAction({
   id: "examples.formatJsonCopy",
   title: "Format JSON and copy",
   description: "Parses the selected text clip as JSON and copies a pretty-printed version.",
-  triggers: ["itemMenu", "commandPalette"],
+  triggers: ["itemMenu", "commandPalette", "localShortcut"],
+  shortcut: "Ctrl+Alt+F",
   input: {
     source: "pickerSelection",
     selection: "one",

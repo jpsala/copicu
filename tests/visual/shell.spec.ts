@@ -1425,7 +1425,7 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await expect(menu.getByRole("menuitem", { name: "Activate" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Paste", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Paste plain" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Open URL" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Open URL" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "copy-current-title" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
@@ -1434,6 +1434,26 @@ test("right click on item opens item actions menu", async ({ page }) => {
 
   await menu.getByRole("menuitem", { name: "Paste", exact: true }).click();
   await expect(menu).toBeHidden();
+});
+
+test("URL action appears only when selected text contains an URL", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    {
+      ...syntheticLongHistory[1],
+      id: 201,
+      text: "Open https://example.test/copicu from a legacy text clip",
+      mime_primary: null,
+    },
+  ]);
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("1 total");
+  const item = page.getByRole("button", { name: /https:\/\/example\.test\/copicu/ });
+  await item.click({ button: "right" });
+
+  const menu = page.getByRole("menu", { name: "Item actions" });
+  await expect(menu.getByRole("menuitem", { name: "Paste plain" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Open URL" })).toBeVisible();
 });
 
 test("item hover actions appear only while hovering row", async ({ page }) => {
@@ -1563,6 +1583,61 @@ test("command palette runs ready built-in and script actions", async ({ page }) 
   expect(request.context.trigger).toBe("commandPalette");
   expect(request.context.selectedItemIds).toEqual([]);
   await expect(palette).toBeHidden();
+});
+
+test("quick actions opens with Ctrl+Alt+Q and runs contextual script", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await selectLongSingleLine(page);
+  await page.keyboard.press("Control+Alt+Q");
+  const picker = page.getByRole("dialog", { name: "Quick Actions" });
+  await expect(picker).toBeVisible();
+  await expect(page.getByLabel("Search quick actions")).toBeFocused();
+  await expect(picker.getByRole("option", { name: /Join selected/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /join-selected-with-log-name/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /global-reserved/ })).toHaveCount(0);
+
+  await page.getByLabel("Search quick actions").fill("join-selected-with-log");
+  await page.keyboard.press("Enter");
+
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.some((call: any) => call.cmd === "run_action" && call.args.request.actionId === "examples.mock3");
+  });
+  const request = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "run_action")
+      .at(-1)
+      .args.request,
+  );
+  expect(request.actionId).toBe("examples.mock3");
+  expect(request.context.trigger).toBe("localShortcut");
+  expect(request.context.shortcut).toBe("Ctrl+Alt+J");
+  expect(request.context.selectedItemIds).toEqual([101]);
+  await expect(picker).toBeHidden();
+});
+
+test("quick actions handles multi-selected legacy text clips without MIME", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[1], id: 301, mime_primary: null },
+    { ...syntheticLongHistory[2], id: 302, mime_primary: null },
+  ]);
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("2 total");
+  const first = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
+  const second = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
+  await first.click();
+  await second.click({ modifiers: ["Control"] });
+  await expect(first).toHaveClass(/is-multi-selected/);
+  await expect(second).toHaveClass(/is-multi-selected/);
+
+  await page.keyboard.press("Control+Alt+Q");
+  const picker = page.getByRole("dialog", { name: "Quick Actions" });
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole("option", { name: /Join selected/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /Open URL/ })).toHaveCount(0);
 });
 
 test("action filter effect settles history instead of leaving Filtering", async ({ page }) => {

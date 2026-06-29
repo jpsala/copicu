@@ -13,7 +13,8 @@ export default defineAction({
   id: "examples.normalizeWhitespaceCopy",
   title: "Copy normalized whitespace",
   description: "Copies the selected text clip with trimmed lines and collapsed spaces.",
-  triggers: ["itemMenu", "commandPalette"],
+  triggers: ["itemMenu", "commandPalette", "localShortcut"],
+  shortcut: "Ctrl+Alt+N",
   input: {
     source: "pickerSelection",
     selection: "one",

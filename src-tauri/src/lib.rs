@@ -63,6 +63,8 @@ const AI_OUTPUT_OPEN_EVENT: &str = "copicu://ai-output/open";
 #[cfg(not(test))]
 const COMPOUND_HOTKEY_PENDING_EVENT: &str = "copicu://hotkeys/compound-pending";
 #[cfg(not(test))]
+const QUICK_ACTIONS_OPEN_EVENT: &str = "copicu://quick-actions/open";
+#[cfg(not(test))]
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
 const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
@@ -87,6 +89,8 @@ const TRAY_EDIT_SCRIPTS_ID: &str = "edit-scripts";
 const TRAY_QUIT_ID: &str = "quit";
 #[cfg(not(test))]
 const PICKER_SHORTCUT_LABEL: &str = "Ctrl+Shift+,";
+#[cfg(not(test))]
+const QUICK_ACTIONS_SHORTCUT_LABEL: &str = "Ctrl+Alt+Q";
 #[cfg(not(test))]
 const HIDE_ON_FOCUS_LOST_DELAY: Duration = Duration::from_millis(320);
 #[cfg(not(test))]
@@ -2938,6 +2942,24 @@ fn spawn_toggle_main_window_without_focus<R: tauri::Runtime + 'static>(app: taur
 }
 
 #[cfg(not(test))]
+fn spawn_open_quick_actions<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = show_main_window(&app_for_main_thread, true) {
+                eprintln!("{error}");
+            }
+            if let Err(error) = app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, QUICK_ACTIONS_OPEN_EVENT, ()) {
+                eprintln!("quick actions open event failed: {error}");
+            }
+        }) {
+            eprintln!("quick actions dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
 fn spawn_toggle_main_window_pin<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
     thread::spawn(move || {
         thread::sleep(NATIVE_WINDOW_TASK_DELAY);
@@ -2995,6 +3017,14 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     {
         eprintln!("picker pin shortcut pressed: {shortcut:?}");
         spawn_toggle_main_window_pin(app.clone());
+        return;
+    }
+
+    if shortcut_from_label(QUICK_ACTIONS_SHORTCUT_LABEL).is_some_and(|quick_actions_shortcut| {
+        *shortcut == quick_actions_shortcut
+    }) {
+        eprintln!("quick actions shortcut pressed: {shortcut:?}");
+        spawn_open_quick_actions(app.clone());
         return;
     }
 
@@ -3386,6 +3416,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
 ) {
     refresh_picker_shortcut_from_settings(app, settings);
     refresh_picker_pin_shortcut_from_settings(app, settings);
+    refresh_quick_actions_shortcut(app);
 
     if let Some(shortcuts) = app.try_state::<GlobalScriptShortcuts>() {
         for shortcut in shortcuts.current_shortcuts() {
@@ -3555,6 +3586,25 @@ fn register_simple_global_script_shortcut<R: tauri::Runtime>(
         Err(error) => eprintln!(
             "global script shortcut registration failed for {} ({}): {error}",
             action.id, shortcut_label
+        ),
+    }
+}
+
+#[cfg(not(test))]
+fn refresh_quick_actions_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(shortcut) = shortcut_from_label(QUICK_ACTIONS_SHORTCUT_LABEL) else {
+        eprintln!("quick actions shortcut not refreshed: unsupported shortcut {QUICK_ACTIONS_SHORTCUT_LABEL}");
+        return;
+    };
+
+    if app.global_shortcut().is_registered(shortcut) {
+        return;
+    }
+
+    match app.global_shortcut().register(shortcut) {
+        Ok(()) => eprintln!("quick actions shortcut registered: {QUICK_ACTIONS_SHORTCUT_LABEL}"),
+        Err(error) => eprintln!(
+            "quick actions shortcut registration failed for {QUICK_ACTIONS_SHORTCUT_LABEL}: {error}"
         ),
     }
 }
