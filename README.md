@@ -29,10 +29,12 @@ More real-looking synthetic workflow demos are planned before the next public fe
 
 Current release:
 
-- [v0.2.8](https://github.com/jpsala/copicu/releases/tag/v0.2.8)
-- Asset: `Copicu_0.2.8_x64-setup.exe`
+- [v0.3.0](https://github.com/jpsala/copicu/releases/tag/v0.3.0)
+- Asset: `Copicu_0.3.0_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `B72C466D5A39A677630D2C4653F6E2F1B26077FAEB8419857B375B3DD977B300`
+- SHA256: `05B077A3416A65A7979BEFE1DF35AC3951AAD42B92304F7FDB6E938EEBB0F2A6`
+
+Public feedback refresh: scoped picker search, configurable search trigger modes, native metadata editing, README/onboarding, synthetic demo data, sample scripts, helper tests, and script onboarding polish.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
