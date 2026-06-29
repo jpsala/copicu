@@ -1,6 +1,8 @@
 import type { EnrichmentSettings, EnterAction } from "./contracts";
 import type { ThemeId, ThemeSetting } from "../themeCatalog";
 
+export type SearchTriggerMode = "realtime" | "enter" | "manual";
+
 export type AppSettings = {
   schemaVersion: 1;
   general: {
@@ -15,6 +17,7 @@ export type AppSettings = {
     hideOnFocusLost: boolean;
     enterAction: EnterAction;
     promoteActiveOnCopy: boolean;
+    searchTriggerMode: SearchTriggerMode;
     pinToggleShortcut: string;
     settingsShortcut: string;
   };
@@ -52,6 +55,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     hideOnFocusLost: true,
     enterAction: "copy",
     promoteActiveOnCopy: true,
+    searchTriggerMode: "realtime",
     pinToggleShortcut: "F8",
     settingsShortcut: "Ctrl+,",
   },
@@ -85,13 +89,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
 };
 
+function normalizeSearchTriggerMode(value: unknown): SearchTriggerMode {
+  return value === "enter" || value === "manual" || value === "realtime" ? value : "realtime";
+}
+
 export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSettings {
+  const picker = { ...DEFAULT_SETTINGS.picker, ...settings.picker };
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
     general: { ...DEFAULT_SETTINGS.general, ...settings.general },
     autoUpdate: { ...DEFAULT_SETTINGS.autoUpdate, ...settings.autoUpdate },
-    picker: { ...DEFAULT_SETTINGS.picker, ...settings.picker },
+    picker: { ...picker, searchTriggerMode: normalizeSearchTriggerMode(picker.searchTriggerMode) },
     history: { ...DEFAULT_SETTINGS.history, ...settings.history },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...settings.appearance },
     scripts: { ...DEFAULT_SETTINGS.scripts, ...settings.scripts },

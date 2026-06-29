@@ -339,7 +339,7 @@ $Summary
 Copicu is used daily
 "@
 
-  $pattern = "(?ms)Current release:\r?\n\r?\n- \[.*?\]\(.*?\)\r?\n- Asset: ``.*?``\r?\n- Windows x64 NSIS installer\r?\n- SHA256: ``.*?``\r?\n\r?\n.*?\r?\n\r?\nCopicu is used daily"
+  $pattern = "(?ms)Current release:\r?\n\r?\n- \[.*?\]\(.*?\)\r?\n- Asset: ``.*?``\r?\n- Windows x64 NSIS installer\r?\n- SHA256: ``.*?``\r?\n\r?\n(?:.*?\r?\n\r?\n)?Copicu is used daily"
   if ($readme -notmatch $pattern) {
     throw "Could not find the Current release block in README.md"
   }

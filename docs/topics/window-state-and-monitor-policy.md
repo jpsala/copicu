@@ -44,6 +44,7 @@ Estado actual:
 | `main` | si | si | si | Picker rapido; al abrir usa el monitor del cursor. |
 | `settings` | si | si | si | Ventana document; usa ultimo monitor disponible. |
 | `ai-output` | si | si | si | Ventana document para Markdown/output. |
+| `metadata` | si | si | si | Utility para metadata; prewarm/cached hidden. |
 | `ui-host` | no | no | no | Prompt compacto; tamano calculado por request. |
 | `notifications` | no | no | no | Posicionada por codigo junto al monitor de `main`; tamano fijo. |
 | `whichkey` | no | no | no | Utility temporal; tamano fijo hasta reactivar/validar. |
@@ -85,6 +86,8 @@ Formato conceptual:
 `monitorKey` se deriva de nombre si existe, posicion y resolucion. No se guarda contenido de clipboard.
 
 ## Restauracion
+
+Estado observado 2026-06-29: la persistencia existe y guarda `lastMonitorKey`, `lastBounds` y `boundsByMonitor` en app data. Hay un matiz pendiente: la politica `LastMonitor` actualmente elige el monitor objetivo desde primario/disponible y luego considera bounds guardados; si el primario tiene bounds previos, puede no preferir exactamente `lastMonitorKey`. Si JP pide precision de ultimo monitor para `settings`/`metadata`/`ai-output`, ajustar `choose_target_monitor`/restore para priorizar `lastMonitorKey` conectado y caer al disponible solo si desaparecio.
 
 Al mostrar una ventana persistente:
 

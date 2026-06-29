@@ -64,10 +64,13 @@ Copicu is early-stage, but the core is functional:
 - deduplicate content by hash;
 - open a compact searchable picker;
 - navigate primarily with the keyboard;
+- search plain text or scoped fields like `meta:`, `title:`, `notes:`, `ctx:`, `tag:`, `kind:`, and `is:marked`;
+- choose whether search runs in realtime, on Enter, or only from the Search button;
 - copy the selected item;
 - paste the selected item into the previous Windows app;
 - edit item content and metadata;
 - add titles, tags, notes, and MIME hints;
+- assign metadata from the picker with `Ctrl+Shift+C`, including batch append/replace/merge for multi-selection;
 - open tag-filtered picker routes;
 - run built-in actions and trusted local TypeScript/JavaScript scripts;
 - use a command palette and local/global shortcut routes;
@@ -76,9 +79,19 @@ Copicu is early-stage, but the core is functional:
 
 ## Core Flows
 
-### 1. Search And Paste
+### 1. Search, Filter, And Paste
 
 Open the picker, type a few characters, select a previous clip, then copy it or paste it into the app you were using before opening Copicu.
+
+Useful query examples:
+
+- `meta:client` searches visible editable metadata: title, notes, and tags.
+- `title:invoice` searches the editable item title.
+- `notes:followup -meta:draft` combines scoped and negated filters.
+- `ctx:vivaldi` searches hidden capture context such as source app/window/URL metadata.
+- `window:pull request` searches captured source window titles. `title:` is reserved for the editable item title.
+
+The picker can filter while typing, wait for Enter, or wait for the Search button. `Ctrl+Enter` runs the current query in any mode.
 
 Paste-to-previous-window is intentionally Windows-first and depends on native focus behavior, target app timing, and paste shortcuts. Please report target-specific failures with synthetic reproduction data.
 
@@ -91,6 +104,8 @@ Copicu clips can carry structured metadata:
 - notes;
 - MIME hints;
 - generated or edited content.
+
+Visible metadata is user-editable and searchable with `meta:`, `title:`, and `notes:`. Capture context is separate: Copicu may store hidden source information such as app, window, URL/domain, and clipboard format hints so `ctx:`/`window:` searches can find where a clip came from without mixing that provenance into your editable title or notes.
 
 This makes the clipboard useful for recurring snippets, links, prompts, code, screenshots, and temporary project notes instead of being just a flat list.
 
@@ -132,7 +147,7 @@ Clipboard history is sensitive. Copicu is local-first by design:
 - examples, screenshots, tests, and issues should use synthetic data;
 - real clipboard dumps, local databases, `.env` files, secrets, and private logs should never be committed.
 
-AI features are optional and disabled by default. Some AI operations, such as search planning, can work without sending clipboard payloads. Other operations, such as summarizing selected clips, necessarily send selected content to the configured provider and should remain explicit, capability-based, and reviewable.
+AI features are optional and disabled by default. Some AI operations, such as search planning, can translate a natural-language request into local filters like `meta:`/`ctx:` without sending clipboard payloads. Other operations, such as summarizing selected clips, necessarily send selected content to the configured provider and should remain explicit, capability-based, and reviewable.
 
 Use [.env.example](.env.example) if you want to test OpenAI-compatible providers locally.
 
@@ -167,7 +182,9 @@ This is a design direction, not an unlimited-history benchmark claim. Storage si
 Known limitations:
 
 - Windows is the primary tested platform right now.
-- APIs, settings, script contracts, and UI behavior can still change.
+- APIs, settings, script contracts, search syntax, and UI behavior can still change.
+- `title:` means editable item title; captured source window title search uses `window:` or broader context filters.
+- Metadata provenance/origin is still evolving; not every captured context field is exposed as an editable property.
 - Paste-to-previous-window depends on Windows focus behavior, target apps, timing, and paste shortcuts.
 - Scripts are trusted local automation, not a secure sandbox or marketplace.
 - AI is optional and disabled by default; selected-content AI actions may send selected clipboard content to the configured provider.
@@ -197,8 +214,8 @@ Open an issue using the templates in this repo and include synthetic reproductio
 
 Near-term priorities:
 
-- more real-looking public screenshots and GIFs with synthetic data;
 - stronger paste-to-previous-window validation across target apps;
+- query explain/chips so scoped search results are easier to understand;
 - more built-in actions and sample scripts;
 - a stable script/action API;
 - richer previews for text, code, URLs, HTML, Markdown, and images;

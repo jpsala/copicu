@@ -173,6 +173,9 @@ Navegacion por teclado:
 - `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible; es el atajo explicito para no pelear con el input de busqueda.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
+- `F2`: edita contenido del item activo.
+- `Shift+F2` / `Ctrl+Shift+C`: edita metadata del item activo o abre batch metadata si hay multiseleccion.
+- `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 
 Crear item manual:
 
@@ -183,6 +186,17 @@ Crear item manual:
 - dedupe por hash del texto normalizado: si ya existe, se promueve arriba y se mergean metadata/tags;
 - gotcha 2026-06-22: el autofocus del dialog debe correr solo al abrir; si depende del draft completo, escribir en `Metadata` re-enfoca `Content` en cada tecla.
 - validacion 2026-06-22: `Ctrl+N` + escribir `Content` + `Tab` + escribir `Metadata` mantuvo foco en metadata; `Create` agrego item arriba y el clipboard sentinel no cambio. El submit quedo robustecido con `onClick` directo y updates funcionales del draft. Dedupe/promocion queda cubierto por tests Rust y Playwright; la validacion manual via Computer Use puede ser ruidosa si una automatizacion deja un dialog stale.
+
+Metadata editable:
+
+- `title`, `notes` y tags visibles son metadata editable del usuario; el contexto de captura automatico queda separado y read-only.
+- Batch metadata soporta tres modos explicitos: append, replace y smart merge.
+- Append conserva metadata existente y agrega lineas nuevas.
+- Replace reemplaza metadata de todos los items seleccionados.
+- Smart merge deduplica lineas y tags case-insensitively preservando texto original de tags nuevos.
+- El editor batch muestra si la seleccion tiene metadata comun, metadata mixta o metadata vacia en todos los items.
+- El shortcut core para metadata es `Ctrl+Shift+C`; no debe depender de scripts active-only.
+- Provenance user/assistant/enrichment queda diferida: `meta:` busca metadata visible sin exponer origen, `ctx:` busca contexto oculto automatico.
 
 Activacion:
 

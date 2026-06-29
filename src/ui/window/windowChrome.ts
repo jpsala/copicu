@@ -24,8 +24,16 @@ function testWindowPinState(): boolean | null {
   return typeof testWindow.__copicuTestWindowPinned === "boolean" ? testWindow.__copicuTestWindowPinned : null;
 }
 
+function windowChromeDiagnosticsDisabled() {
+  const rawOverride =
+    new URLSearchParams(window.location.search).get("copicuDiagnostics") ??
+    window.localStorage?.getItem("copicuDiagnostics");
+  const override = rawOverride?.trim().toLocaleLowerCase();
+  return override === "off" || override === "false" || override === "0";
+}
+
 export function recordWindowChromeEvent(event: string, detail?: string) {
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || windowChromeDiagnosticsDisabled()) {
     return Promise.resolve();
   }
   const diagnostic = invoke("record_renderer_diagnostic", {

@@ -478,7 +478,7 @@ button {
 
 .search-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto auto;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--line);
@@ -656,7 +656,8 @@ button {
 }
 
 .new-item-button,
-.composer-mode-button {
+.composer-mode-button,
+.search-help-button {
   width: 30px;
   height: 28px;
   min-width: 30px;
@@ -673,13 +674,16 @@ button {
 }
 
 .new-item-button:hover,
-.composer-mode-button:hover {
+.composer-mode-button:hover,
+.search-help-button:hover,
+.search-help-button[aria-expanded="true"] {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
   color: var(--accent);
 }
 
 .new-item-button:active,
-.composer-mode-button:active {
+.composer-mode-button:active,
+.search-help-button:active {
   transform: translateY(1px);
 }
 
@@ -696,7 +700,8 @@ button {
 }
 
 .new-item-button:focus-visible,
-.composer-mode-button:focus-visible {
+.composer-mode-button:focus-visible,
+.search-help-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
   outline-offset: 2px;
 }
@@ -725,12 +730,14 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .new-item-button,
-  .composer-mode-button {
+  .composer-mode-button,
+  .search-help-button {
     transition: none;
   }
 
   .new-item-button:active,
-  .composer-mode-button:active {
+  .composer-mode-button:active,
+  .search-help-button:active {
     transform: none;
   }
 }
@@ -755,6 +762,108 @@ button {
 
 .status-text {
   min-width: 0;
+}
+
+.search-help-backdrop {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  overflow: auto;
+  background: var(--overlay-bg);
+  padding: 10px;
+}
+
+.search-help-panel {
+  display: grid;
+  gap: 12px;
+  width: min(920px, 100%);
+  justify-self: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  padding: 12px;
+  box-shadow: 0 18px 42px var(--shadow-strong);
+}
+
+.search-help-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.search-help-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.search-help-header span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.search-help-header strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.search-help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.search-help-grid section {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
+  padding: 9px;
+}
+
+.search-help-grid h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.search-help-grid dl,
+.search-help-grid dd {
+  margin: 0;
+}
+
+.search-help-grid dl {
+  display: grid;
+  gap: 7px;
+}
+
+.search-help-grid dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.search-help-grid code {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 1px 4px;
+}
+
+.search-help-grid dd {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 
 .search-interpretation {
@@ -1990,11 +2099,50 @@ kbd {
   gap: 4px;
 }
 
-.edit-panel label span {
+.edit-panel label span,
+.batch-metadata-editor > span {
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.batch-metadata-editor {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.batch-metadata-existing {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--metadata-bg);
+  padding: 8px;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.batch-metadata-existing strong {
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.batch-metadata-existing span {
+  color: var(--muted);
+}
+
+.batch-metadata-existing pre {
+  max-height: 96px;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  font-family:
+    "Cascadia Mono",
+    "Consolas",
+    monospace;
 }
 
 .edit-panel input,

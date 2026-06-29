@@ -25,6 +25,7 @@ import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import CheckCheck from "lucide-react/dist/esm/icons/check-check.mjs";
+import CircleHelp from "lucide-react/dist/esm/icons/circle-help.mjs";
 import CircleSlash from "lucide-react/dist/esm/icons/circle-slash.mjs";
 import ClipboardCheck from "lucide-react/dist/esm/icons/clipboard-check.mjs";
 import ClipboardPaste from "lucide-react/dist/esm/icons/clipboard-paste.mjs";
@@ -84,6 +85,7 @@ import {
   UiLoader,
   UiAlert,
   UiPaper,
+  UiSelect,
   UiTextarea,
   UiTextInput,
   UiTooltip,
@@ -277,9 +279,14 @@ type CreateItemDraft = {
   metadata: string;
 };
 
+type BatchMetadataMode = "append" | "replace" | "merge";
+
 type BatchMetadataDraft = {
   ids: number[];
   metadata: string;
+  mode: BatchMetadataMode;
+  commonMetadata: string | null;
+  hasMixedMetadata: boolean;
 };
 
 type MarkdownImage = {
@@ -645,7 +652,7 @@ function recordPersistentRendererDiagnostic(event: string, detail?: string) {
 }
 
 function setupRendererHeartbeat() {
-  if (!isTauriRuntime()) {
+  if (!isTauriRuntime() || rendererDiagnosticMode() === "off") {
     return;
   }
   const state = window as Window & { __copicuRendererHeartbeatStarted?: boolean };
@@ -829,6 +836,7 @@ function App() {
   const [markedActionItemsLoading, setMarkedActionItemsLoading] = useState(false);
   const [openItemMenu, setOpenItemMenu] = useState<ItemMenuAnchor | null>(null);
   const [commandPalette, setCommandPalette] = useState<CommandPaletteState | null>(null);
+  const [searchHelpOpen, setSearchHelpOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -878,6 +886,7 @@ function App() {
         ? "mixed"
         : "unchecked";
   const hasNextHistoryPage = historyNextCursor !== null;
+  const searchTriggerMode = settings.picker.searchTriggerMode;
   const virtualRowCount = hasNextHistoryPage ? history.length + 1 : history.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
@@ -987,6 +996,7 @@ function App() {
   const resetPickerSession = useCallback(() => {
     closeTransientEditors();
     setCommandPalette(null);
+    setSearchHelpOpen(false);
     setOpenMarkMenu(null);
     setActionError(null);
     setAiComposerMode(false);
@@ -1027,6 +1037,14 @@ function App() {
         console.warn("hide picker failed", error);
       });
   }, [resetPickerSession]);
+
+  const quitCopicu = useCallback(() => {
+    void recordWindowChromeEvent("quit-app-command-start");
+    void invoke("quit_app").catch((error) => {
+      void recordWindowChromeEvent("quit-app-command-error", String(error));
+      console.warn("quit app failed", error);
+    });
+  }, []);
 
   const setPickerKeepOpenMode = useCallback((keepOpen: boolean) => {
     const previousSettings = settings;
@@ -1584,14 +1602,20 @@ function App() {
   const setSingleSelection = useCallback((index: number) => {
     const item = history[index];
     if (!item) {
-      setSelectedIds(new Set());
+      const emptySelection = new Set<number>();
+      selectedIdsRef.current = emptySelection;
+      selectedItemIdRef.current = null;
+      setSelectedIds(emptySelection);
       setSelectedItemId(null);
       selectionAnchorItemIdRef.current = null;
       return;
     }
 
+    const nextSelection = new Set([item.id]);
+    selectedIdsRef.current = nextSelection;
+    selectedItemIdRef.current = item.id;
     setSelectedItemId(item.id);
-    setSelectedIds(new Set([item.id]));
+    setSelectedIds(nextSelection);
     selectionAnchorItemIdRef.current = item.id;
   }, [history]);
 
@@ -1941,13 +1965,14 @@ function App() {
   }, [aiComposerMode, focusSearch, query, refreshHistory]);
 
   const selectForContextMenu = useCallback((item: HistoryItem, index: number) => {
-    if (selectedIds.has(item.id)) {
+    if (selectedIdsRef.current.has(item.id)) {
+      selectedItemIdRef.current = item.id;
       setSelectedItemId(item.id);
       return;
     }
 
     setSingleSelection(index);
-  }, [selectedIds, setSingleSelection]);
+  }, [setSingleSelection]);
 
   const showItemMenu = useCallback((item: HistoryItem, index: number, event: React.MouseEvent) => {
     selectForContextMenu(item, index);
@@ -1967,12 +1992,18 @@ function App() {
       return;
     }
 
+    const metadataValues = items.map((item) => item.notes?.trim() ?? "");
+    const uniqueMetadataValues = new Set(metadataValues);
+
     setEditError(null);
     setOpenItemMenu(null);
     setOpenMarkMenu(null);
     setBatchMetadataDraft({
       ids: items.map((item) => item.id),
       metadata: "",
+      mode: "append",
+      commonMetadata: uniqueMetadataValues.size === 1 ? metadataValues[0] : null,
+      hasMixedMetadata: uniqueMetadataValues.size > 1,
     });
     window.setTimeout(() => editTextRef.current?.focus(), 0);
   }, []);
@@ -2022,6 +2053,21 @@ function App() {
               <span>Join {noun}</span>
             </UiUnstyledButton>
           ) : null}
+          <UiUnstyledButton
+            type="button"
+            role="menuitem"
+            className="item-menu-action"
+            disabled={!hasItems}
+            onClick={() => {
+              if (hasItems) {
+                beginBatchMetadataEdit(items);
+              }
+            }}
+          >
+            <Plus size={14} strokeWidth={2.2} aria-hidden="true" />
+            <span>Assign metadata to {noun}</span>
+            <ShortcutBadge shortcut={METADATA_EDIT_SHORTCUT} />
+          </UiUnstyledButton>
           {scriptActions.map((action) => (
             <UiUnstyledButton
               key={action.id}
@@ -2035,20 +2081,6 @@ function App() {
               <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
             </UiUnstyledButton>
           ))}
-          <UiUnstyledButton
-            type="button"
-            role="menuitem"
-            className="item-menu-action"
-            disabled={!hasItems}
-            onClick={() => {
-              if (hasItems) {
-                beginBatchMetadataEdit(items);
-              }
-            }}
-          >
-            <Plus size={14} strokeWidth={2.2} aria-hidden="true" />
-            <span>Add metadata to {noun}</span>
-          </UiUnstyledButton>
           {onClear ? (
             <UiUnstyledButton
               type="button"
@@ -2075,12 +2107,16 @@ function App() {
 
   const beginSelectedItemEdit = useCallback(
     (mode: EditMode) => {
+      if (mode === "metadata" && hasMultiSelection) {
+        beginBatchMetadataEdit(effectiveSelection);
+        return;
+      }
       if (!selectedItem || hasMultiSelection) {
         return;
       }
       void beginEdit(selectedItem, mode);
     },
-    [beginEdit, hasMultiSelection, selectedItem],
+    [beginBatchMetadataEdit, beginEdit, effectiveSelection, hasMultiSelection, selectedItem],
   );
 
   const saveEdit = useCallback(async () => {
@@ -2110,7 +2146,7 @@ function App() {
   }, [editDraft, focusSearch, refreshHistory]);
 
   const saveCreateItem = useCallback(async () => {
-    if (!createItemDraft) {
+    if (!createItemDraft || !createItemDraft.text.trim()) {
       return;
     }
 
@@ -2154,9 +2190,9 @@ function App() {
     const itemsToUpdate = batchMetadataDraft.ids
       .map((id) => selectedItemsById.get(id))
       .filter((item): item is HistoryItem => Boolean(item));
-    const metadataToAdd = batchMetadataDraft.metadata.trim();
+    const nextMetadata = batchMetadataDraft.metadata.trim();
 
-    if (itemsToUpdate.length === 0 || metadataToAdd.length === 0) {
+    if (itemsToUpdate.length === 0 || nextMetadata.length === 0) {
       setBatchMetadataDraft(null);
       focusSearch();
       return;
@@ -2166,7 +2202,7 @@ function App() {
       setEditError(null);
       const fullItemsToUpdate = await Promise.all(itemsToUpdate.map(ensureFullHistoryItem));
       for (const item of fullItemsToUpdate) {
-        const nextNotes = appendMetadata(item.notes, metadataToAdd);
+        const nextNotes = applyBatchMetadata(item.notes, nextMetadata, batchMetadataDraft.mode);
         const request: UpdateHistoryItemRequest = {
           id: item.id,
           text: item.text,
@@ -2350,10 +2386,18 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    const searchInput = historySearchInput(query.trim(), aiComposerMode);
-    if (searchInput.mode === "ai") {
+    const trimmedQuery = query.trim();
+    const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
+    if (searchInput.mode === "ai" || searchTriggerMode !== "realtime") {
       setHistoryPending(false);
       setHistoryError(null);
+      if (historyTotalCount === null && historyInputQuery === "" && trimmedQuery === "") {
+        refreshHistory({ resetScroll: true, showPending: false, allowAi: false }).catch((error) => {
+          if (active) {
+            setHistoryError(String(error));
+          }
+        });
+      }
       return () => {
         active = false;
       };
@@ -2386,7 +2430,7 @@ function App() {
         window.clearInterval(intervalId);
       }
     };
-  }, [refreshHistory]);
+  }, [aiComposerMode, historyInputQuery, historyTotalCount, query, refreshHistory, searchTriggerMode]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -2486,7 +2530,7 @@ function App() {
     virtualRows,
   ]);
 
-  const isFilteringHistory = !historyMatchesQuery && !aiDraftActive;
+  const isFilteringHistory = searchTriggerMode === "realtime" && !historyMatchesQuery && !aiDraftActive;
   const searchStatus = useMemo(() => {
     if (historyError) {
       return "Storage unavailable";
@@ -2498,6 +2542,12 @@ function App() {
       return "AI draft";
     }
     if (!historyMatchesQuery) {
+      if (searchTriggerMode === "enter") {
+        return "Press Enter";
+      }
+      if (searchTriggerMode === "manual") {
+        return "Click Search";
+      }
       return "Filtering";
     }
     if (newClipsAvailable) {
@@ -2519,6 +2569,7 @@ function App() {
     historyTotalCount,
     newClipsAvailable,
     query,
+    searchTriggerMode,
   ]);
   const markMenuCountLabel = query.trim()
     ? formatCount(historyFilteredCount ?? history.length)
@@ -2528,6 +2579,9 @@ function App() {
   const markMenuCountAria = query.trim() ? "filtered" : "checked";
   const checkedActionItems = markedActionItems ?? visibleMarkedItems;
   const checkedActionCount = markedTotalCount ?? checkedActionItems.length;
+  const runSearchNow = useCallback(() => {
+    void refreshHistory({ resetScroll: true, allowAi: true });
+  }, [refreshHistory]);
   const searchControlBaseProps = {
     className: "search-input",
     variant: "unstyled" as const,
@@ -2535,12 +2589,12 @@ function App() {
     "aria-controls": "clipboard-feed",
     "aria-activedescendant": selectedItem ? `history-item-${selectedItem.id}` : undefined,
     value: query,
-    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search, "phrase", tag:work, kind:image',
+    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — meta:work, #tag, ai:find invoices',
     title:
-      'Search supports "phrases", -exclude, tag:name, kind:text/image, mime:image/*, has:notes/title/tags, after:YYYY-MM-DD, before:YYYY-MM-DD.',
+      'Search help: use plain text, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setQuery(event.currentTarget.value);
-      setHistoryPending(true);
+      setHistoryPending(searchTriggerMode === "realtime");
       setAiPlanning(false);
       setActionError(null);
       setSearchInterpretation(null);
@@ -2566,10 +2620,16 @@ function App() {
         window.setTimeout(() => searchRef.current?.focus(), 0);
         return;
       }
+      const shortcut = shortcutFromKeyboardEvent(event);
       const settingsShortcut = normalizeShortcutString(settings.picker.settingsShortcut);
-      if (settingsShortcut && shortcutFromKeyboardEvent(event) === settingsShortcut) {
+      if (settingsShortcut && shortcut === settingsShortcut) {
         event.preventDefault();
         void openSettingsWindow();
+        return;
+      }
+      if (shortcut === METADATA_EDIT_SHORTCUT) {
+        event.preventDefault();
+        beginSelectedItemEdit("metadata");
         return;
       }
       if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
@@ -2636,9 +2696,13 @@ function App() {
           break;
         case "Enter":
           event.preventDefault();
-          if ((aiDraftActive && !event.shiftKey) || event.ctrlKey || event.metaKey) {
-            void refreshHistory({ resetScroll: true, allowAi: true });
-          } else if (historyMatchesQuery && !hasMultiSelection) {
+          if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
+            runSearchNow();
+          } else if (!historyMatchesQuery) {
+            if (searchTriggerMode === "enter" || searchTriggerMode === "realtime") {
+              runSearchNow();
+            }
+          } else if (!hasMultiSelection) {
             void activateItem(
               selectedItem,
               activationForEnter(settings.picker.enterAction, event.shiftKey),
@@ -2660,14 +2724,16 @@ function App() {
   return (
     <main className="app-shell">
       <CustomWindowFrame
-        controls={["pin", "keep-open", "minimize", "maximize", "hide"]}
+        controls={["pin", "keep-open", "minimize", "maximize", "hide", "quit"]}
         hideLabel="Hide Copicu"
+        quitLabel="Quit Copicu"
         keepOpen={!settings.picker.hideOnFocusLost}
         pinShortcutLabel={settings.picker.pinToggleShortcut}
         title="Copicu"
         variant="floatingPicker"
         onHide={hidePickerWindow}
         onKeepOpenChange={setPickerKeepOpenMode}
+        onQuit={quitCopicu}
         onPinChange={setPickerPinned}
       >
       <section className="picker-panel" aria-label="Copicu">
@@ -2836,15 +2902,28 @@ function App() {
               )}
             </UiIconButton>
           </UiTooltip>
+          <UiTooltip label="Search and AI help">
+            <UiIconButton
+              type="button"
+              className="search-help-button"
+              variant="default"
+              aria-label="Open search and AI help"
+              aria-expanded={searchHelpOpen}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setSearchHelpOpen(true)}
+            >
+              <CircleHelp size={15} strokeWidth={2.3} aria-hidden="true" />
+            </UiIconButton>
+          </UiTooltip>
           <UiButton
             type="button"
             className="composer-run-button"
             variant="filled"
-            disabled={!query.trim() || historyPending || aiPlanning}
+            disabled={historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => void refreshHistory({ resetScroll: true, allowAi: true })}
+            onClick={runSearchNow}
           >
-            Run
+            Search
           </UiButton>
           <UiBadge
             className={`search-status${isFilteringHistory || aiPlanning ? " is-loading" : ""}`}
@@ -2883,6 +2962,12 @@ function App() {
                 Commands
               </Menu.Item>
               <Menu.Item
+                leftSection={<CircleHelp size={14} strokeWidth={2.2} />}
+                onClick={() => setSearchHelpOpen(true)}
+              >
+                Search help
+              </Menu.Item>
+              <Menu.Item
                 leftSection={<Settings2 size={14} strokeWidth={2.2} />}
                 onClick={openSettingsPanel}
               >
@@ -2891,6 +2976,13 @@ function App() {
             </Menu.Dropdown>
           </Menu>
         </div>
+
+        {searchHelpOpen ? (
+          <SearchHelpDialog onClose={() => {
+            setSearchHelpOpen(false);
+            focusSearch();
+          }} />
+        ) : null}
 
         {visibleSearchInterpretation ? (
           <div className="search-interpretation" aria-live="polite">
@@ -2999,16 +3091,16 @@ function App() {
                       if (event.shiftKey) {
                         setRangeSelection(index);
                       } else if (event.ctrlKey || event.metaKey) {
+                        selectedItemIdRef.current = item.id;
                         setSelectedItemId(item.id);
-                        setSelectedIds((current) => {
-                          const nextSelectedIds = new Set(current);
-                          if (nextSelectedIds.has(item.id)) {
-                            nextSelectedIds.delete(item.id);
-                          } else {
-                            nextSelectedIds.add(item.id);
-                          }
-                          return nextSelectedIds;
-                        });
+                        const nextSelectedIds = new Set(selectedIdsRef.current);
+                        if (nextSelectedIds.has(item.id)) {
+                          nextSelectedIds.delete(item.id);
+                        } else {
+                          nextSelectedIds.add(item.id);
+                        }
+                        selectedIdsRef.current = nextSelectedIds;
+                        setSelectedIds(nextSelectedIds);
                         selectionAnchorItemIdRef.current = item.id;
                       } else {
                         setSingleSelection(index);
@@ -3181,6 +3273,7 @@ function App() {
                           >
                             <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit metadata</span>
+                            <ShortcutBadge shortcut={METADATA_EDIT_SHORTCUT} />
                           </UiUnstyledButton>
                         </>
                       )}
@@ -3235,6 +3328,15 @@ function App() {
               onSubmit={(event) => {
                 event.preventDefault();
                 void saveCreateItem();
+              }}
+              onKeyDown={(event) => {
+                if (event.defaultPrevented) {
+                  return;
+                }
+                if (isSubmitShortcut(event)) {
+                  event.preventDefault();
+                  void saveCreateItem();
+                }
               }}
             >
               <label>
@@ -3318,6 +3420,15 @@ function App() {
               onSubmit={(event) => {
                 event.preventDefault();
                 void saveEdit();
+              }}
+              onKeyDown={(event) => {
+                if (event.defaultPrevented) {
+                  return;
+                }
+                if (isSubmitShortcut(event)) {
+                  event.preventDefault();
+                  void saveEdit();
+                }
               }}
             >
               {editDraft.mode === "content" ? (
@@ -3405,14 +3516,49 @@ function App() {
                 event.preventDefault();
                 void saveBatchMetadata();
               }}
+              onKeyDown={(event) => {
+                if (event.defaultPrevented) {
+                  return;
+                }
+                if (isSubmitShortcut(event)) {
+                  event.preventDefault();
+                  void saveBatchMetadata();
+                }
+              }}
             >
-              <label>
+              <div className="batch-metadata-editor">
                 <span>Metadata for {batchMetadataDraft.ids.length} items</span>
+                <UiSelect
+                  className="batch-metadata-mode"
+                  label="How to apply"
+                  value={batchMetadataDraft.mode}
+                  data={[
+                    { value: "append", label: "Append: keep existing and add this text" },
+                    { value: "replace", label: "Replace: overwrite metadata on every item" },
+                    { value: "merge", label: "Smart merge: add only new lines/tags" },
+                  ]}
+                  onChange={(value) => {
+                    if (value === "append" || value === "replace" || value === "merge") {
+                      setBatchMetadataDraft({ ...batchMetadataDraft, mode: value });
+                    }
+                  }}
+                />
+                <div className="batch-metadata-existing" aria-live="polite">
+                  <strong>Existing metadata</strong>
+                  {batchMetadataDraft.hasMixedMetadata ? (
+                    <span>Mixed values across selected items.</span>
+                  ) : batchMetadataDraft.commonMetadata ? (
+                    <pre>{batchMetadataDraft.commonMetadata}</pre>
+                  ) : (
+                    <span>Empty on all selected items.</span>
+                  )}
+                </div>
                 <UiTextarea
                   ref={editTextRef}
                   className="notes-input"
+                  aria-label={`Metadata for ${batchMetadataDraft.ids.length} items`}
                   value={batchMetadataDraft.metadata}
-                  placeholder="#work&#10;Markdown notes to append"
+                  placeholder="#work&#10;Markdown notes to apply"
                   onChange={(event) =>
                     setBatchMetadataDraft({
                       ...batchMetadataDraft,
@@ -3432,7 +3578,7 @@ function App() {
                   }}
                   autosize={false}
                 />
-              </label>
+              </div>
               {editError ? <UiAlert className="error-text" color="red" variant="light">{editError}</UiAlert> : null}
               <div className="edit-buttons">
                 <UiButton type="button" variant="default" onClick={() => {
@@ -3441,7 +3587,13 @@ function App() {
                 }}>
                   Cancel
                 </UiButton>
-                <UiButton type="submit" variant="filled">Add metadata</UiButton>
+                <UiButton type="submit" variant="filled">
+                  {batchMetadataDraft.mode === "append"
+                    ? "Append metadata"
+                    : batchMetadataDraft.mode === "replace"
+                      ? "Replace metadata"
+                      : "Merge metadata"}
+                </UiButton>
               </div>
             </UiPaper>
           </div>
@@ -3450,6 +3602,112 @@ function App() {
       </CustomWindowFrame>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </main>
+  );
+}
+
+function SearchHelpDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="search-help-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Search and AI help"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <UiPaper
+        className="search-help-panel"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
+      >
+        <header className="search-help-header">
+          <div>
+            <span>Search help</span>
+            <strong>Find clips, metadata, context and AI results</strong>
+          </div>
+          <UiIconButton type="button" variant="subtle" aria-label="Close search help" onClick={onClose}>
+            <X size={16} strokeWidth={2.4} aria-hidden="true" />
+          </UiIconButton>
+        </header>
+
+        <div className="search-help-grid">
+          <section>
+            <h3>Text search</h3>
+            <dl>
+              <div><dt><code>sqlite migration</code></dt><dd>All terms must match.</dd></div>
+              <div><dt><code>"exact phrase"</code></dt><dd>Keep words together.</dd></div>
+              <div><dt><code>-draft</code></dt><dd>Exclude matching clips.</dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <h3>Metadata</h3>
+            <dl>
+              <div><dt><code>meta:client</code></dt><dd>Visible metadata: title, notes and tags.</dd></div>
+              <div><dt><code>title:invoice</code></dt><dd>Only editable title.</dd></div>
+              <div><dt><code>notes:"paid"</code></dt><dd>Only editable notes.</dd></div>
+              <div><dt><code>tag:work</code> / <code>#work</code></dt><dd>Tags.</dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <h3>Clipboard facts</h3>
+            <dl>
+              <div><dt><code>kind:image</code></dt><dd>Text/image/html/file kind.</dd></div>
+              <div><dt><code>mime:image/*</code></dt><dd>Primary MIME type.</dd></div>
+              <div><dt><code>has:notes</code></dt><dd>Also: title, tags, metadata, mime, blob, image.</dd></div>
+              <div><dt><code>is:marked</code></dt><dd>Also: checked, unmarked, unchecked.</dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <h3>Capture context</h3>
+            <dl>
+              <div><dt><code>ctx:vivaldi</code></dt><dd>Any hidden capture context.</dd></div>
+              <div><dt><code>app:code</code></dt><dd>Source app or executable path.</dd></div>
+              <div><dt><code>window:github</code></dt><dd>Captured window title.</dd></div>
+              <div><dt><code>domain:openai.com</code></dt><dd>Detected URL domain.</dd></div>
+              <div><dt><code>format:html</code></dt><dd>Clipboard format.</dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <h3>Dates</h3>
+            <dl>
+              <div><dt><code>after:today</code></dt><dd>Since start of today.</dd></div>
+              <div><dt><code>after:7d</code></dt><dd>Recent relative range.</dd></div>
+              <div><dt><code>before:2026-06-29</code></dt><dd>Before a day.</dd></div>
+              <div><dt><code>on:2026-06-29</code></dt><dd>Only that day.</dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <h3>AI search</h3>
+            <dl>
+              <div><dt><code>ai:find invoices from last week</code></dt><dd>Ask AI to translate intent into local search/actions.</dd></div>
+              <div><dt><code>Ctrl+I</code></dt><dd>Toggle AI composer mode.</dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <h3>Keyboard</h3>
+            <dl>
+              <div><dt><code>Search</code> / <code>Ctrl+Enter</code></dt><dd>Run the current query.</dd></div>
+              <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit metadata for the active or selected clips.</dd></div>
+              <div><dt><code>F2</code> / <code>Shift+F2</code></dt><dd>Edit content or metadata.</dd></div>
+              <div><dt><code>Settings → Picker</code></dt><dd>Choose realtime, Enter, or button-triggered search.</dd></div>
+            </dl>
+          </section>
+        </div>
+      </UiPaper>
+    </div>
   );
 }
 
@@ -3643,6 +3901,10 @@ function CommandPalette({
   );
 }
 
+function isSubmitShortcut(event: ReactKeyboardEvent<HTMLElement>) {
+  return (event.ctrlKey || event.metaKey) && event.key === "Enter";
+}
+
 function activationForEnter(enterAction: EnterAction, shiftKey: boolean): ActivationOptions {
   if (enterAction === "paste") {
     return shiftKey ? COPY_AND_HIDE_ACTIVATION : PASTE_AND_HIDE_ACTIVATION;
@@ -3671,11 +3933,18 @@ function itemMenuScriptActions(
   items: HistoryItem[],
   activeItem: HistoryItem | null,
 ) {
-  return actions.filter(
-    (action) =>
-      action.source === "script" &&
-      actionRunnableForTrigger(action, "itemMenu", itemsForActionContext(action, items, activeItem)),
-  );
+  return actions.filter((action) => {
+    if (action.source !== "script") {
+      return false;
+    }
+    if (isSupersededMetadataEditAction(action)) {
+      return false;
+    }
+    if (items.length > 1 && action.input.selection === "active") {
+      return false;
+    }
+    return actionRunnableForTrigger(action, "itemMenu", itemsForActionContext(action, items, activeItem));
+  });
 }
 
 function itemsForActionContext(
@@ -3690,6 +3959,10 @@ function itemsForActionContext(
     return activeItem ? [activeItem] : items.slice(0, 1);
   }
   return items;
+}
+
+function isSupersededMetadataEditAction(action: ActionDefinition) {
+  return action.id === "examples.assignMetadataToActive";
 }
 
 function actionHasErrorDiagnostics(action: ActionDefinition) {
@@ -3760,6 +4033,8 @@ function mimePatternMatches(pattern: string, mime: string) {
   }
   return false;
 }
+
+const METADATA_EDIT_SHORTCUT = "Ctrl+Shift+C";
 
 function actionSearchText(action: ActionDefinition) {
   return [
@@ -4043,6 +4318,60 @@ function appendMetadata(existing: string | null, metadataToAdd: string) {
     return trimmedExisting;
   }
   return `${trimmedExisting}\n${trimmedMetadata}`;
+}
+
+function applyBatchMetadata(existing: string | null, metadata: string, mode: BatchMetadataMode) {
+  switch (mode) {
+    case "append":
+      return appendMetadata(existing, metadata);
+    case "replace":
+      return metadata.trim();
+    case "merge":
+      return mergeMetadata(existing, metadata);
+  }
+}
+
+function mergeMetadata(existing: string | null, metadataToMerge: string) {
+  const existingLines = metadataLines(existing);
+  const lineKeys = new Set(existingLines.map(metadataLineKey));
+  const tagKeys = new Set(
+    Array.from((existing ?? "").matchAll(/#[\p{L}\p{N}_-]+/gu), (match) => match[0].toLocaleLowerCase()),
+  );
+  const mergedLines = [...existingLines];
+
+  for (const line of metadataLines(metadataToMerge)) {
+    const tags = Array.from(line.matchAll(/#[\p{L}\p{N}_-]+/gu), (match) => match[0]);
+    const isTagOnlyLine = tags.length > 0 && line.replace(/#[\p{L}\p{N}_-]+/gu, "").trim().length === 0;
+
+    if (isTagOnlyLine) {
+      const missingTags = tags.filter((tag) => !tagKeys.has(tag.toLocaleLowerCase()));
+      if (missingTags.length > 0) {
+        missingTags.forEach((tag) => tagKeys.add(tag.toLocaleLowerCase()));
+        mergedLines.push(missingTags.join(" "));
+      }
+      continue;
+    }
+
+    const key = metadataLineKey(line);
+    if (!lineKeys.has(key)) {
+      lineKeys.add(key);
+      tags.forEach((tag) => tagKeys.add(tag.toLocaleLowerCase()));
+      mergedLines.push(line);
+    }
+  }
+
+  return mergedLines.join("\n").trim();
+}
+
+function metadataLines(value: string | null) {
+  return (value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function metadataLineKey(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
 }
 
 function metadataNotesPreview(notes: string | null, tags: string | null) {

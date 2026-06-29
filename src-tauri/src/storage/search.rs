@@ -71,6 +71,22 @@ pub struct SearchPlanFiltersV1 {
     pub source_kind: Vec<String>,
     #[serde(default)]
     pub clipboard_format: Vec<String>,
+    #[serde(default)]
+    pub metadata: Vec<String>,
+    #[serde(default)]
+    pub not_metadata: Vec<String>,
+    #[serde(default)]
+    pub title: Vec<String>,
+    #[serde(default)]
+    pub not_title: Vec<String>,
+    #[serde(default)]
+    pub notes: Vec<String>,
+    #[serde(default)]
+    pub not_notes: Vec<String>,
+    #[serde(default)]
+    pub context: Vec<String>,
+    #[serde(default)]
+    pub not_context: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -199,6 +215,14 @@ pub(super) struct ParsedHistoryQuery {
     pub(super) excluded_domains: Vec<String>,
     pub(super) source_kinds: Vec<String>,
     pub(super) clipboard_formats: Vec<String>,
+    pub(super) metadata_terms: Vec<String>,
+    pub(super) excluded_metadata_terms: Vec<String>,
+    pub(super) title_terms: Vec<String>,
+    pub(super) excluded_title_terms: Vec<String>,
+    pub(super) notes_terms: Vec<String>,
+    pub(super) excluded_notes_terms: Vec<String>,
+    pub(super) context_terms: Vec<String>,
+    pub(super) excluded_context_terms: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -259,6 +283,46 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
                     push_has_filter(&mut parsed, value, negated);
                 }
             }
+            "meta" | "metadata" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.metadata_terms,
+                        &mut parsed.excluded_metadata_terms,
+                        value,
+                        negated,
+                    );
+                }
+            }
+            "title" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.title_terms,
+                        &mut parsed.excluded_title_terms,
+                        value,
+                        negated,
+                    );
+                }
+            }
+            "note" | "notes" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.notes_terms,
+                        &mut parsed.excluded_notes_terms,
+                        value,
+                        negated,
+                    );
+                }
+            }
+            "ctx" | "context" => {
+                for value in split_filter_values(value) {
+                    push_capture_value_filter(
+                        &mut parsed.context_terms,
+                        &mut parsed.excluded_context_terms,
+                        value,
+                        negated,
+                    );
+                }
+            }
             "app" | "program" | "process" => {
                 for value in split_filter_values(value) {
                     push_capture_value_filter(
@@ -269,7 +333,7 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
                     );
                 }
             }
-            "window" | "title" => {
+            "window" => {
                 for value in split_filter_values(value) {
                     push_capture_value_filter(
                         &mut parsed.window_titles,
@@ -545,6 +609,14 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
     filters.not_domain = query.excluded_domains;
     filters.source_kind = query.source_kinds;
     filters.clipboard_format = query.clipboard_formats;
+    filters.metadata = query.metadata_terms;
+    filters.not_metadata = query.excluded_metadata_terms;
+    filters.title = query.title_terms;
+    filters.not_title = query.excluded_title_terms;
+    filters.notes = query.notes_terms;
+    filters.not_notes = query.excluded_notes_terms;
+    filters.context = query.context_terms;
+    filters.not_context = query.excluded_context_terms;
     if let Some(after_unix_ms) = query.after_unix_ms {
         filters.date.push(SearchPlanDateFilterV1 {
             field: SearchPlanDateFieldV1::Created,
@@ -598,6 +670,14 @@ impl SearchPlanFiltersV1 {
             && self.not_domain.is_empty()
             && self.source_kind.is_empty()
             && self.clipboard_format.is_empty()
+            && self.metadata.is_empty()
+            && self.not_metadata.is_empty()
+            && self.title.is_empty()
+            && self.not_title.is_empty()
+            && self.notes.is_empty()
+            && self.not_notes.is_empty()
+            && self.context.is_empty()
+            && self.not_context.is_empty()
     }
 }
 
@@ -732,6 +812,86 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
                 false,
             );
         }
+        for term in clean_values(&filters.metadata) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &[
+                    "COALESCE(title, '')",
+                    "COALESCE(notes, '')",
+                    "COALESCE(tags, '')",
+                ],
+                term,
+                false,
+            );
+        }
+        for term in clean_values(&filters.not_metadata) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &[
+                    "COALESCE(title, '')",
+                    "COALESCE(notes, '')",
+                    "COALESCE(tags, '')",
+                ],
+                term,
+                true,
+            );
+        }
+        for term in clean_values(&filters.title) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &["COALESCE(title, '')"],
+                term,
+                false,
+            );
+        }
+        for term in clean_values(&filters.not_title) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &["COALESCE(title, '')"],
+                term,
+                true,
+            );
+        }
+        for term in clean_values(&filters.notes) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &["COALESCE(notes, '')"],
+                term,
+                false,
+            );
+        }
+        for term in clean_values(&filters.not_notes) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &["COALESCE(notes, '')"],
+                term,
+                true,
+            );
+        }
+        for term in clean_values(&filters.context) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &["COALESCE(context_search_text, '')"],
+                term,
+                false,
+            );
+        }
+        for term in clean_values(&filters.not_context) {
+            push_field_like_clause(
+                &mut clauses,
+                &mut params,
+                &["COALESCE(context_search_text, '')"],
+                term,
+                true,
+            );
+        }
     }
 
     let where_sql = if clauses.is_empty() {
@@ -776,67 +936,6 @@ pub(super) fn history_page_sql(where_sql: &str, order_sql: &str, include_content
          LIMIT ?",
         history_item_select_columns(include_content)
     )
-}
-
-pub(super) fn history_where_clause(query: &ParsedHistoryQuery) -> (String, Vec<Value>) {
-    let mut clauses = Vec::new();
-    let mut params = Vec::new();
-
-    for term in &query.text_terms {
-        push_text_like_clause(&mut clauses, &mut params, term, false);
-    }
-    for term in &query.excluded_text_terms {
-        push_text_like_clause(&mut clauses, &mut params, term, true);
-    }
-    for tag in &query.tags {
-        push_tag_clause(&mut clauses, &mut params, tag, false);
-    }
-    for tag in &query.excluded_tags {
-        push_tag_clause(&mut clauses, &mut params, tag, true);
-    }
-    for kind in &query.kinds {
-        clauses.push("content_kind = ?".to_string());
-        params.push(Value::Text(kind.clone()));
-    }
-    for kind in &query.excluded_kinds {
-        clauses.push("content_kind != ?".to_string());
-        params.push(Value::Text(kind.clone()));
-    }
-    for mime in &query.mimes {
-        push_mime_clause(&mut clauses, &mut params, mime, false);
-    }
-    for mime in &query.excluded_mimes {
-        push_mime_clause(&mut clauses, &mut params, mime, true);
-    }
-    for filter in &query.has_filters {
-        clauses.push(has_filter_sql(*filter, false));
-    }
-    for filter in &query.missing_filters {
-        clauses.push(has_filter_sql(*filter, true));
-    }
-    for marked in &query.marked_filters {
-        if *marked {
-            clauses.push("is_marked != 0".to_string());
-        } else {
-            clauses.push("is_marked = 0".to_string());
-        }
-    }
-    if let Some(after_unix_ms) = query.after_unix_ms {
-        clauses.push("created_at_unix_ms >= ?".to_string());
-        params.push(Value::Integer(after_unix_ms));
-    }
-    if let Some(before_unix_ms) = query.before_unix_ms {
-        clauses.push("created_at_unix_ms < ?".to_string());
-        params.push(Value::Integer(before_unix_ms));
-    }
-
-    let where_sql = if clauses.is_empty() {
-        String::new()
-    } else {
-        format!("WHERE {}", clauses.join(" AND "))
-    };
-
-    (where_sql, params)
 }
 
 fn clean_values(values: &[String]) -> impl Iterator<Item = &str> {
@@ -1067,6 +1166,16 @@ fn push_text_like_clause(
         "content_kind",
         "COALESCE(context_search_text, '')",
     ];
+    push_field_like_clause(clauses, params, &fields, term, negated);
+}
+
+fn push_field_like_clause(
+    clauses: &mut Vec<String>,
+    params: &mut Vec<Value>,
+    fields: &[&str],
+    term: &str,
+    negated: bool,
+) {
     let joined = fields
         .iter()
         .map(|field| format!("{field} LIKE ? ESCAPE '\\'"))

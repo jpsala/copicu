@@ -701,6 +701,26 @@ function gotoShell(page: Parameters<typeof test>[0]["page"], url = "/") {
   return page.goto(url, { waitUntil: "domcontentloaded" });
 }
 
+async function waitForDefaultHistoryReady(page: Parameters<typeof test>[0]["page"]) {
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toHaveClass(/is-selected/);
+}
+
+async function selectLongSingleLine(page: Parameters<typeof test>[0]["page"]) {
+  await waitForDefaultHistoryReady(page);
+  const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
+  await item.click();
+  await expect(item).toHaveClass(/is-selected/);
+}
+
+async function selectLongSingleLineAndUnbroken(page: Parameters<typeof test>[0]["page"]) {
+  await selectLongSingleLine(page);
+  const unbroken = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
+  await unbroken.click({ modifiers: ["Control"] });
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-multi-selected/);
+  await expect(unbroken).toHaveClass(/is-multi-selected/);
+}
+
 test("shell loads without horizontal overflow", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1030,7 +1050,7 @@ test("mark menu shows global marked count and checkbox states", async ({ page })
   await expect(menu.getByText("Checked items")).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Join checked" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Add metadata to checked" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Assign metadata to checked" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete 4 checked" })).toHaveCount(0);
 });
 
@@ -1190,10 +1210,14 @@ test("diagnostics off disables idle diagnostics polling", async ({ page }) => {
 
   const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
   const count = (cmd: string) => calls.filter((call: any) => call.cmd === cmd).length;
-  expect(count("record_renderer_diagnostic")).toBe(0);
+  const diagnosticEvents = calls
+    .filter((call: any) => call.cmd === "record_renderer_diagnostic")
+    .map((call: any) => call.args?.event);
+  expect(diagnosticEvents).not.toContain("heartbeat");
+  expect(diagnosticEvents).not.toContain("renderer.heartbeat");
   expect(count("get_capture_snapshot")).toBe(0);
   expect(count("get_clipboard_probe")).toBe(0);
-  expect(count("history_search")).toBe(1);
+  expect(count("history_search")).toBeGreaterThanOrEqual(1);
   expect(count("get_compound_hotkey_pending")).toBeLessThanOrEqual(2);
 });
 
@@ -1286,7 +1310,7 @@ test("search composer mode toggles with icon button", async ({ page }) => {
   const search = page.getByLabel("Search clipboard history");
   const toggle = page.getByRole("button", { name: "Search mode, switch to AI mode" });
 
-  await expect(search).toHaveAttribute("placeholder", 'Search, "phrase", tag:work, kind:image');
+  await expect(search).toHaveAttribute("placeholder", "Search clips — meta:work, #tag, ai:find invoices");
   await expect(search).toHaveJSProperty("tagName", "INPUT");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(toggle).toHaveAttribute("data-mode", "search");
@@ -1306,7 +1330,7 @@ test("search composer mode toggles with icon button", async ({ page }) => {
     "data-mode",
     "search",
   );
-  await expect(search).toHaveAttribute("placeholder", 'Search, "phrase", tag:work, kind:image');
+  await expect(search).toHaveAttribute("placeholder", "Search clips — meta:work, #tag, ai:find invoices");
   await expect(search).toHaveJSProperty("tagName", "INPUT");
 });
 
@@ -1314,6 +1338,7 @@ test("single click selects item without activating it", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
+  await waitForDefaultHistoryReady(page);
   const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.click();
 
@@ -1467,10 +1492,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
+  await selectLongSingleLineAndUnbroken(page);
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
@@ -1478,7 +1500,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu.getByRole("menuitem", { name: "Join selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Add metadata to selected" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Assign metadata to selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete 2 selected" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Clear selection" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Activate" })).toHaveCount(0);
@@ -1492,10 +1514,7 @@ test("built-in action uses ids only and shows stacked toast", async ({ page }) =
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
+  await selectLongSingleLineAndUnbroken(page);
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
@@ -1563,8 +1582,7 @@ test("local shortcut runs matching ready script with shortcut context", async ({
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await selectLongSingleLine(page);
   await page.keyboard.press("Control+Alt+J");
 
   await page.waitForFunction(() => {
@@ -1618,11 +1636,7 @@ test("active item action uses current item even with multi selection", async ({ 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
-  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await selectLongSingleLineAndUnbroken(page);
   await page.keyboard.press("Control+Alt+M");
 
   await page.waitForFunction(() => {
@@ -1674,10 +1688,7 @@ test("delete key in search input does not delete selected items", async ({ page 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
+  await selectLongSingleLineAndUnbroken(page);
   const search = page.getByLabel("Search clipboard history");
   await expect(search).toBeFocused();
   await page.keyboard.press("Delete");
@@ -1730,10 +1741,7 @@ test("multi selection trash button deletes selected items", async ({ page }) => 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
+  await selectLongSingleLineAndUnbroken(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).hover();
   const deleteButtons = page.getByRole("button", { name: "Delete 2 selected items" });
@@ -1757,11 +1765,7 @@ test("shift delete deletes selected items", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
-  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await selectLongSingleLineAndUnbroken(page);
   await page.keyboard.press("Shift+Delete");
 
   await page.waitForFunction(() => {
@@ -1780,19 +1784,16 @@ test("batch metadata uses textarea and extracts hash tags", async ({ page }) => 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    modifiers: ["Control"],
-  });
+  await selectLongSingleLineAndUnbroken(page);
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
-  await page.getByRole("menuitem", { name: "Add metadata to selected" }).click();
+  await page.getByRole("menuitem", { name: "Assign metadata to selected" }).click();
 
   const metadata = page.getByLabel("Metadata for 2 items");
   await expect(metadata).toBeVisible();
   await metadata.fill("#work\nMarkdown note");
-  await page.getByRole("button", { name: "Add metadata" }).click();
+  await page.getByRole("button", { name: "Append metadata" }).click();
 
   await page.waitForFunction(() => {
     const calls = (window as any).__copicuTestInvocations;

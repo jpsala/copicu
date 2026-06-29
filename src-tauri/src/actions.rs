@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(test))]
 use serde_json::json;
 use std::{
+    path::Path,
     process::{Child, ExitStatus},
     thread,
     time::{Duration, Instant},
@@ -13,7 +14,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(not(test))]
 use std::{
     io::{BufRead, BufReader, Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Command, Stdio},
     sync::mpsc,
     time::{SystemTime, UNIX_EPOCH},
@@ -1649,7 +1650,7 @@ fn run_node_script_runner<R: Runtime>(
         .ok_or_else(|| format!("invalid script runner path: {}", runner_path.display()))?;
     let mut command = Command::new("node");
     command
-        .arg(&runner_path)
+        .arg(node_entrypoint_arg(&runner_path))
         .current_dir(project_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1825,13 +1826,24 @@ fn kill_timed_out_child(child: &mut Child, timeout: Duration) -> String {
     )
 }
 
+fn node_entrypoint_arg(path: &Path) -> String {
+    let raw = path.to_string_lossy().replace('\\', "/");
+    if let Some(rest) = raw.strip_prefix("//?/UNC/") {
+        return format!("//{rest}");
+    }
+    if let Some(rest) = raw.strip_prefix("//?/") {
+        return rest.to_string();
+    }
+    raw
+}
+
 #[cfg(not(test))]
 fn find_script_runner_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     if let Ok(candidate) = app
         .path()
         .resolve("scripts/copicu-script-runner.mjs", BaseDirectory::Resource)
     {
-        if candidate.exists() {
+        if candidate.is_file() {
             return Ok(candidate);
         }
     }
@@ -1849,14 +1861,14 @@ fn find_script_runner_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, St
     for root in roots {
         for ancestor in root.ancestors() {
             let candidate = ancestor.join("scripts").join("copicu-script-runner.mjs");
-            if candidate.exists() {
+            if candidate.is_file() {
                 return Ok(candidate);
             }
             let sibling_candidate = ancestor
                 .parent()
                 .map(|parent| parent.join("scripts").join("copicu-script-runner.mjs"));
             if let Some(candidate) = sibling_candidate {
-                if candidate.exists() {
+                if candidate.is_file() {
                     return Ok(candidate);
                 }
             }
@@ -1869,6 +1881,39 @@ fn find_script_runner_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn node_entrypoint_arg_normalizes_windows_style_paths_for_node() {
+        let normalized = node_entrypoint_arg(Path::new(
+            r"C:\Users\jpsal\AppData\Local\Copicu\scripts\copicu-script-runner.mjs",
+        ));
+        assert_eq!(
+            normalized,
+            "C:/Users/jpsal/AppData/Local/Copicu/scripts/copicu-script-runner.mjs"
+        );
+    }
+
+    #[test]
+    fn node_entrypoint_arg_strips_windows_verbatim_prefix_for_node() {
+        let normalized = node_entrypoint_arg(Path::new(
+            r"\\?\C:\Users\jpsal\AppData\Local\Copicu\scripts\copicu-script-runner.mjs",
+        ));
+        assert_eq!(
+            normalized,
+            "C:/Users/jpsal/AppData/Local/Copicu/scripts/copicu-script-runner.mjs"
+        );
+    }
+
+    #[test]
+    fn node_entrypoint_arg_strips_windows_verbatim_unc_prefix_for_node() {
+        let normalized = node_entrypoint_arg(Path::new(
+            r"\\?\UNC\server\share\scripts\copicu-script-runner.mjs",
+        ));
+        assert_eq!(
+            normalized,
+            "//server/share/scripts/copicu-script-runner.mjs"
+        );
+    }
 
     #[test]
     fn registry_has_stable_builtin_ids() {

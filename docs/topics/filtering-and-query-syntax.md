@@ -94,6 +94,20 @@ La busqueda conserva keyset pagination. No usa `OFFSET`.
 
 La UI usa `totalCount`/`filteredCount` para el badge del picker. El virtualizer no usa esos conteos como cantidad de filas; para cursor pagination sigue el pattern TanStack de `loaded + 1 loader row`.
 
+## Ejecucion De Search
+
+El picker soporta `Settings > Picker > Search trigger`:
+
+- `Realtime while typing`: comportamiento por defecto; cada cambio dispara busqueda con debounce corto.
+- `When pressing Enter`: tipear solo deja la query como draft; Enter aplica la busqueda. Si la query ya esta aplicada, Enter conserva la accion de activar item.
+- `Only Search button`: tipear solo deja la query como draft; solo el boton `Search` aplica la busqueda. Enter no activa resultados viejos mientras la query esta sin aplicar.
+
+`Ctrl+Enter` fuerza Search en el input principal para mantener un escape rapido desde cualquier modo.
+
+Invariante 2026-06-29: aunque el modo no sea realtime, el picker debe cargar historial inicial al abrir para mostrar total/resultados. Lo que se desactiva es buscar en cada tecla, no el primer load.
+
+La ayuda in-app vive en el picker como boton `?` y entrada `Search help` del menu. Debe cubrir ejemplos de sintaxis local, filtros por metadata/contexto/fecha, AI `ai:` y shortcuts de busqueda/metadata. Mantenerla sincronizada con esta tabla cuando cambie el contrato.
+
 ## Sintaxis Actual
 
 Texto plain busca en:
@@ -113,6 +127,13 @@ Operadores soportados:
 | `sqlite migration` | ambos terminos deben matchear en campos buscables |
 | `"sqlite migration"` | frase exacta como un unico termino |
 | `-draft` | excluye resultados que contengan `draft` |
+| `meta:cliente` | busca solo en metadata visible/editable del usuario: title, notes y tags |
+| `metadata:cliente` | alias de `meta:cliente` |
+| `-meta:draft` | excluye items cuya metadata visible matchee `draft` |
+| `title:factura` | busca solo en el titulo editable del item |
+| `notes:"cliente cloud"` | busca solo en notas/tags editables del item |
+| `ctx:vivaldi` | busca solo en contexto oculto de captura (`context_search_text`) |
+| `context:vivaldi` | alias de `ctx:vivaldi` |
 | `tag:ypf` | filtra items con tag/metadata que contenga `ypf` |
 | `#ypf` | alias de `tag:ypf` |
 | `-tag:private` | excluye tag/metadata `private` |
@@ -203,13 +224,14 @@ Primer objetivo AI:
 - pedir aclaracion si el pedido usa un campo inexistente;
 - mostrar "interpretado como ..." antes o despues de ejecutar.
 
-Estado primer planner 2026-06-06:
+Estado vigente:
 
 - UI manual con prefijo `ai:`;
 - runner Node `scripts/ai-query-planner.mjs`;
 - salida validada como `AiHistorySearchPlan`;
 - ejecucion final sigue siendo SQLite local via query syntax;
-- no se envia contenido de clips al modelo.
+- no se envia contenido de clips al modelo;
+- el prompt/planner conoce `meta:/metadata:`, `title:`, `notes:/note:` y `ctx:/context:` para que AI traduzca lenguaje natural a los campos soportados sin inventar SQL.
 
 No objetivo inicial:
 

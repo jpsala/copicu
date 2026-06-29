@@ -1,7 +1,7 @@
 ---
 id: filtering-search-foundation
 status: active
-updated: 2026-06-07
+updated: 2026-06-29
 ---
 
 # Filtering Search Foundation
@@ -13,6 +13,16 @@ Topic estable: `docs/topics/filtering-and-query-syntax.md`.
 Topic de arquitectura nueva: `docs/topics/search-plan-engine.md`.
 
 ## Estado Actual
+
+Actualizacion 2026-06-29:
+
+- scoped search implementado y documentado: `meta:/metadata:` busca metadata visible (`title`, `notes`, `tags`), `title:` solo titulo editable, `notes:/note:` notas, y `ctx:/context:` contexto oculto de captura; formas negadas como `-meta:` tambien funcionan.
+- `title:` dejo de ser alias conceptual de window title capturado; para ventana origen usar `window:`. Esto evita mezclar titulo editable del item con contexto automatico.
+- Search trigger configurable en `Settings > Picker`: realtime default, buscar con Enter o buscar solo con boton `Search`; `Ctrl+Enter` fuerza ejecucion.
+- UI de ayuda in-app agregada desde boton `?` y menu del picker, con sintaxis deterministica, filtros de contexto, fechas, AI `ai:` y shortcuts relevantes; luego se separo la ayuda de `Keyboard` para no mezclar metadata shortcuts con AI.
+- Planner AI actualizado para entender/promover `meta:/title:/notes:/ctx:` sobre el contrato local.
+- Fix dogfood 2026-06-29: en modos `When pressing Enter`/`Only Search button`, el picker debe cargar historial inicial aunque no haga busqueda realtime por cada tecla; se corrigio el efecto para refrescar solo el estado inicial vacio y no cada cambio de query.
+- Checks recientes: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run`, `node --test tests/ai-query-planner.test.mjs`; instalada actualizada con `npm run install:current`.
 
 Primer corte implementado 2026-06-05:
 
@@ -161,6 +171,17 @@ Razon:
 - el futuro AI planner puede emitir un plan validado en vez de tocar SQL o ejecutar comandos.
 
 ## Proximo Corte Recomendado
+
+### Slice Search UX Explain/Chips
+
+Objetivo: hacer visible el contrato sin saturar el input.
+
+Candidatos:
+
+- chips/facets editables para `meta`, `title`, `notes`, `ctx`, `kind`, fechas y marked;
+- explain/plan serializable para mostrar como se interpreto una query;
+- ejemplos contextuales dentro de la ayuda in-app segun modo structured vs AI;
+- tests focalizados para que `Enter` no active resultados viejos cuando la query esta pendiente en modo manual.
 
 ### Slice AI Script Mode Hardening
 

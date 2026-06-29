@@ -49,7 +49,7 @@ try {
       "Convert the user's natural language request into either a search plan or a generic AI script action request.",
       "Do not ask for, mention, infer, or require actual clipboard clip contents.",
       "Never generate SQL, shell commands, file paths, or raw clipboard actions.",
-      "Supported filters: tag:name, #name, kind:text, kind:image, mime:image/*, has:notes, has:title, has:tags, has:metadata, has:mime, has:blob, has:image, is:marked, is:unmarked, after:today, after:yesterday, after:7d, before:YYYY-MM-DD, on:YYYY-MM-DD, quoted phrases, and -exclusions.",
+      "Supported filters: meta:term, metadata:term, title:term, notes:term, ctx:term, context:term, tag:name, #name, kind:text, kind:image, mime:image/*, has:notes, has:title, has:tags, has:metadata, has:mime, has:blob, has:image, is:marked, is:unmarked, after:today, after:yesterday, after:7d, before:YYYY-MM-DD, on:YYYY-MM-DD, quoted phrases, and -exclusions.",
       "For action requests that change history, clipboard, picker state, metadata, marked state, paste, or UI, return intent history_action and action { type: 'run_ai_script', prompt: original user request }.",
       "Do not invent action-specific tools such as mark_positions, mark_random, tag_batch, or copy_joined.",
       "For requests like 'mark 3 with text openrouter', return history_action and preserve the exact user request in action.prompt.",

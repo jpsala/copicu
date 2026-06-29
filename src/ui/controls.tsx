@@ -148,6 +148,7 @@ export function UiPaper(
     children?: ReactNode;
     component?: "div" | "form";
     onSubmit?: FormEventHandler<HTMLFormElement>;
+    onKeyDown?: KeyboardEventHandler<HTMLFormElement>;
     role?: string;
     "aria-label"?: string;
     style?: CSSProperties;

@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-06-14
+updated: 2026-06-29
 topic: docs/topics/tag-management-hotkeys.md
 related:
   - docs/topics/hotkeys.md
@@ -12,7 +12,7 @@ archive:
 
 # 012 Hotkeys, WhichKey And Tags
 
-Estado vigente: Settings Hotkeys V1 implementado; hotkeys nativos por tag removidos; filtros por tag/query se expresan como scripts.
+Estado vigente: Settings Hotkeys V1 implementado; hotkeys nativos por tag removidos; filtros por tag/query se expresan como scripts. Atajos criticos del picker pueden ser nativos aunque haya scripts historicos con el mismo gesto.
 
 Este archivo es estado vivo retomable. El historial completo previo fue archivado en `docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md` para reducir bloat de contexto.
 
@@ -57,6 +57,7 @@ await copicu.commands.run("picker.open", {
   - renderer consulta pending con polling liviano y captura el siguiente paso con `keydown`.
 - Callbacks nativos/global-shortcut deben retornar rapido; cualquier UI/ventana/plugin debe ir por main thread o primitiva segura.
 - Scripts con `shortcut` son read-only desde Settings: se editan en el archivo fuente y luego se refresca cache/diagnosticos.
+- `Ctrl+Shift+C` queda reservado de facto para metadata del picker: abre metadata del item activo o batch metadata de seleccion multiple. No debe depender del script historico `examples.assignMetadataToActive`.
 - Patch preview para shortcuts de scripts queda opcional/futuro; no es pendiente inmediato.
 
 ## Implementado
@@ -77,6 +78,15 @@ await copicu.commands.run("picker.open", {
 - Settings > Tags existe como metadata/listado, sin recorder/status de hotkeys.
 - Hotkeys nativos de tags (`ShortcutRoute::TagOpen`, registros nativos desde `tag_configs.hotkey`) fueron removidos del runtime vigente.
 - Ejemplos de scripts filtrados agregados: `020`-`024` (`tag:context`, work/context/marked/prompt variants).
+
+### Shortcuts Nativos Del Picker
+
+Actualizacion 2026-06-29:
+
+- `Ctrl+Shift+C` es handler React/nativo del picker para metadata: single item -> editor de metadata; multiseleccion -> batch metadata.
+- El menu contextual muestra el badge `Ctrl+Shift+C` en `Edit metadata` y `Assign metadata to selected/checked`.
+- El script `examples.assignMetadataToActive` queda oculto en item menu para no competir con la accion nativa; puede seguir existiendo como ejemplo/script si no molesta.
+- Razon: metadata es una accion core del picker y necesita soportar multi-seleccion; el script viejo solo apuntaba al active item.
 
 ### Settings > Hotkeys
 

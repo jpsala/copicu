@@ -2,6 +2,16 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-06-29 - Metadata y search como flujo core del picker
+
+Estado: accepted
+
+Decision: La metadata editable se trata como superficie core del picker: `Ctrl+Shift+C` abre metadata nativa para el item activo o batch metadata para multiseleccion; batch metadata ofrece append, replace y smart merge; `meta:` busca metadata visible editable (`title`, `notes`, `tags`), mientras `ctx:` queda para contexto automatico oculto. Por ahora no se expone provenance user/assistant/enrichment en UX; se puede modelar mas adelante sin complicar el flujo actual.
+
+Motivo: JP necesita editar/buscar metadata rapidamente, incluso en batches. El script historico active-only no cubria multiseleccion y mezclaba una accion core con automation opcional.
+
+Proximo paso: mantener ayuda in-app, topic de search y shortcuts sincronizados; si se agrega provenance, primero definir storage/source por entrada/tag antes de exponer filtros como `meta.by:*`.
+
 ### 2026-06-18 - El hotkey del picker debe abrir con foco
 
 Estado: accepted

@@ -24,10 +24,10 @@ use self::schema::MIGRATIONS;
 use self::schema::MIGRATIONS_SLICE;
 use self::search::{
     compile_search_plan, explain_history_query, finish_history_page, history_item_select_columns,
-    history_page_sql, history_where_clause, parse_history_query, search_plan_from_query,
+    history_page_sql, search_plan_from_query,
 };
 #[cfg(test)]
-use self::search::{days_from_civil, HasFilter};
+use self::search::{days_from_civil, parse_history_query, HasFilter};
 pub use self::search::{
     SearchPlanDateFieldV1, SearchPlanDateFilterV1, SearchPlanDateOpV1, SearchPlanFiltersV1,
     SearchPlanHasV1, SearchPlanKindV1, SearchPlanMissingV1, SearchPlanRelativeDateV1,
@@ -382,6 +382,8 @@ pub struct PickerSettings {
     pub enter_action: EnterAction,
     #[serde(default = "default_promote_active_on_copy")]
     pub promote_active_on_copy: bool,
+    #[serde(default)]
+    pub search_trigger_mode: SearchTriggerMode,
     #[serde(default = "default_pin_toggle_shortcut")]
     pub pin_toggle_shortcut: String,
     #[serde(default = "default_settings_shortcut")]
@@ -393,6 +395,15 @@ pub struct PickerSettings {
 pub enum EnterAction {
     Copy,
     Paste,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchTriggerMode {
+    #[default]
+    Realtime,
+    Enter,
+    Manual,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -497,6 +508,7 @@ impl Default for AppSettings {
                 hide_on_focus_lost: true,
                 enter_action: EnterAction::Copy,
                 promote_active_on_copy: default_promote_active_on_copy(),
+                search_trigger_mode: SearchTriggerMode::Realtime,
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
                 settings_shortcut: default_settings_shortcut(),
             },
@@ -1178,8 +1190,9 @@ impl AppStorage {
 
     pub fn set_query_marked(&self, request: SetHistoryQueryMarkedRequest) -> Result<(), String> {
         let now = now_unix_ms();
-        let parsed_query = parse_history_query(request.query.trim());
-        let (where_sql, mut filter_params) = history_where_clause(&parsed_query);
+        let plan = search_plan_from_query(request.query.trim());
+        let compiled = compile_search_plan(&plan)?;
+        let mut filter_params = compiled.params;
         let mut query_params = Vec::with_capacity(filter_params.len() + 2);
         query_params.push(Value::Integer(if request.marked { 1 } else { 0 }));
         query_params.push(if request.marked {
@@ -1197,7 +1210,8 @@ impl AppStorage {
             "UPDATE clipboard_items
              SET is_marked = ?,
                  marked_at_unix_ms = ?
-             {where_sql}"
+             {}",
+            compiled.where_sql
         );
         conn.execute(&sql, params_from_iter(query_params.iter()))
             .map_err(|error| format!("failed to update marked clipboard query: {error}"))?;
@@ -2759,6 +2773,10 @@ mod tests {
         assert_eq!(settings.ai.api_key, "");
         assert_eq!(settings.appearance.theme_id, ThemeId::Default);
         assert!(settings.picker.promote_active_on_copy);
+        assert_eq!(
+            settings.picker.search_trigger_mode,
+            SearchTriggerMode::Realtime
+        );
         assert_eq!(settings.picker.settings_shortcut, "Ctrl+,");
         validate_settings(&settings).expect("old settings with script defaults should validate");
     }
@@ -3710,6 +3728,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_history_query_extracts_metadata_scoped_filters() {
+        let parsed = parse_history_query(
+            r#"meta:invoice title:"Client A" notes:paid ctx:vivaldi -meta:draft"#,
+        );
+
+        assert_eq!(parsed.metadata_terms, vec!["invoice"]);
+        assert_eq!(parsed.title_terms, vec!["Client A"]);
+        assert_eq!(parsed.notes_terms, vec!["paid"]);
+        assert_eq!(parsed.context_terms, vec!["vivaldi"]);
+        assert_eq!(parsed.excluded_metadata_terms, vec!["draft"]);
+        assert!(parsed.text_terms.is_empty());
+    }
+
+    #[test]
     fn parse_history_query_extracts_marked_filters() {
         let checked = parse_history_query("is:checked");
         assert_eq!(checked.marked_filters, vec![true]);
@@ -3785,6 +3817,169 @@ mod tests {
             })
             .expect("structured image query should load");
         assert_eq!(ids(&image_page.items), vec![3]);
+    }
+
+    #[test]
+    fn list_page_filters_metadata_scoped_terms() {
+        let storage = test_storage_with_migrations();
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 1,
+                created_at: 30_001,
+                content_kind: "text",
+                text: "body has no client keyword",
+                mime_primary: Some("text/plain"),
+                title: Some("Client invoice"),
+                notes: Some("paid by transfer"),
+                tags: Some("#Finance"),
+            },
+        );
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 2,
+                created_at: 30_002,
+                content_kind: "text",
+                text: "client invoice in content only",
+                mime_primary: Some("text/plain"),
+                title: None,
+                notes: None,
+                tags: None,
+            },
+        );
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 3,
+                created_at: 30_003,
+                content_kind: "text",
+                text: "body has no scoped keywords",
+                mime_primary: Some("text/plain"),
+                title: Some("Draft invoice"),
+                notes: Some("needs review"),
+                tags: Some("#draft"),
+            },
+        );
+        {
+            let conn = storage
+                .conn
+                .lock()
+                .expect("test sqlite connection lock should work");
+            conn.execute(
+                "UPDATE clipboard_items SET context_search_text = ?1 WHERE id = ?2",
+                params!["vivaldi browser client portal", 1_i64],
+            )
+            .expect("test context should update");
+            conn.execute(
+                "UPDATE clipboard_items SET context_search_text = ?1, source_window_title = ?2 WHERE id = ?3",
+                params!["notepad client body", "Invoice - Browser", 2_i64],
+            )
+            .expect("test context should update");
+            conn.execute(
+                "UPDATE clipboard_items SET context_search_text = ?1 WHERE id = ?2",
+                params!["vivaldi draft portal", 3_i64],
+            )
+            .expect("test context should update");
+        }
+
+        let meta_page = storage
+            .list_page(HistoryPageRequest {
+                query: "meta:client".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("metadata query should load");
+        assert_eq!(ids(&meta_page.items), vec![1]);
+
+        let title_page = storage
+            .list_page(HistoryPageRequest {
+                query: "title:invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("title query should load");
+        assert_eq!(ids(&title_page.items), vec![3, 1]);
+
+        let notes_page = storage
+            .list_page(HistoryPageRequest {
+                query: "notes:paid".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("notes query should load");
+        assert_eq!(ids(&notes_page.items), vec![1]);
+
+        let window_page = storage
+            .list_page(HistoryPageRequest {
+                query: "window:browser".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("window query should load");
+        assert_eq!(ids(&window_page.items), vec![2]);
+
+        let title_does_not_match_window_page = storage
+            .list_page(HistoryPageRequest {
+                query: "title:browser".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("title query should not use source window title");
+        assert!(title_does_not_match_window_page.items.is_empty());
+
+        let context_page = storage
+            .list_page(HistoryPageRequest {
+                query: "ctx:vivaldi -meta:draft".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("context query should load");
+        assert_eq!(ids(&context_page.items), vec![1]);
+
+        let negated_title_page = storage
+            .list_page(HistoryPageRequest {
+                query: "-title:invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("negated title query should load");
+        assert_eq!(ids(&negated_title_page.items), vec![2]);
+    }
+
+    #[test]
+    fn set_query_marked_uses_scoped_search_plan_filters() {
+        let storage = test_storage_with_migrations();
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 1,
+                created_at: 30_001,
+                content_kind: "text",
+                text: "body has no client keyword",
+                mime_primary: Some("text/plain"),
+                title: Some("Client invoice"),
+                notes: None,
+                tags: None,
+            },
+        );
+        insert_test_text_item(&storage, 2, 30_002, "client invoice in content only");
+
+        storage
+            .set_query_marked(SetHistoryQueryMarkedRequest {
+                query: "title:client".to_string(),
+                marked: true,
+            })
+            .expect("scoped query should mark matching items");
+
+        let marked_page = storage
+            .list_page(HistoryPageRequest {
+                query: "is:marked".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("marked query should load");
+        assert_eq!(ids(&marked_page.items), vec![1]);
     }
 
     #[test]
@@ -4059,6 +4254,81 @@ mod tests {
                 ai_context: None,
             })
             .expect("plan search should load");
+
+        assert_eq!(ids(&page.items), vec![1]);
+    }
+
+    #[test]
+    fn history_search_plan_accepts_scoped_metadata_filters() {
+        let storage = test_storage_with_migrations();
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 1,
+                created_at: 30_001,
+                content_kind: "text",
+                text: "body content",
+                mime_primary: Some("text/plain"),
+                title: Some("Client invoice"),
+                notes: Some("paid"),
+                tags: Some("finance"),
+            },
+        );
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 2,
+                created_at: 30_002,
+                content_kind: "text",
+                text: "body content",
+                mime_primary: Some("text/plain"),
+                title: Some("Draft invoice"),
+                notes: Some("client follow-up"),
+                tags: Some("draft"),
+            },
+        );
+        {
+            let conn = storage
+                .conn
+                .lock()
+                .expect("test sqlite connection lock should work");
+            conn.execute(
+                "UPDATE clipboard_items SET context_search_text = ?1 WHERE id = ?2",
+                params!["vivaldi client portal", 1_i64],
+            )
+            .expect("test context should update");
+            conn.execute(
+                "UPDATE clipboard_items SET context_search_text = ?1 WHERE id = ?2",
+                params!["vivaldi draft portal", 2_i64],
+            )
+            .expect("test context should update");
+        }
+
+        let page = storage
+            .history_search(HistorySearchRequest {
+                query: String::new(),
+                cursor: None,
+                limit: None,
+                plan: Some(SearchPlanV1 {
+                    schema_version: 1,
+                    text: None,
+                    filters: Some(SearchPlanFiltersV1 {
+                        metadata: vec!["client".to_string()],
+                        title: vec!["invoice".to_string()],
+                        context: vec!["vivaldi".to_string()],
+                        not_metadata: vec!["draft".to_string()],
+                        ..SearchPlanFiltersV1::default()
+                    }),
+                    sort: Vec::new(),
+                    limit: Some(10),
+                }),
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: true,
+                explain: false,
+                ai_context: None,
+            })
+            .expect("scoped plan search should load");
 
         assert_eq!(ids(&page.items), vec![1]);
     }

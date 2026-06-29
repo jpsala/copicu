@@ -50,7 +50,7 @@ import type {
   UpdateHistoryItemRequest,
   UpdateTagConfigRequest,
 } from "../shared/contracts";
-import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "../shared/settings";
+import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings, type SearchTriggerMode } from "../shared/settings";
 import {
   UiAlert,
   UiBadge,
@@ -183,6 +183,21 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "window:focus-previous",
   "input:paste",
 ]);
+
+function isSubmitShortcut(event: ReactKeyboardEvent<HTMLElement> | globalThis.KeyboardEvent) {
+  return (event.ctrlKey || event.metaKey) && event.key === "Enter";
+}
+
+function searchTriggerModeLabel(mode: SearchTriggerMode) {
+  switch (mode) {
+    case "enter":
+      return "Search on Enter";
+    case "manual":
+      return "Search by button";
+    case "realtime":
+      return "Realtime search";
+  }
+}
 
 function normalizeRetentionCount(value: number | string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -609,7 +624,7 @@ export function MetadataWindowApp() {
         event.preventDefault();
         closeWindow();
       }
-      if (event.key === "F2" || ((event.ctrlKey || event.metaKey) && event.key === "Enter")) {
+      if (event.key === "F2" || isSubmitShortcut(event)) {
         event.preventDefault();
         void save();
       }
@@ -1328,7 +1343,20 @@ export function UiHostApp() {
 
   return (
     <main className="ui-host-shell">
-      <UiPaper component="form" className={`ui-host-panel is-${request.kind}`} onSubmit={submit}>
+      <UiPaper
+        component="form"
+        className={`ui-host-panel is-${request.kind}`}
+        onKeyDown={(event) => {
+          if (event.defaultPrevented) {
+            return;
+          }
+          if (isSubmitShortcut(event)) {
+            event.preventDefault();
+            void resolve(request.kind === "confirm" ? true : request.kind === "alert" ? null : inputValue);
+          }
+        }}
+        onSubmit={submit}
+      >
         <div className="ui-host-copy">
           <strong>{request.title}</strong>
           {request.body ? <p>{request.body}</p> : null}
@@ -1606,6 +1634,11 @@ function SettingsPanel({
         if (event.key === "Escape") {
           event.preventDefault();
           onCancel();
+          return;
+        }
+        if (isSubmitShortcut(event)) {
+          event.preventDefault();
+          onSave();
         }
       }}
       onSubmit={(event) => {
@@ -1644,6 +1677,7 @@ function SettingsPanel({
         <div className="settings-status-strip" aria-label="Current settings summary">
           <UiBadge className="settings-summary-badge" variant="light">{draft.general.globalShortcut}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.picker.enterAction === "copy" ? "Enter copies" : "Enter pastes"}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{searchTriggerModeLabel(draft.picker.searchTriggerMode)}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.enrichment.enabled ? "Enrichment on" : "Enrichment off"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.autoUpdate.enabled ? "Auto-update on" : "Auto-update off"}</UiBadge>
@@ -1808,6 +1842,29 @@ function SettingsPanel({
                           picker: {
                             ...draft.picker,
                             enterAction: (value ?? "copy") as EnterAction,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("picker", "Search trigger", "Realtime Enter button manual run filter search") ? (
+                  <SettingRow label="Search trigger" description="Choose whether typing filters immediately, Enter applies the query, or only the Search button runs it.">
+                    <UiSelect
+                      aria-label="Search trigger"
+                      value={draft.picker.searchTriggerMode}
+                      data={[
+                        { value: "realtime", label: "Realtime while typing" },
+                        { value: "enter", label: "When pressing Enter" },
+                        { value: "manual", label: "Only Search button" },
+                      ]}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            searchTriggerMode: (value ?? "realtime") as SearchTriggerMode,
                           },
                         })
                       }
@@ -2531,7 +2588,7 @@ function HotkeyField({ label, value, onChange, allowSequences = true, helpText }
         onChange={(event) => setManualValue(event.currentTarget.value)}
         onBlur={normalizeAndCommitManualValue}
         onKeyDown={(event) => {
-          if (event.key === "Enter") {
+          if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
             event.preventDefault();
             normalizeAndCommitManualValue();
           }

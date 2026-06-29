@@ -1006,6 +1006,14 @@ fn hide_picker(window: tauri::WebviewWindow) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
+fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    diag_log("app.quit.requested", "renderer command");
+    app.exit(0);
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn consume_picker_session_snapshot(
     window: tauri::WebviewWindow,
     session: tauri::State<PickerSessionController>,
@@ -2034,6 +2042,7 @@ pub fn run() {
             history_search,
             show_picker,
             hide_picker,
+            quit_app,
             consume_picker_session_snapshot,
             open_settings_window,
             hide_whichkey_window,
