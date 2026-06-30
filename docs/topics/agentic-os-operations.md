@@ -119,11 +119,12 @@ bun run context:audit
 3. Preservar memoria local: `docs/WORKING_MEMORY.md`, `docs/DECISIONS.md`, tracks, specs y topics de producto no se pisan; se fusionan si hace falta.
 4. Preservar convenciones locales como `docs/tracks/`, reglas de producto, Windows-first, Tauri, clipboard privacy, dev/instalada y release.
 5. Traer mejoras portables de scripts, prompts, extensiones, skills o audit cuando no dependan de contexto manager-only del upstream.
-6. Omitir piezas manager-only de AOS: registry global, decisiones/tracks/memoria del kit, inventarios personales y docs meta.
-7. Reescribir cualquier mejora del upstream como contexto local de Copicu antes de incorporarla.
-8. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
-9. Preservar `docs/skills/` como fuente canonica; usar `scripts/toggle-skills-link.ps1 status|on|off` para discovery bajo demanda.
-10. Regenerar indice y correr audit antes de reportar.
+6. Si upstream trae politica `minimal-implementation`/Ponytail, propagarla solo como modo liviano subordinado a AOS: no instalar paquetes ni dependencias locales salvo pedido explicito.
+7. Omitir piezas manager-only de AOS: registry global, decisiones/tracks/memoria del kit, inventarios personales y docs meta.
+8. Reescribir cualquier mejora del upstream como contexto local de Copicu antes de incorporarla.
+9. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
+10. Preservar `docs/skills/` como fuente canonica; usar `scripts/toggle-skills-link.ps1 status|on|off` para discovery bajo demanda.
+11. Regenerar indice y correr audit antes de reportar.
 
 ## Criterio De Exito
 

@@ -24,6 +24,7 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 - No intentar paridad completa con CopyQ por defecto. El producto es CopyQ-inspired, no CopyQ-compatible.
 - Validar temprano los comportamientos nativos dificiles: monitoreo de clipboard, global shortcut, tray, foco anterior y paste-to-previous-window.
 - No revertir cambios de usuario sin pedido explicito.
+- Para bugs/refactors/reviews, usar `docs/topics/minimal-implementation.md` como politica liviana: preferir reusar y reducir superficie, sin quitar seguridad, privacidad, accesibilidad, checks ni memoria durable.
 - No dejar archivos de contexto preexistentes sin indexar ni sin destino claro.
 - Mantener documentacion liviana: decisiones durables a docs estables; trabajos vivos en `docs/tracks/`.
 - Para features grandes, crear o actualizar una spec en `specs/` antes de implementar.

@@ -2,24 +2,22 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-06-29.
-
-Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-06-30. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
-Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, spec o reference. Para auditorias lentas en Pi, preferir lecturas scoped (`src`, `src-tauri/src`, `docs/topics`) y evitar `map .` salvo orientacion global.
+Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o reference. En Pi, preferir lecturas scoped (`src`, `src-tauri/src`, `docs/topics`) y evitar `map .` salvo orientacion global.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
-| Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | `Ctrl+Alt+Q` abre Quick Actions contextual; filtra Open URL solo si hay URL y trata texto legacy sin MIME como text/plain. Showcase scripts (`028`-`031`, `010`) documentado. |
-| Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Ideas guardadas para discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
-| Search / AI / metadata | active/validated | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Scoped search `meta:/title:/notes:/ctx:`, ayuda in-app y trigger modes validados en instalada. Proximo: chips/explain UI o whole-word search si JP lo prioriza. |
-| Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`. Revisar `LastMonitor` si importa restaurar exactamente en ultimo monitor. |
-| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md`, `docs/topics/windows-installer.md` | `v0.3.2` publicado con hardening de autostart; instalada local relanzada. Proximo: dogfood instalada/update, demo assets sinteticos o feedback real. |
+| Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | `Ctrl+Alt+Q` Quick Actions contextual; Open URL solo con URL; texto legacy sin MIME = text/plain. Showcase `028`-`031`, `010`. |
+| Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
+| Search / AI / metadata | active/validated | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Scoped search y ayuda in-app validados. Proximo: chips/explain UI o whole-word search si JP prioriza. |
+| Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
+| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.2` publicado; instalada local relanzada. Proximo urgente: signing/trust track para reducir warnings de instalacion; luego dogfood/update, demo assets o feedback real. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md`, `docs/topics/agentic-os-operations.md` | Copicu es downstream AOS; mantener ruta caliente corta. Pendiente: compactar TOPICS/topics grandes cuando molesten. |
 
@@ -38,12 +36,11 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Stack vigente: Tauri 2, React/Vite/TypeScript, Rust, SQLite, Mantine donde aporta.
 - Priorizar velocidad/latencia percibida; aceptar coste razonable de memoria si evita romper el picker caliente.
 - Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
-- Release Windows vigente: `v0.3.2`; release/tag apunta a `ce27b55`; `main`/`origin/main` esta despues del corte con docs post-release. Autostart hardening instalado localmente con `npm run install:current`.
+- Release Windows vigente: `v0.3.2` (`ce27b55`); `main`/`origin/main` esta despues del corte con docs post-release; autostart hardening instalado localmente.
 - Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
-- Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
-- `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia de coste extremo.
+- Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia de coste extremo.
 - Skills canonicas: `docs/skills/`; `.agents/skills` es compatibilidad.
-- Copicu es downstream AOS: no copiar registry global, decisiones/tracks/memoria del kit ni inventarios.
+- Copicu es downstream AOS: no copiar registry global, memoria/tracks/decisiones del kit ni inventarios.
 - Memoria durable vive en docs versionados; Pi compaction/memoria automatica no reemplaza docs.
 - Para UI relevante abrir `docs/topics/ui-design-and-impeccable.md`.
 
@@ -51,32 +48,23 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 
 - Updater: respaldar fuera del repo `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`.
 - Hang instalada: si reaparece, revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar; dump previo en `.codex-run\hang-dumps\copicu-installed-hung-20260623-113818.dmp`.
-- Shortcuts/autostart globales: evitar colisiones instalada/dev; `Launch on Windows startup` lee estado real del OS y bloquea cambios desde dev/override para no pisar `HKCU Run\Copicu`; `Ctrl+Shift+C` metadata no debe volver a depender del script `examples.assignMetadataToActive`.
-- Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varía.
+- Shortcuts/autostart: evitar colisiones instalada/dev; `Launch on Windows startup` lee OS real y bloquea cambios desde dev/override; `Ctrl+Shift+C` metadata no debe depender de `examples.assignMetadataToActive`.
+- Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varia.
 - Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
-- Picker: `Ctrl+Shift+.` abre con foco; `Shift+Delete` borra seleccion; no usar no-activate como default.
-- Pi lento en este repo: causas conocidas son hot docs largas, `docs/skills/impeccable/`, referencias historicas y monolitos (`src/main.tsx`, `src-tauri/src/lib.rs`, `storage.rs`). Usar herramientas scoped y no abrir docs largas salvo necesidad.
+- Picker: `Ctrl+Shift+.` abre con foco; `Shift+Delete` borra seleccion; no usar no-activate default.
+- Pi lento: causas conocidas son hot docs, `docs/skills/impeccable/`, referencias historicas y monolitos. Usar scopes y evitar docs largas salvo necesidad.
 
 ## Comandos De Contexto
 
-```powershell
-bun run context:index
-bun run context:audit
-mise run release-vite-chunk-check
-npm run perf:windows -- -AppDataDir .codex-run\perf-memory-20260611\app-data-10k -SkipBuild
-npm run install:current
-npm run release:windows
-```
-
-Checks de producto de referencia: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, `cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run`, `node --test tests/ai-query-planner.test.mjs` cuando cambia AI search, `npm run rust:test` si el entorno lo permite, visual focalizado/full segun riesgo.
+OS: `bun run context:index`, `bun run context:audit`.
+Producto segun riesgo: `npm run build`, cargo check/test Tauri, `node --test tests/ai-query-planner.test.mjs`, `npm run rust:test`, `mise run release-vite-chunk-check`, `npm run perf:windows -- -AppDataDir .codex-run\perf-memory-20260611\app-data-10k -SkipBuild`, visual focalizado/full. Release/instalada: `npm run install:current`, `npm run release:windows`.
 
 ## Proximo Paso Probable
 
-1. Dogfood instalada actual (`v0.3.2`) especialmente Settings/autostart y updater desde builds previas.
-2. Si JP sigue con UX del picker/search: discutir o implementar el siguiente corte chico (chips/explain UI, whole-word search o polish visual de ayuda) sin tocar el runner Node.
-3. Si reaparece un hang/lentitud real de la app: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo.
-4. Si el problema es Pi/contexto: compactar ruta caliente, usar `map/search` scoped y evitar `docs/skills/impeccable/` salvo UI/impeccable.
-5. Si se toca producto: correr build/checks focalizados y relanzar app dev/instalada segun corresponda.
+1. Retomar `docs/tracks/021-distribution-trust-code-signing.md`: auditar requisitos SignPath y diseñar release CI verificable para firmar instaladores Windows.
+2. Dogfood instalada `v0.3.2`: Settings/autostart/updater desde builds previas.
+3. UX picker/search: siguiente corte chico (chips/explain UI, whole-word search o polish de ayuda) sin tocar runner Node.
+4. Si hay hang/lentitud: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo; si es Pi/contexto, compactar ruta caliente y usar `map/search` scoped.
 
 ## Promocion De Memoria
 

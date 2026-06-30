@@ -31,6 +31,7 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 | CopyQ feature inventory/import | [copyq-feature-inventory](reference/copyq-feature-inventory.md), [007-copyq-import](tracks/007-copyq-import.md) |
 | Sistema agentico, AOS, docs, checkpoint, continuar, gol | [docs-knowledge-system](topics/docs-knowledge-system.md), [pi-agentic-os](topics/pi-agentic-os.md), [agentic-os-operations](topics/agentic-os-operations.md), [os-quality](topics/os-quality.md), [local-codex-skills](topics/local-codex-skills.md) |
 | Research tecnico, librerias, dependencias | [technical-research-process](topics/technical-research-process.md) |
+| Ponytail, implementacion minima, YAGNI, over-engineering, diff minimo, dependencias innecesarias | [minimal-implementation](topics/minimal-implementation.md) |
 | Guia de usuario, scripts para usuarios | [user/README.md](user/README.md), [user/scripts.md](user/scripts.md) |
 | Aliases, glosario | [GLOSSARY.md](GLOSSARY.md) |
 | Stack, arquitectura, desarrollo | [DEVELOPMENT.md](DEVELOPMENT.md) |

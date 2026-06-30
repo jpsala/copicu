@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-30T13:59:12.129Z
+Generated: 2026-06-30T15:17:06.422Z
 
 ## Topics
 
@@ -21,6 +21,7 @@ Generated: 2026-06-30T13:59:12.129Z
 - reference: [macos-portability-research-unindexed](../topics/macos-portability-research-unindexed.md)
 - active: [mantine-ui-system](../topics/mantine-ui-system.md)
 - active: [markdown-output-surface](../topics/markdown-output-surface.md)
+- active: [minimal-implementation](../topics/minimal-implementation.md)
 - active: [open-source-github](../topics/open-source-github.md)
 - active: [os-quality](../topics/os-quality.md)
 - active: [performance-and-memory](../topics/performance-and-memory.md)
@@ -63,6 +64,7 @@ Generated: 2026-06-30T13:59:12.129Z
 - active: [Public Launch Readiness](../tracks/018-public-launch-readiness.md)
 - parked: [Paste Queue](../tracks/019-paste-queue.md)
 - parked: [Secure Clips / Password Metadata](../tracks/020-secure-clips-password.md)
+- active-next: [Distribution Trust And Code Signing](../tracks/021-distribution-trust-code-signing.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)
