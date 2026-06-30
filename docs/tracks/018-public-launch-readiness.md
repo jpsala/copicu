@@ -454,8 +454,16 @@ Checkpoint 2026-06-29 post `v0.3.0`:
 - JP decidio borrar todos los issues publicos sembrados porque sonaban falsos/no reales; se eliminaron #1-#8 y #11-#18 con `gh issue delete`, y `gh issue list --state all` quedo vacío.
 - `main`/`origin/main` quedaron en `7b9dda4` con docs post-release. El siguiente cambio publico debe ser feedback real, bug/repro o tarea curada.
 
+Checkpoint 2026-06-30 post `v0.3.1`:
+
+- `v0.3.1` publicado en GitHub con assets `Copicu_0.3.1_x64-setup.exe` y `latest.json`; release/tag apunta a `30039699fb4653a5d722cb88ff0fcbb2f5a6fe43`; SHA256 `754DBA71FC9C38D27566982902F92C5774AD6E6F99410EBC99D1A9195D986426`.
+- Checks del corte: `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests` y `npm run tauri:build -- --config src-tauri/tauri.updater-artifacts.conf.json` pasaron durante `npm run release:windows`.
+- `main`/`origin/main` avanzaron luego a `91e8f1b` (`fix: harden Windows autostart settings`) y esa build esta instalada localmente con `npm run install:current`.
+- Hardening autostart: Settings lee `get_autostart_status`, muestra estado real del OS, deshabilita el toggle en dev/override/debug y evita que una build dev sobrescriba `HKCU Run\Copicu` de la instalada.
+- Validacion local: Settings muestra `Startup on`; `HKCU Run\Copicu` apunta a `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`; `StartupApproved\Run\Copicu` esta enabled (`020000000000000000000000`).
+
 Pendiente inmediato:
 
-1. Dogfood instalada/update de `v0.3.0` y revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` si aparece hang/lentitud.
+1. Dogfood instalada actual (`91e8f1b` post-`v0.3.1`), especialmente Settings/autostart; si se quiere publicar ese fix, cortar `v0.3.2`.
 2. Si se quiere abrir contributor funnel, crear solo issues reales/curados; evitar issues de relleno.
 3. Si se crea release/tag o se pushea otro commit, pedir aprobacion explicita antes.

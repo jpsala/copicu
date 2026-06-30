@@ -139,11 +139,24 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-06-29: release actual `v0.3.0` publicado con auto-update firmado. Assets: `Copicu_0.3.0_x64-setup.exe` y `latest.json`; commit `ef4192a6ffbde51fee59d4bee68a847adb745667`; SHA256 `05B077A3416A65A7979BEFE1DF35AC3951AAD42B92304F7FDB6E938EEBB0F2A6`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7`, `v0.2.8` y `v0.3.0` sirven para validar ciclos reales de update desde instalaciones previas.
+Estado 2026-06-30: release actual `v0.3.1` publicado con auto-update firmado. Assets: `Copicu_0.3.1_x64-setup.exe` y `latest.json`; commit `30039699fb4653a5d722cb88ff0fcbb2f5a6fe43`; SHA256 `754DBA71FC9C38D27566982902F92C5774AD6E6F99410EBC99D1A9195D986426`. `main`/`origin/main` ya avanzaron a `91e8f1b` con hardening de autostart post-release e instalado localmente. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7`, `v0.2.8`, `v0.3.0` y `v0.3.1` sirven para validar ciclos reales de update desde instalaciones previas.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target, estado de auto-update y boton manual `Check now`. Ese check consulta el manifest firmado/latest via Tauri Updater y solo reporta disponibilidad; la instalacion automatica sigue controlada por `autoUpdate.enabled`.
 
 `v0.2.8` agrego diagnostics persistente para release/instalada en `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` con rotacion simple a `diagnostics.previous.jsonl` al pasar ~5 MB. Registra eventos sin payloads: `app.startup`, `storage.ready`, `window.*`, `updater.*`, `clipboard.event.*` con duracion/outcome/tamano y `renderer.heartbeat` cada ~30 s. Si una instancia instalada vuelve a quedar `Hung=True`, revisar el ultimo heartbeat/evento antes de reiniciar; el dump local del incidente previo quedo en `.codex-run\hang-dumps\copicu-installed-hung-20260623-113818.dmp`.
+
+## Launch On Windows Startup
+
+La opcion Settings -> General -> `Launch on Windows startup` usa `tauri-plugin-autostart`, que en Windows escribe `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con el app name de Tauri (`Copicu`) y marca `Explorer\StartupApproved\Run` como enabled cuando existe.
+
+Hardening vigente post-`v0.3.1` (`91e8f1b`):
+
+- Settings consulta `get_autostart_status` y muestra el estado real del OS, no solo el valor persistido en SQLite.
+- El toggle queda deshabilitado si la app corre en dev/debug/`COPICU_APP_DATA_DIR`/`COPICU_TAURI_DEV`, para no pisar el autostart de la instalada con una ruta dev.
+- `update_settings` bloquea cambios de autostart desde perfiles no instalados; en la instalada sincroniza de forma idempotente con el OS.
+- Al sincronizar, se limpian entradas legacy conocidas `Copicu`/`copicu` que no coincidan con el nombre canonico.
+
+Estado validado local: `HKCU Run\Copicu = C:\Users\jpsal\AppData\Local\Copicu\copicu.exe` y `StartupApproved\Run\Copicu = 020000000000000000000000`.
 
 Gotcha 2026-06-22: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script ya carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH` hacia `TAURI_SIGNING_PRIVATE_KEY`, pero el password sigue siendo necesario si la clave esta cifrada. Para esta linea de releases, la clave/password local estan en `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; deben respaldarse fuera del repo.
 
