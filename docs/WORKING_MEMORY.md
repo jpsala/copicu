@@ -19,7 +19,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Ideas guardadas para discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | active/validated | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Scoped search `meta:/title:/notes:/ctx:`, ayuda in-app y trigger modes validados en instalada. Proximo: chips/explain UI o whole-word search si JP lo prioriza. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`. Revisar `LastMonitor` si importa restaurar exactamente en ultimo monitor. |
-| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md`, `docs/topics/windows-installer.md` | `v0.3.1` publicado; `main` ya incluye hardening de autostart post-release. Proximo: dogfood instalada/update, release `v0.3.2` si se quiere publicar ese fix, demo assets sinteticos o feedback real. |
+| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/013-open-source-growth.md`, `docs/topics/windows-installer.md` | `v0.3.2` publicado con hardening de autostart; instalada local relanzada. Proximo: dogfood instalada/update, demo assets sinteticos o feedback real. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md`, `docs/topics/agentic-os-operations.md` | Copicu es downstream AOS; mantener ruta caliente corta. Pendiente: compactar TOPICS/topics grandes cuando molesten. |
 
@@ -38,7 +38,7 @@ Este archivo es router operativo. Si un detalle crece, moverlo a topic, track, s
 - Stack vigente: Tauri 2, React/Vite/TypeScript, Rust, SQLite, Mantine donde aporta.
 - Priorizar velocidad/latencia percibida; aceptar coste razonable de memoria si evita romper el picker caliente.
 - Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
-- Release Windows vigente: `v0.3.1`; release/tag apunta a `3003969`; `main`/`origin/main` a `91e8f1b` con hardening de `Launch on Windows startup` post-release e instalado localmente con `npm run install:current`.
+- Release Windows vigente: `v0.3.2`; release/tag apunta a `ce27b55`; `main`/`origin/main` esta despues del corte con docs post-release. Autostart hardening instalado localmente con `npm run install:current`.
 - Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
 - Clipboard enrichment v1 es logica interna post-capture, no scripting-first.
 - `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia de coste extremo.
@@ -72,7 +72,7 @@ Checks de producto de referencia: `npm run build`, `cargo check --manifest-path 
 
 ## Proximo Paso Probable
 
-1. Dogfood instalada actual (`91e8f1b` post-`v0.3.1`) especialmente Settings/autostart; si se quiere compartir el fix, cortar `v0.3.2` con `npm run release:windows`.
+1. Dogfood instalada actual (`v0.3.2`) especialmente Settings/autostart y updater desde builds previas.
 2. Si JP sigue con UX del picker/search: discutir o implementar el siguiente corte chico (chips/explain UI, whole-word search o polish visual de ayuda) sin tocar el runner Node.
 3. Si reaparece un hang/lentitud real de la app: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo.
 4. Si el problema es Pi/contexto: compactar ruta caliente, usar `map/search` scoped y evitar `docs/skills/impeccable/` salvo UI/impeccable.

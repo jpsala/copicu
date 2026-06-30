@@ -139,7 +139,7 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-06-30: release actual `v0.3.1` publicado con auto-update firmado. Assets: `Copicu_0.3.1_x64-setup.exe` y `latest.json`; commit `30039699fb4653a5d722cb88ff0fcbb2f5a6fe43`; SHA256 `754DBA71FC9C38D27566982902F92C5774AD6E6F99410EBC99D1A9195D986426`. `main`/`origin/main` ya avanzaron a `91e8f1b` con hardening de autostart post-release e instalado localmente. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7`, `v0.2.8`, `v0.3.0` y `v0.3.1` sirven para validar ciclos reales de update desde instalaciones previas.
+Estado 2026-06-30: release actual `v0.3.2` publicado con auto-update firmado. Assets: `Copicu_0.3.2_x64-setup.exe` y `latest.json`; commit `ce27b557fa105705933a51b76c35032b845f884a`; SHA256 `2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A`. Incluye hardening de autostart e instalada local relanzada con `npm run install:current`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7`, `v0.2.8`, `v0.3.0`, `v0.3.1` y `v0.3.2` sirven para validar ciclos reales de update desde instalaciones previas.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target, estado de auto-update y boton manual `Check now`. Ese check consulta el manifest firmado/latest via Tauri Updater y solo reporta disponibilidad; la instalacion automatica sigue controlada por `autoUpdate.enabled`.
 
@@ -149,7 +149,7 @@ La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, ver
 
 La opcion Settings -> General -> `Launch on Windows startup` usa `tauri-plugin-autostart`, que en Windows escribe `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con el app name de Tauri (`Copicu`) y marca `Explorer\StartupApproved\Run` como enabled cuando existe.
 
-Hardening vigente post-`v0.3.1` (`91e8f1b`):
+Hardening vigente desde `v0.3.2` (`ce27b55`):
 
 - Settings consulta `get_autostart_status` y muestra el estado real del OS, no solo el valor persistido en SQLite.
 - El toggle queda deshabilitado si la app corre en dev/debug/`COPICU_APP_DATA_DIR`/`COPICU_TAURI_DEV`, para no pisar el autostart de la instalada con una ruta dev.

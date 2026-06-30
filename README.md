@@ -34,7 +34,7 @@ Current release:
 - Windows x64 NSIS installer
 - SHA256: `2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A`
 
-Autostart settings hardening: Settings now reads the real Windows startup state and blocks dev builds from overwriting installed autostart.\n\nSHA256: 2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A.
+Autostart settings hardening: Settings now reads the real Windows startup state and blocks dev builds from overwriting installed autostart.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
