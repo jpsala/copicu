@@ -129,6 +129,12 @@ type AppShortcutStatus = {
   pin: NativeShortcutStatus;
 };
 
+type AutostartStatus = {
+  supported: boolean;
+  enabled: boolean;
+  reason: string | null;
+};
+
 type MetadataEditorPayload = {
   item: HistoryItem;
   captureContextEvents: CaptureContextEvent[];
@@ -310,6 +316,23 @@ function getAppAboutInfo() {
 
 function getAppShortcutStatus() {
   return invoke<AppShortcutStatus>("get_app_shortcut_status");
+}
+
+function getAutostartStatus() {
+  return invoke<AutostartStatus>("get_autostart_status");
+}
+
+function settingsWithEffectiveAutostart(settings: AppSettings, status: AutostartStatus | null) {
+  if (!status?.supported) {
+    return settings;
+  }
+  return {
+    ...settings,
+    general: {
+      ...settings.general,
+      launchOnStartup: status.enabled,
+    },
+  };
 }
 
 function editScriptsInVscode() {
@@ -763,6 +786,7 @@ export function SettingsWindowApp() {
   const [error, setError] = useState<string | null>(null);
   const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
   const [shortcutStatus, setShortcutStatus] = useState<AppShortcutStatus | null>(null);
+  const [autostartStatus, setAutostartStatus] = useState<AutostartStatus | null>(null);
   const [appInfo, setAppInfo] = useState<AppAboutInfo | null>(null);
   const [updateStatus, setUpdateStatus] = useState<AutoUpdateStatus | null>(null);
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
@@ -832,8 +856,11 @@ export function SettingsWindowApp() {
       const nextSettings = normalizeSettings(await invoke<AppSettings>("update_settings", {
         settings: draft,
       }));
-      setSettings(nextSettings);
-      setDraft(nextSettings);
+      const nextAutostartStatus = await getAutostartStatus().catch(() => null);
+      const effectiveSettings = settingsWithEffectiveAutostart(nextSettings, nextAutostartStatus);
+      setAutostartStatus(nextAutostartStatus);
+      setSettings(effectiveSettings);
+      setDraft(effectiveSettings);
       setShortcutStatus(await getAppShortcutStatus());
       if (isTauriRuntime()) {
         await emitTo("main", SETTINGS_UPDATED_EVENT, nextSettings);
@@ -1111,12 +1138,17 @@ export function SettingsWindowApp() {
   useEffect(() => {
     let active = true;
 
-    invoke<AppSettings>("get_settings")
-      .then((nextSettings) => {
+    Promise.all([
+      invoke<AppSettings>("get_settings"),
+      getAutostartStatus().catch(() => null),
+    ])
+      .then(([nextSettings, nextAutostartStatus]) => {
         if (active) {
           const normalizedSettings = normalizeSettings(nextSettings);
-          setSettings(normalizedSettings);
-          setDraft(normalizedSettings);
+          const effectiveSettings = settingsWithEffectiveAutostart(normalizedSettings, nextAutostartStatus);
+          setAutostartStatus(nextAutostartStatus);
+          setSettings(effectiveSettings);
+          setDraft(effectiveSettings);
         }
       })
       .catch((loadError) => {
@@ -1207,6 +1239,7 @@ export function SettingsWindowApp() {
           tagsLoading={tagsLoading}
           tagSummary={tagSummary}
           shortcutStatus={shortcutStatus}
+          autostartStatus={autostartStatus}
           appInfo={appInfo}
           updateStatus={updateStatus}
           checkingForUpdates={checkingForUpdates}
@@ -1403,6 +1436,7 @@ type SettingsPanelProps = {
     itemCount: number;
   };
   shortcutStatus: AppShortcutStatus | null;
+  autostartStatus: AutostartStatus | null;
   appInfo: AppAboutInfo | null;
   updateStatus: AutoUpdateStatus | null;
   checkingForUpdates: boolean;
@@ -1452,6 +1486,7 @@ function SettingsPanel({
   tagsLoading,
   tagSummary,
   shortcutStatus,
+  autostartStatus,
   appInfo,
   updateStatus,
   checkingForUpdates,
@@ -1680,6 +1715,13 @@ function SettingsPanel({
           <UiBadge className="settings-summary-badge" variant="light">{searchTriggerModeLabel(draft.picker.searchTriggerMode)}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.enrichment.enabled ? "Enrichment on" : "Enrichment off"}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">
+            {autostartStatus?.supported === false
+              ? "Startup unavailable"
+              : draft.general.launchOnStartup
+                ? "Startup on"
+                : "Startup off"}
+          </UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.autoUpdate.enabled ? "Auto-update on" : "Auto-update off"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{tags.length} tags</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{actionSummary.scriptCount} scripts</UiBadge>
@@ -1717,10 +1759,20 @@ function SettingsPanel({
             {displayedSections.some((section) => section.id === "general") ? (
               <SettingsSection title="General" description="Core app behavior and entry points.">
                 {visible("general", "Launch on Windows startup", "Start Copicu when Windows starts") ? (
-                  <SettingRow label="Launch on Windows startup" description="Registers Copicu with the OS autostart manager.">
+                  <SettingRow
+                    label="Launch on Windows startup"
+                    description={
+                      autostartStatus?.supported === false
+                        ? autostartStatus.reason ?? "Available only from the installed Windows app."
+                        : autostartStatus?.reason
+                          ? autostartStatus.reason
+                          : "Registers Copicu with the OS autostart manager."
+                    }
+                  >
                     <UiSwitch
                       label="Launch on Windows startup"
                       checked={draft.general.launchOnStartup}
+                      disabled={autostartStatus?.supported === false}
                       onChange={(checked) =>
                         onDraftChange({
                           ...draft,

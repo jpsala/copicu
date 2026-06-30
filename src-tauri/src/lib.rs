@@ -206,6 +206,15 @@ struct AppShortcutStatus {
 }
 
 #[cfg(not(test))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutostartStatus {
+    supported: bool,
+    enabled: bool,
+    reason: Option<String>,
+}
+
+#[cfg(not(test))]
 impl Default for NativeShortcutStatus {
     fn default() -> Self {
         Self {
@@ -664,6 +673,31 @@ fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppSh
         });
 
     AppShortcutStatus { picker, pin }
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_autostart_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AutostartStatus {
+    if let Some(reason) = autostart_unavailable_reason() {
+        return AutostartStatus {
+            supported: false,
+            enabled: false,
+            reason: Some(reason),
+        };
+    }
+
+    match app.autolaunch().is_enabled() {
+        Ok(enabled) => AutostartStatus {
+            supported: true,
+            enabled,
+            reason: None,
+        },
+        Err(error) => AutostartStatus {
+            supported: true,
+            enabled: false,
+            reason: Some(format!("failed to read launch on startup state: {error}")),
+        },
+    }
 }
 
 #[cfg(not(test))]
@@ -1483,7 +1517,12 @@ fn update_settings(
         normalize_optional_single_shortcut(&settings.picker.pin_toggle_shortcut, "pin toggle")?;
     settings.picker.settings_shortcut =
         normalize_optional_single_shortcut(&settings.picker.settings_shortcut, "settings")?;
-    apply_autostart_setting(&app, settings.general.launch_on_startup)?;
+    let current_settings = storage.get_settings()?;
+    sync_autostart_setting(
+        &app,
+        current_settings.general.launch_on_startup,
+        settings.general.launch_on_startup,
+    )?;
     let next_settings = storage.update_settings(settings)?;
     apply_picker_keep_open_window_policy(&app, &next_settings);
     actions::refresh_script_action_cache(&storage)?;
@@ -2040,6 +2079,7 @@ pub fn run() {
             set_main_window_pin_state,
             get_app_about_info,
             get_app_shortcut_status,
+            get_autostart_status,
             list_recent_items,
             search_items,
             list_history_page,
@@ -2782,36 +2822,133 @@ fn should_hide_on_focus_lost<R: tauri::Runtime>(window: &tauri::Window<R>) -> bo
 }
 
 #[cfg(not(test))]
-fn apply_autostart_setting<R: tauri::Runtime>(
+fn sync_autostart_setting<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
-    enabled: bool,
+    current_enabled: bool,
+    next_enabled: bool,
 ) -> Result<(), String> {
+    if let Some(reason) = autostart_unavailable_reason() {
+        if current_enabled != next_enabled {
+            return Err(reason);
+        }
+        return Ok(());
+    }
+
     let autostart = app.autolaunch();
-    if enabled {
+    let canonical_name = app.package_info().name.clone();
+    if next_enabled {
         autostart
             .enable()
             .map_err(|error| format!("failed to enable launch on startup: {error}"))?;
+        cleanup_legacy_autostart_entries(&canonical_name);
     } else {
         let was_enabled = autostart.is_enabled().unwrap_or(false);
-        if !was_enabled {
-            return Ok(());
-        }
-        if let Err(error) = autostart.disable() {
-            if !autostart.is_enabled().unwrap_or(false) {
-                return Ok(());
+        if was_enabled {
+            if let Err(error) = autostart.disable() {
+                if autostart.is_enabled().unwrap_or(false) {
+                    return Err(format!("failed to disable launch on startup: {error}"));
+                }
             }
-            return Err(format!("failed to disable launch on startup: {error}"));
         }
+        cleanup_legacy_autostart_entries(&canonical_name);
     }
     Ok(())
 }
 
 #[cfg(test)]
-fn apply_autostart_setting<R: tauri::Runtime>(
+fn sync_autostart_setting<R: tauri::Runtime>(
     _app: &tauri::AppHandle<R>,
-    _enabled: bool,
+    _current_enabled: bool,
+    _next_enabled: bool,
 ) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(not(test))]
+fn autostart_unavailable_reason() -> Option<String> {
+    if std::env::var_os("COPICU_APP_DATA_DIR").is_some()
+        || std::env::var_os("COPICU_TAURI_DEV").is_some()
+    {
+        return Some(
+            "Launch on startup can only be changed from the installed Copicu app.".to_string(),
+        );
+    }
+
+    if cfg!(debug_assertions) {
+        return Some(
+            "Launch on startup can only be changed from a release-installed Copicu app."
+                .to_string(),
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if !current_exe_looks_installed() {
+            return Some(
+                "Launch on startup can only be changed from the installed Copicu app."
+                    .to_string(),
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        return Some("Launch on startup is currently supported only on Windows.".to_string());
+    }
+
+    None
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn current_exe_looks_installed() -> bool {
+    let Ok(current_exe) = std::env::current_exe() else {
+        return false;
+    };
+    let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") else {
+        return false;
+    };
+    let expected = std::path::PathBuf::from(local_app_data)
+        .join("Copicu")
+        .join("copicu.exe");
+    paths_equal_case_insensitive(&current_exe, &expected)
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn paths_equal_case_insensitive(left: &std::path::Path, right: &std::path::Path) -> bool {
+    left.to_string_lossy()
+        .eq_ignore_ascii_case(right.to_string_lossy().as_ref())
+}
+
+#[cfg(not(test))]
+fn cleanup_legacy_autostart_entries(canonical_name: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        for name in ["Copicu", "copicu"] {
+            if name.eq_ignore_ascii_case(canonical_name) {
+                continue;
+            }
+            let status = std::process::Command::new("reg")
+                .args([
+                    "delete",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    name,
+                    "/f",
+                ])
+                .status();
+            if let Err(error) = status {
+                diag_log(
+                    "autostart.cleanup.error",
+                    format!("name={name} error={error}"),
+                );
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = canonical_name;
+    }
 }
 
 #[cfg(not(test))]
