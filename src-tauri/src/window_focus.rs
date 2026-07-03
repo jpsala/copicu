@@ -515,6 +515,11 @@ mod platform {
                 | "opera.exe"
                 | "opera_gx.exe"
                 | "tabby.exe"
+                | "windowsterminal.exe"
+                | "wezterm-gui.exe"
+                | "pwsh.exe"
+                | "powershell.exe"
+                | "cmd.exe"
         )
     }
 
@@ -560,9 +565,16 @@ mod platform {
         }
 
         #[test]
+        fn default_uses_ctrl_v_for_terminal_processes() {
+            assert!(default_uses_ctrl_v_for_process("windowsterminal.exe"));
+            assert!(default_uses_ctrl_v_for_process("pwsh.exe"));
+            assert!(default_uses_ctrl_v_for_process("powershell.exe"));
+            assert!(default_uses_ctrl_v_for_process("cmd.exe"));
+        }
+
+        #[test]
         fn default_does_not_use_ctrl_v_for_plain_editors() {
             assert!(!default_uses_ctrl_v_for_process("notepad.exe"));
-            assert!(!default_uses_ctrl_v_for_process("powershell.exe"));
         }
     }
 }

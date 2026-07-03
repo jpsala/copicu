@@ -124,7 +124,7 @@ function New-UpdaterManifest(
     return
   }
 
-  $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath
+  $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8
 }
 
 function ConvertTo-Semver($Value) {
@@ -310,7 +310,7 @@ let cargo = fs.readFileSync(cargoToml, "utf8");
 cargo = cargo.replace(/^(version\s*=\s*)"[^"]+"/m, `$1"${version}"`);
 fs.writeFileSync(cargoToml, cargo);
 '@
-  Set-Content -LiteralPath $versionScriptPath -Value $script
+  Set-Content -LiteralPath $versionScriptPath -Value $script -Encoding utf8
   & node $versionScriptPath
   if ($LASTEXITCODE -ne 0) {
     throw "failed to update project version to $Version"
@@ -349,7 +349,7 @@ Copicu is used daily
     Write-Step "README.md would be updated for $ReleaseTag / $AssetName / $Sha256"
     return
   }
-  Set-Content -LiteralPath $ReadmePath -Value $updated -NoNewline
+  Set-Content -LiteralPath $ReadmePath -Value $updated -NoNewline -Encoding utf8
 }
 
 function Stop-CopicuProcessesForRelease() {
@@ -548,7 +548,7 @@ try {
       $notesBody = ($Notes -replace '<filled after build>', $hash)
       $notesBody = $notesBody + "`n`nInstaller SHA256: ``$hash```nTarget commit: ``$head``"
       if (-not $DryRun) {
-        Set-Content -LiteralPath $NotesFile -Value $notesBody
+        Set-Content -LiteralPath $NotesFile -Value $notesBody -Encoding utf8
       }
     }
 
