@@ -1,7 +1,5 @@
 use crate::storage::{CaptureContext, CaptureFormatContext};
-use clipboard_rs::{
-    Clipboard, ClipboardContext, ClipboardHandler, ClipboardWatcher, ClipboardWatcherContext,
-};
+use clipboard_rs::{ClipboardContext, ClipboardHandler, ClipboardWatcher, ClipboardWatcherContext};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -570,8 +568,19 @@ fn hash_text(text: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+#[cfg(target_os = "windows")]
+fn get_text_with_retry(_clipboard: &mut ClipboardContext) -> clipboard_rs::Result<String> {
+    retry_clipboard_operation(read_windows_unicode_text, &CLIPBOARD_RETRY_DELAYS)
+}
+
+#[cfg(not(target_os = "windows"))]
 fn get_text_with_retry(clipboard: &mut ClipboardContext) -> clipboard_rs::Result<String> {
     retry_clipboard_operation(|| clipboard.get_text(), &CLIPBOARD_RETRY_DELAYS)
+}
+
+#[cfg(target_os = "windows")]
+fn read_windows_unicode_text() -> clipboard_rs::Result<String> {
+    windows_clipboard_text::read_unicode_text()
 }
 
 fn retry_clipboard_operation<T, E, F>(mut operation: F, delays: &[Duration]) -> Result<T, E>
@@ -586,6 +595,81 @@ where
     }
 
     operation()
+}
+
+#[cfg(target_os = "windows")]
+mod windows_clipboard_text {
+    use windows::Win32::{
+        Foundation::HGLOBAL,
+        System::{
+            DataExchange::{
+                CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+            },
+            Memory::{GlobalLock, GlobalUnlock},
+        },
+    };
+
+    const CF_UNICODETEXT: u32 = 13;
+
+    pub fn read_unicode_text() -> clipboard_rs::Result<String> {
+        let _guard = ClipboardOpenGuard::open()?;
+        if !unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT).is_ok() } {
+            return Err("clipboard does not contain Unicode text".into());
+        }
+
+        let handle = unsafe { GetClipboardData(CF_UNICODETEXT) }
+            .map_err(|error| format!("get CF_UNICODETEXT failed: {error}"))?;
+        let global = HGLOBAL(handle.0);
+        let ptr = unsafe { GlobalLock(global) };
+        if ptr.is_null() {
+            return Err("lock CF_UNICODETEXT failed".into());
+        }
+
+        let result = unsafe { read_null_terminated_utf16(ptr as *const u16) };
+        unsafe {
+            let _ = GlobalUnlock(global);
+        }
+        result
+    }
+
+    struct ClipboardOpenGuard;
+
+    impl ClipboardOpenGuard {
+        fn open() -> clipboard_rs::Result<Self> {
+            unsafe { OpenClipboard(None) }
+                .map(|_| Self)
+                .map_err(|error| format!("open clipboard failed: {error}").into())
+        }
+    }
+
+    impl Drop for ClipboardOpenGuard {
+        fn drop(&mut self) {
+            let _ = unsafe { CloseClipboard() };
+        }
+    }
+
+    unsafe fn read_null_terminated_utf16(ptr: *const u16) -> clipboard_rs::Result<String> {
+        let mut len = 0usize;
+        while *ptr.add(len) != 0 {
+            len += 1;
+        }
+
+        let units = std::slice::from_raw_parts(ptr, len);
+        Ok(String::from_utf16_lossy(units))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn decodes_accented_unicode_text() {
+            let mut units: Vec<u16> = "áéíóú, hola".encode_utf16().collect();
+            units.push(0);
+            let decoded = unsafe { super::read_null_terminated_utf16(units.as_ptr()) }
+                .expect("utf16 should decode");
+
+            assert_eq!(decoded, "áéíóú, hola");
+        }
+    }
 }
 
 fn capture_context_from_probe(
