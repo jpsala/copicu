@@ -1,4 +1,4 @@
-# Copicu
+﻿# Copicu
 
 **Copicu is a local-first, scriptable clipboard manager for Windows power users.**
 
@@ -29,12 +29,12 @@ More real-looking synthetic workflow demos are planned before the next public fe
 
 Current release:
 
-- [v0.3.2](https://github.com/jpsala/copicu/releases/tag/v0.3.2)
-- Asset: `Copicu_0.3.2_x64-setup.exe`
+- [v0.3.3](https://github.com/jpsala/copicu/releases/tag/v0.3.3)
+- Asset: `Copicu_0.3.3_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A`
+- SHA256: `2F56E4DAB31547DF43EDF71E7AED262F767225D18D6ECEFEE0B4B59FC2D515A2`
 
-Autostart settings hardening: Settings now reads the real Windows startup state and blocks dev builds from overwriting installed autostart.
+Fix Windows terminal paste encoding so accented text such as 'rÃ¡pido' stays intact when using Copicu paste-to-previous-window.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -128,11 +128,11 @@ Example workflows:
 
 The repo already includes runnable showcase examples under [scripts/examples/](scripts/examples/). Copy them to your Copicu scripts folder, refresh diagnostics in Settings, then run them from the item menu, command palette, or local shortcuts while the picker is focused:
 
-- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts) — `Ctrl+Alt+U`;
-- [format selected JSON](scripts/examples/029-format-json-copy.ts) — `Ctrl+Alt+F`;
-- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts) — `Ctrl+Alt+N`;
-- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) — `Ctrl+Alt+L`;
-- [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) — `Ctrl+Alt+M`.
+- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts) â€” `Ctrl+Alt+U`;
+- [format selected JSON](scripts/examples/029-format-json-copy.ts) â€” `Ctrl+Alt+F`;
+- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts) â€” `Ctrl+Alt+N`;
+- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) â€” `Ctrl+Alt+L`;
+- [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) â€” `Ctrl+Alt+M`.
 
 Press `Ctrl+Alt+Q` in the picker to open **Quick Actions**, a context-aware action picker that shows runnable scripts/actions for the current selection so you do not need to memorize every shortcut.
 
