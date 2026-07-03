@@ -34,7 +34,7 @@ Current release:
 - Windows x64 NSIS installer
 - SHA256: `2F56E4DAB31547DF43EDF71E7AED262F767225D18D6ECEFEE0B4B59FC2D515A2`
 
-Fix Windows terminal paste encoding so accented text such as 'rÃ¡pido' stays intact when using Copicu paste-to-previous-window.
+Fix Windows terminal paste encoding so accented text such as 'rápido' stays intact when using Copicu paste-to-previous-window.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
