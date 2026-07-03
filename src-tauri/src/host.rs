@@ -66,7 +66,7 @@ pub fn write_item<R: Runtime>(
 
     if item.content_kind() == "image" {
         let png_bytes = storage.read_blob_for_item(&item)?;
-        crate::image_capture::write_png_to_clipboard(&png_bytes).inspect_err(|error| {
+        crate::image_capture::write_png_to_clipboard(&png_bytes).inspect_err(|_| {
             suppression.clear_if_hash(item.normalized_hash());
         })?;
     } else {
