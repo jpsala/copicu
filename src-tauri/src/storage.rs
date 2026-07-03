@@ -422,6 +422,7 @@ pub struct AppearanceSettings {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct TraySettings {
     #[serde(default)]
     pub vscode_path: String,
@@ -465,13 +466,6 @@ impl Default for ScriptsSettings {
     }
 }
 
-impl Default for TraySettings {
-    fn default() -> Self {
-        Self {
-            vscode_path: String::new(),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

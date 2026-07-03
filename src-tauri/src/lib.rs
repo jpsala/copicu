@@ -190,6 +190,7 @@ struct HotkeyNormalizationResult {
 #[cfg(not(test))]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 struct NativeShortcutStatus {
     label: String,
     registered: bool,
@@ -215,16 +216,6 @@ struct AutostartStatus {
 }
 
 #[cfg(not(test))]
-impl Default for NativeShortcutStatus {
-    fn default() -> Self {
-        Self {
-            label: String::new(),
-            registered: false,
-            supported: false,
-            error: None,
-        }
-    }
-}
 
 #[cfg(not(test))]
 #[derive(Clone, serde::Serialize)]
@@ -2692,12 +2683,10 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
                 }
             }
         }
+    } else if let Err(error) = window_focus::show_tauri_window_no_activate(&window) {
+        eprintln!("window no-activate show failed: {error}");
     } else {
-        if let Err(error) = window_focus::show_tauri_window_no_activate(&window) {
-            eprintln!("window no-activate show failed: {error}");
-        } else {
-            diag_log("window.show.step", "show no-activate ok");
-        }
+        diag_log("window.show.step", "show no-activate ok");
     }
 
     let visible = window.is_visible().unwrap_or(false);
@@ -3201,10 +3190,8 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
                         emit_compound_pending_on_main_thread(app, pending_info_for_thread);
                     }
                 });
-            } else {
-                if ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS {
-                    emit_compound_pending_on_main_thread(app.clone(), pending_info);
-                }
+            } else if ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS {
+                emit_compound_pending_on_main_thread(app.clone(), pending_info);
             }
             return;
         }

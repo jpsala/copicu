@@ -311,10 +311,7 @@ impl ShortcutRegistry {
             if let Some(route) = &node.route {
                 return Some(route.id.clone());
             }
-            node = match node.children.get(step) {
-                Some(next) => next,
-                None => return None,
-            };
+            node = node.children.get(step)?;
         }
         None
     }

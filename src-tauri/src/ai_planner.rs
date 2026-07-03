@@ -54,6 +54,7 @@ pub struct AiMarkdownResponseRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct AiMarkdownResponseContext {
     #[serde(default)]
     pub title: Option<String>,
@@ -71,19 +72,6 @@ pub struct AiMarkdownResponseContext {
     pub visible_item_ids: Vec<String>,
 }
 
-impl Default for AiMarkdownResponseContext {
-    fn default() -> Self {
-        Self {
-            title: None,
-            source: None,
-            current_query: None,
-            active_item_id: None,
-            current_item_id: None,
-            selected_item_ids: Vec::new(),
-            visible_item_ids: Vec::new(),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

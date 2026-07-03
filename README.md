@@ -29,12 +29,12 @@ More real-looking synthetic workflow demos are planned before the next public fe
 
 Current release:
 
-- [v0.3.3](https://github.com/jpsala/copicu/releases/tag/v0.3.3)
-- Asset: `Copicu_0.3.3_x64-setup.exe`
+- [v0.3.4](https://github.com/jpsala/copicu/releases/tag/v0.3.4)
+- Asset: `Copicu_0.3.4_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `2F56E4DAB31547DF43EDF71E7AED262F767225D18D6ECEFEE0B4B59FC2D515A2`
+- SHA256: `CF05ECB55EB0B93D63842A51EADC2EA908302C09A5A47E28D99C379795F27D78`
 
-Fix Windows terminal paste encoding so accented text such as 'rápido' stays intact when using Copicu paste-to-previous-window.
+`v0.3.4` updates the Windows installer and current release notes for this cut.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

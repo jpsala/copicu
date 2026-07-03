@@ -403,7 +403,7 @@ fn find_matching(source: &str, open_index: usize, open: char, close: char) -> Op
 fn read_quoted_strings(source: &str) -> Vec<String> {
     let mut values = Vec::new();
     let mut rest = source;
-    while let Some(index) = rest.find(|character| matches!(character, '"' | '\'')) {
+    while let Some(index) = rest.find(['"', '\'']) {
         if let Some((value, consumed)) = read_quoted_string(&rest[index..]) {
             values.push(value);
             rest = &rest[index + consumed..];
