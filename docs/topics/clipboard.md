@@ -103,37 +103,24 @@ Read/write puntual:
 
 ## Encoding Windows / Terminal
 
-Incidente 2026-07-03: copiar texto acentuado desde Windows Terminal podia llegar al historial como mojibake, por ejemplo `áéíóú` -> `├í├®├¡├│├║`. La DB no era la causa: cuando Rust recibe Unicode correcto, SQLite lo persiste bien. El problema era el contenido publicado por la fuente en formatos Windows mezclados.
+Regla actual para captura de texto en Windows:
 
-Hallazgos de repro:
-
-- Un item bueno queda en SQLite como Unicode correcto (`áéíóú ñ Ñ ü Ü`).
-- El item roto tenia evento de captura desde `windowsterminal.exe` con formatos `CF_UNICODETEXT`, `CF_LOCALE`, `CF_TEXT`, `CF_OEMTEXT`.
-- En ese caso, `CF_UNICODETEXT` ya podia estar mojibakeado, mientras `CF_TEXT` contenia bytes UTF-8 recuperables.
-- `clipboard-rs`/abstracciones que priorizan `CF_UNICODETEXT` preservan el mojibake si la fuente lo publico asi.
-
-Decision de implementacion actual:
-
-1. En Windows, leer texto de captura con Win32 directo, no solo `clipboard-rs::get_text()`.
-2. Mantener `CF_UNICODETEXT` como ruta canonica para apps normales.
+1. Leer texto con Win32 directo para poder inspeccionar formatos.
+2. Usar `CF_UNICODETEXT` como formato canonico por defecto.
 3. Si `CF_UNICODETEXT` parece mojibake UTF-8/OEM (`├`, `┬`, `Γ`) y `CF_TEXT` decodifica como UTF-8 valido, preferir `CF_TEXT`.
-4. No aplicar esa preferencia globalmente si `CF_UNICODETEXT` se ve correcto; evitar romper apps que usan ANSI/codepage real en `CF_TEXT`.
-5. Los items historicos ya capturados rotos no se arreglan solos: recapturar o hacer una reparacion puntual si importa.
+4. No preferir `CF_TEXT` globalmente: puede contener ANSI/codepage real en apps que no publican UTF-8.
 
 Smokes sinteticos utiles:
 
-- Unicode normal: `Set-Clipboard` con `áéíóú ñ Ñ ü Ü €`, luego verificar SQLite.
-- ANSI normal: publicar solo `CF_TEXT` cp1252, verificar fallback.
-- Terminal-like: publicar `CF_UNICODETEXT` mojibakeado + `CF_TEXT` UTF-8 correcto; Copicu debe guardar el texto correcto.
+- Unicode normal: `Set-Clipboard` con `áéíóú ñ Ñ ü Ü €`.
+- ANSI normal: publicar solo `CF_TEXT` cp1252.
+- Terminal-like: publicar `CF_UNICODETEXT` mojibakeado + `CF_TEXT` UTF-8 correcto.
 
-Referencias externas revisadas:
+Referencias de implementacion:
 
-- Microsoft Learn `Clipboard Formats`: `CF_UNICODETEXT` es el formato Unicode de Windows; `CF_TEXT`/`CF_OEMTEXT` son formatos de texto alternativos/convertidos. <https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats>
-- Microsoft Learn `Using the Clipboard`: APIs Win32 de lectura/escritura de formatos clipboard. <https://learn.microsoft.com/en-us/windows/win32/dataxchg/using-the-clipboard>
-- CopyQ modela texto como MIME/UTF-8 al clonar datos (`cloneText()` usa `text/plain` y fallback `QMimeData::text()`): <https://github.com/hluk/CopyQ/blob/0dd509993b3241beb8ed26822c5e5c38612adfe2/src/common/common.cpp#L498-L502>
-- CopyQ documenta que sus helpers de texto asumen UTF-8 para datos textuales: <https://github.com/hluk/CopyQ/blob/0dd509993b3241beb8ed26822c5e5c38612adfe2/src/common/textdata.h#L19-L23>
-- Ditto conserva/consulta `CF_UNICODETEXT` y `CF_TEXT` como formatos separados: <https://github.com/sabrogden/Ditto/blob/7b65b04a133d62ec81f180a3d2cb1310637b94cf/src/Clip.cpp#L1746-L1766>
-- Ditto tiene conversiones explicitas ANSI/UTF-8/Unicode: <https://github.com/sabrogden/Ditto/blob/7b65b04a133d62ec81f180a3d2cb1310637b94cf/Shared/TextConvert.h#L7-L28>
+- Microsoft Learn `Clipboard Formats`: <https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats>
+- CopyQ clona texto como MIME/UTF-8 con fallback `QMimeData::text()`: <https://github.com/hluk/CopyQ/blob/0dd509993b3241beb8ed26822c5e5c38612adfe2/src/common/common.cpp#L498-L502>
+- Ditto conserva `CF_UNICODETEXT` y `CF_TEXT` como formatos separados: <https://github.com/sabrogden/Ditto/blob/7b65b04a133d62ec81f180a3d2cb1310637b94cf/src/Clip.cpp#L1746-L1766>
 
 ## Decision Actual
 
