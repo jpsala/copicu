@@ -605,18 +605,36 @@ mod windows_clipboard_text {
             DataExchange::{
                 CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
             },
-            Memory::{GlobalLock, GlobalUnlock},
+            Memory::{GlobalLock, GlobalSize, GlobalUnlock},
         },
     };
 
+    const CF_TEXT: u32 = 1;
     const CF_UNICODETEXT: u32 = 13;
 
     pub fn read_unicode_text() -> clipboard_rs::Result<String> {
         let _guard = ClipboardOpenGuard::open()?;
-        if !unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT).is_ok() } {
-            return Err("clipboard does not contain Unicode text".into());
+        let unicode = if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT).is_ok() } {
+            Some(read_cf_unicode_text()?)
+        } else {
+            None
+        };
+        let utf8_text = if unsafe { IsClipboardFormatAvailable(CF_TEXT).is_ok() } {
+            read_cf_text_as_utf8().ok()
+        } else {
+            None
+        };
+
+        if let Some(utf8_text) = utf8_text {
+            if unicode.as_ref().is_none_or(|text| looks_like_utf8_mojibake(text)) {
+                return Ok(utf8_text);
+            }
         }
 
+        unicode.ok_or_else(|| "clipboard does not contain Unicode text".into())
+    }
+
+    fn read_cf_unicode_text() -> clipboard_rs::Result<String> {
         let handle = unsafe { GetClipboardData(CF_UNICODETEXT) }
             .map_err(|error| format!("get CF_UNICODETEXT failed: {error}"))?;
         let global = HGLOBAL(handle.0);
@@ -630,6 +648,27 @@ mod windows_clipboard_text {
             let _ = GlobalUnlock(global);
         }
         result
+    }
+
+    fn read_cf_text_as_utf8() -> clipboard_rs::Result<String> {
+        let handle = unsafe { GetClipboardData(CF_TEXT) }
+            .map_err(|error| format!("get CF_TEXT failed: {error}"))?;
+        let global = HGLOBAL(handle.0);
+        let ptr = unsafe { GlobalLock(global) };
+        if ptr.is_null() {
+            return Err("lock CF_TEXT failed".into());
+        }
+
+        let result = unsafe { read_null_terminated_bytes(global, ptr as *const u8) }
+            .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string().into()));
+        unsafe {
+            let _ = GlobalUnlock(global);
+        }
+        result
+    }
+
+    fn looks_like_utf8_mojibake(text: &str) -> bool {
+        text.contains('├') || text.contains('┬') || text.contains('Γ')
     }
 
     struct ClipboardOpenGuard;
@@ -658,6 +697,20 @@ mod windows_clipboard_text {
         Ok(String::from_utf16_lossy(units))
     }
 
+    unsafe fn read_null_terminated_bytes(
+        global: HGLOBAL,
+        ptr: *const u8,
+    ) -> clipboard_rs::Result<Vec<u8>> {
+        let size = GlobalSize(global);
+        if size == 0 {
+            return Err("CF_TEXT has empty global memory".into());
+        }
+
+        let bytes = std::slice::from_raw_parts(ptr, size);
+        let len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+        Ok(bytes[..len].to_vec())
+    }
+
     #[cfg(test)]
     mod tests {
         #[test]
@@ -668,6 +721,12 @@ mod windows_clipboard_text {
                 .expect("utf16 should decode");
 
             assert_eq!(decoded, "áéíóú, hola");
+        }
+
+        #[test]
+        fn detects_utf8_as_oem_mojibake() {
+            assert!(super::looks_like_utf8_mojibake("├í├®├¡"));
+            assert!(!super::looks_like_utf8_mojibake("áéí"));
         }
     }
 }
