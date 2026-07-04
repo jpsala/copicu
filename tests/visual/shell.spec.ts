@@ -117,6 +117,13 @@ const syntheticPagedHistory = Array.from({ length: 80 }, (_, index) => ({
   tags: null,
 }));
 
+const syntheticMarkdownScrollHistory = Array.from({ length: 80 }, (_, index) => ({
+  ...syntheticPagedHistory[index],
+  id: 6000 - index,
+  text: `COPICU_SYNTH_SCROLL_${String(index + 1).padStart(2, "0")}\n![missing](copicu://missing-${index}.png)`,
+  normalized_hash: `synthetic-scroll-${index + 1}`,
+}));
+
 async function mockTauriInvoke(
   page: Parameters<typeof test>[0]["page"],
   historyItems = syntheticLongHistory,
@@ -1239,6 +1246,25 @@ test("scrolling to the loader fetches the next history page", async ({ page }) =
 
   await expect(resultCount).toHaveText("80 total");
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+});
+
+test("manual scroll keeps moving downward while variable rows are measured", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticMarkdownScrollHistory);
+  await gotoShell(page);
+
+  const feed = page.locator(".history-feed-scroll");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_SCROLL_01/ })).toBeVisible();
+
+  let previous = await feed.evaluate((element) => element.scrollTop);
+  for (let index = 0; index < 8; index += 1) {
+    await feed.evaluate((element) => {
+      element.scrollTop += 360;
+    });
+    await page.waitForTimeout(50);
+    const current = await feed.evaluate((element) => element.scrollTop);
+    expect(current).toBeGreaterThanOrEqual(previous);
+    previous = current;
+  }
 });
 
 test("selected item survives history reorder by id", async ({ page }) => {

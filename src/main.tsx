@@ -928,6 +928,7 @@ function App() {
       return hasMetadata(item) ? 132 : 108;
     },
     getItemKey: (index) => history[index]?.id ?? `loader-${index}`,
+    ...({ shouldAdjustScrollPositionOnItemSizeChange: () => false } as Record<string, unknown>),
     overscan: 24,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
