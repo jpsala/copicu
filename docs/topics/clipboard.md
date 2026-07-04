@@ -42,16 +42,16 @@ Capturar texto plano, evitar duplicados consecutivos, persistir historial y escr
 - Context7: `/websites/rs_clipboard-rs`, consulta `get_text set_text clipboard Rust HTML image formats`.
 - Context7: `/websites/rs_clipboard-rs`, consulta `ClipboardWatcher ClipboardHandler start_watch on_clipboard_change Rust Windows`.
 - Context7: `/microsoft/windows-rs`, consulta `AddClipboardFormatListener WM_CLIPBOARDUPDATE RemoveClipboardFormatListener Rust windows crate`.
-- Tauri Clipboard plugin: https://v2.tauri.app/plugin/clipboard/
-- Tauri Clipboard JS reference: https://v2.tauri.app/reference/javascript/clipboard-manager/
-- arboard docs.rs: https://docs.rs/arboard/latest/arboard/struct.Clipboard.html
-- clipboard-rs docs.rs: https://docs.rs/crate/clipboard-rs/latest
-- clipboard-rs `ClipboardWatcher`: https://docs.rs/clipboard-rs/latest/clipboard_rs/trait.ClipboardWatcher.html
-- clipboard-win docs.rs: https://docs.rs/crate/clipboard-win/latest
-- clipboard-win GitHub: https://github.com/DoumanAsh/clipboard-win
-- Microsoft Learn `AddClipboardFormatListener`: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-addclipboardformatlistener
-- Microsoft Learn `WM_CLIPBOARDUPDATE`: https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-clipboardupdate
-- Raymond Chen on modern clipboard listener model: https://devblogs.microsoft.com/oldnewthing/20110919-00/?p=9613
+- Tauri Clipboard plugin: <https://v2.tauri.app/plugin/clipboard/>
+- Tauri Clipboard JS reference: <https://v2.tauri.app/reference/javascript/clipboard-manager/>
+- arboard docs.rs: <https://docs.rs/arboard/latest/arboard/struct.Clipboard.html>
+- clipboard-rs docs.rs: <https://docs.rs/crate/clipboard-rs/latest>
+- clipboard-rs `ClipboardWatcher`: <https://docs.rs/clipboard-rs/latest/clipboard_rs/trait.ClipboardWatcher.html>
+- clipboard-win docs.rs: <https://docs.rs/crate/clipboard-win/latest>
+- clipboard-win GitHub: <https://github.com/DoumanAsh/clipboard-win>
+- Microsoft Learn `AddClipboardFormatListener`: <https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-addclipboardformatlistener>
+- Microsoft Learn `WM_CLIPBOARDUPDATE`: <https://learn.microsoft.com/en-us/windows/win32/dataxchg/wm-clipboardupdate>
+- Raymond Chen on modern clipboard listener model: <https://devblogs.microsoft.com/oldnewthing/20110919-00/?p=9613>
 
 ## Hallazgos
 
@@ -100,6 +100,40 @@ Read/write puntual:
 - Rich formats quedan fuera de MVP 0.
 - Clipboard Windows es global y puede estar ocupado por otra app; implementar retry/backoff y tratar errores transitorios como esperables.
 - El listener puede causar conflictos si abre el clipboard demasiado agresivamente; leer con retry/debounce, no en loops apretados.
+
+## Encoding Windows / Terminal
+
+Incidente 2026-07-03: copiar texto acentuado desde Windows Terminal podia llegar al historial como mojibake, por ejemplo `áéíóú` -> `├í├®├¡├│├║`. La DB no era la causa: cuando Rust recibe Unicode correcto, SQLite lo persiste bien. El problema era el contenido publicado por la fuente en formatos Windows mezclados.
+
+Hallazgos de repro:
+
+- Un item bueno queda en SQLite como Unicode correcto (`áéíóú ñ Ñ ü Ü`).
+- El item roto tenia evento de captura desde `windowsterminal.exe` con formatos `CF_UNICODETEXT`, `CF_LOCALE`, `CF_TEXT`, `CF_OEMTEXT`.
+- En ese caso, `CF_UNICODETEXT` ya podia estar mojibakeado, mientras `CF_TEXT` contenia bytes UTF-8 recuperables.
+- `clipboard-rs`/abstracciones que priorizan `CF_UNICODETEXT` preservan el mojibake si la fuente lo publico asi.
+
+Decision de implementacion actual:
+
+1. En Windows, leer texto de captura con Win32 directo, no solo `clipboard-rs::get_text()`.
+2. Mantener `CF_UNICODETEXT` como ruta canonica para apps normales.
+3. Si `CF_UNICODETEXT` parece mojibake UTF-8/OEM (`├`, `┬`, `Γ`) y `CF_TEXT` decodifica como UTF-8 valido, preferir `CF_TEXT`.
+4. No aplicar esa preferencia globalmente si `CF_UNICODETEXT` se ve correcto; evitar romper apps que usan ANSI/codepage real en `CF_TEXT`.
+5. Los items historicos ya capturados rotos no se arreglan solos: recapturar o hacer una reparacion puntual si importa.
+
+Smokes sinteticos utiles:
+
+- Unicode normal: `Set-Clipboard` con `áéíóú ñ Ñ ü Ü €`, luego verificar SQLite.
+- ANSI normal: publicar solo `CF_TEXT` cp1252, verificar fallback.
+- Terminal-like: publicar `CF_UNICODETEXT` mojibakeado + `CF_TEXT` UTF-8 correcto; Copicu debe guardar el texto correcto.
+
+Referencias externas revisadas:
+
+- Microsoft Learn `Clipboard Formats`: `CF_UNICODETEXT` es el formato Unicode de Windows; `CF_TEXT`/`CF_OEMTEXT` son formatos de texto alternativos/convertidos. <https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats>
+- Microsoft Learn `Using the Clipboard`: APIs Win32 de lectura/escritura de formatos clipboard. <https://learn.microsoft.com/en-us/windows/win32/dataxchg/using-the-clipboard>
+- CopyQ modela texto como MIME/UTF-8 al clonar datos (`cloneText()` usa `text/plain` y fallback `QMimeData::text()`): <https://github.com/hluk/CopyQ/blob/0dd509993b3241beb8ed26822c5e5c38612adfe2/src/common/common.cpp#L498-L502>
+- CopyQ documenta que sus helpers de texto asumen UTF-8 para datos textuales: <https://github.com/hluk/CopyQ/blob/0dd509993b3241beb8ed26822c5e5c38612adfe2/src/common/textdata.h#L19-L23>
+- Ditto conserva/consulta `CF_UNICODETEXT` y `CF_TEXT` como formatos separados: <https://github.com/sabrogden/Ditto/blob/7b65b04a133d62ec81f180a3d2cb1310637b94cf/src/Clip.cpp#L1746-L1766>
+- Ditto tiene conversiones explicitas ANSI/UTF-8/Unicode: <https://github.com/sabrogden/Ditto/blob/7b65b04a133d62ec81f180a3d2cb1310637b94cf/Shared/TextConvert.h#L7-L28>
 
 ## Decision Actual
 
