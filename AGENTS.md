@@ -27,6 +27,7 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 - Para bugs/refactors/reviews, usar `docs/topics/minimal-implementation.md` como politica liviana: preferir reusar y reducir superficie, sin quitar seguridad, privacidad, accesibilidad, checks ni memoria durable.
 - No dejar archivos de contexto preexistentes sin indexar ni sin destino claro.
 - Mantener documentacion liviana: decisiones durables a docs estables; trabajos vivos en `docs/tracks/`.
+- Para bugs/debugging, documentar solo conocimiento reusable para el futuro: regla vigente, invariant, repro minimo, smoke/check util, decision de diseño o referencia externa necesaria. No guardar narrativa historica, intentos fallidos ni diagnosticos negativos salvo que cambien una regla operativa durable.
 - Para features grandes, crear o actualizar una spec en `specs/` antes de implementar.
 - Tras cambios de codigo/config/assets/frontend/backend, reiniciar o recargar la instancia dev segun corresponda; no dejar una app vieja corriendo.
 - No dejar que la capa agentica se convierta en transcript, backlog historico o lectura obligatoria amplia. Si crece, compactar, archivar o mover a referencia profunda.
