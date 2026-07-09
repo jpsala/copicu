@@ -1,6 +1,6 @@
 ---
 name: aos-plan-implementar
-description: Create, review, and execute a bounded implementation plan with the right Pi/AOS tool. Use when JP asks to plan and implement a feature end-to-end, turn an idea/spec/TODO into execution, or choose between manual work, planner, dgoal, until-done, long-task, or taskflow.
+description: Create, review, and execute a bounded implementation plan with the right Pi/AOS tool. Use when JP asks to plan and implement a feature end-to-end, turn an idea/spec/TODO into execution, or choose between manual work, planner, until-done, long-task, taskflow, or dgoal only when its audit loop is worth the UX cost.
 ---
 
 # AOS Plan E Implementar
@@ -20,7 +20,7 @@ Comando Pi recomendado:
 
 ## Principio
 
-Elegir **un motor principal** para implementar. No anidar planner + dgoal + until-done salvo decision explicita. Las demas herramientas son apoyos: `advisor` para criterio, `taskflow`/council para reviews, `pi-lens` para feedback, Ponytail para recortar scope.
+Elegir **un motor principal** para implementar. No anidar planner + dgoal + until-done salvo decision explicita. Las demas herramientas son apoyos: `advisor` para criterio, `taskflow`/council para reviews, `pi-lens` para feedback, Ponytail para recortar scope. La matriz canonica esta en `docs/topics/agent-tool-routing.md`; la policy verificable en `docs/reference/tool-routing.yaml`.
 
 ## Fases
 
@@ -42,18 +42,35 @@ Clasificar el trabajo real:
 - `implement`: hay alcance claro para editar.
 - `review`: hay diff/plan para revisar.
 
+Emitir siempre un bloque `Routing Decision` antes de planear/implementar:
+
+```text
+Routing Decision
+- Intent:
+- Primary engine:
+- Why:
+- Support tools:
+- Forbidden nesting:
+- Required gates:
+- Verification:
+```
+
 Elegir herramienta:
 
 | Caso | Herramienta principal |
 | --- | --- |
 | Cambio chico/reversible | manual + Ponytail + pi-lens + tests |
 | Feature grande con stages/TDD/branches | `pi-code-planner` |
-| Objetivo largo con auditor por fases | `pi-dgoal` |
+| Objetivo largo con auditor por fases | `pi-dgoal` solo si JP acepta su startup gate/i18n; no para fleet updates |
+| Fleet update AOS serial | `/aos-fleet-update` -> `pi_long_task` |
 | Loop hasta done con contrato/juez | `/until-done` |
 | TODO secuencial claro | `pi_long_task` |
 | Auditoria/review/fan-out/DAG | `taskflow` |
 | Research externo/versionado | `web_search` + `fetch_content`/`web_answer`; `librarian` para internals open-source |
 | Spec fuerte antes de codigo | `/task` o SpecKit |
+
+Si hay duda, usar `docs/reference/tool-routing.yaml` como contrato y preferir el
+motor mas chico que cierre el objetivo sin perder seguridad.
 
 ### 3. Plan Artifact
 

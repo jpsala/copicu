@@ -1,56 +1,43 @@
 # Skills Locales
 
-`docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` es compatibilidad tecnica estable hacia `docs/skills`; no borrarla para limpiar slash porque algunos hosts cachean paths.
+`docs/skills/` es la fuente canonica de las skills locales del repo.
 
 ## Regla
 
 - No duplicar skills en dos carpetas reales.
+- `.agents/skills` existe solo como compatibilidad tecnica y debe apuntar por junction a `docs/skills/` cuando el host debe descubrir skills.
 - Si se agrega o modifica una skill, editar `docs/skills/<nombre>/`.
-- Los comandos AOS nuevos usan prefijo `aos-*`; las carpetas sin prefijo quedan como aliases/compatibilidad local mientras no molesten.
-- Si una skill operativa cambia comportamiento durable, actualizar tambien el topic/script canonico correspondiente.
+- Si una skill es operativa del sistema, documentarla tambien en topics/working memory/decisions cuando cambie el comportamiento durable.
 
-## Contenido Principal
+## Contenido Actual
 
-- `aos-sigamos/`: continuar el trabajo activo en la misma sesion.
-- `aos-guardar-sesion/` y alias `aos-checkpoint/`: persistir valor durable sin cerrar ni cambiar de sesion.
-- `aos-cerrar-sesion/`: cierre de valor sin transcript.
-- `aos-gol-lite/`: ejecutar un lote chico verificable en la sesion actual, sin `/until-done` automatico.
-- `aos-realinear-os/`: auditoria y reparacion de la capa agentica.
-- `aos-perfect-os/`: checklist exigente para dejar el OS en condiciones.
-- `aos-orquestar/`, `aos-fanout/`: fan-out controlado con subagentes/threads cuando aporta paralelismo real.
+- `aos-impeccable/`: skill local para trabajo de UI/frontend.
+- `aos-speckit-*/`: skills locales del workflow SpecKit.
+- `aos-help/`: mostrar comandos AOS disponibles y cuando usarlos.
+- `aos-perfect-os/`: auditar y optimizar un proyecto para agentes: contexto, docs, continuidad, comandos y audit.
+- `aos-align-os-project/`: actualizar/adoptar y auditar proyectos registrados para alinear mecanica y vision AOS.
+- `aos-init-os/`, `aos-adopt-os/`, `aos-update-os/`: inicializar, adoptar o actualizar AOS en repos destino.
+- `aos-plan-implementar/`: crear, revisar y ejecutar un plan acotado eligiendo un solo motor principal (`manual`, planner, dgoal, until-done, long-task o taskflow).
+- `aos-sigamos/`: continuar con lo siguiente en la misma sesion, sin lote formal.
+- `aos-orquestar/`: proponer o ejecutar un fan-out controlado con taskflow/subagentes disponibles.
+- `aos-fanout/`: alias intensivo para maximizar orquestacion segura y volver a serial cuando no conviene.
 - `aos-dynamic-workflows-pilot/`: piloto opt-in para comparar `pi-dynamic-workflows` contra `taskflow` sin volverlo default.
+- `aos-fleet-update/`: lote serial multi-repo con `pi_long_task`, allowlist, checks y commits locales opcionales.
+- `aos-guardar-sesion/`: guardar lo valioso de la sesion en docs vivos.
+- `aos-checkpoint/` y `aos-cerrar-sesion/`: aliases legados de `aos-guardar-sesion/`.
+- `/aos-continuar` vive en el adapter Pi (`.pi/extensions/aos-tools.ts`): abre sesion nueva con prompt de continuidad despues de que JP guardo sesion.
+- `aos-realinear-os/`: auditoria y reparacion de la capa agentica.
 - `aos-evaluar-skills/`: auditar que partes del sistema agentico conviene promover a skills hibridas.
 - `aos-repo-commit-push/`: checklist para incluir cambios necesarios, commitear y pushear.
-- `impeccable/`: skill local para trabajo de UI/frontend.
-- `speckit-*/`: skills locales del workflow SpecKit.
 
-## Comandos Operativos
-
-| Usuario dice | Skill principal | Efecto |
-| --- | --- | --- |
-| `aos-sigamos` / `sigamos` | `aos-sigamos` | Sigue en la misma sesion sin cierre, handoff ni thread nuevo. |
-| `aos-guardar-sesion` / `aos-checkpoint` / `checkpoint` | `aos-guardar-sesion` | Promueve valor durable a docs sin cerrar, compactar, handoff ni thread nuevo. |
-| `aos-cerrar-sesion` / `cerrar sesion` | `aos-cerrar-sesion` | Promueve valor durable a docs, regenera indice y corre audit cuando aplica. |
-| `aos-gol` / `aos-gol-lite` | `aos-gol-lite` | Avanza un lote chico verificable en esta sesion. |
-| `aos-realinear-os` / `realinear os` | `aos-realinear-os` | Audita y repara drift de la capa agentica sin tocar producto salvo pedido explicito. |
-| `aos-perfect-os` / `perfect os` | `aos-perfect-os` | Revisa calidad agentica por capas y corrige lo seguro. |
-| `aos-orquestar` / `aos-fanout` | `aos-orquestar`, `aos-fanout` | Propone/ejecuta paralelismo seguro con ownership claro. |
-| `repo commit push` | `aos-repo-commit-push` | Revisa inclusion, valida, commitea y pushea el batch. |
-
-La fuente canonica del comportamiento esta en `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/os-quality.md` y `docs/topics/pi-agentic-os.md`; las skills son wrappers cortos para discovery.
-
-## Pi
-
-Prompt templates y extension commands viven en `.pi` y usan prefijo `aos-*`:
-
-- `/aos-status`, `/aos-sync`, `/aos-compact`, `/aos-continuar`, `/aos-skills`, `/aos-checkpoint-nudge`.
-
-Usar `/reload` en Pi despues de editar `.pi`, prompts o skills.
+Las herramientas Pi de pensamiento/implementacion (`taskflow`, `pi-code-planner`, `pi-task`, `advisor`, Ponytail, `dgoal`, `context-viewer`, `pi-lens`) se documentan en `docs/topics/pi-extension-stack.md`, no como skills locales separadas.
 
 ## Validacion
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
+powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
+python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/<nombre>
 bun run context:index
 bun run context:audit
 ```
@@ -59,5 +46,12 @@ bun run context:audit
 
 - Si una skill nueva usa metadata UI, crear o regenerar `agents/openai.yaml`.
 - Si un doc humano apunta a `.agents/skills` como fuente de verdad, corregirlo a `docs/skills/`.
-- Si necesitás discovery de skills, activar primero el toggle (`/aos-skills on`) antes de tocar contenido.
-- `aos-plan-implementar/`: crear/revisar/ejecutar planes acotados eligiendo un solo motor principal.
+- Si Codex deja de descubrir skills, reparar primero la junction antes de tocar contenido: `bun run skills:on`.
+- Si Pi muestra demasiadas skills en `/`, no borrar el junction: Pi/Codex pueden cachear paths; `off`/`toggle` son aliases legacy no destructivos.
+- Tras mover o portar el repo a otro disco, correr `scripts/ensure-skills-link.ps1`: si encuentra una carpeta real en `.agents/skills`, la mueve a backup, fusiona items faltantes hacia `docs/skills/` y recrea el junction sin perder contenido.
+
+## Aplicar En Otros Repos
+
+- Copiar o fusionar `docs/skills/` como parte de AOS cuando el repo destino necesite slash commands locales.
+- No copiar `.agents/skills` como carpeta real; recrearla en destino con `scripts/ensure-skills-link.ps1`. Si el port ya trajo una carpeta real, el script la preserva como `.agents/skills.backup-*` y copia skills faltantes al canon.
+- Mantener las skills hibridas: metadata y cuerpo corto en la skill, procedimiento durable en topics, scripts o docs canonicos del repo destino.

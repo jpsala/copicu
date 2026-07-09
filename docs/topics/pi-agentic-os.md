@@ -5,213 +5,121 @@ kind: how-to
 triggers:
   - pi os
   - pi agentic os
-  - aos-checkpoint-nudge
-  - aos-status
-  - aos-compact
-  - aos-continuar
-  - aos-sync
-  - aos-gol
-  - until-done
-  - compactacion pi
-  - sesiones pi
-  - extensiones pi
-  - prompts pi
-  - rtk
-  - pi-rtk-optimizer
+  - /aos-continuar
+  - /aos-sync
+  - /aos-skills
+  - /aos-plan-implementar
+  - /aos-orquestar
+  - /aos-fanout
+  - ask_user
+  - taskflow
+  - advisor
+  - pi-lens
   - computer use
-  - cua-driver
-  - background computer use
-  - web research
-  - internet
-  - instalar paquetes
-  - instalar cli
 primary_refs:
-  - .pi/extensions/aos-checkpoint-nudge.ts
   - .pi/extensions/aos-tools.ts
-  - .pi/extensions/copicu-computer-use.ts
+  - .pi/extensions/aos-checkpoint-nudge.ts
   - .pi/prompts/
-  - docs/topics/docs-knowledge-system.md
-  - docs/topics/agentic-os-operations.md
+  - docs/topics/pi-extension-stack.md
+  - docs/topics/agent-tool-routing.md
+  - docs/reference/tool-routing.yaml
+  - docs/reference/pi-agentic-os-command-surface.md
+  - docs/OS_PLAYBOOK.md
+  - scripts/toggle-skills-link.ps1
   - docs/skills/aos-guardar-sesion/SKILL.md
 ---
 
 # Pi Agentic OS
 
-Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla de fondo no cambia: la memoria durable vive en docs versionados; Pi aporta automatizacion, nudges, sesiones, labels y compaction. Copicu es downstream AOS: el adapter Pi se mantiene local y no importa gobierno manager-only de `C:\dev\os`.
+Adapter Pi para Agentic OS. La fuente de verdad sigue siendo el repo
+(`AGENTS.md`, `WORKING_MEMORY`, topics, tracks, specs y decisiones); Pi aporta
+slash commands, prompts, tools y compaction controlada.
 
-## Web, Internet E Instalaciones
-
-- Usar web/internet libremente por defecto cuando conocimiento externo o cambiante evite adivinar: documentacion oficial, changelogs/releases, issues/source, metadata de paquetes, errores, APIs, ejemplos y comparativas.
-- Si evidencia online contradice el repo local, docs del proyecto o comportamiento observado, pausar y consultar a JP antes de decidir; presentar ambas evidencias con fuentes y el impacto practico.
-- No enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos.
-- Priorizar fuentes oficiales y citar fuentes cuando afecten decisiones tecnicas.
-- Antes de instalar dependencias, CLIs globales, paquetes de sistema, herramientas de package-manager o binarios/scripts remotos, pedir autorizacion explicita con comando exacto, alcance, motivo, riesgos, alternativa, cambios esperados y rollback.
-- Tratar `curl | sh`, binarios remotos y scripts de instalacion no auditados como alto riesgo; preferir package managers, checksums, docs oficiales o pasos inspeccionables.
+Detalle historico/completo de comandos y paquetes:
+`docs/reference/pi-agentic-os-command-surface.md` y
+`docs/topics/pi-extension-stack.md`.
 
 ## Comandos Pi Locales
 
+Regla de visibilidad: con `enableSkillCommands=false`, `docs/skills/*` no aparece
+como slash command. Los slash visibles de AOS deben existir como
+`.pi/prompts/aos-*.md` o registrarse en `.pi/extensions/aos-tools.ts`.
+
 | Comando | Tipo | Uso |
 | --- | --- | --- |
-| `/aos-guardar-sesion` | prompt template | Persistir valor durable sin cerrar sesion ni compactar. |
-| `/aos-checkpoint-nudge` | extension command | Ver/controlar avisos por uso de contexto. Subcomandos: `prefill`, `mute`, `unmute`, `test`. |
-| `/aos-status [audit]` | extension command | Insertar estado operativo: sesion, modelo, contexto, git y opcional `bun run context:audit`. |
-| `/aos-compact [foco]` | extension command | Ejecutar compactacion manual con instrucciones OS-aware. Usar despues de checkpoint si habia valor durable. |
-| `/aos-continuar [objetivo]` | extension command | Asume que JP ya corrio `/aos-guardar-sesion`; abre una sesion nueva y envia un prompt de continuidad que referencia docs vivos, sin duplicarlos. |
-| `/aos-continuar --preview [objetivo]` | extension command | Igual, pero deja el prompt cargado en el editor de la nueva sesion sin enviarlo automaticamente. |
-| `/aos-sync` | extension command | Sincronizar el OS despues de cambios en docs, topics, tracks, skills, prompts o extensiones: mantiene skills discovery off en Pi, regenera context index y corre audit. |
-| `/aos-gol [objetivo]` | extension command | Preparar un `/until-done` acotado para ejecutar una tarea Copicu completa con constraints del OS. Requiere revisar y enviar el comando prellenado. |
-| `/release-windows [tag|patch|minor|major|rc] [notas]` | prompt template | Ejecutar el release Windows completo usando `npm run release:windows`. Si no se pasa tag, el script calcula el proximo release mirando version actual, tags y GitHub releases. Confirma antes de commit, push y GitHub release/subida de assets. |
-| `/until-done <objetivo>` | package command | Loop instalado via `pi-until-done` para objetivos con contrato, presupuesto, pausa/resume y verificacion. Usar para tareas acotadas que deban completarse o bloquearse con evidencia. |
-| `/reload` | built-in Pi | Recargar extensiones, prompts y skills despues de instalar paquetes o editar `.pi/`. |
+| `/aos-help` | prompt | Mostrar comandos AOS. |
+| `/aos-guardar-sesion` | prompt | Persistir valor durable sin abrir sesion nueva. |
+| `/aos-checkpoint`, `/aos-cerrar` | prompt legacy | Alias de guardado/cierre. |
+| `/aos-continuar [objetivo]` | extension | Abrir sesion nueva con prompt desde docs vivos. |
+| `/aos-plan-implementar` | extension | Crear/revisar plan y elegir un motor principal. |
+| `/aos-routing status | set | clear` | extension | Registro advisory del motor principal activo. |
+| `/aos-status [audit]` | extension | Estado git/contexto/audit/routing. |
+| `/aos-sync` | extension | Ensure skills link, regenerar indice y correr audit. |
+| `/aos-skills status | on | off | toggle` | extension | Ver/reparar `.agents/skills`; `off`/`toggle` son aliases legacy no destructivos. |
+| `/aos-compact [foco]` | extension | Compactacion manual OS-aware. |
+| `/aos-orquestar`, `/aos-fanout` | prompt | Fan-out controlado con taskflow/subagentes. |
+| `/aos-evaluar-skills` | prompt | Auditar skills/prompts/extensiones. |
+| `/ask`, `/advisor`, `/until-done`, `/planner-*` | paquetes Pi | Disponibles segun stack global. |
 
+## Extensiones Locales
 
-## Extensiones
+- `.pi/extensions/aos-tools.ts`: `/aos-status`, `/aos-routing`, `/aos-sync`,
+  `/aos-skills`, `/aos-compact`, `/aos-continuar`, `/aos-plan-implementar`.
+- `.pi/extensions/aos-checkpoint-nudge.ts`: nudges para guardar contexto cuando
+  uso de ventana/diff/tiempo lo justifica.
 
-### `.pi/extensions/aos-checkpoint-nudge.ts`
+## Strategy Gate
 
-- Avisa cuando el contexto cruza 70%, 85% y 92%.
-- Mantiene status en footer mientras el contexto esta alto.
-- No ejecuta checkpoint ni compaction automaticamente.
-- Detecta input de checkpoint y etiqueta el leaf final en `/tree` como `checkpoint YYYY-MM-DD HH:mm`.
+Usar `/aos-plan-implementar` para trabajos medianos/grandes. Elegir **un** motor:
+manual, planner, dgoal, until-done, long-task o taskflow. No anidar motores sin
+explicitar por que.
 
-### `.pi/extensions/aos-tools.ts`
+La fuente canonica de combinacion es `docs/topics/agent-tool-routing.md`; la
+policy verificable vive en `docs/reference/tool-routing.yaml`.
 
-- `/aos-status`: snapshot operativo no semantico. Puede correr audit bajo demanda.
-- `/aos-sync`: comando de higiene despues de tocar la capa OS; mantiene `.agents/skills` deshabilitado en Pi para reducir ruido, corre `bun run context:index` y `bun run context:audit`, y deja salida visible en la sesion.
-- `/aos-gol [objetivo]`: prepara en el editor un `/until-done` con constraints Copicu/OS. No arranca solo; JP revisa y envia.
-- `/aos-compact`: wrapper seguro para `ctx.compact()` con instrucciones de preservacion OS.
-- Hook `session_before_compact`: avisa que existe la ruta manual `/aos-guardar-sesion` -> `/aos-compact`.
+Antes de implementar, emitir un bloque `Routing Decision` con intent, motor
+principal, motivo, apoyos, nesting prohibido, gates y verificacion.
 
-### `pi-until-done`
+Heuristica corta:
 
-- Instalado globalmente con `pi install npm:pi-until-done` (`~/.pi/agent/npm/node_modules/pi-until-done`).
-- Comando principal: `/until-done <objetivo>`; wrapper local: `/aos-gol [objetivo]`.
-- Usarlo para objetivos acotados que deben terminar en uno de dos estados: completado con verificacion/evidencia, o bloqueado con razon exacta.
-- Mantener presupuestos modestos y evitar objetivos amplios tipo "hacer roadmap"; partir tracks/specs grandes en metas concretas.
-- Para riesgos nativos (clipboard, global shortcuts, foco previo, paste, instalador, acciones destructivas), el loop debe bloquear y pedir confirmacion/dogfood de JP en vez de inventar exito.
+- cambio chico: manual + Ponytail si aplica + checks;
+- investigacion externa/versionada: `web_search`/`fetch_content`/`web_answer`,
+  `librarian` para internals OSS;
+- decision fuerte: `advisor()` antes de `DECISIONS.md`, arquitectura/storage/prod
+  o loops largos; no para orientación barata, checks o pasos chicos de un
+  playbook ya decidido;
+- fleet update AOS serial: `/aos-fleet-update` -> `pi_long_task`; no `dgoal`;
+- auditoria/review/fan-out: `taskflow` o council si el paralelismo vale el costo;
+- codigo tocado: `lens_diagnostics`/LSP como feedback y checks del repo como gate.
 
-### `.pi/extensions/copicu-computer-use.ts`
+## Human-in-the-loop
 
-- Tool Pi `copicu_computer_use` para dogfood manual de la app Windows/Tauri desde el agente.
-- Implementa una capa compacta sobre AHK-MCP local en `.codex-run/tools/ahk-mcp` y AutoHotkey v2 (`C:/Program Files/AutoHotkey/v2/AutoHotkey64.exe`).
-- Acciones utiles: `windows`, `open_picker`, `focus`, `send`, `type`, `click`, `screenshot`, `read`, `uia_tree`, `uia_find`, `self_test`, `debug_last`.
-- `self_test` valida AHK y ventanas; `debug_last` lee `.codex-run/computer-use/last-call.json` con params, script Python generado, stdout/stderr y exit code.
-- Las llamadas se serializan con una queue interna para evitar carreras entre AHK/ventanas cuando el agente dispara tools en paralelo.
-- Para Copicu/Tauri, UIA ve la ventana pero expone poco del WebView (`Edit` no aparece); ruta confiable actual: foco/hotkeys/teclado + screenshots. `window_info` puede timeoutear con Tauri, no usarlo por defecto.
-- Hay config global opcional de MCP en `~/.pi/agent/mcp.json` con `pi-mcp-extension` + `ahk-mcp` lazy, pero el wrapper versionado es la interfaz recomendada para este repo.
+Usar `ask_user`/`ask_user_question` cuando hay decision de producto, arquitectura,
+credenciales, permisos, instalaciones, prod/deploy, acciones destructivas o
+contradiccion internet-vs-local. No preguntar lo inferible ni encadenar modales.
 
-### Orquestacion Con Threads/Subagentes
+## Browser / Computer Use
 
-Usar `aos-orquestar` o `/aos-fanout` solo cuando haya frentes independientes y el hilo principal pueda integrar/verificar. Preferir `explorer` read-only; usar `worker` solo con ownership exclusivo por archivos o repos, sin solapamiento. Pedir confirmacion con `ask_user` si JP no pidio threads explicitamente o si hay riesgo. No paralelizar secretos, deploy/push, acciones destructivas, decisiones humanas ni ediciones sobre los mismos archivos. El hilo principal conserva la decision final, integra resultados y corre checks.
+Browser signed-in, Cua Driver, hotkeys, clipboard, apps o UI visible requieren el
+aviso inicial de `AGENTS.md` para un batch coherente. No tocar cuentas reales,
+canales, pagos, prod ni datos privados sin confirmacion explicita.
 
-### Pi Performance En Este Repo
+## Orquestacion
 
-Copicu tiene muchos docs, skills vendorizadas y archivos monoliticos. Para que Pi no se ponga lento:
-
-- Usar `map/search` scoped (`src`, `src-tauri/src`, `docs/topics`, `docs/tracks`) antes que `map .`.
-- No abrir `docs/skills/impeccable/`, `docs/reference/`, `dist/`, `test-results/` ni `.codex-run/` salvo necesidad explicita.
-- Leer `docs/.generated/context-index.md` como indice, no como contexto completo permanente.
-- Si una lectura/command se vuelve lenta, repetirla con scope y exclusiones (`--exclude`, paths concretos, o `git ls-files`).
-- Mantener `WORKING_MEMORY.md`, `TOPICS.md` y topics activos compactos; archivar historia en `docs/reference/`.
-
-### RTK / Token Savings
-
-RTK es una optimizacion global de Pi, no dependencia de este repo. Si aparece `[rtk] No hook installed`, es un aviso global de optimizacion, no un problema del proyecto; se puede ignorar o habilitar fuera del repo con `rtk init -g` y verificar con `rtk gain`.
-
-Politica segura local:
-
-- No versionar config global de RTK ni exigirlo como dependencia del repo.
-- Mantener lecturas exactas: `readCompaction.enabled=false` y `sourceCodeFilteringEnabled=false`.
-- Usar RTK solo para output ruidoso (`git diff/log`, logs, builds/tests largos, busquedas grandes).
-- Para evidencia final, anchors de `edit`, lineas exactas o errores raros, pedir output crudo o leer archivos directamente.
-
-## Politica De Automatizacion
-
-Hacer automatico:
-
-- nudges por contexto;
-- labels/checkpoints de navegacion;
-- status operativo;
-- handoff estructural desde docs;
-- compaction manual con instrucciones predecibles.
-
-No hacer automatico por defecto:
-
-- editar docs sin gesto humano;
-- ejecutar `/aos-guardar-sesion` solo por tokens;
-- compactar agresivamente antes de persistir valor durable;
-- crear sesiones nuevas sin confirmacion.
+Usar taskflow/council cuando haya paralelismo real, ownership claro y retorno
+comprimido. El orquestador integra y verifica; workers empiezan read-only salvo
+plan aprobado.
 
 ## Flujo Recomendado
 
-A 70% de contexto:
-
-1. seguir si no hay valor durable nuevo;
-2. si hubo decisiones, usar `/aos-guardar-sesion`;
-3. si el contexto molesta despues del checkpoint, usar `/aos-compact`.
-
-Antes de cambiar de frente:
-
-1. `/aos-guardar-sesion` si hubo valor nuevo;
-3. enviar `aos-sigamos` en la sesion nueva cuando quieras arrancar.
-
-Para ejecutar un objetivo completo y seguro:
-
-1. elegir una tarea acotada desde topic/track/spec;
-2. usar `/aos-gol <objetivo>`;
-3. revisar el `/until-done` prellenado y enviarlo;
-4. pausar o bloquear si aparece riesgo nativo, falta de evidencia o decision de producto.
-
-Para diagnostico:
-
-```text
-/aos-status audit
-```
-
-Despues de cambiar el OS:
-
-```text
-/aos-sync
-```
-
-Usar `/reload` despues si se editaron o instalaron extensiones, prompts, skills o paquetes Pi.
+1. Leer ruta liviana: index -> working memory -> TOPICS -> topic puntual.
+2. Inspeccionar git antes de editar.
+3. Elegir herramienta con la tabla de `docs/topics/pi-extension-stack.md`.
+4. Ejecutar el corte mas chico verificable.
+5. Si se tocaron docs: `bun run context:index` y `bun run check`.
+6. Guardar valor durable en docs; no transcript.
 
 ## Portabilidad
 
-El adapter Pi es opcional. Copicu puede trabajar solo con docs versionados, scripts de contexto y skills locales; `.pi/` agrega comodidad cuando se usa Pi.
-
-## Bloat
-
-El primer ajuste Pi redujo `docs/WORKING_MEMORY.md` y archivo la version larga en `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
-
-Pendiente: compactar tracks grandes, especialmente `docs/tracks/012-tags-and-hotkeys.md`, moviendo historia a `docs/reference/` sin perder estado retomable.
-## Computer Use Local / Background
-
-Usar computer use solo cuando APIs, tests o browser/DOM no alcancen para validar una UI real. No convertirlo en requisito duro del repo: la infraestructura global de JP vive en `C:\dev\infra`; hoy incluye Cua Driver global via Pi MCP `cua-driver` en modo `eager`/persistente (tras `/reload` o reinicio), y puede incluir browser remoto o VM segun la maquina.
-
-Politica local:
-
-- Documentar la superficie permitida antes de automatizar: app fixture, sandbox, browser remoto, VM o ventana especifica.
-- Preferir fixtures efimeras y datos de prueba; no operar sobre documentos, cuentas o apps reales sin confirmacion de JP.
-- Mantener evidencia externa: archivo resultado, screenshot, log, estado de DB o comando de verificacion. No alcanza con decir que se clickeo.
-- Orden recomendado: API/test directo -> Playwright/DOM/browser tool -> Cua/UIA background -> computer-use visual por screenshots/VM. Subir de nivel solo cuando el anterior no cubre el caso.
-- Pedir confirmacion con `ask_user` antes de login, pagos, compras, envios, publicaciones, cambios productivos, aceptacion de terminos, instalar drivers, habilitar autostart/RunLevel Highest, exponer VNC/noVNC o abrir tunnels.
-- Cerrar procesos/ventanas y limpiar temporales al finalizar. Registrar limitaciones conocidas por control (por ejemplo combos/selects) en el topic o track del trabajo.
-
-Smoke test minimo por repo:
-
-1. Crear fixture/app efimera con inputs, boton y salida verificable.
-2. Lanzarla con computer use sin robar foreground cuando aplique.
-3. Leer accessibility tree/screenshot antes de actuar.
-4. Completar campos y disparar accion final.
-5. Verificar salida por comando/archivo/API y documentar gotchas.
-6. Cerrar procesos y borrar datos temporales si corresponde.
-
-Patron probado para E2E real de producto:
-
-- Referencia actual: `C:/dev/dictation-tauri/scripts/desktop-dictation-e2e.ps1`, passing report `artifacts/desktop-control/dictation-e2e/20260624-104246/report.json`.
-- Separar aprobaciones por flags: side effects desktop, provider/cloud call y clipboard/paste mutation.
-- Usar target fixture editable o sandbox real con salida externa verificable; guardar live output fuera del repo si el dev server watch-ea artifacts y copiarlo al final.
-- Validar cadena completa, no solo UI: driver health, app launch, target foreground, trigger/hotkey, input controlado, artifact fresco, provider/runtime, delivery, clipboard restoration y cleanup.
-- El reporte versionable/ignorado debe guardar rutas, hashes/longitudes/tokens esperados y checks; no guardar raw transcript, secretos ni contenido privado en docs/chat.
-
+`.pi/` es adapter opcional. Repos destino reciben solo lo que necesitan; no copiar
+settings globales, inventarios de JP ni registry manager-only.

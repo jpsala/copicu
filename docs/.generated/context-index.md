@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-09T12:19:36.014Z
+Generated: 2026-07-09T15:09:44.540Z
 
 ## Topics
 
@@ -88,7 +88,7 @@ Generated: 2026-07-09T12:19:36.014Z
 ## Skills
 
 - Canon: [docs/skills/](../skills/)
-- Operational commands: aos-dynamic-workflows-pilot, aos-evaluar-skills, aos-fanout, aos-gol-lite, aos-guardar-sesion, aos-help, aos-orquestar, aos-perfect-os, aos-plan-implementar, aos-realinear-os, aos-repo-commit-push, aos-sigamos
+- Operational commands: aos-dynamic-workflows-pilot, aos-evaluar-skills, aos-fanout, aos-fleet-update, aos-gol-lite, aos-guardar-sesion, aos-help, aos-orquestar, aos-perfect-os, aos-plan-implementar, aos-realinear-os, aos-repo-commit-push, aos-sigamos
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
 ## Pi Resources
