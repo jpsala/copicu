@@ -10,18 +10,12 @@ const root = process.cwd();
 const findings: Finding[] = [];
 
 const requiredAosPiPrompts = [
-  "aos-cerrar.md",
-  "aos-checkpoint.md",
-  "aos-continuar-sesion.md",
+  "aos-evaluar-skills.md",
   "aos-fanout.md",
-  "aos-gol.md",
   "aos-guardar-sesion.md",
   "aos-help.md",
-  "aos-nueva-sesion.md",
-  "aos-nueva-sesion-con-gol.md",
   "aos-orquestar.md",
   "aos-sigamos.md",
-  "aos-siguiente.md",
 ];
 
 const requiredAosPiExtensions = [
@@ -32,9 +26,7 @@ const requiredAosPiExtensions = [
 const requiredAosToolCommands = [
   "aos-compact",
   "aos-continuar",
-  "aos-gol",
-  "aos-nueva-sesion",
-  "aos-nueva-sesion-con-gol",
+  "aos-plan-implementar",
   "aos-skills",
   "aos-status",
   "aos-sync",
@@ -228,9 +220,8 @@ if ((exists("docs/topics/agentic-os-operations.md") || exists("docs/skills/aos-r
   add("warn", "AGENTS.md should keep a short `aos-realinear-os` pointer to docs/topics/agentic-os-operations.md");
 }
 
-if ((exists("docs/skills/aos-cerrar-sesion") || exists("docs/skills/aos-continuar-sesion"))
-  && (!agents.includes("aos-cerrar-sesion") || !agents.includes("aos-continuar-sesion"))) {
-  add("warn", "AGENTS.md should keep short pointers for `aos-cerrar-sesion` and `aos-continuar-sesion`");
+if (exists("docs/skills/aos-cerrar-sesion") && !agents.includes("aos-cerrar-sesion")) {
+  add("warn", "AGENTS.md should keep short pointer for `aos-cerrar-sesion`");
 }
 
 if (docsReadme) {

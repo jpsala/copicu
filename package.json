@@ -30,7 +30,14 @@
     "tauri": "tauri",
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1",
     "tauri:dev:watcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -EnableClipboardWatcher",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "context:refresh": "bun run context:index && bun run context:audit",
+    "skills:status": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status",
+    "skills:on": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 on",
+    "skills:off": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 off",
+    "skills:toggle": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 toggle",
+    "check": "bun run context:audit && bun run skills:status && bun -e \"await import('./.pi/extensions/aos-tools.ts'); console.log('aos-tools import ok')\"",
+    "check:ci": "bun scripts/agent-context-audit.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.48",

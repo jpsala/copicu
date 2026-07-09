@@ -2,11 +2,12 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-06-30T15:17:06.422Z
+Generated: 2026-07-09T11:56:09.479Z
 
 ## Topics
 
 - active: [actions-and-scripting-api](../topics/actions-and-scripting-api.md)
+- active: [agent-tool-routing](../topics/agent-tool-routing.md)
 - active: [agentic-os-operations](../topics/agentic-os-operations.md)
 - draft: [ai-search-and-actions](../topics/ai-search-and-actions.md)
 - active: [clipboard](../topics/clipboard.md)
@@ -26,6 +27,7 @@ Generated: 2026-06-30T15:17:06.422Z
 - active: [os-quality](../topics/os-quality.md)
 - active: [performance-and-memory](../topics/performance-and-memory.md)
 - active: [pi-agentic-os](../topics/pi-agentic-os.md)
+- active: [pi-extension-stack](../topics/pi-extension-stack.md)
 - active: [picker-interaction](../topics/picker-interaction.md)
 - active: [product-ambition](../topics/product-ambition.md)
 - active: [product-direction](../topics/product-direction.md)
@@ -86,12 +88,12 @@ Generated: 2026-06-30T15:17:06.422Z
 ## Skills
 
 - Canon: [docs/skills/](../skills/)
-- Operational commands: aos-evaluar-skills, aos-fanout, aos-gol-lite, aos-guardar-sesion, aos-help, aos-nueva-sesion, aos-nueva-sesion-con-gol, aos-orquestar, aos-perfect-os, aos-realinear-os, aos-repo-commit-push, aos-sigamos
+- Operational commands: aos-dynamic-workflows-pilot, aos-evaluar-skills, aos-fanout, aos-gol-lite, aos-guardar-sesion, aos-help, aos-orquestar, aos-perfect-os, aos-plan-implementar, aos-realinear-os, aos-repo-commit-push, aos-sigamos
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
 ## Pi Resources
 
-- Prompts: 16 in [.pi/prompts/](../../.pi/prompts/)
+- Prompts: 13 in [.pi/prompts/](../../.pi/prompts/)
 - Extensions: aos-checkpoint-nudge.ts, aos-tools.ts, copicu-computer-use.ts
 - Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
 

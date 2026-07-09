@@ -48,7 +48,7 @@ No abrirlo durante trabajo normal del repo ni durante `cerrar sesion`/`continuar
 
 `docs/skills/` es la fuente de verdad de las skills locales del repo.
 
-`.agents/skills` existe solo como compatibilidad tecnica: puede apuntar por junction/symlink a `docs/skills/` cuando se necesita discovery, pero en Pi queda deshabilitado por defecto para reducir ruido de slash/contexto.
+`.agents/skills` existe solo como compatibilidad tecnica estable: apunta por junction/symlink a `docs/skills/` cuando se necesita discovery y no se borra para limpiar slash porque algunos hosts cachean paths.
 
 No duplicar la misma skill en dos carpetas reales.
 
@@ -136,3 +136,8 @@ bun run context:audit
 - Si se agrega una skill nueva, indexarla desde `docs/skills/README.md`; actualizar este topic solo si cambia el criterio de diseño o mantenimiento.
 - Si una skill necesita metadata UI, mantener `agents/openai.yaml` alineado con `SKILL.md`.
 - Preferir skills hibridas cortas cuando ya existe una fuente canonica confiable.
+## Dynamic Workflows Pilot
+
+- `aos-dynamic-workflows-pilot/`: piloto opt-in para comparar `pi-dynamic-workflows` contra `taskflow` sin volverlo default.
+- `.agents/skills` se mantiene como compatibility path estable; no borrarlo para limpiar slash porque algunos hosts cachean paths.
+

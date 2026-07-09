@@ -23,41 +23,20 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Specs Activas
 
-| Spec | Estado | Abrir |
-| --- | --- | --- |
-| `004-actions-scripting-api` | active | `specs/004-actions-scripting-api/spec.md` |
-| `005-search-plan-engine` | active | `specs/005-search-plan-engine/spec.md` |
-| `006-tags-and-hotkeys` | active | `specs/006-tags-and-hotkeys/tasks.md` |
-| `008-clipboard-enrichment` | draft | `specs/008-clipboard-enrichment/spec.md` |
+`004-actions-scripting-api`, `005-search-plan-engine`, `006-tags-and-hotkeys` y draft `008-clipboard-enrichment`. Abrir el directorio `specs/<id>/` solo si el pedido lo requiere.
 
 ## Decisiones Vigentes
 
-- Copicu es CopyQ-inspired, no CopyQ-compatible.
-- Stack vigente: Tauri 2, React/Vite/TypeScript, Rust, SQLite, Mantine donde aporta.
-- Priorizar velocidad/latencia percibida; aceptar coste razonable de memoria si evita romper el picker caliente.
-- Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`.
-- Release Windows vigente: `v0.3.2` (`ce27b55`); `main`/`origin/main` esta despues del corte con docs post-release; autostart hardening instalado localmente.
-- Scripts/AI usan host APIs/capabilities; no SQL/shell/fs/network crudo.
-- Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia de coste extremo.
-- Skills canonicas: `docs/skills/`; `.agents/skills` es compatibilidad.
-- Copicu es downstream AOS: no copiar registry global, memoria/tracks/decisiones del kit ni inventarios.
-- Memoria durable vive en docs versionados; Pi compaction/memoria automatica no reemplaza docs.
-- Para UI relevante abrir `docs/topics/ui-design-and-impeccable.md`.
+Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release vigente `v0.3.2` (`ce27b55`). Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
 
 ## Riesgos / Pendientes Tecnicos
 
-- Updater: respaldar fuera del repo `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`.
-- Hang instalada: si reaparece, revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar; dump previo en `.codex-run\hang-dumps\copicu-installed-hung-20260623-113818.dmp`.
-- Shortcuts/autostart: evitar colisiones instalada/dev; `Launch on Windows startup` lee OS real y bloquea cambios desde dev/override; `Ctrl+Shift+C` metadata no debe depender de `examples.assignMetadataToActive`.
-- Dogfood dev: usar `npm run dev:restart` / built-dev si `tauri dev` varia.
-- Enrichment: pendiente dogfood `026` por `Ctrl+Alt+E`; policy manual `{ apply: true }`.
-- Picker: `Ctrl+Shift+.` abre con foco; `Shift+Delete` borra seleccion; no usar no-activate default.
-- Pi lento: causas conocidas son hot docs, `docs/skills/impeccable/`, referencias historicas y monolitos. Usar scopes y evitar docs largas salvo necesidad.
+Updater: secretos fuera del repo en `.codex-run/secrets/copicu-updater.*`. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` metadata no depende de `examples.assignMetadataToActive`. Dogfood/dev: `npm run dev:restart` o built-dev; enrichment `026` pendiente por `Ctrl+Alt+E`. Picker: `Ctrl+Shift+.` foco, `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
 
 ## Comandos De Contexto
 
 OS: `bun run context:index`, `bun run context:audit`.
-Producto segun riesgo: `npm run build`, cargo check/test Tauri, `node --test tests/ai-query-planner.test.mjs`, `npm run rust:test`, `mise run release-vite-chunk-check`, `npm run perf:windows -- -AppDataDir .codex-run\perf-memory-20260611\app-data-10k -SkipBuild`, visual focalizado/full. Release/instalada: `npm run install:current`, `npm run release:windows`.
+Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai-query-planner.test.mjs`, `npm run rust:test`, `mise run release-vite-chunk-check`, perf/visual focalizado. Release/instalada: `npm run install:current`, `npm run release:windows`.
 
 ## Proximo Paso Probable
 
@@ -73,3 +52,4 @@ Producto segun riesgo: `npm run build`, cargo check/test Tauri, `node --test tes
 3. Conocimiento reusable -> `docs/topics/<topic>.md`.
 4. Decision durable -> `docs/DECISIONS.md`.
 5. Trabajo retomable -> `docs/tracks/`, sin transcript.
+- Continuidad Pi 2026-07-04: JP guarda primero con `/aos-guardar-sesion`; luego `/aos-continuar [objetivo]` es el unico comando para abrir sesion nueva con prompt de continuidad desde docs vivos. `--preview` permite revisar antes de enviar.

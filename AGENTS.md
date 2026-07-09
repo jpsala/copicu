@@ -20,6 +20,9 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 
 ## Reglas Generales
 
+- Usar web/internet libremente por defecto cuando conocimiento externo o cambiante evite adivinar: docs oficiales, releases, issues/source, metadata de paquetes, errores, APIs y comparativas. No enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos.
+- Si evidencia online contradice el repo local, docs del proyecto o comportamiento observado, consultar a JP antes de decidir; presentar ambas evidencias, fuentes e impacto practico.
+- Antes de instalar dependencias, CLIs globales, paquetes de sistema, herramientas de package-manager o binarios/scripts remotos, pedir autorizacion explicita con comando exacto, alcance, motivo, riesgos, alternativa, cambios esperados y rollback. Tratar `curl | sh`/scripts remotos como alto riesgo y preferir alternativas auditables.
 - Respetar el stack objetivo salvo decision explicita en contrario: Tauri 2, TypeScript, frontend React/Vite o Solid, Rust y SQLite.
 - No intentar paridad completa con CopyQ por defecto. El producto es CopyQ-inspired, no CopyQ-compatible.
 - Validar temprano los comportamientos nativos dificiles: monitoreo de clipboard, global shortcut, tray, foco anterior y paste-to-previous-window.
@@ -34,15 +37,14 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 
 ## Comandos De Sistema
 
-- Si JP dice `aos-realinear-os`, `realinear os` o pide auditar/reparar el sistema agentico, abrir `docs/topics/agentic-os-operations.md`. Limitar cambios a la capa agentica salvo pedido explicito.
-- Si JP dice `aos-perfect-os`, `perfect os` o pide dejar el OS en condiciones, abrir `docs/topics/os-quality.md` y aplicar el checklist sin tocar producto/runtime salvo pedido explicito.
-- Si JP dice `actualizar instalada`, `promover dev a instalada`, `crear instalador e instalar`, `instalar current` o pide que la app instalada quede igual a lo que le gusto en dev, ejecutar `npm run install:current`. Esto debe buildar Tauri, crear el instalador NSIS, cerrar instancias `copicu.exe`, instalar silencioso y relanzar `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`. Mantener separacion vigente: instalada usa `%APPDATA%\dev.jpsala.copicu`; dev usa `.codex-run\dev-isolated`.
-- Si JP dice `aos-sigamos` o `sigamos`, continuar el trabajo activo en la misma sesion. No hacer cierre, handoff, thread nuevo ni pedir `aos-gol` salvo que el usuario cambie de objetivo.
-- Si JP dice `aos-guardar-sesion`, `aos-checkpoint`, `checkpoint`, `persistí estado` o pide guardar lo valioso antes de seguir, persistir solo valor durable en docs vivos sin cerrar sesion, sin handoff, sin thread nuevo, sin pedir `aos-gol` y sin compactar salvo pedido explicito.
-- En Pi, los comandos locales del OS usan prefijo `aos-*` (`/aos-checkpoint-nudge`, `/aos-status`, `/aos-compact`, `/aos-continuar`, `/aos-sync`, `/aos-gol`) y estan documentados en `docs/topics/pi-agentic-os.md`.
-- Si JP dice `aos-cerrar-sesion` o `cerrar sesion`, persistir el valor de la sesion en docs vivos antes de responder: tracks, topics, decisiones, working memory y specs si aplica. No crear transcript ni archivo historico por defecto.
-- Si JP dice `aos-nueva-sesion`, `aos-continuar-sesion` o `continuar sesion`, hacer primero el mismo cierre de valor que `cerrar sesion` y despues abrir un thread visible nuevo con handoff compacto si la herramienta de la plataforma esta disponible; si no, devolver un prompt pegable. La memoria principal son los docs actualizados, no el prompt.
-- Si JP dice `aos-nueva-sesion-con-gol`, `aos-continuar-sesion-con-gol`, `aos-siguiente`, `continuar sesion con gol`, `continuar con gol`, `siguiente`, `nueva sesion con gol` o equivalente, hacer el cierre de valor de `continuar sesion`, abrir un thread visible nuevo con handoff compacto y pedir que la nueva sesion arranque con `aos-gol` para el proximo lote acordado. No hay variante para seguir en la misma sesion con `aos-gol`.
+- `aos-realinear-os` / `realinear os`: abrir `docs/topics/agentic-os-operations.md` y reparar solo la capa agentica salvo pedido explicito.
+- `aos-perfect-os` / `perfect os`: abrir `docs/topics/os-quality.md`, aplicar checklist, regenerar indice/audit.
+- `aos-sigamos` / `sigamos`: seguir en esta sesion; no cerrar, compactar ni abrir thread nuevo.
+- `aos-guardar-sesion` / `aos-checkpoint` / `checkpoint`: persistir valor durable en docs vivos sin transcript ni handoff.
+- `aos-cerrar-sesion` / `cerrar sesion`: guardar valor durable y cerrar, sin transcript por defecto.
+- Continuidad Pi: JP guarda primero; luego `/aos-continuar [objetivo]` abre sesion nueva desde docs vivos (`--preview` para revisar).
+- Comandos Pi locales documentados en `docs/topics/pi-agentic-os.md`: `/aos-status`, `/aos-sync`, `/aos-compact`, `/aos-continuar`, `/aos-skills`, `/aos-checkpoint-nudge`, `/aos-gol`.
+- App instalada: si JP pide promover dev a instalada/crear instalador/instalar current, ejecutar `npm run install:current`; toca procesos Copicu instalados, asi que avisar y verificar evidencia.
 
 ## Persistencia
 

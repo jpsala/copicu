@@ -1,6 +1,6 @@
 # Skills Locales
 
-`docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` es compatibilidad tecnica: en Pi queda deshabilitado por defecto para bajar ruido; se puede activar bajo demanda con `/aos-skills on` o `scripts/toggle-skills-link.ps1 on`.
+`docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` es compatibilidad tecnica estable hacia `docs/skills`; no borrarla para limpiar slash porque algunos hosts cachean paths.
 
 ## Regla
 
@@ -14,12 +14,11 @@
 - `aos-sigamos/`: continuar el trabajo activo en la misma sesion.
 - `aos-guardar-sesion/` y alias `aos-checkpoint/`: persistir valor durable sin cerrar ni cambiar de sesion.
 - `aos-cerrar-sesion/`: cierre de valor sin transcript.
-- `aos-nueva-sesion/`, `aos-continuar-sesion/`: cierre de valor mas handoff compacto para sesion nueva.
-- `aos-nueva-sesion-con-gol/`, `aos-continuar-sesion-con-gol/`: continuidad que pide arrancar la proxima sesion con `aos-gol`.
 - `aos-gol-lite/`: ejecutar un lote chico verificable en la sesion actual, sin `/until-done` automatico.
 - `aos-realinear-os/`: auditoria y reparacion de la capa agentica.
 - `aos-perfect-os/`: checklist exigente para dejar el OS en condiciones.
 - `aos-orquestar/`, `aos-fanout/`: fan-out controlado con subagentes/threads cuando aporta paralelismo real.
+- `aos-dynamic-workflows-pilot/`: piloto opt-in para comparar `pi-dynamic-workflows` contra `taskflow` sin volverlo default.
 - `aos-evaluar-skills/`: auditar que partes del sistema agentico conviene promover a skills hibridas.
 - `aos-repo-commit-push/`: checklist para incluir cambios necesarios, commitear y pushear.
 - `impeccable/`: skill local para trabajo de UI/frontend.
@@ -32,8 +31,6 @@
 | `aos-sigamos` / `sigamos` | `aos-sigamos` | Sigue en la misma sesion sin cierre, handoff ni thread nuevo. |
 | `aos-guardar-sesion` / `aos-checkpoint` / `checkpoint` | `aos-guardar-sesion` | Promueve valor durable a docs sin cerrar, compactar, handoff ni thread nuevo. |
 | `aos-cerrar-sesion` / `cerrar sesion` | `aos-cerrar-sesion` | Promueve valor durable a docs, regenera indice y corre audit cuando aplica. |
-| `aos-nueva-sesion` / `aos-continuar-sesion` / `continuar sesion` | `aos-nueva-sesion` | Cierre de valor + handoff compacto para sesion nueva. |
-| `aos-nueva-sesion-con-gol` / `aos-siguiente` / `siguiente` | `aos-nueva-sesion-con-gol` | Cierre + handoff + instruccion de arrancar con `aos-gol`. |
 | `aos-gol` / `aos-gol-lite` | `aos-gol-lite` | Avanza un lote chico verificable en esta sesion. |
 | `aos-realinear-os` / `realinear os` | `aos-realinear-os` | Audita y repara drift de la capa agentica sin tocar producto salvo pedido explicito. |
 | `aos-perfect-os` / `perfect os` | `aos-perfect-os` | Revisa calidad agentica por capas y corrige lo seguro. |
@@ -46,7 +43,6 @@ La fuente canonica del comportamiento esta en `docs/topics/docs-knowledge-system
 
 Prompt templates y extension commands viven en `.pi` y usan prefijo `aos-*`:
 
-- `/aos-guardar-sesion`, `/aos-checkpoint`, `/aos-cerrar`, `/aos-continuar-sesion`, `/aos-nueva-sesion`, `/aos-nueva-sesion-con-gol`, `/aos-sigamos`, `/aos-siguiente`, `/aos-gol`.
 - `/aos-status`, `/aos-sync`, `/aos-compact`, `/aos-continuar`, `/aos-skills`, `/aos-checkpoint-nudge`.
 
 Usar `/reload` en Pi despues de editar `.pi`, prompts o skills.
@@ -64,3 +60,4 @@ bun run context:audit
 - Si una skill nueva usa metadata UI, crear o regenerar `agents/openai.yaml`.
 - Si un doc humano apunta a `.agents/skills` como fuente de verdad, corregirlo a `docs/skills/`.
 - Si necesitás discovery de skills, activar primero el toggle (`/aos-skills on`) antes de tocar contenido.
+- `aos-plan-implementar/`: crear/revisar/ejecutar planes acotados eligiendo un solo motor principal.

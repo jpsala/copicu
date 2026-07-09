@@ -21,6 +21,10 @@ triggers:
   - computer use
   - cua-driver
   - background computer use
+  - web research
+  - internet
+  - instalar paquetes
+  - instalar cli
 primary_refs:
   - .pi/extensions/aos-checkpoint-nudge.ts
   - .pi/extensions/aos-tools.ts
@@ -35,6 +39,15 @@ primary_refs:
 
 Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla de fondo no cambia: la memoria durable vive en docs versionados; Pi aporta automatizacion, nudges, sesiones, labels y compaction. Copicu es downstream AOS: el adapter Pi se mantiene local y no importa gobierno manager-only de `C:\dev\os`.
 
+## Web, Internet E Instalaciones
+
+- Usar web/internet libremente por defecto cuando conocimiento externo o cambiante evite adivinar: documentacion oficial, changelogs/releases, issues/source, metadata de paquetes, errores, APIs, ejemplos y comparativas.
+- Si evidencia online contradice el repo local, docs del proyecto o comportamiento observado, pausar y consultar a JP antes de decidir; presentar ambas evidencias con fuentes y el impacto practico.
+- No enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos.
+- Priorizar fuentes oficiales y citar fuentes cuando afecten decisiones tecnicas.
+- Antes de instalar dependencias, CLIs globales, paquetes de sistema, herramientas de package-manager o binarios/scripts remotos, pedir autorizacion explicita con comando exacto, alcance, motivo, riesgos, alternativa, cambios esperados y rollback.
+- Tratar `curl | sh`, binarios remotos y scripts de instalacion no auditados como alto riesgo; preferir package managers, checksums, docs oficiales o pasos inspeccionables.
+
 ## Comandos Pi Locales
 
 | Comando | Tipo | Uso |
@@ -43,15 +56,14 @@ Este topic documenta la adaptacion del sistema agentico de Copicu a Pi. La regla
 | `/aos-checkpoint-nudge` | extension command | Ver/controlar avisos por uso de contexto. Subcomandos: `prefill`, `mute`, `unmute`, `test`. |
 | `/aos-status [audit]` | extension command | Insertar estado operativo: sesion, modelo, contexto, git y opcional `bun run context:audit`. |
 | `/aos-compact [foco]` | extension command | Ejecutar compactacion manual con instrucciones OS-aware. Usar despues de checkpoint si habia valor durable. |
-| `/aos-nueva-sesion [objetivo]` | extension command | Guardar valor durable y crear nueva sesion Pi con handoff desde docs vivos. |
-| `/aos-continuar [objetivo]` | extension command | Alias de continuidad para crear una nueva sesion con handoff; confirma si falta guardar valor. |
+| `/aos-continuar [objetivo]` | extension command | Asume que JP ya corrio `/aos-guardar-sesion`; abre una sesion nueva y envia un prompt de continuidad que referencia docs vivos, sin duplicarlos. |
+| `/aos-continuar --preview [objetivo]` | extension command | Igual, pero deja el prompt cargado en el editor de la nueva sesion sin enviarlo automaticamente. |
 | `/aos-sync` | extension command | Sincronizar el OS despues de cambios en docs, topics, tracks, skills, prompts o extensiones: mantiene skills discovery off en Pi, regenera context index y corre audit. |
 | `/aos-gol [objetivo]` | extension command | Preparar un `/until-done` acotado para ejecutar una tarea Copicu completa con constraints del OS. Requiere revisar y enviar el comando prellenado. |
 | `/release-windows [tag|patch|minor|major|rc] [notas]` | prompt template | Ejecutar el release Windows completo usando `npm run release:windows`. Si no se pasa tag, el script calcula el proximo release mirando version actual, tags y GitHub releases. Confirma antes de commit, push y GitHub release/subida de assets. |
 | `/until-done <objetivo>` | package command | Loop instalado via `pi-until-done` para objetivos con contrato, presupuesto, pausa/resume y verificacion. Usar para tareas acotadas que deban completarse o bloquearse con evidencia. |
 | `/reload` | built-in Pi | Recargar extensiones, prompts y skills despues de instalar paquetes o editar `.pi/`. |
 
-Prompts equivalentes: `/aos-cerrar`, `/aos-continuar-sesion`, `/aos-siguiente`, `/aos-sigamos`, `/aos-checkpoint`, `/aos-guardar-sesion`, `/aos-realinear-os`, `/aos-perfect-os`, `/research` y `/release-windows`.
 
 ## Extensiones
 
@@ -68,7 +80,6 @@ Prompts equivalentes: `/aos-cerrar`, `/aos-continuar-sesion`, `/aos-siguiente`, 
 - `/aos-sync`: comando de higiene despues de tocar la capa OS; mantiene `.agents/skills` deshabilitado en Pi para reducir ruido, corre `bun run context:index` y `bun run context:audit`, y deja salida visible en la sesion.
 - `/aos-gol [objetivo]`: prepara en el editor un `/until-done` con constraints Copicu/OS. No arranca solo; JP revisa y envia.
 - `/aos-compact`: wrapper seguro para `ctx.compact()` con instrucciones de preservacion OS.
-- `/aos-nueva-sesion`, `/aos-nueva-sesion-con-gol` y `/aos-continuar`: usan `ctx.newSession()` y `SessionManager.appendCustomMessageEntry()` para crear una sesion nueva con handoff basado en docs vivos, no en transcript.
 - Hook `session_before_compact`: avisa que existe la ruta manual `/aos-guardar-sesion` -> `/aos-compact`.
 
 ### `pi-until-done`
@@ -142,7 +153,6 @@ A 70% de contexto:
 Antes de cambiar de frente:
 
 1. `/aos-guardar-sesion` si hubo valor nuevo;
-2. `/aos-nueva-sesion <objetivo>` o `/aos-continuar <objetivo>` para abrir sesion nueva con handoff desde docs;
 3. enviar `aos-sigamos` en la sesion nueva cuando quieras arrancar.
 
 Para ejecutar un objetivo completo y seguro:
