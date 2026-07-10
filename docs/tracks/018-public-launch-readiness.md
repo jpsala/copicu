@@ -438,13 +438,13 @@ Avance #16/#17:
 Research de distribucion/confianza 2026-06-23:
 
 - Microsoft Learn indica que para apps fuera de Microsoft Store conviene firmar los archivos, pero la reputacion SmartScreen se construye con descargas/uso; EV ya no debe asumirse como bypass instantaneo desde la documentacion 2024+.
-  - https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options
-  - https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation
+  - <https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options>
+  - <https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation>
 - Microsoft Store/MSIX evita warnings SmartScreen por firma/reputacion de Store, pero implica pipeline y requisitos extra; no tomarlo como paso inmediato sin evaluar compatibilidad Tauri/NSIS.
 - WinGet acepta manifests YAML para paquetes con instaladores EXE/MSI/MSIX y `InstallerUrl` debe apuntar a la ubicacion del publisher/ISV; GitHub Releases encaja como origen si el installer es estable.
-  - https://learn.microsoft.com/en-us/windows/package-manager/package/
-  - https://learn.microsoft.com/en-us/windows/package-manager/package/manifest
-  - https://learn.microsoft.com/en-us/windows/package-manager/package/windows-package-manager-policies
+  - <https://learn.microsoft.com/en-us/windows/package-manager/package/>
+  - <https://learn.microsoft.com/en-us/windows/package-manager/package/manifest>
+  - <https://learn.microsoft.com/en-us/windows/package-manager/package/windows-package-manager-policies>
 - Recomendacion actual: para `v0.3.0`, mantener GitHub Releases + SHA256 + warning transparente; preparar winget/Scoop despues del corte si el instalador y naming quedan estables; no comprar OV/EV todavia sin validar costos/requisitos y beneficio real.
 
 Checkpoint 2026-06-29 post `v0.3.0`:
@@ -462,8 +462,17 @@ Checkpoint 2026-06-30 post `v0.3.2`:
 - Hardening autostart: Settings lee `get_autostart_status`, muestra estado real del OS, deshabilita el toggle en dev/override/debug y evita que una build dev sobrescriba `HKCU Run\Copicu` de la instalada.
 - Validacion local: Settings muestra `Startup on`; `HKCU Run\Copicu` apunta a `C:\Users\jpsal\AppData\Local\Copicu\copicu.exe`; `StartupApproved\Run\Copicu` esta enabled (`020000000000000000000000`). Asset descargado de GitHub verifica SHA256 `2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A`.
 
+Checkpoint 2026-07-09 `v0.3.7`:
+
+- Picker: plain query en composer AI vuelve a search local; paginas cargadas quedan estables en idle; refresh/focus tardio no roba seleccion; conteos `null` no pisan estado valido.
+- README: demo sintetica aclarada, instrucciones SHA256/Authenticode agregadas y mojibake de links corregido.
+- Release Windows: `Copicu_0.3.7_x64-setup.exe`, SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`, `latest.json` firmado.
+- La clave Tauri Updater anterior no estaba disponible y JP aprobo rotarla. `v0.3.6` o anterior requiere instalar `v0.3.7` manualmente una vez; futuros cortes pueden actualizar desde la nueva trust root.
+- Checks: frontend build, 114 Playwright, 109 Rust (+1 ignored), scripts/capabilities/AI planner, context audit, cargo check y Tauri release build verdes.
+- Signing Authenticode sigue pendiente; workflow y policy SignPath permanecen drafts, no claims activos.
+
 Pendiente inmediato:
 
-1. Dogfood instalada actual (`v0.3.2`), especialmente Settings/autostart y updater desde builds previas.
-2. Si se quiere abrir contributor funnel, crear solo issues reales/curados; evitar issues de relleno.
-3. Si se crea release/tag o se pushea otro commit, pedir aprobacion explicita antes.
+1. Respaldar fuera del repo la nueva key/password de `.codex-run/secrets/`.
+2. Dogfood instalada `v0.3.7` y validar el proximo updater desde esta trust root.
+3. Continuar Authenticode/SignPath sin publicar claims de firma antes de verificar el artifact final.

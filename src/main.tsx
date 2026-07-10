@@ -492,12 +492,7 @@ function historySearchInput(
       mode: "ai",
     };
   }
-  if (forceAi && trimmed) {
-    return {
-      query: trimmed,
-      mode: "ai",
-    };
-  }
+  void forceAi;
   return {
     query: trimmed,
     mode: "structured",
@@ -874,6 +869,7 @@ function App() {
   const selectedIdsRef = useRef<Set<number>>(new Set());
   const selectedItemIdRef = useRef<number | null>(selectedItemId);
   const selectionAnchorItemIdRef = useRef<number | null>(null);
+  const selectionInteractionSeqRef = useRef(0);
   const nextToastIdRef = useRef(1);
   const compoundHotkeyPendingRef = useRef(false);
   const compoundHotkeyArmedAtRef = useRef(0);
@@ -1474,6 +1470,7 @@ function App() {
         }
       }
       const requestSeq = ++historyRequestSeqRef.current;
+      const selectionInteractionSeq = selectionInteractionSeqRef.current;
       const planningAi = allowAi && searchInput.mode === "ai";
       if (showPending) {
         setHistoryPending(true);
@@ -1490,6 +1487,7 @@ function App() {
           limit: HISTORY_PAGE_LIMIT,
           mode: searchInput.mode,
           includeContent: false,
+          includeCounts: true,
           explain: searchInput.mode === "ai",
           aiContext: searchInput.mode === "ai"
             ? {
@@ -1539,8 +1537,12 @@ function App() {
         ) {
           setNewClipsAvailable(true);
         }
-        setHistoryTotalCount(countOrNull(page.totalCount));
-        setHistoryFilteredCount(countOrNull(page.filteredCount));
+        if (typeof page.totalCount === "number") {
+          setHistoryTotalCount(page.totalCount);
+        }
+        if (typeof page.filteredCount === "number") {
+          setHistoryFilteredCount(page.filteredCount);
+        }
         void refreshMarkedCount().catch(() => undefined);
         setHistoryPending(false);
         if (planningAi) {
@@ -1552,8 +1554,12 @@ function App() {
 
       setHistory(page.items);
       setHistoryNextCursor(page.nextCursor);
-      setHistoryTotalCount(countOrNull(page.totalCount));
-      setHistoryFilteredCount(countOrNull(page.filteredCount));
+      if (typeof page.totalCount === "number") {
+        setHistoryTotalCount(page.totalCount);
+      }
+      if (typeof page.filteredCount === "number") {
+        setHistoryFilteredCount(page.filteredCount);
+      }
       setHistoryInputQuery(trimmed);
       setHistoryQuery(
         originalSearchInput.mode === "ai" ? (page.interpretedQuery ?? searchInput.query) : searchInput.query,
@@ -1574,8 +1580,9 @@ function App() {
       }
       setNewClipsAvailable(false);
       setHistoryError(null);
+      const canResetSelection = resetScroll && selectionInteractionSeq === selectionInteractionSeqRef.current;
       setSelectedIds((current) => {
-        if (resetScroll) {
+        if (canResetSelection) {
           return current.size === 0 ? current : new Set();
         }
         const availableIds = new Set(page.items.map((item) => item.id));
@@ -1589,7 +1596,7 @@ function App() {
           selectionAnchorItemIdRef.current = null;
           return null;
         }
-        if (!resetScroll && currentItemId !== null && page.items.some((item) => item.id === currentItemId)) {
+        if (!canResetSelection && currentItemId !== null && page.items.some((item) => item.id === currentItemId)) {
           return currentItemId;
         }
         const nextItemId = page.items[0].id;
@@ -1597,7 +1604,7 @@ function App() {
         return nextItemId;
       });
 
-      if (resetScroll) {
+      if (canResetSelection) {
         historyScrollRef.current?.scrollTo({ top: 0 });
       }
       void refreshMarkedCount().catch(() => undefined);
@@ -1672,11 +1679,11 @@ function App() {
         ];
       });
       setHistoryNextCursor(page.nextCursor);
-      if (page.totalCount !== undefined) {
-        setHistoryTotalCount(countOrNull(page.totalCount));
+      if (typeof page.totalCount === "number") {
+        setHistoryTotalCount(page.totalCount);
       }
-      if (page.filteredCount !== undefined) {
-        setHistoryFilteredCount(countOrNull(page.filteredCount));
+      if (typeof page.filteredCount === "number") {
+        setHistoryFilteredCount(page.filteredCount);
       }
       setHistoryQuery(searchInput.mode === "ai" ? historyQuery : trimmed);
       setHistoryError(null);
@@ -1698,6 +1705,7 @@ function App() {
     query.trim().length > 0 && searchInterpretation ? searchInterpretation : null;
 
   const setSingleSelection = useCallback((index: number) => {
+    selectionInteractionSeqRef.current += 1;
     const item = history[index];
     if (!item) {
       const emptySelection = new Set<number>();
@@ -1718,6 +1726,7 @@ function App() {
   }, [history]);
 
   const setRangeSelection = useCallback((toIndex: number) => {
+    selectionInteractionSeqRef.current += 1;
     if (history.length === 0) {
       setSelectedIds(new Set());
       setSelectedItemId(null);
@@ -2065,6 +2074,7 @@ function App() {
 
   const selectForContextMenu = useCallback((item: HistoryItem, index: number) => {
     if (selectedIdsRef.current.has(item.id)) {
+      selectionInteractionSeqRef.current += 1;
       selectedItemIdRef.current = item.id;
       setSelectedItemId(item.id);
       return;
@@ -2486,12 +2496,13 @@ function App() {
   useEffect(() => {
     let active = true;
     const trimmedQuery = query.trim();
+    const queryChanged = trimmedQuery !== historyInputQuery;
     const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
     if (searchInput.mode === "ai" || searchTriggerMode !== "realtime") {
       setHistoryPending(false);
       setHistoryError(null);
       if (historyTotalCount === null && historyInputQuery === "" && trimmedQuery === "") {
-        refreshHistory({ resetScroll: true, showPending: false, allowAi: false }).catch((error) => {
+        refreshHistory({ resetScroll: false, showPending: false, allowAi: false }).catch((error) => {
           if (active) {
             setHistoryError(String(error));
           }
@@ -2501,9 +2512,16 @@ function App() {
         active = false;
       };
     }
+    if (!queryChanged && historyTotalCount !== null) {
+      setHistoryPending(false);
+      setHistoryError(null);
+      return () => {
+        active = false;
+      };
+    }
     setHistoryPending(true);
     const timeoutId = window.setTimeout(() => {
-      refreshHistory({ resetScroll: true }).catch((error) => {
+      refreshHistory({ resetScroll: queryChanged }).catch((error) => {
         if (active) {
           setHistoryPending(false);
           setHistoryError(String(error));
@@ -2511,23 +2529,9 @@ function App() {
       });
     }, 120);
 
-    const intervalId = rendererDebugDiagnosticsEnabled()
-      ? window.setInterval(() => {
-          refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
-            if (active) {
-              setHistoryPending(false);
-              setHistoryError(String(error));
-            }
-          });
-        }, 1400)
-      : null;
-
     return () => {
       active = false;
       window.clearTimeout(timeoutId);
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
     };
   }, [aiComposerMode, historyInputQuery, historyTotalCount, query, refreshHistory, searchTriggerMode]);
 
@@ -2565,6 +2569,7 @@ function App() {
         return;
       }
 
+      const focusSelectionSeq = selectionInteractionSeqRef.current;
       void (async () => {
         let resetFromHost = false;
         try {
@@ -2579,7 +2584,8 @@ function App() {
         if (resetFromHost) {
           pickerWasHiddenRef.current = true;
         }
-        const resetAfterHidden = pickerWasHiddenRef.current;
+        const pendingHiddenReset = pickerWasHiddenRef.current;
+        const resetAfterHidden = pendingHiddenReset && focusSelectionSeq === selectionInteractionSeqRef.current;
         pickerWasHiddenRef.current = false;
         if (resetAfterHidden) {
           resetPickerSession();
@@ -3140,7 +3146,7 @@ function App() {
                 if (!item) {
                   return (
                     <li
-                      key="history-loader"
+                      key={`history-loader-${virtualRow.index}`}
                       className="history-loader-row"
                       style={{
                         transform: `translateY(${Math.ceil(virtualRow.start) + 1}px)`,
@@ -3202,6 +3208,7 @@ function App() {
                       if (event.shiftKey) {
                         setRangeSelection(index);
                       } else if (event.ctrlKey || event.metaKey) {
+                        selectionInteractionSeqRef.current += 1;
                         selectedItemIdRef.current = item.id;
                         setSelectedItemId(item.id);
                         const nextSelectedIds = new Set(selectedIdsRef.current);

@@ -52,14 +52,13 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 - `WORKING_MEMORY.md`: memoria operativa actual.
 - `tracks/`: trabajos vivos retomables.
 - `skills/`: skills locales portables; fuente canonica.
-- `.agents/skills`: toggle de compatibilidad hacia `docs/skills/`; disabled por defecto en Pi.
+- `.agents/skills`: junction estable de compatibilidad hacia `docs/skills/`.
 - `.generated/context-index.md`: cache generado; no editar a mano.
 
 ## Skills Locales
 
 - `docs/skills/` es la fuente canonica de skills locales portables.
-- `.agents/skills` es un toggle de compatibilidad para descubrimiento de Codex/Pi.
-- En Pi queda deshabilitado por defecto para bajar ruido; activarlo solo bajo demanda con `/aos-skills on` o `scripts/toggle-skills-link.ps1 on`.
+- `.agents/skills` es una junction estable para descubrimiento de Codex/Pi; `skills:off` queda como no-op legacy y no borra la junction.
 
 ## Audit De Contexto
 

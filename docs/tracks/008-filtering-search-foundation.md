@@ -14,6 +14,15 @@ Topic de arquitectura nueva: `docs/topics/search-plan-engine.md`.
 
 ## Estado Actual
 
+Actualizacion 2026-07-09 dogfood:
+
+- Se corrigio una carrera donde refresh/reset async del picker podia devolver el item activo al primero; `src/main.tsx` usa una generacion de interaccion de seleccion para ignorar resets viejos.
+- Se corrigio churn de conteos/scroll: los conteos omitidos por Tauri pueden llegar como `null`; el frontend solo actualiza `historyTotalCount`/`historyFilteredCount` cuando recibe numeros.
+- Se removio el polling debug que refrescaba historial cada ~1.4s y movia virtual scroll/conteos sin accion del usuario.
+- Se agrego validacion Playwright para reset async, conteo estable, query plain en composer AI y boton Search/lupa; checks recientes: `npx playwright test tests/visual/shell.spec.ts --reporter=line` PASS 114/0, `npm run build`, `git diff --check`.
+- Se revirtio el experimento de scrollbar estimada por total conocido. Con cursor pagination queda el patron seguro `loaded rows + 1 loader`; una scrollbar proporcional al total real requiere otro contrato backend/windowing antes de implementarse.
+- Validacion visible/CDP reciente: AI composer + `youtube` + Enter -> `39 / 3,334 matches`; Search mode + `github` + click Search -> `33 / 3,334 matches`; scroll al fondo + idle mantuvo count/scroll estable.
+
 Actualizacion 2026-06-29:
 
 - scoped search implementado y documentado: `meta:/metadata:` busca metadata visible (`title`, `notes`, `tags`), `title:` solo titulo editable, `notes:/note:` notas, y `ctx:/context:` contexto oculto de captura; formas negadas como `-meta:` tambien funcionan.

@@ -404,7 +404,7 @@ if (hasPiAdapter) {
 }
 
 if (!exists(".agents/skills")) {
-  // Allowed: .agents/skills is a discovery toggle. Pi sessions keep it disabled to avoid slash noise.
+  // Allowed for repos without skills discovery; repos using this convention keep the compatibility path stable.
 } else if (exists("docs/skills")) {
   const stats = lstatSync(join(root, ".agents/skills"));
   if (!(stats.isSymbolicLink() || stats.isDirectory())) {

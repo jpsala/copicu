@@ -15,9 +15,9 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | `Ctrl+Alt+Q` Quick Actions contextual; Open URL solo con URL; texto legacy sin MIME = text/plain. Showcase `028`-`031`, `010`. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
-| Search / AI / metadata | active/validated | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Scoped search y ayuda in-app validados. Proximo: chips/explain UI o whole-word search si JP prioriza. |
+| Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Picker search/scroll estabilizado al volver a cursor pagination `loaded + 1 loader`; si JP quiere scrollbar proporcional al total, diseñar contrato backend/windowing antes de implementar. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.2` publicado; instalada local relanzada. Proximo urgente: signing/trust track para reducir warnings de instalacion; luego dogfood/update, demo assets o feedback real. |
+| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.7`; `<=0.3.6` requiere salto manual por rotacion updater. Proximo: backup de clave y Authenticode/SignPath. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md`, `docs/topics/agentic-os-operations.md` | Copicu es downstream AOS; mantener ruta caliente corta. Pendiente: compactar TOPICS/topics grandes cuando molesten. |
 
@@ -27,11 +27,11 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Decisiones Vigentes
 
-Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release vigente `v0.3.2` (`ce27b55`). Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
+Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release vigente `v0.3.7` (SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`). Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
 
 ## Riesgos / Pendientes Tecnicos
 
-Updater: secretos fuera del repo en `.codex-run/secrets/copicu-updater.*`. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` metadata no depende de `examples.assignMetadataToActive`. Dogfood/dev: `npm run dev:restart` o built-dev; enrichment `026` pendiente por `Ctrl+Alt+E`. Picker: `Ctrl+Shift+.` foco, `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
+Updater: trust root rotada en `v0.3.7`; `<=0.3.6` requiere instalacion manual. Clave local en `.codex-run/secrets/copicu-updater.*`; falta backup externo. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` metadata no depende de `examples.assignMetadataToActive`. Dogfood/dev: `npm run dev:restart`/built-dev; si target frio falla por `WebView2Loader.dll`, ver `docs/DEVELOPMENT.md`. Enrichment `026` pendiente por `Ctrl+Alt+E`. Picker: `Ctrl+Shift+.` foco, `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
 
 ## Comandos De Contexto
 
@@ -41,8 +41,8 @@ Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai
 ## Proximo Paso Probable
 
 1. Retomar `docs/tracks/021-distribution-trust-code-signing.md`: auditar requisitos SignPath y diseñar release CI verificable para firmar instaladores Windows.
-2. Dogfood instalada `v0.3.2`: Settings/autostart/updater desde builds previas.
-3. UX picker/search: siguiente corte chico (chips/explain UI, whole-word search o polish de ayuda) sin tocar runner Node.
+2. Dogfood instalada `v0.3.7`: Settings/autostart; el proximo corte debe validar updater desde esta nueva trust root.
+3. UX picker/search: mantener validacion visible con Computer Use al tocar search/scroll. Estado actual: Enter/lupa aplican filtro local y muestran `filtered / total`; AI solo con `ai:`; virtualizer usa paginas cargadas + loader. Para scrollbar total real, primero diseñar paginacion/windowing backend.
 4. Si hay hang/lentitud: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo; si es Pi/contexto, compactar ruta caliente y usar `map/search` scoped.
 
 ## Promocion De Memoria
@@ -52,4 +52,5 @@ Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai
 3. Conocimiento reusable -> `docs/topics/<topic>.md`.
 4. Decision durable -> `docs/DECISIONS.md`.
 5. Trabajo retomable -> `docs/tracks/`, sin transcript.
+
 - Continuidad Pi 2026-07-04: JP guarda primero con `/aos-guardar-sesion`; luego `/aos-continuar [objetivo]` es el unico comando para abrir sesion nueva con prompt de continuidad desde docs vivos. `--preview` permite revisar antes de enviar.

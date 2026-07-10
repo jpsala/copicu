@@ -121,7 +121,7 @@ if not defined CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER set "CARGO_TARGET_X86_
 
 Preferencia en una PC limpia: reiniciar terminal/Pi despues de instalar Rust. Los wrappers son para sesiones largas que no heredaron PATH.
 
-## WebView2Loader.dll en cargo check frio
+## WebView2Loader.dll en cargo check/dev:restart frio
 
 Este repo referencia en `src-tauri/tauri.conf.json` el recurso:
 
@@ -129,7 +129,7 @@ Este repo referencia en `src-tauri/tauri.conf.json` el recurso:
 "target/release/WebView2Loader.dll": "WebView2Loader.dll"
 ```
 
-En un target frio, `cargo check` puede fallar con:
+En un target frio, `cargo check` o `npm run dev:restart` pueden fallar con:
 
 ```text
 resource path `target\release\WebView2Loader.dll` doesn't exist
@@ -142,12 +142,7 @@ New-Item -ItemType Directory -Force src-tauri\target\release | Out-Null
 Copy-Item src-tauri\target\debug\build\webview2-com-sys-*\out\x64\WebView2Loader.dll src-tauri\target\release\WebView2Loader.dll -Force
 ```
 
-Luego reintentar:
-
-```powershell
-cd src-tauri
-cargo check
-```
+Luego reintentar `cargo check` o `npm run dev:restart`.
 
 ## Validacion completa
 

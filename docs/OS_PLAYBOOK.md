@@ -72,7 +72,7 @@ These are Pi commands available in this repo.
 | `/aos-status [audit]` | You need operational status | Shows session/git/context state. With `audit`, runs the context audit. |
 | `/aos-compact [focus]` | Context is high after checkpointing | Manual OS-aware compaction. Run `/aos-guardar-sesion` first if there is durable value. |
 | `/aos-continuar [objective]` | You want a clean Pi session | Creates a new session with handoff from live docs. Confirms checkpoint first. |
-| `/aos-sync` | You changed the OS layer | Keeps Pi skills discovery off, regenerates the context index, and runs the context audit. |
+| `/aos-sync` | You changed the OS layer | Repairs/keeps the stable skills junction, regenerates the context index, and runs the context audit. |
 | `/aos-gol [objective]` | You want to execute a bounded task to completion | Prefills a safe `/until-done` command. Review before sending. |
 | `/until-done <objective>` | You want a continuation loop | Provided by `pi-until-done`; use for bounded goals with verification. |
 | `/aos-checkpoint-nudge` | You want to inspect or control context nudges | Subcommands: `prefill`, `mute`, `unmute`, `test`. |

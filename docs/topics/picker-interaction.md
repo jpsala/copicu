@@ -41,14 +41,14 @@ La estetica de CopyQ no es el objetivo, pero su idea de mostrar contenido direct
 
 Fuentes:
 
-- CopyQ keyboard: https://copyq-de.readthedocs.io/de/stable/keyboard.html
-- CopyQ tabs/items: https://copyq-docs.readthedocs.io/en/latest/tabs-and-items.html
-- CopyQ images: https://copyq-docs.readthedocs.io/en/latest/images.html
-- CleanClip manual: https://cleanclip.cc/gb/docs/manual
-- Paste search: https://pasteapp.io/help/search-and-filters
-- Pasta: https://getpasta.com/
-- ClipClip features: https://www.clipclip.com/features
-- ClipboardFusion triggers: https://www.clipboardfusion.com/Features/Triggers/
+- CopyQ keyboard: <https://copyq-de.readthedocs.io/de/stable/keyboard.html>
+- CopyQ tabs/items: <https://copyq-docs.readthedocs.io/en/latest/tabs-and-items.html>
+- CopyQ images: <https://copyq-docs.readthedocs.io/en/latest/images.html>
+- CleanClip manual: <https://cleanclip.cc/gb/docs/manual>
+- Paste search: <https://pasteapp.io/help/search-and-filters>
+- Pasta: <https://getpasta.com/>
+- ClipClip features: <https://www.clipclip.com/features>
+- ClipboardFusion triggers: <https://www.clipboardfusion.com/Features/Triggers/>
 
 ## Baseline CopyQ Reutilizable
 
@@ -225,10 +225,14 @@ Estado actual 2026-06-22:
 - al ocultar, el estado transitorio del picker se resetea como CopyQ: query vacia, seleccion vacia, anchor vacio y scroll arriba; al refrescar/reabrir se selecciona el primer item visible;
 - Decision 2026-06-12: el lifecycle de sesion transitoria del picker es host-owned. `PickerSessionController` marca una sesion hidden/resettable cuando `host::hide_picker()` oculta o cuando el hide nativo por focus-lost ejecuta `window.hide()`. El renderer no debe adivinar ese lifecycle solo por `focus`/`visibilitychange`; consume `consume_picker_session_snapshot()` y, si hay reset pendiente, limpia query/seleccion y refresca historial con `queryOverride: ""`.
 - el scroll manual del feed no se debe resetear por refresh automatico del historial. `scrollIntoView` corre solo cuando cambia `selectedIndex`, no cuando cambia `history`.
+- Dogfood 2026-07-09: los refresh/reset async del picker deben estar guardados por una generacion de interaccion de seleccion; un refresh viejo no puede devolver el item activo al primero ni scrollear arriba despues de que el usuario navego.
+- Dogfood 2026-07-09: el badge de conteos no debe caer a `history.length` cuando backend/Tauri omite conteos como `null`; solo numeros actualizan `totalCount`/`filteredCount`.
+- Decision dogfood 2026-07-09: con cursor pagination, la scrollbar del feed usa el patron seguro `filas cargadas + 1 loader`. El experimento de estimar altura por total conocido se revirtio; si se quiere scrollbar proporcional al total real, primero hace falta un contrato backend/windowing que soporte indices o ventanas estables.
 - Decision ajustada 2026-06-12: `Keep picker open` es la politica persistida para sesion persistente del picker. Cuando esta activa, perder foco no oculta, activar un item no oculta y no resetea query/sesion. El boton de barra del picker toggla esa politica persistida via comando host-owned `set_picker_keep_open` desde `main`; no llama `update_settings` porque ese comando esta guardado para `settings`. En modo transitorio el picker sigue fuera de taskbar/Alt-Tab; con `Keep picker open` activo el host aplica `skip_taskbar=false` para que se comporte como ventana recuperable. `Pin` queda como control generico de ventana para always-on-top; en picker tambien evita ocultado por foco como consecuencia de estar pinned, pero no es la unica forma de mantener abierto. Los intentos de hotkey renderer (`Ctrl+G`, `Ctrl+Shift+O`, `F8`) no fueron confiables en WebView/Computer Use; si se quiere hotkey, implementarlo nativo/global, no como handler React. Computer Use valido el 2026-06-12 que el boton cambia `Keep picker open is on/off`, persiste en backend, deshabilita focus-lost hide y permite activar un item sin ocultar.
 - Decision 2026-06-18: abrir el picker por hotkey global debe dejar el search listo para recibir teclado. Se removio el default no-activate porque hacia que el picker pudiera verse delante pero el input siguiera en la app previa. La ruta no-activate queda solo para diagnostico (`COPICU_PICKER_NO_ACTIVATE=1`).
 - Validacion stress 2026-06-14 con `copicu_computer_use`: flow usuario real paso con watcher activo en app-data aislada: seleccionar/copiar texto externo en una ventana AHK, abrir picker con `Ctrl+Shift+.`, filtrar por token (`ZETA`, `BETA`, `https stress-flow`), activar con `Enter` y pegar de vuelta en la app fuente. El empty state `0 / 2 matches` tambien se valido. Riesgos detectados: `Get-Clipboard` desde Pi/Session 0 no sirve como oracle del clipboard interactivo; `focus`/target screenshot no prueban foreground real, por lo que los checks de foco deben incluir screenshot de pantalla completa; `F8`/pin puede reportar target de ventana equivocada aunque el hotkey global llegue a Copicu; el wrapper `copicu_computer_use` tuvo un `PermissionError` leyendo temp output pese a que la accion se ejecuto.
 - Validacion 2026-06-18: regresion de foco del hotkey cubierta con Computer Use: enfocar ventana externa, `open_picker`, tipear token sin `focus` manual, y confirmar por screenshot que el token entro en el search (`.codex-run/computer-use/focus-hotkey-after-type-2.png`). Este oracle debe repetirse si se toca hotkey, foco, show/hide o lifecycle del picker.
+- Validacion requerida tras tocar search/scroll 2026-07-09: usar Computer Use/CDP con la app visible y muestrear `query`, `[title='Result count']`, `scrollTop`, `scrollHeight` y primer item. Casos minimos: query plain + Enter/lupa muestra `filtered / total matches`; `ai:` puede mostrar AI planning; idle no cambia conteo/scroll; navegar con flechas no resetea seleccion ni vuelve al primer item.
 
 Settings a prever:
 

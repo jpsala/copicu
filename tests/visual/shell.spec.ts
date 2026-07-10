@@ -124,12 +124,20 @@ const syntheticMarkdownScrollHistory = Array.from({ length: 80 }, (_, index) => 
   normalized_hash: `synthetic-scroll-${index + 1}`,
 }));
 
+type MockTauriOptions = {
+  historySearchDelayMs?: number;
+  pickerSessionDelayMs?: number;
+  pickerSessionSnapshots?: Array<{ reset: boolean; generation: number }>;
+  searchTriggerMode?: "realtime" | "enter" | "manual";
+};
+
 async function mockTauriInvoke(
   page: Parameters<typeof test>[0]["page"],
   historyItems = syntheticLongHistory,
   initialCompoundPending: unknown = null,
+  options: MockTauriOptions = {},
 ) {
-  await page.addInitScript(({ items, pending }) => {
+  await page.addInitScript(({ items, pending, mockOptions }: { items: any[]; pending: unknown; mockOptions: MockTauriOptions }) => {
     const PREVIEW_LIMIT = 2000;
     const withHistoryPreview = (item: any, includeContent: boolean) => {
       const fullText = item.text ?? "";
@@ -148,6 +156,8 @@ async function mockTauriInvoke(
     (window as any).__copicuTestWindowPinned = false;
     (window as any).__copicuTestHistoryItems = items;
     (window as any).__copicuTestCompoundPending = pending;
+    (window as any).__copicuTestMockOptions = mockOptions;
+    (window as any).__copicuTestPickerSessionSnapshots = [...(mockOptions.pickerSessionSnapshots ?? [])];
     (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => undefined,
     };
@@ -188,6 +198,7 @@ async function mockTauriInvoke(
         promoteActiveOnCopy: true,
         pinToggleShortcut: "F8",
         settingsShortcut: "Ctrl+,",
+        searchTriggerMode: mockOptions.searchTriggerMode ?? "realtime",
       },
       history: {
         retentionCount: 1000,
@@ -443,6 +454,10 @@ async function mockTauriInvoke(
             };
           case "history_search":
           case "list_history_page": {
+            const delayMs = (window as any).__copicuTestMockOptions?.historySearchDelayMs ?? 0;
+            if (delayMs > 0) {
+              await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+            }
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
             const query = args?.query?.toLocaleLowerCase() ?? "";
             const request = args?.request ?? {};
@@ -493,8 +508,8 @@ async function mockTauriInvoke(
                       afterId: nextItem.id,
                     }
                   : null,
-              totalCount: includeCounts ? sourceItems.length : undefined,
-              filteredCount: includeCounts ? filteredItems.length : undefined,
+              totalCount: includeCounts ? sourceItems.length : null,
+              filteredCount: includeCounts ? filteredItems.length : null,
               interpretedQuery: request.explain ? interpretedQuery : null,
               explanation: request.explain
                 ? aiMode
@@ -682,6 +697,13 @@ async function mockTauriInvoke(
               marked_at_unix_ms: null,
             }));
             return null;
+          case "consume_picker_session_snapshot": {
+            const delayMs = (window as any).__copicuTestMockOptions?.pickerSessionDelayMs ?? 0;
+            if (delayMs > 0) {
+              await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+            }
+            return (window as any).__copicuTestPickerSessionSnapshots.shift() ?? { reset: false, generation: 0 };
+          }
           case "get_settings":
             return (window as any).__copicuTestSettings;
           case "update_settings":
@@ -701,7 +723,7 @@ async function mockTauriInvoke(
         currentWebview: { label: "main" },
       },
     };
-  }, { items: historyItems, pending: initialCompoundPending });
+  }, { items: historyItems, pending: initialCompoundPending, mockOptions: options });
 }
 
 function gotoShell(page: Parameters<typeof test>[0]["page"], url = "/") {
@@ -1202,7 +1224,8 @@ test("manual scroll is not reset by history refresh", async ({ page }) => {
   });
   const before = await feed.evaluate((element) => element.scrollTop);
 
-  await page.waitForTimeout(1700);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(150);
 
   const after = await feed.evaluate((element) => element.scrollTop);
   expect(after).toBeGreaterThanOrEqual(before - 2);
@@ -1248,6 +1271,54 @@ test("scrolling to the loader fetches the next history page", async ({ page }) =
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
 });
 
+test("loaded page count stays stable while idle", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory);
+  await gotoShell(page);
+
+  const resultCount = page.locator("[title='Result count']");
+  await expect(resultCount).toHaveText("80 total");
+  const feed = page.locator(".history-feed-scroll");
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll(".feed-item")).some((item) =>
+      item.textContent?.includes("COPICU_SYNTH_PAGE_80"),
+    ),
+  );
+  const before = await feed.evaluate((element) => ({ top: element.scrollTop, height: element.scrollHeight }));
+
+  await page.waitForTimeout(1800);
+
+  await expect(resultCount).toHaveText("80 total");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+  const after = await feed.evaluate((element) => ({ top: element.scrollTop, height: element.scrollHeight }));
+  expect(after).toEqual(before);
+});
+
+test("keyboard selection survives delayed picker reset refresh", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, {
+    historySearchDelayMs: 250,
+    pickerSessionDelayMs: 250,
+    pickerSessionSnapshots: [{ reset: true, generation: 1 }],
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total", { timeout: 5000 });
+  await search.focus();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(20);
+  for (let index = 0; index < 5; index += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+
+  await page.waitForTimeout(350);
+
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_06/ })).toHaveClass(/is-selected/);
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_01/ })).not.toHaveClass(/is-selected/);
+});
+
 test("manual scroll keeps moving downward while variable rows are measured", async ({ page }) => {
   await mockTauriInvoke(page, syntheticMarkdownScrollHistory);
   await gotoShell(page);
@@ -1278,6 +1349,7 @@ test("selected item survives history reorder by id", async ({ page }) => {
   await page.evaluate(() => {
     const items = (window as any).__copicuTestHistoryItems;
     (window as any).__copicuTestHistoryItems = [items[2], items[0], items[1], items[3]];
+    window.dispatchEvent(new Event("focus"));
   });
 
   await page.waitForFunction(() =>
@@ -1358,6 +1430,34 @@ test("search composer mode toggles with icon button", async ({ page }) => {
   );
   await expect(search).toHaveAttribute("placeholder", "Search clips — meta:work, #tag, ai:find invoices");
   await expect(search).toHaveJSProperty("tagName", "INPUT");
+});
+
+test("plain query in AI composer still runs local search", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("unbroken");
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
+});
+
+test("plain query in AI composer search button still runs local search", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "manual" });
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("unbroken");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
 });
 
 test("single click selects item without activating it", async ({ page }) => {

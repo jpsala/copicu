@@ -3865,9 +3865,23 @@ mod tests {
                 params!["vivaldi browser client portal", 1_i64],
             )
             .expect("test context should update");
-            conn.execute(
-                "UPDATE clipboard_items SET context_search_text = ?1, source_window_title = ?2 WHERE id = ?3",
-                params!["notepad client body", "Invoice - Browser", 2_i64],
+            let capture_context = CaptureContext {
+                source_kind: "clipboard".to_string(),
+                source_app_name: Some("Notepad".to_string()),
+                source_window_title: Some("Invoice - Browser".to_string()),
+                ..CaptureContext::default()
+            };
+            record_capture_event(
+                &conn,
+                2,
+                30_002,
+                "text",
+                Some("text/plain"),
+                None,
+                None,
+                None,
+                None,
+                Some(&capture_context),
             )
             .expect("test context should update");
             conn.execute(

@@ -1,0 +1,124 @@
+name: Windows Release Signing Draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (tag, branch, or SHA)"
+        required: true
+        default: "main"
+      build_unsigned_artifact:
+        description: "Build Authenticode-unsigned Windows installer artifact"
+        required: true
+        type: boolean
+        default: false
+      submit_to_signpath:
+        description: "Submit uploaded artifact to SignPath"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows-release-signing-draft:
+    name: Windows release signing draft
+    runs-on: windows-latest
+    env:
+      # TODO(signing): confirm updater metadata order vs Authenticode.
+      # Authenticode mutates installer bytes; final updater metadata may need
+      # to be generated after signing.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: >-
+        ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - name: Checkout requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Frontend build
+        run: npm run build
+
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml --tests
+
+      - name: Build Authenticode-unsigned Tauri artifact
+        if: ${{ inputs.build_unsigned_artifact == true }}
+        shell: pwsh
+        run: |
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+            throw "TAURI_SIGNING_PRIVATE_KEY secret is required."
+          }
+          npm run tauri:build -- --config `
+            src-tauri/tauri.updater-artifacts.conf.json
+
+      - name: Locate unsigned installer
+        if: ${{ inputs.build_unsigned_artifact == true }}
+        id: installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem `
+            src-tauri/target/release/bundle/nsis `
+            -Filter 'Copicu_*_x64-setup.exe' |
+            Select-Object -First 1
+          if (-not $installer) { throw 'Installer not found' }
+          "path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($installer.Name)" >> $env:GITHUB_OUTPUT
+          Get-FileHash $installer.FullName -Algorithm SHA256
+
+      - name: Upload unsigned installer
+        if: ${{ inputs.build_unsigned_artifact == true }}
+        id: upload-unsigned-installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows-installer
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+
+      - name: Submit signing request to SignPath
+        if: >-
+          ${{ inputs.submit_to_signpath == true &&
+          inputs.build_unsigned_artifact == true }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ secrets.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ secrets.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: >-
+            ${{ secrets.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: >-
+            ${{ steps.upload-unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-artifact
+          parameters: |
+            version: ${{ toJSON(inputs.ref) }}
+
+      - name: Verify signed installer
+        if: >-
+          ${{ inputs.submit_to_signpath == true &&
+          inputs.build_unsigned_artifact == true }}
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem signed-artifact `
+            -Recurse `
+            -Filter 'Copicu_*_x64-setup.exe' |
+            Select-Object -First 1
+          if (-not $signed) { throw 'Signed installer not found' }
+          Get-AuthenticodeSignature $signed.FullName | Format-List
+          Get-FileHash $signed.FullName -Algorithm SHA256

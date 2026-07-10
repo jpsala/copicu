@@ -73,7 +73,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Ruta caliente: `AGENTS.md`, indice generado, `WORKING_MEMORY.md`, `TOPICS.md` y tracks activos siguen chicos y no son transcript.
 - Routing: topics relevantes existen, tienen triggers utiles y estan linkeados desde `docs/TOPICS.md`.
 - Continuidad: track activo tiene estado, next step y refs que existen.
-- Skills: `docs/skills/` existe; `.agents/skills` es toggle de discovery y debe estar disabled en Pi salvo uso explicito.
+- Skills: `docs/skills/` existe; `.agents/skills` es junction estable de compatibilidad y `skills:off` es no-op legacy.
 - Pi: `.pi/prompts/` y `.pi/extensions/` estan documentados en `docs/topics/pi-agentic-os.md` cuando afectan el OS.
 - Decisiones: lo durable esta en `docs/DECISIONS.md` o topic estable, no enterrado en tracks.
 - Specs: specs activas estan indexadas, no tienen prefijos duplicados y tienen `spec.md`.

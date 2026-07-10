@@ -11,12 +11,10 @@
 
 ## Contenido Actual
 
-- `aos-impeccable/`: skill local para trabajo de UI/frontend.
+- `impeccable/`: skill local para trabajo de UI/frontend.
 - `aos-speckit-*/`: skills locales del workflow SpecKit.
 - `aos-help/`: mostrar comandos AOS disponibles y cuando usarlos.
-- `aos-perfect-os/`: auditar y optimizar un proyecto para agentes: contexto, docs, continuidad, comandos y audit.
-- `aos-align-os-project/`: actualizar/adoptar y auditar proyectos registrados para alinear mecanica y vision AOS.
-- `aos-init-os/`, `aos-adopt-os/`, `aos-update-os/`: inicializar, adoptar o actualizar AOS en repos destino.
+- `aos-perfect-os/`: auditar y optimizar el repo para agentes: contexto, docs, continuidad, comandos y audit.
 - `aos-plan-implementar/`: crear, revisar y ejecutar un plan acotado eligiendo un solo motor principal (`manual`, planner, dgoal, until-done, long-task o taskflow).
 - `aos-sigamos/`: continuar con lo siguiente en la misma sesion, sin lote formal.
 - `aos-orquestar/`: proponer o ejecutar un fan-out controlado con taskflow/subagentes disponibles.

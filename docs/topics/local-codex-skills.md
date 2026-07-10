@@ -156,7 +156,6 @@ Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
 
 - `os help` / `ayuda os` / `comandos os`
 - `perfect os` / `dejar en condiciones`
-- `init os` / `adopt os` / `update os`
 - `aos-sigamos`
 - `avancemos` / siguiente paso en esta sesion
 - `aos-orquestar` / `aos-fanout` / `aos-threads` / `orquestá` / `usá threads`
@@ -174,10 +173,8 @@ Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
 | Comando o grupo                                                       | Skill                                                          | Comportamiento                                                                                                 |
 | --------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `os help`, `ayuda os`, `comandos os`                                  | `docs/skills/aos-help/`                                        | Muestra comandos OS y cuando usarlos sin ejecutar cambios.                                                     |
-| `perfect os`, `dejar en condiciones`                                  | `docs/skills/aos-perfect-os/`                                  | Optimiza un repo para agentes: contexto, docs, continuidad, comandos y audit.                                  |
-| `init os`                                                             | `docs/skills/aos-init-os/`                                     | Inicializa AOS minimo en un proyecto nuevo o sin capa agentica.                                                |
-| `adopt os`                                                            | `docs/skills/aos-adopt-os/`                                    | Fusiona AOS en un repo existente preservando reglas y memoria local.                                           |
-| `update os`                                                           | `docs/skills/aos-update-os/`                                   | Actualiza una instalacion downstream contra el upstream sin copiar piezas manager-only.                        |
+| `perfect os`, `dejar en condiciones`                                  | `docs/skills/aos-perfect-os/`                                  | Optimiza este repo para agentes: contexto, docs, continuidad, comandos y audit.                                |
+| `init/adopt/update os`                                                 | upstream `C:/dev/os`                                           | Operaciones manager-only para otros repos; Copicu solo recibe la capa downstream local.                        |
 | `aos-sigamos`                                                         | `docs/skills/aos-sigamos/`                                     | Continua con lo siguiente en la misma sesion, sin lote formal.                                                 |
 | `avancemos`, `ejecutar lote`, siguiente paso                          | `docs/skills/aos-sigamos/`                                     | Continua en esta sesion con el siguiente paso concreto; para loops largos usar tooling explicito.              |
 | `aos-orquestar`, `orquestá`, `usá threads`, `spawn agents`            | `docs/skills/aos-orquestar/`                                   | Propone o ejecuta fan-out controlado con threads/subagentes, con confirmacion si no fue pedido explicitamente. |

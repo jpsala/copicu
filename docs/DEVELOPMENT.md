@@ -168,27 +168,41 @@ npm run tauri:build
 
 Regla operativa: mientras no exista un binario instalable estable, los cambios deben reflejarse en la instancia viva de Copicu.
 
-`npm run dev:restart` usa built-dev por defecto para evitar la inestabilidad de Vite dev server en WebView2. Esta es una decision operativa: el modo diario prioriza confiabilidad nativa sobre HMR. Para dogfood real de Copicu usar built-dev; para diagnosticar Vite dev explicitamente, usar:
+`npm run dev:restart` usa built-dev por defecto para evitar la inestabilidad de Vite dev server en WebView2. Esta es una decision operativa: el modo diario prioriza confiabilidad nativa sobre HMR. El modo default no necesita puerto `1420`; ese puerto solo importa para diagnosticar Vite dev explicitamente:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1 -ViteDev
 ```
 
-Antes de arrancar o reiniciar:
+Antes de arrancar o reiniciar, buscar solo procesos del producto actual:
 
 ```powershell
-Get-NetTCPConnection -LocalPort 1420 -ErrorAction SilentlyContinue
+$repo = [regex]::Escape((Resolve-Path .).Path)
 Get-CimInstance Win32_Process |
-  Where-Object { $_.CommandLine -match 'copyq-tauri|copicu|tauri dev|vite --host 127.0.0.1 --port 1420' } |
+  Where-Object { $_.CommandLine -match $repo -and $_.CommandLine -match 'copicu|tauri dev|vite --host 127.0.0.1 --port 1420' } |
   Select-Object ProcessId,Name,ExecutablePath,CommandLine
 ```
 
-Cerrar solo procesos viejos de Copicu/Vite/Tauri que correspondan al producto y esten ocupando el puerto, registrando shortcuts o corriendo desde otro worktree. Despues de relanzar, validar:
+Cerrar solo procesos viejos de Copicu/Vite/Tauri que correspondan al producto y esten registrando shortcuts o corriendo desde otro worktree. Despues de relanzar, validar:
 
-- Vite escucha `127.0.0.1:1420`.
+- Default built-dev: no esperar Vite propio; `1420` puede pertenecer a otro repo y no prueba salud de Copicu.
 - `copicu.exe` corre desde el worktree actual.
 - Los logs muestran `global shortcut registered`, `main window startup state: visible=false` y los shortcuts/rutas esperadas.
 - La app responde (`Get-Process -Name copicu | Select Id,Responding,Path`).
+
+Si Cargo recompila mucho y el timeout queda corto, repetir con mas margen:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1 -TimeoutSeconds 600
+```
+
+Si falla con `resource path target\release\WebView2Loader.dll doesn't exist`, reparar el target frio y reintentar:
+
+```powershell
+New-Item -ItemType Directory -Force src-tauri\target\release | Out-Null
+Copy-Item src-tauri\target\debug\build\webview2-com-sys-*\out\x64\WebView2Loader.dll src-tauri\target\release\WebView2Loader.dll -Force
+npm run dev:restart
+```
 
 Si el branch esta atrasado respecto de la DB real y aparece `migration number too high`, no downgradear ni borrar la DB real de AppData. Para dogfood de branch/worktree, usar datos aislados:
 

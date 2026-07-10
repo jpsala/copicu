@@ -20,9 +20,7 @@ triggers:
   - pi-footer
   - image_generate
 primary_refs:
-  - C:/Users/jpsal/.pi/agent/settings.json
-  - C:/Users/jpsal/.pi/agent/extensions/pi-footer.json
-  - docs/reference/pi-extension-stack-inventory.md
+  - C:/dev/os/docs/reference/pi-extension-stack-inventory.md
   - docs/topics/pi-agentic-os.md
   - docs/topics/agent-tool-routing.md
   - docs/reference/tool-routing.yaml
@@ -31,10 +29,11 @@ primary_refs:
 
 # Pi Extension Stack
 
-Referencia de entrada para elegir herramientas Pi. El inventario completo de
-paquetes globales vive en `docs/reference/pi-extension-stack-inventory.md`.
-No copiar esa lista a repos destino: es configuracion global de la maquina de
-JP, no dependencia core de AOS.
+Referencia de entrada para elegir herramientas Pi en Copicu. El inventario
+global completo de paquetes/config de JP vive en
+`C:/dev/os/docs/reference/pi-extension-stack-inventory.md`.
+No duplicar esa lista aca: es configuracion global, no dependencia local de
+Copicu ni del downstream AOS.
 
 ## Regla Operativa
 
@@ -117,9 +116,10 @@ permiso, y guardar evidencia reproducible.
 
 ## Footer / Statusline
 
-`pi-footer` es la pieza correcta para ajustar statusline/footer. Config actual:
-`C:/Users/jpsal/.pi/agent/extensions/pi-footer.json`. Detalle completo en
-`docs/reference/pi-extension-stack-inventory.md`.
+`pi-footer` es la pieza correcta para ajustar statusline/footer. La config e
+inventario global se documentan en
+`C:/dev/os/docs/reference/pi-extension-stack-inventory.md`; no convertirlos en
+memoria local de Copicu.
 
 ## Sincronizar Otra PC
 
@@ -131,6 +131,7 @@ permiso, y guardar evidencia reproducible.
 
 ## Aprendizajes Recientes
 
-Solo guardar aca aprendizajes de runtime Pi o patrones agenticos genericos. No
-incluir fixes de producto, canales, credenciales ni datos downstream. El detalle
-historico completo quedo en `docs/reference/pi-extension-stack-inventory.md`.
+Solo guardar aca aprendizajes de runtime Pi o patrones agenticos genericos que
+afecten a Copicu. No incluir fixes de producto, canales, credenciales ni datos
+downstream. El inventario historico/global queda en
+`C:/dev/os/docs/reference/pi-extension-stack-inventory.md`.

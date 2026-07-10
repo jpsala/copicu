@@ -139,7 +139,9 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-06-30: release actual `v0.3.2` publicado con auto-update firmado. Assets: `Copicu_0.3.2_x64-setup.exe` y `latest.json`; commit `ce27b557fa105705933a51b76c35032b845f884a`; SHA256 `2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A`. Incluye hardening de autostart e instalada local relanzada con `npm run install:current`. `v0.2.5` fue el primer corte con updater firmado; `v0.2.6`, `v0.2.7`, `v0.2.8`, `v0.3.0`, `v0.3.1` y `v0.3.2` sirven para validar ciclos reales de update desde instalaciones previas.
+Estado 2026-07-09: release actual `v0.3.7` con assets `Copicu_0.3.7_x64-setup.exe` y `latest.json`; SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`. Mejora estabilidad de search/paginacion/seleccion y mantiene el instalador NSIS unsigned con updater Tauri firmado.
+
+La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target, estado de auto-update y boton manual `Check now`. Ese check consulta el manifest firmado/latest via Tauri Updater y solo reporta disponibilidad; la instalacion automatica sigue controlada por `autoUpdate.enabled`.
 
@@ -158,7 +160,7 @@ Hardening vigente desde `v0.3.2` (`ce27b55`):
 
 Estado validado local: `HKCU Run\Copicu = C:\Users\jpsal\AppData\Local\Copicu\copicu.exe` y `StartupApproved\Run\Copicu = 020000000000000000000000`.
 
-Gotcha 2026-06-22: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script ya carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH` hacia `TAURI_SIGNING_PRIVATE_KEY`, pero el password sigue siendo necesario si la clave esta cifrada. Para esta linea de releases, la clave/password local estan en `.codex-run/secrets/copicu-updater.key` y `.codex-run/secrets/copicu-updater.password`; deben respaldarse fuera del repo.
+Gotcha 2026-07-09: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH`, pero el password sigue siendo necesario. La clave nueva de `v0.3.7` vive localmente en `.codex-run/secrets/copicu-updater.key` con password en `.codex-run/secrets/copicu-updater.password`; ambos estan ignorados y deben respaldarse juntos fuera del repo.
 
 Gotcha 2026-06-23: en PowerShell, `@($json | ConvertFrom-Json | ForEach-Object { $_.tagName })` puede envolver el array de releases como un solo item y hacer que el auto-tag ignore GitHub releases recientes. El helper `scripts/dev/release-windows.ps1` debe primero asignar `$items = $json | ConvertFrom-Json` y luego enumerar `$items | ForEach-Object`; esto evita repetir un tag ya publicado cuando el clon local no tiene tags frescos.
 
@@ -263,9 +265,9 @@ La instalada conserva tooltip/icono normal `Copicu`.
 
 ## Fuentes
 
-- Tauri v2 Windows Installer: https://v2.tauri.app/distribute/windows-installer/
-- Tauri v2 configuration reference: https://v2.tauri.app/reference/config/
-- Tauri v2 updater: https://v2.tauri.app/plugin/updater/
+- Tauri v2 Windows Installer: <https://v2.tauri.app/distribute/windows-installer/>
+- Tauri v2 configuration reference: <https://v2.tauri.app/reference/config/>
+- Tauri v2 updater: <https://v2.tauri.app/plugin/updater/>
 
 ## Preguntas Abiertas
 

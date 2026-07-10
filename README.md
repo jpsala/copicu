@@ -19,7 +19,7 @@ Short generated flow:
 Static poster: [docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png](docs/assets/screenshots/copicu-synthetic-picker-demo-poster.png)  
 Video: [docs/assets/videos/copicu-synthetic-picker-demo.mp4](docs/assets/videos/copicu-synthetic-picker-demo.mp4)
 
-More real-looking synthetic workflow demos are planned before the next public feedback push.
+All public demo assets use synthetic data; no maintainer clipboard history is included.
 
 ## Install The Windows Alpha
 
@@ -29,14 +29,25 @@ More real-looking synthetic workflow demos are planned before the next public fe
 
 Current release:
 
-- [v0.3.6](https://github.com/jpsala/copicu/releases/tag/v0.3.6)
-- Asset: `Copicu_0.3.6_x64-setup.exe`
+- [v0.3.7](https://github.com/jpsala/copicu/releases/tag/v0.3.7)
+- Asset: `Copicu_0.3.7_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `AFFA75A67F513EA65EFB992EB5B204944B20BD1BC6C4337A1493E6EEECE29880`
+- SHA256: `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`
 
-`v0.3.6` updates the Windows installer and current release notes for this cut.
+Improves picker search and navigation reliability: plain queries stay local, loaded pages remain stable while idle, and delayed refreshes no longer steal keyboard selection.
+
+The Tauri updater signing key was rotated for `v0.3.7` after the previous private key became unavailable. Install `v0.3.7` manually once from GitHub Releases if you are on `v0.3.6` or older; later releases can auto-update again from this new trust root.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
+
+Verify a downloaded installer from PowerShell:
+
+```powershell
+Get-FileHash .\Copicu_*_x64-setup.exe -Algorithm SHA256
+Get-AuthenticodeSignature .\Copicu_*_x64-setup.exe
+```
+
+The hash must match the value above. Until Authenticode signing is enabled, `Get-AuthenticodeSignature` is expected to report `NotSigned`; the Tauri updater manifest remains cryptographically signed separately.
 
 ## Why Use It?
 
@@ -93,7 +104,7 @@ Useful query examples:
 - `ctx:vivaldi` searches hidden capture context such as source app/window/URL metadata.
 - `window:pull request` searches captured source window titles. `title:` is reserved for the editable item title.
 
-The picker can filter while typing, wait for Enter, or wait for the Search button. `Ctrl+Enter` runs the current query in any mode.
+The picker can filter while typing, wait for Enter, or wait for the Search button. `Ctrl+Enter` runs the current query in any mode. Plain text always uses local deterministic search; prefix a request with `ai:` to invoke the optional AI planner.
 
 Paste-to-previous-window is intentionally Windows-first and depends on native focus behavior, target app timing, and paste shortcuts. Please report target-specific failures with synthetic reproduction data.
 
@@ -128,11 +139,11 @@ Example workflows:
 
 The repo already includes runnable showcase examples under [scripts/examples/](scripts/examples/). Copy them to your Copicu scripts folder, refresh diagnostics in Settings, then run them from the item menu, command palette, or local shortcuts while the picker is focused:
 
-- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts) â€” `Ctrl+Alt+U`;
-- [format selected JSON](scripts/examples/029-format-json-copy.ts) â€” `Ctrl+Alt+F`;
-- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts) â€” `Ctrl+Alt+N`;
-- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) â€” `Ctrl+Alt+L`;
-- [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) â€” `Ctrl+Alt+M`.
+- [clean URL tracking parameters](scripts/examples/028-clean-url-tracking-copy.ts) — `Ctrl+Alt+U`;
+- [format selected JSON](scripts/examples/029-format-json-copy.ts) — `Ctrl+Alt+F`;
+- [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts) — `Ctrl+Alt+N`;
+- [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) — `Ctrl+Alt+L`;
+- [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) — `Ctrl+Alt+M`.
 
 Press `Ctrl+Alt+Q` in the picker to open **Quick Actions**, a context-aware action picker that shows runnable scripts/actions for the current selection so you do not need to memorize every shortcut.
 

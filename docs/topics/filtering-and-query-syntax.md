@@ -48,6 +48,7 @@ type HistorySearchRequest = {
   limit?: number;
   mode?: "plain" | "structured" | "ai";
   includeContent?: boolean;
+  includeCounts?: boolean;
   explain?: boolean;
 };
 ```
@@ -92,7 +93,9 @@ React search input
 
 La busqueda conserva keyset pagination. No usa `OFFSET`.
 
-La UI usa `totalCount`/`filteredCount` para el badge del picker. El virtualizer no usa esos conteos como cantidad de filas; para cursor pagination sigue el pattern TanStack de `loaded + 1 loader row`.
+La UI usa `totalCount`/`filteredCount` para el badge del picker. Tauri puede serializar conteos omitidos como `null`; el frontend solo debe actualizar estado de conteo cuando recibe numeros para no caer a `history.length` y hacer oscilar badge/scroll.
+
+Dogfood 2026-07-09: con keyset/cursor pagination el virtualizer debe usar filas cargadas + una fila loader. El experimento de reservar altura por `totalCount`/`filteredCount` se revirtio: inventar placeholders de items no cargados rompe expectativas con filas variables. Una scrollbar proporcional al total real requiere otro contrato backend/windowing, no solo frontend.
 
 ## Ejecucion De Search
 
@@ -206,6 +209,8 @@ Las operaciones `All results` / `None results` llaman `set_history_query_marked`
 - La nomenclatura UI mezcla checked y marked. Decision pendiente: consolidar copy visible sin perder que storage/API usan `marked`.
 
 ## Relacion Con AI
+
+Invariante dogfood 2026-07-09: una query normal siempre ejecuta busqueda local deterministica, incluso si el composer visual esta en modo AI. El planner AI solo corre con prefijo explicito `ai:`; Enter/lupa sobre texto plain debe devolver `filtered / total matches`, no quedar en `AI planning`.
 
 AI search debe ser capa superior:
 

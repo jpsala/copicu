@@ -21,7 +21,8 @@ Que una persona nueva pueda instalar Copicu con una cadena de confianza clara:
 ## Estado Actual
 
 - Canal actual: GitHub Releases con NSIS `Copicu_*_x64-setup.exe`, `latest.json` firmado para Tauri Updater y SHA256 publicado.
-- Release vigente: `v0.3.2`, commit `ce27b55`, SHA256 `2E38ABC686DAD94F16DAAE16C2671F49281A5A84FCEDA3D14EF93D48E565110A`.
+- Release vigente: `v0.3.7`, SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`.
+- `v0.3.7` rota la trust root Tauri Updater porque la private key anterior no estaba disponible; `<=0.3.6` requiere un salto manual. La nueva key local necesita backup externo.
 - Instalador publico aun no esta Authenticode-signed; Windows/SmartScreen puede mostrar warning de publisher desconocido o app no reconocida.
 - El warning es un problema real de producto, especialmente para usuarios nuevos y para una app que observa clipboard/shortcuts.
 
@@ -36,10 +37,10 @@ Que una persona nueva pueda instalar Copicu con una cadena de confianza clara:
 
 Fuentes:
 
-- Microsoft SmartScreen reputation: https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation
-- Microsoft code signing options: https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options
-- SignPath Foundation: https://signpath.org/
-- OSSign: https://ossign.org/
+- Microsoft SmartScreen reputation: <https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation>
+- Microsoft code signing options: <https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options>
+- SignPath Foundation: <https://signpath.org/>
+- OSSign: <https://ossign.org/>
 
 ## Decision De Direccion
 
@@ -143,3 +144,55 @@ Pedir confirmacion explicita antes de:
 1. Auditar requisitos de SignPath y mapear gaps concretos del repo/pipeline.
 2. Diseñar release CI verificable para Windows sin mover todavia secretos reales.
 3. Proponer a JP si aplicar primero a SignPath o hacer spike Microsoft Store/MSIX.
+
+## Readiness SignPath / CI Verificable
+
+Precheck 2026-07-09:
+
+- `LICENSE` existe y es MIT, una licencia OSI-compatible.
+- Al iniciar el precheck no habia workflow; ahora existe `.github/workflows/windows-release-signing.yml` como draft manual-only. El release real sigue siendo local con `scripts/dev/release-windows.ps1` hasta resolver SignPath y el orden Authenticode/updater.
+- El script local ya hace `npm run build`, `cargo check --manifest-path src-tauri/Cargo.toml --tests`, build Tauri con updater artifacts, `latest.json` y SHA256.
+- Falta Authenticode: no hay SignPath/Trusted Signing/signtool, verificacion `Get-AuthenticodeSignature` ni politica publica de code signing.
+- `src-tauri/tauri.conf.json` produce NSIS `.exe`; SignPath soporta Authenticode para PE `.exe`, por lo que el instalador NSIS es firmable como `.exe` aunque no haya integracion NSIS especial.
+
+Requisitos SignPath Foundation que afectan a Copicu:
+
+- Proyecto OSS activo, releaseado y documentado; sin malware/PUA ni codigo propietario no permitido.
+- MFA en SignPath y GitHub para miembros con rol de signing.
+- Roles claros: authors/committers, reviewers y approvers; cada signing request requiere aprobacion manual.
+- Publicar una seccion o pagina `Code signing policy` en homepage/download/release pages con el texto requerido: `Free code signing provided by SignPath.io, certificate by SignPath Foundation`, roles/miembros y privacidad.
+- Trusted build + origin verification: para OSS, los jobs que llevan al signing request deben correr en GitHub-hosted runners; el artifact debe subirse como GitHub workflow artifact antes de enviarse a SignPath.
+- Artifact configuration con metadata restrictions: product name = `Copicu`; product/file version consistente por build.
+
+Diseño CI minimo propuesto, sin secretos reales:
+
+1. `workflow_dispatch` + tag input para build Windows en `windows-latest`.
+2. Checkout del tag/commit, instalar Node/Bun/Rust/Tauri prerequisites documentadas.
+3. Ejecutar los checks actuales: `npm run build` y `cargo check --manifest-path src-tauri/Cargo.toml --tests`.
+4. Build unsigned con updater artifacts usando secretos de updater solo en GitHub Actions cuando JP decida migrar release: `TAURI_SIGNING_PRIVATE_KEY` y password si aplica.
+5. Subir `Copicu_<version>_x64-setup.exe` como artifact unsigned.
+6. Enviar ese artifact a `signpath/github-action-submit-signing-request@v2` con `wait-for-completion: true`.
+7. Descargar el artifact signed y verificar:
+
+```powershell
+Get-AuthenticodeSignature src-tauri/target/release/copicu.exe
+Get-AuthenticodeSignature src-tauri/target/release/bundle/nsis/Copicu_<version>_x64-setup.exe
+Get-FileHash src-tauri/target/release/bundle/nsis/Copicu_<version>_x64-setup.exe -Algorithm SHA256
+```
+
+Punto critico antes de implementar CI: definir y probar el orden **Tauri updater signature vs Authenticode**. Si Authenticode cambia bytes del instalador despues de crear `.sig`/`latest.json`, el updater puede fallar. El corte seguro es crear un dry-run que compare:
+
+1. updater `.sig` antes de Authenticode;
+2. Authenticode signing del instalador;
+3. validacion real de update/install con el artifact final.
+
+Si falla, el release pipeline debe firmar Authenticode antes de generar/publicar `latest.json` o regenerar updater signature/hash despues de Authenticode, segun permita Tauri.
+
+Artefactos draft creados:
+
+- `.github/workflows/windows-release-signing.yml`: workflow manual-only para checks, build opcional, upload de artifact, submit SignPath condicional y verificacion Authenticode condicional.
+- `docs/reference/code-signing-policy.md`: politica publica draft, no activa hasta aprobacion SignPath/JP.
+
+Gates antes de ejecutar:
+
+- Pedir confirmacion a JP antes de mover release real a CI, cargar secretos en GitHub, instalar SignPath GitHub App, enviar signing requests, aplicar a SignPath Foundation, publicar release signed/trusted o pagar certificados.

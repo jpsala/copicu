@@ -10,6 +10,8 @@ playwright-report/
 logs/
 .codex-run/
 .agents/
+.pi/npm/
+.pi/taskflows/
 tmp-*.log
 *.log
 __pycache__/
