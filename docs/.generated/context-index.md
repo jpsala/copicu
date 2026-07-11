@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-10T00:04:30.499Z
+Generated: 2026-07-11T21:22:18.691Z
 
 ## Topics
 
@@ -88,13 +88,13 @@ Generated: 2026-07-10T00:04:30.499Z
 ## Skills
 
 - Canon: [docs/skills/](../skills/)
-- Operational commands: aos-dynamic-workflows-pilot, aos-evaluar-skills, aos-fanout, aos-fleet-update, aos-gol-lite, aos-guardar-sesion, aos-help, aos-orquestar, aos-perfect-os, aos-plan-implementar, aos-realinear-os, aos-repo-commit-push, aos-sigamos
+- Operational commands: aos-gol-lite
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
 ## Pi Resources
 
-- Prompts: 13 in [.pi/prompts/](../../.pi/prompts/)
-- Extensions: aos-checkpoint-nudge.ts, aos-tools.ts, copicu-computer-use.ts
+- Prompts: 4 in [.pi/prompts/](../../.pi/prompts/)
+- Extensions: copicu-computer-use.ts
 - Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
 
 ## Aliases

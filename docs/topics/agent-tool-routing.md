@@ -16,7 +16,7 @@ primary_refs:
   - docs/reference/tool-routing.yaml
   - docs/topics/pi-agentic-os.md
   - docs/topics/pi-extension-stack.md
-  - docs/skills/aos-plan-implementar/SKILL.md
+  - C:/dev/os/docs/skills/aos-plan-implementar/SKILL.md
   - .pi/extensions/aos-tools.ts
 ---
 
@@ -59,6 +59,22 @@ es cambio chico; validar con <check>`.
 | Prod/deploy/envios/datos/destructivo | el que corresponda | ask_user | confirmacion explicita |
 
 La version verificable vive en `docs/reference/tool-routing.yaml`.
+
+## Routing GPT-5.6
+
+Para elegir modelo y nivel de razonamiento dentro del motor ya seleccionado:
+
+| Trabajo | Ruta preferida |
+| --- | --- |
+| Pi normal y planificacion compacta | Sol medium |
+| Planificacion sustantiva, arquitectura, advisor y conformance | Sol high |
+| Trabajo mecanico barato | Luna medium |
+| Implementacion background acotada | Luna xhigh; reintentar con Luna max |
+| Implementacion interactiva sensible a latencia | Terra high |
+| Trabajo de alta garantia | Terra max, validado por Sol xhigh |
+
+Tests, conformance y riesgo prevalecen sobre las heuristicas de costo. Los
+cambios de settings requieren reload o una sesion nueva cuando aplique.
 
 ## Nesting Permitido
 

@@ -12,21 +12,10 @@
 ## Contenido Actual
 
 - `impeccable/`: skill local para trabajo de UI/frontend.
-- `aos-speckit-*/`: skills locales del workflow SpecKit.
-- `aos-help/`: mostrar comandos AOS disponibles y cuando usarlos.
-- `aos-perfect-os/`: auditar y optimizar el repo para agentes: contexto, docs, continuidad, comandos y audit.
-- `aos-plan-implementar/`: crear, revisar y ejecutar un plan acotado eligiendo un solo motor principal (`manual`, planner, dgoal, until-done, long-task o taskflow).
-- `aos-sigamos/`: continuar con lo siguiente en la misma sesion, sin lote formal.
-- `aos-orquestar/`: proponer o ejecutar un fan-out controlado con taskflow/subagentes disponibles.
-- `aos-fanout/`: alias intensivo para maximizar orquestacion segura y volver a serial cuando no conviene.
-- `aos-dynamic-workflows-pilot/`: piloto opt-in para comparar `pi-dynamic-workflows` contra `taskflow` sin volverlo default.
-- `aos-fleet-update/`: lote serial multi-repo con `pi_long_task`, allowlist, checks y commits locales opcionales.
-- `aos-guardar-sesion/`: guardar lo valioso de la sesion en docs vivos.
-- `aos-checkpoint/` y `aos-cerrar-sesion/`: aliases legados de `aos-guardar-sesion/`.
+- `speckit-*/`: skills locales del workflow SpecKit.
+- `aos-gol-lite/`, `cerrar-sesion/`, `checkpoint/`, `continuar-sesion*/`, `evaluar-skills/`, `realinear-os/`, `repo-commit-push/` y `sigamos/`: workflows locales no colisionantes.
+- Los workflows AOS portables con nombre `aos-*` viven upstream en `C:/dev/os/docs/skills/`.
 - `/aos-continuar` vive en el adapter Pi (`.pi/extensions/aos-tools.ts`): abre sesion nueva con prompt de continuidad despues de que JP guardo sesion.
-- `aos-realinear-os/`: auditoria y reparacion de la capa agentica.
-- `aos-evaluar-skills/`: auditar que partes del sistema agentico conviene promover a skills hibridas.
-- `aos-repo-commit-push/`: checklist para incluir cambios necesarios, commitear y pushear.
 
 Las herramientas Pi de pensamiento/implementacion (`taskflow`, `pi-code-planner`, `pi-task`, `advisor`, Ponytail, `dgoal`, `context-viewer`, `pi-lens`) se documentan en `docs/topics/pi-extension-stack.md`, no como skills locales separadas.
 

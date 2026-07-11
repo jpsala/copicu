@@ -26,7 +26,7 @@ primary_refs:
   - docs/reference/pi-agentic-os-command-surface.md
   - docs/OS_PLAYBOOK.md
   - scripts/toggle-skills-link.ps1
-  - docs/skills/aos-guardar-sesion/SKILL.md
+  - C:/dev/os/docs/skills/aos-guardar-sesion/SKILL.md
 ---
 
 # Pi Agentic OS
@@ -91,6 +91,14 @@ Heuristica corta:
 - fleet update AOS serial: `/aos-fleet-update` -> `pi_long_task`; no `dgoal`;
 - auditoria/review/fan-out: `taskflow` o council si el paralelismo vale el costo;
 - codigo tocado: `lens_diagnostics`/LSP como feedback y checks del repo como gate.
+
+Routing GPT-5.6: Sol medium para Pi normal/plan compacto; Sol high para
+planificacion, arquitectura, advisor y conformance; Luna medium para mecanica
+barata; Luna xhigh para implementacion background acotada, con retry Luna max;
+Terra high para implementacion interactiva sensible a latencia; Terra max para
+alta garantia, validado por Sol xhigh. Tests, conformance y riesgo prevalecen
+sobre costo. Los cambios de settings requieren reload o sesion nueva cuando
+aplique.
 
 ## Human-in-the-loop
 

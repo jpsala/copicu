@@ -49,7 +49,7 @@ Copicu ni del downstream AOS.
 | --- | --- | --- |
 | Core diario | `fffind`, `ffgrep`, CodeMapper (`map/search/outline`), `ask_user`, `advisor`, `lens_diagnostics` | Orientacion, decisiones humanas, segundo juicio y feedback tecnico. |
 | Orquestacion | `taskflow`, `pi-council`, `pi-link` | Auditorias/reviews paralelas con ownership claro; no para trabajo serial chico. |
-| Piloto opt-in | `pi-dynamic-workflows` via `docs/skills/aos-dynamic-workflows-pilot/` si se instala | Comparar fan-out pesado/deep research/adversarial review contra `taskflow`; no dejar triggers genericos activos. |
+| Piloto opt-in | `pi-dynamic-workflows` via `C:/dev/os/docs/skills/aos-dynamic-workflows-pilot/` si se instala | Comparar fan-out pesado/deep research/adversarial review contra `taskflow`; no dejar triggers genericos activos. |
 | Ejecucion larga | `pi-code-planner`, `/until-done`, `pi_long_task`; `pi-dgoal` solo experimental | Elegir **uno** desde `/aos-plan-implementar`; para fleet updates AOS usar `pi_long_task`/`/aos-fleet-update`, no `dgoal`. |
 | Research externo | `web_search`, `fetch_content`, `web_answer`, `web_research`, skill `librarian` | Usar para docs, releases, issues, APIs, internals OSS; no enviar secretos. |
 | Visual/UI | `pi-chrome`, `cua-driver`, `image_generate`, `aos-impeccable` | UI, browser signed-in y assets; pedir aprobacion para cuentas reales/envios/material privado. |

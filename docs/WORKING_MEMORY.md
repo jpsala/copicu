@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-06-30. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-07-10. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -15,7 +15,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | `Ctrl+Alt+Q` Quick Actions contextual; Open URL solo con URL; texto legacy sin MIME = text/plain. Showcase `028`-`031`, `010`. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
-| Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `docs/topics/picker-interaction.md` | Picker search/scroll estabilizado al volver a cursor pagination `loaded + 1 loader`; si JP quiere scrollbar proporcional al total, diseñar contrato backend/windowing antes de implementar. |
+| Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `specs/005-search-plan-engine/` | Triggers, chips/explain y diagnostico sintactico listos. Autocomplete local esta en worktree y requiere validacion independiente antes de marcarlo aplicado; luego saved searches o highlighting. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
 | Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.7`; `<=0.3.6` requiere salto manual por rotacion updater. Proximo: backup de clave y Authenticode/SignPath. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
@@ -42,7 +42,7 @@ Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai
 
 1. Retomar `docs/tracks/021-distribution-trust-code-signing.md`: auditar requisitos SignPath y diseñar release CI verificable para firmar instaladores Windows.
 2. Dogfood instalada `v0.3.7`: Settings/autostart; el proximo corte debe validar updater desde esta nueva trust root.
-3. UX picker/search: mantener validacion visible con Computer Use al tocar search/scroll. Estado actual: Enter/lupa aplican filtro local y muestran `filtered / total`; AI solo con `ai:`; virtualizer usa paginas cargadas + loader. Para scrollbar total real, primero diseñar paginacion/windowing backend.
+3. UX picker/search: validar el autocomplete local pendiente (diff, build, visual focal/full, Rust, CUA: Tab/Escape/Enter/click y narrow) antes de marcarlo aplicado. Luego evaluar saved searches o highlighting. Scrollbar total real requiere contrato backend/windowing.
 4. Si hay hang/lentitud: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo; si es Pi/contexto, compactar ruta caliente y usar `map/search` scoped.
 
 ## Promocion De Memoria

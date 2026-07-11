@@ -172,22 +172,14 @@ Cuando JP pida revisar que del sistema agentico se puede pasar a skills:
 
 | Comando o grupo                                                       | Skill                                                          | Comportamiento                                                                                                 |
 | --------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `os help`, `ayuda os`, `comandos os`                                  | `docs/skills/aos-help/`                                        | Muestra comandos OS y cuando usarlos sin ejecutar cambios.                                                     |
-| `perfect os`, `dejar en condiciones`                                  | `docs/skills/aos-perfect-os/`                                  | Optimiza este repo para agentes: contexto, docs, continuidad, comandos y audit.                                |
+| `perfect os`, `dejar en condiciones`                                  | `C:/dev/os/docs/skills/aos-perfect-os/`                        | Optimiza este repo para agentes: contexto, docs, continuidad, comandos y audit.                                |
 | `init/adopt/update os`                                                 | upstream `C:/dev/os`                                           | Operaciones manager-only para otros repos; Copicu solo recibe la capa downstream local.                        |
-| `aos-sigamos`                                                         | `docs/skills/aos-sigamos/`                                     | Continua con lo siguiente en la misma sesion, sin lote formal.                                                 |
-| `avancemos`, `ejecutar lote`, siguiente paso                          | `docs/skills/aos-sigamos/`                                     | Continua en esta sesion con el siguiente paso concreto; para loops largos usar tooling explicito.              |
-| `aos-orquestar`, `orquestá`, `usá threads`, `spawn agents`            | `docs/skills/aos-orquestar/`                                   | Propone o ejecuta fan-out controlado con threads/subagentes, con confirmacion si no fue pedido explicitamente. |
-| `aos-fanout`, `aos-threads`, `/aos-fanout`                            | `docs/skills/aos-fanout/`                                      | Alias intensivo: maximiza paralelismo seguro y vuelve a serial si no conviene.                                 |
-| `aos-dynamic-workflows-pilot`, `probar pi-dynamic-workflows`          | `docs/skills/aos-dynamic-workflows-pilot/`                     | Piloto opt-in para comparar `pi-dynamic-workflows` contra `taskflow` sin volverlo default.                     |
-| `aos-fleet-update`, `actualizar repos`, `actualizar nuestras repos`       | `docs/skills/aos-fleet-update/`                              | Genera un `pi_long_task` serial para actualizar repos AOS con allowlist, checks y commits locales opcionales. |
+| `aos-dynamic-workflows-pilot`, `probar pi-dynamic-workflows`          | `C:/dev/os/docs/skills/aos-dynamic-workflows-pilot/`           | Piloto opt-in para comparar `pi-dynamic-workflows` contra `taskflow` sin volverlo default.                     |
+| `aos-fleet-update`, `actualizar repos`, `actualizar nuestras repos`   | `C:/dev/os/docs/skills/aos-fleet-update/`                      | Genera un `pi_long_task` serial para actualizar repos AOS con allowlist, checks y commits locales opcionales. |
 | Pi planning tools, advisor, taskflow, dgoal, pi-lens, pi-code-planner | `docs/topics/pi-extension-stack.md`                            | No es skill nueva: topic/runbook canonico para elegir herramientas de pensamiento/implementación.              |
-| `guardar sesion`, `documentar sesion`                                 | `docs/skills/aos-guardar-sesion/`                              | Persiste valor durable en docs vivos, sin handoff ni thread nuevo.                                             |
-| `aos-checkpoint`, `persistir estado`, `cerrar sesion`                 | `docs/skills/aos-guardar-sesion/`                              | Aliases de guardar sesion; `cerrar` agrega solo sintesis final.                                                |
 | `/aos-continuar [objetivo]`                                           | `.pi/extensions/aos-tools.ts` + `.pi/prompts/aos-continuar.md` | Abre sesion Pi nueva y pasa un prompt de continuidad desde docs vivos; JP debe haber guardado antes.           |
-| `realinear os`                                                        | `docs/skills/aos-realinear-os/`                                | Audita y repara la capa agentica sin tocar producto salvo pedido.                                              |
+| `realinear os`                                                        | `C:/dev/os/docs/skills/aos-realinear-os/`                      | Audita y repara la capa agentica sin tocar producto salvo pedido.                                              |
 | `evaluar skills`, `pasar a skills`                                    | `docs/skills/evaluar-skills/`                                  | Audita candidatos del sistema agentico para promoverlos a skills hibridas.                                     |
-| `hacer commits`, `push`, `publicar cambios`, `repo commit push`       | `docs/skills/aos-repo-commit-push/`                            | Revisa inclusion, valida, commitea y pushea el batch del repo.                                                 |
 
 ## Validacion
 
@@ -205,10 +197,10 @@ powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
 1. Validar una skill o todas las necesarias:
 
 ```powershell
-python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/aos-sigamos
-python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/aos-checkpoint
-python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/aos-cerrar-sesion
-python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/aos-realinear-os
+python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/sigamos
+python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/checkpoint
+python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/cerrar-sesion
+python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/realinear-os
 python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/evaluar-skills
 ```
 
