@@ -29,7 +29,7 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 | Instalador, release Windows, updater | [windows-installer](topics/windows-installer.md) |
 | macOS port | [macos-portability-research-unindexed](topics/macos-portability-research-unindexed.md), [015-macos-port-spike](tracks/015-macos-port-spike.md) |
 | CopyQ feature inventory/import | [copyq-feature-inventory](reference/copyq-feature-inventory.md), [007-copyq-import](tracks/007-copyq-import.md) |
-| Sistema agentico, AOS, docs, checkpoint, continuar, gol | [docs-knowledge-system](topics/docs-knowledge-system.md), [pi-agentic-os](topics/pi-agentic-os.md), [agentic-os-operations](topics/agentic-os-operations.md), [agent-tool-routing](topics/agent-tool-routing.md), [os-quality](topics/os-quality.md), [local-codex-skills](topics/local-codex-skills.md) |
+| Sistema agentico, AOS, `/flow`, docs y routing | [docs-knowledge-system](topics/docs-knowledge-system.md), [pi-agentic-os](topics/pi-agentic-os.md), [agentic-os-operations](topics/agentic-os-operations.md), [agent-tool-routing](topics/agent-tool-routing.md), [os-quality](topics/os-quality.md), [local-codex-skills](topics/local-codex-skills.md) |
 | Research tecnico, librerias, dependencias | [technical-research-process](topics/technical-research-process.md) |
 | Ponytail, implementacion minima, YAGNI, over-engineering, diff minimo, dependencias innecesarias | [minimal-implementation](topics/minimal-implementation.md) |
 | Guia de usuario, scripts para usuarios | [user/README.md](user/README.md), [user/scripts.md](user/scripts.md) |

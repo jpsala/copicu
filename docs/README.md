@@ -30,7 +30,7 @@ Para entender el estado actual sin inflar contexto:
 - `user/README.md`: guia clara de que es Copicu, que hace y como se usa.
 - `user/scripts.md`: guia exhaustiva de scripts, metadata, API host, capabilities y ejemplos.
 - `USER_GUIDE.md`: guia breve para humanos sobre como usar la capa agentica.
-- `OS_PLAYBOOK.md`: playbook humano para elegir entre checkpoint, continuidad, compaction, `/aos-gol`, `/until-done`, dogfood y auditoria.
+- `OS_PLAYBOOK.md`: playbook humano mínimo para `/flow`, continuidad documental, dogfood y auditoría.
 
 ## Contexto Inicial
 

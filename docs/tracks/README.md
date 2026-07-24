@@ -16,24 +16,19 @@ updated: YYYY-MM-DD
 
 Cuando un trabajo descubra algo durable, promoverlo a `docs/PROJECT.md`, `docs/DECISIONS.md`, `docs/OPEN_QUESTIONS.md` o `docs/topics/`.
 
-## Cierre Y Continuacion De Sesion
+## `/flow` Y Continuidad
 
-Al cerrar o continuar una sesion, usar `tracks` como fuente principal de continuidad cuando hay trabajo vivo:
+Planear registra un brief liviano y Hacer usa la track seleccionada como handoff
+documental hacia una sesión nueva enlazada. Al cerrar un corte:
 
-- actualizar estado, checklist y proximo corte;
+- actualizar estado y próximo paso sólo si cambiaron;
 - promover decisiones durables a `docs/DECISIONS.md`;
-- promover research y patterns a `docs/topics/`;
-- actualizar `docs/WORKING_MEMORY.md`;
-- evitar historial largo o duplicacion.
-- si un track crece como transcript, compactarlo y mover detalle a referencia profunda o archivo historico.
+- promover conocimiento reusable a `docs/topics/`;
+- mantener `docs/WORKING_MEMORY.md` como foco mínimo;
+- evitar historial, receipts y duplicación.
 
-`cerrar sesion` termina con una sintesis compacta despues de persistir valor.
-
-`continuar sesion` hace el mismo cierre de valor y despues abre una sesion nueva con handoff compacto si la herramienta esta disponible. Si no lo esta, devolver un prompt pegable. El handoff debe apuntar a docs actualizados; no debe reemplazarlos ni repetirlos.
-
-`continuar sesion con gol` hace el mismo cierre de valor, abre una sesion nueva y pide arrancar con `gol` para el proximo lote acordado.
-
-`continuar con gol` y `siguiente` son aliases de `continuar sesion con gol`; no hay variante para seguir en la misma sesion.
+Cerrar compacta únicamente valor durable faltante y no inicia otro batch. El
+handoff apunta a docs actualizados; no los reemplaza ni repite.
 
 ## Inventario
 

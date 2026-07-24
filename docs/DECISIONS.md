@@ -58,7 +58,7 @@ Proximo paso: al ejecutar `actualizar aos`, seguir `docs/topics/agentic-os-opera
 
 ### 2026-06-12 - Canonizar skills locales en `docs/skills`
 
-Estado: accepted
+Estado: superseded parcialmente por AOS 1.1 flow-first
 
 Decision: `docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` queda solo como junction de compatibilidad para descubrimiento tecnico de Codex. Los comandos operativos `sigamos`, `cerrar sesion`, `continuar sesion`, `continuar sesion con gol` y `realinear os` se representan como skills locales versionadas dentro de `docs/skills/`.
 
@@ -68,7 +68,7 @@ Proximo paso: mantener `docs/skills/`, `scripts/ensure-skills-link.ps1`, `contex
 
 ### 2026-06-11 - Simplificar continuidad con `gol`
 
-Estado: accepted
+Estado: superseded por AOS 1.1 flow-first
 
 Decision: el sistema agentico conserva cuatro comandos de continuidad: `cerrar sesion`, `continuar sesion`, `continuar sesion con gol` y `siguiente`. `continuar sesion con gol` equivale a `continuar sesion`, pero el handoff debe pedir que el thread nuevo arranque con `gol` para el proximo lote acordado. `siguiente` es alias de `continuar sesion con gol`. `continuar con gol` queda solo como alias de `continuar sesion con gol`; se elimina la variante que seguia trabajando con Goal en la misma sesion. `goal` / `gol` como comando suelto deja de ser regla automatica del sistema agentico.
 
@@ -116,7 +116,7 @@ Motivo: Una guia ayuda a entender el sistema, pero duplicar playbooks largos la 
 
 ### 2026-06-11 - `continuar sesion` como handoff transaccional
 
-Estado: accepted
+Estado: superseded por AOS 1.1 flow-first
 
 Decision: `cerrar sesion` y `continuar sesion` comparten un cierre de valor obligatorio: extraer lo durable, rutearlo a docs vivos, regenerar indice y verificar drift cuando aplica. `continuar sesion` agrega la creacion de un thread nuevo con handoff compacto si la herramienta esta disponible; si no, devuelve un prompt pegable.
 
@@ -191,10 +191,10 @@ Proximo paso: aplicar la politica desde `AGENTS.md` y `docs/topics/pi-agentic-os
 
 ### 2026-07-04 - Simplificar continuidad Pi a `/aos-continuar` post-guardado
 
-Estado: accepted
+Estado: superseded por AOS 1.1 flow-first
 
-Decision: AOS deja un unico comando Pi para abrir una sesion/thread nuevo: `/aos-continuar [objetivo]`. JP se hace cargo de correr `/aos-guardar-sesion` primero cuando haya valor durable. `/aos-continuar` no guarda, no compacta, no ejecuta `gol` y no duplica docs: crea una sesion nueva con `ctx.newSession()` y le pasa un prompt de continuidad que referencia `docs/.generated/context-index.md`, `docs/WORKING_MEMORY.md`, `docs/TOPICS.md`, topic/track/spec puntual y estado git. `--preview` abre la sesion nueva con el prompt en el editor sin enviarlo automaticamente.
+Decision histórica: el adapter local separaba guardado y continuidad mediante `/aos-continuar`. Desde AOS 1.1 la superficie diaria es `/flow`; el handoff documental de Hacer reemplaza ese lifecycle local sin copiar runtime al downstream.
 
 Motivo: los comandos previos (`/aos-nueva-sesion`, `/aos-continuar-sesion`, `/aos-nueva-sesion-con-gol`, `/aos-continuar-con-gol`, `/aos-siguiente`) mezclaban guardado, handoff y ejecucion, generando ambiguedad. JP quiere revisar/controlar el guardado por separado y tener una continuidad confiable basada en docs vivos.
 
-Proximo paso: usar `/aos-continuar` despues de `/aos-guardar-sesion` y ejecutar `/reload` tras actualizar el adapter Pi.
+Proximo paso histórico: reemplazado por `/flow`; no reintroducir los aliases locales.

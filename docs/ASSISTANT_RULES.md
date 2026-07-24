@@ -56,95 +56,24 @@
 
 El asistente puede modificar documentacion, codigo, configuracion, scripts, tests y estructura del proyecto, respetando reglas locales y cambios del usuario.
 
-## Cierre De Sesion
+## Flujo Y Persistencia
 
-Cuando el usuario pida "cerrar sesion", "guardar sesion", "compactar", "continuar sesion", "seguir en una sesion nueva", "continuar sesion con gol", "continuar con gol", "siguiente" o equivalente, ejecutar un cierre de valor. No crear un archivo historico de sesion por defecto.
+`/flow` es la única entrada Pi cotidiana. Pensar converge decisiones, Planear
+crea un brief liviano, Hacer abre una sesión nueva enlazada con handoff documental
+revisable y Cerrar persiste sólo valor durable faltante. No crear aliases locales
+para esas fases ni usar un session saver externo.
 
-No usar un skill externo de session saver para este proyecto. El cierre se maneja con documentacion viva del repo: `tracks`, topics, decisiones y memoria corta.
+El objetivo no es archivar la conversación: es dejar el proyecto retomable con
+la menor lectura posible. Promover únicamente:
 
-### Protocolo Comun
+- reglas críticas a `AGENTS.md`;
+- foco y estado vivo a `docs/WORKING_MEMORY.md`;
+- trabajo retomable a `docs/tracks/`;
+- conocimiento reusable a `docs/topics/`;
+- decisiones durables a `docs/DECISIONS.md`;
+- features grandes a `specs/`.
 
-El objetivo no es archivar la conversacion: es dejar el proyecto retomable con la menor lectura posible.
-
-1. Extraer valor:
-   - cambios de codigo, docs, configuracion, tests o scripts;
-   - decisiones y tradeoffs;
-   - checks corridos y resultados;
-   - bloqueos reproducibles;
-   - riesgos del worktree o datos locales;
-   - preferencias nuevas de JP;
-   - proximo paso concreto.
-2. Filtrar ruido:
-   - no guardar transcript;
-   - no guardar razonamiento intermedio;
-   - no guardar intentos fallidos triviales;
-   - no guardar logs largos, payload real del clipboard, secretos, bases locales ni rutas privadas innecesarias.
-3. Rutear memoria:
-   - regla critica para todos los agentes -> `AGENTS.md`;
-   - estado vivo o proximo paso -> `docs/WORKING_MEMORY.md`;
-   - trabajo retomable -> `docs/tracks/`;
-   - conocimiento reusable, research o pattern -> `docs/topics/`;
-   - decision durable -> `docs/DECISIONS.md`;
-   - alcance, plan o tareas de feature grande -> `specs/`.
-4. Verificar:
-   - regenerar `docs/.generated/context-index.md` con `bun run context:index` cuando cambien docs indexados;
-   - correr `bun run context:audit` cuando se toque la capa agentica o haya riesgo de drift;
-   - reportar checks de producto solo si se tocaron codigo/tests o si ya se habian corrido.
-5. Sintetizar:
-   - responder con archivos actualizados, decisiones, estado actual, checks, riesgos y proximo paso;
-   - incluir prompt compacto solo si sirve para otra sesion.
-
-### Cerrar Vs Continuar
-
-`cerrar sesion` significa persistir valor y cerrar. No crea otra sesion.
-
-`continuar sesion` significa persistir valor, cerrar el corte actual y seguir el trabajo pendiente en una sesion limpia:
-
-1. ejecutar el Protocolo Comun;
-2. construir un handoff compacto que apunte a docs actualizados;
-3. crear un thread nuevo si la herramienta esta disponible y el usuario pidio continuar en nueva sesion;
-4. si no hay herramienta, devolver el prompt para pegar manualmente.
-
-El prompt de continuacion nunca es la memoria principal. La memoria principal son los docs actualizados.
-
-`continuar sesion con gol` significa ejecutar el Protocolo Comun, crear un thread nuevo con handoff compacto y pedir que la nueva sesion arranque con `gol` para el proximo lote acordado.
-
-`continuar con gol` y `siguiente` son aliases de `continuar sesion con gol`. No hay variante para seguir en la misma sesion con `gol`.
-
-### Destinos De Memoria
-
-Actualizar solo el conocimiento que sirve para continuar:
-
-1. `docs/tracks/` para trabajos vivos, estado actual, checklist y proximo corte.
-2. `docs/topics/` para descubrimientos, research, patterns y decisiones por area.
-3. `docs/DECISIONS.md` para decisiones durables.
-4. `docs/WORKING_MEMORY.md` para el estado operativo corto.
-5. Specs relevantes si cambio el alcance, plan o tareas.
-
-No duplicar documentacion estable: linkear topics/specs/tracks en vez de copiar contenido.
-
-No guardar historial largo salvo que ayude a preservar una decision, error, tradeoff o preferencia de colaboracion.
-
-Al final, si es util para continuar en una sesion nueva, devolver una sintesis compacta en la respuesta final con:
-
-- archivos actualizados;
-- decisiones tomadas;
-- estado actual;
-- checks corridos o no corridos;
-- riesgos y cosas que no hay que hacer;
-- proximo paso concreto;
-- prompt corto opcional para pegar en una sesion nueva.
-
-Formato recomendado del handoff:
-
-```text
-Continuar en <repo>. Leer primero <ruta liviana>.
-Estado actual:
-Fuentes actualizadas:
-Decisiones tomadas:
-Checks:
-Worktree / riesgos:
-No hacer:
-Objetivo de la nueva sesion:
-Primer paso:
-```
+No guardar transcript, razonamiento intermedio, intentos triviales, logs largos,
+payload real del clipboard, secretos, bases locales ni rutas privadas
+innecesarias. Regenerar índice/audit sólo cuando la capa documental cambie y
+reportar checks de producto sólo si son relevantes para el corte.

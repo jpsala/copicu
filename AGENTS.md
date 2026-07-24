@@ -37,13 +37,11 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 
 ## Comandos De Sistema
 
-- `aos-realinear-os` / `realinear os`: abrir `docs/topics/agentic-os-operations.md` y reparar solo la capa agentica salvo pedido explicito.
-- `aos-perfect-os` / `perfect os`: abrir `docs/topics/os-quality.md`, aplicar checklist, regenerar indice/audit.
-- `aos-sigamos` / `sigamos`: seguir en esta sesion; no cerrar, compactar ni abrir thread nuevo.
-- `aos-guardar-sesion` / `aos-checkpoint` / `checkpoint`: persistir valor durable en docs vivos sin transcript ni handoff.
-- `aos-cerrar-sesion` / `cerrar sesion`: guardar valor durable y cerrar, sin transcript por defecto.
-- Continuidad Pi: JP guarda primero; luego `/aos-continuar [objetivo]` abre sesion nueva desde docs vivos (`--preview` para revisar).
-- Comandos Pi locales documentados en `docs/topics/pi-agentic-os.md`: `/aos-status`, `/aos-sync`, `/aos-compact`, `/aos-continuar`, `/aos-skills`, `/aos-checkpoint-nudge`, `/aos-gol`.
+- `/flow` es la única entrada Pi cotidiana: `Pensar | Planear | Hacer | Cerrar`; Copicu exige `aos.flow-first@1.1.0`, un comando global `user/package` y foco documental válido.
+- Planear declara `execution_route: economical | balanced | strong`; Hacer aplica esa ruta (`balanced` por defecto) y bloquea sin fallback si falta modelo o auth.
+- `/flow → Hacer` abre una única sesión nueva enlazada con handoff revisable y ejecuta allí sin Agent ni auto-send.
+- `aos-realinear-os` / `realinear os`: abrir `docs/topics/agentic-os-operations.md` y reparar solo la capa agentica salvo pedido explícito.
+- Las capacidades propias permanecen en `docs/skills/`, `.pi/extensions/copicu-computer-use.ts`, prompts de producto y taskflows; no crear aliases locales para pensar, planear, implementar, continuar o cerrar.
 - App instalada: si JP pide promover dev a instalada/crear instalador/instalar current, ejecutar `npm run install:current`; toca procesos Copicu instalados, asi que avisar y verificar evidencia.
 
 ## Persistencia

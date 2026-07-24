@@ -2,18 +2,25 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-07-10. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-07-24. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
 Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o reference. En Pi, preferir lecturas scoped (`src`, `src-tauri/src`, `docs/topics`) y evitar `map .` salvo orientacion global.
+
+## Foco Único De Ejecución
+
+- **Estado:** `waiting_gate`.
+- **Referencia:** `docs/tracks/004-actions-scripting.md`.
+- **Gate:** JP valida físicamente que, tras abrir con `Ctrl+Alt+C`, `Up/Down` simples navegan sin toast de hotkey y que `Ctrl+Alt+Up/Down` activan vecinos con feedback, tanto oculto como visible.
+- **Siguiente acción:** Si el gate pasa, cerrar el corte y volver a `/flow → Planear`; si falla, diagnosticar sólo el comportamiento observado.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
-| Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md` | `Ctrl+Alt+Q` Quick Actions contextual; Open URL solo con URL; texto legacy sin MIME = text/plain. Showcase `028`-`031`, `010`. |
+| Actions/scripts/hotkeys | active/dogfood | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `docs/tracks/022-reusable-quick-pick.md` | Validar navegación simple tras `Ctrl+Alt+C` y activación global con `Ctrl+Alt+Up/Down`; luego cerrar o diagnosticar sólo el fallo observado. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `specs/005-search-plan-engine/` | Triggers, chips/explain y diagnostico sintactico listos. Autocomplete local esta en worktree y requiere validacion independiente antes de marcarlo aplicado; luego saved searches o highlighting. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
@@ -31,7 +38,7 @@ Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust +
 
 ## Riesgos / Pendientes Tecnicos
 
-Updater: trust root rotada en `v0.3.7`; `<=0.3.6` requiere instalacion manual. Clave local en `.codex-run/secrets/copicu-updater.*`; falta backup externo. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` metadata no depende de `examples.assignMetadataToActive`. Dogfood/dev: `npm run dev:restart`/built-dev; si target frio falla por `WebView2Loader.dll`, ver `docs/DEVELOPMENT.md`. Enrichment `026` pendiente por `Ctrl+Alt+E`. Picker: `Ctrl+Shift+.` foco, `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
+Updater: trust root rotada en `v0.3.7`; `<=0.3.6` requiere instalacion manual. Clave local en `.codex-run/secrets/copicu-updater.*`; falta backup externo. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` metadata no depende de `examples.assignMetadataToActive`. Dogfood/dev: `npm run dev:restart`/built-dev; si target frio falla por `WebView2Loader.dll`, ver `docs/DEVELOPMENT.md`. Enrichment `026` pendiente por `Ctrl+Alt+E`. Picker dev sincronizado: `Ctrl+Alt+C`; `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
 
 ## Comandos De Contexto
 
@@ -40,10 +47,8 @@ Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai
 
 ## Proximo Paso Probable
 
-1. Retomar `docs/tracks/021-distribution-trust-code-signing.md`: auditar requisitos SignPath y diseñar release CI verificable para firmar instaladores Windows.
-2. Dogfood instalada `v0.3.7`: Settings/autostart; el proximo corte debe validar updater desde esta nueva trust root.
-3. UX picker/search: validar el autocomplete local pendiente (diff, build, visual focal/full, Rust, CUA: Tab/Escape/Enter/click y narrow) antes de marcarlo aplicado. Luego evaluar saved searches o highlighting. Scrollbar total real requiere contrato backend/windowing.
-4. Si hay hang/lentitud: diagnosticar con `diagnostics.jsonl`, memoria/procesos y repro antes de cambiar codigo; si es Pi/contexto, compactar ruta caliente y usar `map/search` scoped.
+1. Completar la validacion fisica de `Ctrl+Alt+Up/Down` definida en el foco unico.
+2. Si pasa, cerrar este corte y usar `/flow → Planear` para elegir entre firma/distribucion, autocomplete u otra prioridad de JP.
 
 ## Promocion De Memoria
 
@@ -52,5 +57,3 @@ Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai
 3. Conocimiento reusable -> `docs/topics/<topic>.md`.
 4. Decision durable -> `docs/DECISIONS.md`.
 5. Trabajo retomable -> `docs/tracks/`, sin transcript.
-
-- Continuidad Pi 2026-07-04: JP guarda primero con `/aos-guardar-sesion`; luego `/aos-continuar [objetivo]` es el unico comando para abrir sesion nueva con prompt de continuidad desde docs vivos. `--preview` permite revisar antes de enviar.

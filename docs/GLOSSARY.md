@@ -19,10 +19,6 @@ Fuente estable para abreviaturas, nombres cortos y definiciones recurrentes del 
 | Skills Canonicas | Carpeta `docs/skills/`, fuente de verdad de las skills locales. |
 | Skills Compat | Carpeta `.agents/skills`, junction de compatibilidad hacia `docs/skills/`. |
 | Realinear OS | Comando para auditar y reparar drift de la capa agentica siguiendo `docs/topics/agentic-os-operations.md`. |
-| Sigamos | Seguir trabajando en la sesion actual sin cierre de valor, sin handoff y sin thread nuevo. |
-| Continuar Sesion Con Gol | Alias de `continuar sesion` que ademas instruye al thread nuevo a arrancar con `gol` para el proximo lote acordado. |
-| Continuar Con Gol | Alias de `continuar sesion con gol`; no existe una variante que siga en la misma sesion. |
-| Siguiente | Alias de `continuar sesion con gol`. |
 
 ## Regla De Uso
 

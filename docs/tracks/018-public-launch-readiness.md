@@ -379,7 +379,7 @@ Hecho en el primer lote:
 - Audit no destructivo de superficie versionada:
   - `.agents/`, `.codex-run/`, `.codemapper/`, `.vscode/`, `test-results/`, `logs/` y `tmp-*` no aparecen versionados.
   - Si aparecen como archivos locales, `.gitignore` ya los cubre.
-  - Siguen versionados `.pi/extensions/*`, `.pi/prompts/*` y `docs/skills/aos-orquestar/SKILL.md`; tratarlos como tooling durable del proyecto hasta que JP apruebe moverlos o retirarlos antes del launch.
+  - Siguen versionados sólo adapters Pi propios de producto; `/flow` y el lifecycle AOS viven en el package global y no se publican con Copicu.
 - `README.md` reescrito con enfoque user-first:
   - headline cambio a `local-first, scriptable clipboard manager for Windows power users`;
   - AI bajo de headline a feature opcional;

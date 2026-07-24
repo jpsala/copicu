@@ -13,9 +13,9 @@
 
 - `impeccable/`: skill local para trabajo de UI/frontend.
 - `speckit-*/`: skills locales del workflow SpecKit.
-- `aos-gol-lite/`, `cerrar-sesion/`, `checkpoint/`, `continuar-sesion*/`, `evaluar-skills/`, `realinear-os/`, `repo-commit-push/` y `sigamos/`: workflows locales no colisionantes.
-- Los workflows AOS portables con nombre `aos-*` viven upstream en `C:/dev/os/docs/skills/`.
-- `/aos-continuar` vive en el adapter Pi (`.pi/extensions/aos-tools.ts`): abre sesion nueva con prompt de continuidad despues de que JP guardo sesion.
+- `evaluar-skills/`, `realinear-os/`, `repo-commit-push/`, SpecKit e `impeccable/`: capacidades locales preservadas; no son aliases del lifecycle diario.
+- Los workflows AOS portables y la superficie diaria `/flow` viven en el package global de `C:/dev/os`; Copicu sólo declara requisitos.
+- `.pi/extensions/copicu-computer-use.ts`, prompts de research/release y taskflows de producto siguen siendo adapters locales con propósito propio.
 
 Las herramientas Pi de pensamiento/implementacion (`taskflow`, `pi-code-planner`, `pi-task`, `advisor`, Ponytail, `dgoal`, `context-viewer`, `pi-lens`) se documentan en `docs/topics/pi-extension-stack.md`, no como skills locales separadas.
 

@@ -19,6 +19,7 @@
     "perf:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/measure-window-lifecycle.ps1",
     "context:index": "bun scripts/context-index.ts",
     "context:audit": "bun scripts/agent-context-audit.ts",
+    "routing:check": "bun scripts/check-tool-routing.ts",
     "rust:test": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/manual/run-rust-tests.ps1",
     "capabilities:drift:test": "node --test tests/script-capabilities-drift.test.mjs",
     "scripts:examples:test": "node --test tests/script-clean-url-helper.test.mjs tests/script-format-json-helper.test.mjs tests/script-extract-urls-helper.test.mjs tests/script-join-markdown-helper.test.mjs",

@@ -50,7 +50,7 @@ Copicu ni del downstream AOS.
 | Core diario | `fffind`, `ffgrep`, CodeMapper (`map/search/outline`), `ask_user`, `advisor`, `lens_diagnostics` | Orientacion, decisiones humanas, segundo juicio y feedback tecnico. |
 | Orquestacion | `taskflow`, `pi-council`, `pi-link` | Auditorias/reviews paralelas con ownership claro; no para trabajo serial chico. |
 | Piloto opt-in | `pi-dynamic-workflows` via `C:/dev/os/docs/skills/aos-dynamic-workflows-pilot/` si se instala | Comparar fan-out pesado/deep research/adversarial review contra `taskflow`; no dejar triggers genericos activos. |
-| Ejecucion larga | `pi-code-planner`, `/until-done`, `pi_long_task`; `pi-dgoal` solo experimental | Elegir **uno** desde `/aos-plan-implementar`; para fleet updates AOS usar `pi_long_task`/`/aos-fleet-update`, no `dgoal`. |
+| Ejecución | `/flow → Hacer` en sesión enlazada; herramientas extra sólo por pedido explícito | El brief guía alcance; no activar loops autónomos ni Agent por defecto. |
 | Research externo | `web_search`, `fetch_content`, `web_answer`, `web_research`, skill `librarian` | Usar para docs, releases, issues, APIs, internals OSS; no enviar secretos. |
 | Visual/UI | `pi-chrome`, `cua-driver`, `image_generate`, `aos-impeccable` | UI, browser signed-in y assets; pedir aprobacion para cuentas reales/envios/material privado. |
 | Global/optional | footer, Telegram/Discord remotes, MCP, RTK, themes, shims | Entorno de JP; no copiarlos como dependencia AOS ni usarlos si no aportan. |
@@ -95,17 +95,13 @@ Playbook: `docs/topics/conversational-research.md`.
 - CodeMapper `map/search/outline/expand/path`: estructura, simbolos y relaciones.
 - `pi-lens`: LSP/diagnostics/AST; es feedback tecnico, no reemplaza checks del repo.
 
-## Planning Y Ejecucion
+## Planning Y Ejecución
 
-Usar `/aos-plan-implementar` para elegir un motor principal. La matriz completa
-esta en `docs/topics/agent-tool-routing.md` y su policy verificable en
+Usar `/flow`: Pensar converge, Planear registra un brief corto y Hacer ejecuta en
+una sesión nueva enlazada sin Agent ni auto-send. Para cambios chicos, priorizar
+inspección mínima y checks focales; herramientas de fan-out o revisión se agregan
+sólo por pedido explícito o riesgo real. La política verificable vive en
 `docs/reference/tool-routing.yaml`.
-
-- manual + Ponytail para cambios chicos;
-- planner para features con stages/worktree;
-- dgoal/until-done para objetivos largos acotados;
-- long-task para TODO secuencial claro;
-- taskflow/council para auditorias, reviews y fan-out.
 
 ## UI / Browser / Computer Use
 

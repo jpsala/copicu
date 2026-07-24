@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-11T21:22:18.691Z
+Generated: 2026-07-24T15:52:52.856Z
 
 ## Topics
 
@@ -67,6 +67,7 @@ Generated: 2026-07-11T21:22:18.691Z
 - parked: [Paste Queue](../tracks/019-paste-queue.md)
 - parked: [Secure Clips / Password Metadata](../tracks/020-secure-clips-password.md)
 - active-next: [Distribution Trust And Code Signing](../tracks/021-distribution-trust-code-signing.md)
+- proposed: [022 Reusable Quick Pick](../tracks/022-reusable-quick-pick.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)
@@ -84,19 +85,19 @@ Generated: 2026-07-11T21:22:18.691Z
 - [006-tags-and-hotkeys](../../specs/006-tags-and-hotkeys/)
 - [007-architecture-hardening](../../specs/007-architecture-hardening/)
 - [008-clipboard-enrichment](../../specs/008-clipboard-enrichment/)
+- [009-saved-history-views](../../specs/009-saved-history-views/)
 
 ## Skills
 
 - Canon: [docs/skills/](../skills/)
-- Operational commands: aos-gol-lite
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
 ## Pi Resources
 
-- Prompts: 4 in [.pi/prompts/](../../.pi/prompts/)
+- Prompts: 3 in [.pi/prompts/](../../.pi/prompts/)
 - Extensions: copicu-computer-use.ts
 - Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
 
 ## Aliases
 
-- See [GLOSSARY.md](../GLOSSARY.md) for 17 alias definitions.
+- See [GLOSSARY.md](../GLOSSARY.md) for 13 alias definitions.
