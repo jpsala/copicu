@@ -29,14 +29,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.3.7](https://github.com/jpsala/copicu/releases/tag/v0.3.7)
-- Asset: `Copicu_0.3.7_x64-setup.exe`
+- [v0.3.8](https://github.com/jpsala/copicu/releases/tag/v0.3.8)
+- Asset: `Copicu_0.3.8_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`
+- SHA256: `A53268AF683211283CB67CA7EFBCE45D79EA9D660DCEB66D8B3485EB420089AA`
 
-Improves picker search and navigation reliability: plain queries stay local, loaded pages remain stable while idle, and delayed refreshes no longer steal keyboard selection.
-
-The Tauri updater signing key was rotated for `v0.3.7` after the previous private key became unavailable. Install `v0.3.7` manually once from GitHub Releases if you are on `v0.3.6` or older; later releases can auto-update again from this new trust root.
+`v0.3.8` updates the Windows installer and current release notes for this cut.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
