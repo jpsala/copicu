@@ -76,6 +76,11 @@ type HistoryPage = {
   filteredCount: number;
   interpretedQuery?: string | null;
   explanation?: string | null;
+  queryExplanation?: {
+    version: 1;
+    chips: Array<{ label: string; queryWithoutClause: string }>;
+    diagnostics: Array<{ severity: "warning" | "error"; code: string; message: string }>;
+  } | null;
   warnings: string[];
 };
 ```
@@ -91,7 +96,11 @@ React search input
   -> SQLite SELECT paginado por (created_at_unix_ms, id)
 ```
 
-La busqueda conserva keyset pagination. No usa `OFFSET`.
+La busqueda conserva keyset pagination. No usa `OFFSET`. El snapshot aplicado es dueno de query y cursor: una busqueda explicita conserva ownership de la primera pagina; refreshes de foco/clipboard, actions y paginas siguientes no pueden consumir ni reemplazarla con un draft pendiente. Los refreshes de background diferidos se repiten cuando termina el request foreground. Un fallo de `load more` invalida ese cursor para evitar retries automaticos infinitos.
+
+Mientras el cursor solo codifique orden por ultima copia, un plan con sort custom no devuelve `nextCursor` y cualquier cursor entrante se rechaza. Es una limitacion deliberada hasta tener cursores sort-aware.
+
+`All results` siempre opera sobre la query aplicada, no sobre el draft visible. El comando bulk esta autorizado solo para la ventana principal y una query no vacia sin filtros efectivos falla cerrada antes de llegar a un `UPDATE` global.
 
 La UI usa `totalCount`/`filteredCount` para el badge del picker. Tauri puede serializar conteos omitidos como `null`; el frontend solo debe actualizar estado de conteo cuando recibe numeros para no caer a `history.length` y hacer oscilar badge/scroll.
 
@@ -102,10 +111,11 @@ Dogfood 2026-07-09: con keyset/cursor pagination el virtualizer debe usar filas 
 El picker soporta `Settings > Picker > Search trigger`:
 
 - `Realtime while typing`: comportamiento por defecto; cada cambio dispara busqueda con debounce corto.
-- `When pressing Enter`: tipear solo deja la query como draft; Enter aplica la busqueda. Si la query ya esta aplicada, Enter conserva la accion de activar item.
-- `Only Search button`: tipear solo deja la query como draft; solo el boton `Search` aplica la busqueda. Enter no activa resultados viejos mientras la query esta sin aplicar.
+- `When pressing Enter`: tipear deja la query pendiente; Enter aplica la busqueda. Si la query ya esta aplicada, Enter conserva la accion de activar item.
 
-`Ctrl+Enter` fuerza Search en el input principal para mantener un escape rapido desde cualquier modo.
+El boton `Search` aplica explicitamente desde ambos modos. El control rapido con icono y tooltip alterna solo entre los dos modos persistentes.
+
+`Confirm structured filters with Enter` es un setting independiente. Si esta activo y el modo persistente es `realtime`, un draft con sintaxis estructurada explicita (`#tag`, negacion o prefijos soportados como `tag:`, `kind:`, `has:`, `after:`) usa `enter` como trigger efectivo solo hasta aplicar o limpiar esa query. El setting global no cambia y el status anuncia `Structured query, press Enter`. La deteccion frontend es conservadora y solo decide UX; Rust sigue siendo la autoridad semantica.
 
 Invariante 2026-06-29: aunque el modo no sea realtime, el picker debe cargar historial inicial al abrir para mostrar total/resultados. Lo que se desactiva es buscar en cada tecla, no el primer load.
 
@@ -203,8 +213,8 @@ Las operaciones `All results` / `None results` llaman `set_history_query_marked`
 - Tags siguen como string en `clipboard_items.tags`; no hay tablas `tags`/`item_tags`.
 - `app:`, `window:`, `domain:`, `source:` y `format:` dependen de eventos de captura nuevos; items historicos previos a la migracion solo matchean si se recapturan o se rellenan por migracion futura.
 - Fechas se interpretan como bounds de dia UTC; falta semantica local fina.
-- No hay parser publico/serializable completo de `ParsedHistoryQuery`; vive interno en Rust. `history_search(..., explain: true)` solo devuelve summary inicial.
-- No hay UI de chips/facets para editar la query visualmente.
+- `history_search(..., explain: true)` devuelve un explain versionado con chips removibles y diagnosticos tipados; el AST interno completo sigue siendo Rust-only.
+- Los chips solo representan filtros estructurados ya aplicados; no existe aun autocompletado ni un query builder visual.
 - No hay ranking por relevancia; el orden sigue siendo reciente: `created_at_unix_ms DESC, id DESC`.
 - La nomenclatura UI mezcla checked y marked. Decision pendiente: consolidar copy visible sin perder que storage/API usan `marked`.
 

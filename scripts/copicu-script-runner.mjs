@@ -131,6 +131,17 @@ globalThis.copicu = {
         content: Boolean(content),
       });
     },
+    async neighbor(id, { direction, wrap = false, content = false } = {}) {
+      if (!['older', 'newer'].includes(direction)) {
+        throw new Error("history.neighbor direction must be older or newer");
+      }
+      return hostCall("history.neighbor", {
+        id: normalizeItemId(id),
+        direction,
+        wrap: Boolean(wrap),
+        content: Boolean(content),
+      });
+    },
     async update(id, patch) {
       await hostCall("history.update", {
         id: normalizeItemId(id),

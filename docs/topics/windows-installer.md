@@ -135,7 +135,7 @@ Ese config agrega:
 }
 ```
 
-El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_PRIVATE_KEY` o `TAURI_SIGNING_PRIVATE_KEY_PATH`, lee `Copicu_<version>_x64-setup.exe.sig`, genera `latest.json` y sube ambos assets al GitHub Release.
+El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_PRIVATE_KEY` o `TAURI_SIGNING_PRIVATE_KEY_PATH`, lee `Copicu_<version>_x64-setup.exe.sig`, genera `latest.json` y sube instalador, firma y manifest al GitHub Release.
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 

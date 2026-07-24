@@ -8,6 +8,7 @@ src-tauri/target*/
 test-results/
 playwright-report/
 logs/
+tmp/
 .codex-run/
 .agents/
 .pi/npm/

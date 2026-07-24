@@ -36,17 +36,6 @@ pub fn read_clipboard_image() -> Result<CapturedImage, String> {
     normalize_clipboard_image(image)
 }
 
-pub fn write_png_to_clipboard(png_bytes: &[u8]) -> Result<(), String> {
-    let image = RustImageData::from_bytes(png_bytes)
-        .map_err(|error| format!("failed to decode stored PNG: {error}"))?;
-    let clipboard =
-        ClipboardContext::new().map_err(|error| format!("image clipboard open failed: {error}"))?;
-
-    clipboard
-        .set_image(image)
-        .map_err(|error| format!("image clipboard write failed: {error}"))
-}
-
 fn normalize_clipboard_image(image: RustImageData) -> Result<CapturedImage, String> {
     let (width, height) = image.get_size();
 
@@ -101,7 +90,10 @@ fn hash_bytes(bytes: &[u8]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn retry_clipboard_operation<T, E, F>(mut operation: F, delays: &[Duration]) -> Result<T, E>
+pub(crate) fn retry_clipboard_operation<T, E, F>(
+    mut operation: F,
+    delays: &[Duration],
+) -> Result<T, E>
 where
     F: FnMut() -> Result<T, E>,
 {
@@ -118,6 +110,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retries_transient_clipboard_failures() {
+        let mut attempts = 0;
+        let result = retry_clipboard_operation(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err("busy")
+                } else {
+                    Ok("written")
+                }
+            },
+            &[Duration::ZERO, Duration::ZERO],
+        );
+
+        assert_eq!(result, Ok("written"));
+        assert_eq!(attempts, 3);
+    }
 
     #[test]
     fn rejects_empty_dimensions() {

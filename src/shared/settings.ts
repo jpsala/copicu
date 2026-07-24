@@ -1,7 +1,7 @@
 import type { EnrichmentSettings, EnterAction } from "./contracts";
 import type { ThemeId, ThemeSetting } from "../themeCatalog";
 
-export type SearchTriggerMode = "realtime" | "enter" | "manual";
+export type SearchTriggerMode = "realtime" | "enter";
 
 export type AppSettings = {
   schemaVersion: 1;
@@ -18,6 +18,7 @@ export type AppSettings = {
     enterAction: EnterAction;
     promoteActiveOnCopy: boolean;
     searchTriggerMode: SearchTriggerMode;
+    deferStructuredSearchUntilEnter: boolean;
     pinToggleShortcut: string;
     settingsShortcut: string;
   };
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     enterAction: "copy",
     promoteActiveOnCopy: true,
     searchTriggerMode: "realtime",
+    deferStructuredSearchUntilEnter: false,
     pinToggleShortcut: "F8",
     settingsShortcut: "Ctrl+,",
   },
@@ -90,7 +92,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 function normalizeSearchTriggerMode(value: unknown): SearchTriggerMode {
-  return value === "enter" || value === "manual" || value === "realtime" ? value : "realtime";
+  return value === "enter" || value === "manual" ? "enter" : "realtime";
 }
 
 export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSettings {

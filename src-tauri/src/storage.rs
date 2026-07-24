@@ -24,7 +24,7 @@ use self::schema::MIGRATIONS;
 use self::schema::MIGRATIONS_SLICE;
 use self::search::{
     compile_search_plan, explain_history_query, finish_history_page, history_item_select_columns,
-    history_page_sql, search_plan_from_query,
+    history_page_sql, search_plan_from_query, search_query_explanation,
 };
 #[cfg(test)]
 use self::search::{days_from_civil, parse_history_query, HasFilter};
@@ -247,6 +247,29 @@ pub struct HistorySearchRequest {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct HistorySearchChip {
+    pub label: String,
+    pub query_without_clause: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistorySearchDiagnostic {
+    pub severity: String,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistorySearchExplanation {
+    pub version: u8,
+    pub chips: Vec<HistorySearchChip>,
+    pub diagnostics: Vec<HistorySearchDiagnostic>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HistoryPage {
     pub items: Vec<HistoryItem>,
     pub next_cursor: Option<HistoryPageCursor>,
@@ -254,6 +277,7 @@ pub struct HistoryPage {
     pub filtered_count: Option<i64>,
     pub interpreted_query: Option<String>,
     pub explanation: Option<String>,
+    pub query_explanation: Option<HistorySearchExplanation>,
     pub warnings: Vec<String>,
 }
 
@@ -324,9 +348,51 @@ pub struct SetItemTagsRequest {
     pub tags: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedHistoryView {
+    pub id: i64,
+    pub title: String,
+    pub query: String,
+    pub open_mode: String,
+    pub hotkey: Option<String>,
+    pub pinned: bool,
+    pub sort_order: Option<i64>,
+    pub created_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSavedHistoryViewRequest {
+    pub title: String,
+    pub query: String,
+    #[serde(default)]
+    pub hotkey: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSavedHistoryViewRequest {
+    pub id: i64,
+    pub title: String,
+    pub query: String,
+    #[serde(default)]
+    pub hotkey: Option<String>,
+    pub pinned: bool,
+    #[serde(default)]
+    pub sort_order: Option<i64>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HistoryMovePosition {
     Top,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryNeighborDirection {
+    Older,
+    Newer,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -384,6 +450,8 @@ pub struct PickerSettings {
     pub promote_active_on_copy: bool,
     #[serde(default)]
     pub search_trigger_mode: SearchTriggerMode,
+    #[serde(default)]
+    pub defer_structured_search_until_enter: bool,
     #[serde(default = "default_pin_toggle_shortcut")]
     pub pin_toggle_shortcut: String,
     #[serde(default = "default_settings_shortcut")]
@@ -466,7 +534,6 @@ impl Default for ScriptsSettings {
     }
 }
 
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ThemeSetting {
@@ -503,6 +570,7 @@ impl Default for AppSettings {
                 enter_action: EnterAction::Copy,
                 promote_active_on_copy: default_promote_active_on_copy(),
                 search_trigger_mode: SearchTriggerMode::Realtime,
+                defer_structured_search_until_enter: false,
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
                 settings_shortcut: default_settings_shortcut(),
             },
@@ -978,6 +1046,7 @@ impl AppStorage {
 
     pub fn history_search(&self, request: HistorySearchRequest) -> Result<HistoryPage, String> {
         let trimmed = request.query.trim();
+        let query_explanation = search_query_explanation(trimmed);
         let mut warnings = Vec::new();
         if request.mode == HistorySearchMode::Ai {
             warnings.push(
@@ -988,11 +1057,38 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        if request.plan.is_none()
+            && query_explanation
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == "error")
+        {
+            let total_count = request
+                .include_counts
+                .then(|| count_history_items(&conn, "", &[]))
+                .transpose()?;
+            return Ok(HistoryPage {
+                items: Vec::new(),
+                next_cursor: None,
+                total_count,
+                filtered_count: request.include_counts.then_some(0),
+                interpreted_query: request.explain.then(|| trimmed.to_string()),
+                explanation: request
+                    .explain
+                    .then(|| "Fix the structured search syntax before searching.".to_string()),
+                query_explanation: request.explain.then_some(query_explanation),
+                warnings,
+            });
+        }
 
         let plan = request
             .plan
             .clone()
             .unwrap_or_else(|| search_plan_from_query(trimmed));
+        let custom_sort = !plan.sort.is_empty();
+        if request.cursor.is_some() && custom_sort {
+            return Err("cursor pagination with custom sort is not supported yet".to_string());
+        }
         let compiled = compile_search_plan(&plan)?;
         let where_sql = compiled.where_sql;
         let mut query_params = compiled.params;
@@ -1038,6 +1134,7 @@ impl AppStorage {
                 filtered_count,
                 request.explain.then(|| trimmed.to_string()),
                 request.explain.then(|| explain_history_query(trimmed)),
+                request.explain.then(|| query_explanation.clone()),
                 warnings,
             )?;
             drop(conn);
@@ -1056,8 +1153,12 @@ impl AppStorage {
             filtered_count,
             request.explain.then(|| trimmed.to_string()),
             request.explain.then(|| explain_history_query(trimmed)),
+            request.explain.then_some(query_explanation),
             warnings,
         )?;
+        if custom_sort {
+            page.next_cursor = None;
+        }
         drop(conn);
         self.attach_thumbnail_data_urls(&mut page.items);
         Ok(page)
@@ -1086,6 +1187,52 @@ impl AppStorage {
         items
             .pop()
             .ok_or_else(|| format!("clipboard item not found: {id}"))
+    }
+
+    pub fn get_neighbor_item(
+        &self,
+        id: i64,
+        direction: HistoryNeighborDirection,
+        wrap: bool,
+    ) -> Result<Option<HistoryItem>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let (comparison, order) = match direction {
+            HistoryNeighborDirection::Older => ("<", "DESC"),
+            HistoryNeighborDirection::Newer => (">", "ASC"),
+        };
+        let mut items = self.query_items(
+            &conn,
+            &format!(
+                "SELECT {}
+                 FROM clipboard_items
+                 WHERE id {comparison} ?1
+                 ORDER BY id {order}
+                 LIMIT 1",
+                history_item_select_columns(true)
+            ),
+            params![id],
+        )?;
+        if items.is_empty() && wrap {
+            let wrap_order = match direction {
+                HistoryNeighborDirection::Older => "DESC",
+                HistoryNeighborDirection::Newer => "ASC",
+            };
+            items = self.query_items(
+                &conn,
+                &format!(
+                    "SELECT {}
+                     FROM clipboard_items
+                     ORDER BY id {wrap_order}
+                     LIMIT 1",
+                    history_item_select_columns(true)
+                ),
+                [],
+            )?;
+        }
+        Ok(items.pop())
     }
 
     pub fn mark_used(&self, id: i64) -> Result<(), String> {
@@ -1184,8 +1331,21 @@ impl AppStorage {
 
     pub fn set_query_marked(&self, request: SetHistoryQueryMarkedRequest) -> Result<(), String> {
         let now = now_unix_ms();
-        let plan = search_plan_from_query(request.query.trim());
+        let trimmed_query = request.query.trim();
+        if search_query_explanation(trimmed_query)
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == "error")
+        {
+            return Err("query has invalid structured syntax; refusing marked update".to_string());
+        }
+        let plan = search_plan_from_query(trimmed_query);
         let compiled = compile_search_plan(&plan)?;
+        if !trimmed_query.is_empty() && compiled.where_sql.is_empty() {
+            return Err(
+                "query has no effective filters; refusing a global marked update".to_string(),
+            );
+        }
         let mut filter_params = compiled.params;
         let mut query_params = Vec::with_capacity(filter_params.len() + 2);
         query_params.push(Value::Integer(if request.marked { 1 } else { 0 }));
@@ -1393,27 +1553,34 @@ impl AppStorage {
         Ok(settings)
     }
 
-    pub fn update_settings(&self, settings: AppSettings) -> Result<AppSettings, String> {
+    pub fn update_settings(&self, mut settings: AppSettings) -> Result<AppSettings, String> {
+        normalize_loaded_settings(&mut settings);
         validate_settings(&settings)?;
         ensure_scripts_folder(&settings)?;
-        let value_json = serde_json::to_string(&settings)
-            .map_err(|error| format!("failed to encode settings: {error}"))?;
-        let now = now_unix_ms();
         let conn = self
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        persist_settings_to_conn(&conn, &settings)?;
+        Ok(settings)
+    }
 
-        conn.execute(
-            "INSERT INTO app_settings (key, value_json, updated_at_unix_ms)
-             VALUES (?1, ?2, ?3)
-             ON CONFLICT(key) DO UPDATE SET
-                value_json = excluded.value_json,
-                updated_at_unix_ms = excluded.updated_at_unix_ms",
-            params![APP_SETTINGS_KEY, value_json, now],
-        )
-        .map_err(|error| format!("failed to persist settings: {error}"))?;
-
+    pub fn update_search_trigger_mode(
+        &self,
+        mode: SearchTriggerMode,
+    ) -> Result<AppSettings, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let mut settings = settings_from_conn(&conn)?;
+        settings.picker.search_trigger_mode = if mode == SearchTriggerMode::Manual {
+            SearchTriggerMode::Enter
+        } else {
+            mode
+        };
+        validate_settings(&settings)?;
+        persist_settings_to_conn(&conn, &settings)?;
         Ok(settings)
     }
 
@@ -1423,6 +1590,123 @@ impl AppStorage {
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         query_tag_summaries(&conn, None)
+    }
+
+    pub fn list_saved_history_views(&self) -> Result<Vec<SavedHistoryView>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let mut statement = conn
+            .prepare(
+                "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+                 FROM saved_history_views
+                 ORDER BY pinned DESC, sort_order ASC, title COLLATE NOCASE ASC, id ASC",
+            )
+            .map_err(|error| format!("failed to prepare saved history views query: {error}"))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(SavedHistoryView {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    query: row.get(2)?,
+                    open_mode: row.get(3)?,
+                    hotkey: row.get(4)?,
+                    pinned: row.get::<_, i64>(5)? != 0,
+                    sort_order: row.get(6)?,
+                    created_at_unix_ms: row.get(7)?,
+                    updated_at_unix_ms: row.get(8)?,
+                })
+            })
+            .map_err(|error| format!("failed to query saved history views: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to read saved history view row: {error}"))
+    }
+
+    pub fn create_saved_history_view(
+        &self,
+        request: CreateSavedHistoryViewRequest,
+    ) -> Result<SavedHistoryView, String> {
+        validate_saved_history_view(&request.title, &request.query)?;
+        let title = request.title.trim();
+        let query = request.query.trim();
+        let now = now_unix_ms();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        conn.execute(
+            "INSERT INTO saved_history_views (
+                title, query, hotkey, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?4)",
+            params![title, query, normalize_optional_text(request.hotkey), now],
+        )
+        .map_err(|error| format!("failed to create saved history view: {error}"))?;
+        let id = conn.last_insert_rowid();
+        conn.query_row(
+            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+             FROM saved_history_views WHERE id = ?1",
+            params![id],
+            saved_history_view_from_row,
+        )
+        .map_err(|error| format!("failed to read saved history view after create: {error}"))
+    }
+
+    pub fn update_saved_history_view(
+        &self,
+        request: UpdateSavedHistoryViewRequest,
+    ) -> Result<SavedHistoryView, String> {
+        validate_saved_history_view(&request.title, &request.query)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let changed = conn.execute(
+            "UPDATE saved_history_views
+             SET title = ?1, query = ?2, hotkey = ?3, pinned = ?4, sort_order = ?5, updated_at_unix_ms = ?6
+             WHERE id = ?7",
+            params![
+                request.title.trim(), request.query.trim(), normalize_optional_text(request.hotkey),
+                i64::from(request.pinned), request.sort_order, now_unix_ms(), request.id,
+            ],
+        ).map_err(|error| format!("failed to update saved history view: {error}"))?;
+        if changed == 0 {
+            return Err("saved history view not found".to_string());
+        }
+        conn.query_row(
+            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+             FROM saved_history_views WHERE id = ?1",
+            params![request.id],
+            saved_history_view_from_row,
+        ).map_err(|error| format!("failed to read saved history view after update: {error}"))
+    }
+
+    pub fn delete_saved_history_view(&self, id: i64) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        if conn
+            .execute("DELETE FROM saved_history_views WHERE id = ?1", params![id])
+            .map_err(|error| format!("failed to delete saved history view: {error}"))?
+            == 0
+        {
+            return Err("saved history view not found".to_string());
+        }
+        Ok(())
+    }
+
+    pub fn get_saved_history_view(&self, id: i64) -> Result<SavedHistoryView, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        conn.query_row(
+            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+             FROM saved_history_views WHERE id = ?1",
+            params![id],
+            saved_history_view_from_row,
+        ).map_err(|error| format!("saved history view not found: {error}"))
     }
 
     pub fn create_tag(&self, request: CreateTagRequest) -> Result<TagSummary, String> {
@@ -2485,6 +2769,49 @@ fn default_scripts_folder_path_from_env(
         .into_owned()
 }
 
+fn saved_history_view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedHistoryView> {
+    Ok(SavedHistoryView {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        query: row.get(2)?,
+        open_mode: row.get(3)?,
+        hotkey: row.get(4)?,
+        pinned: row.get::<_, i64>(5)? != 0,
+        sort_order: row.get(6)?,
+        created_at_unix_ms: row.get(7)?,
+        updated_at_unix_ms: row.get(8)?,
+    })
+}
+
+fn validate_saved_history_view(title: &str, query: &str) -> Result<(), String> {
+    if title.trim().is_empty() {
+        return Err("saved history view title is required".to_string());
+    }
+    if search_query_explanation(query.trim())
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == "error")
+    {
+        return Err("invalid saved history view query".to_string());
+    }
+    Ok(())
+}
+
+fn persist_settings_to_conn(conn: &Connection, settings: &AppSettings) -> Result<(), String> {
+    let value_json = serde_json::to_string(settings)
+        .map_err(|error| format!("failed to encode settings: {error}"))?;
+    conn.execute(
+        "INSERT INTO app_settings (key, value_json, updated_at_unix_ms)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET
+            value_json = excluded.value_json,
+            updated_at_unix_ms = excluded.updated_at_unix_ms",
+        params![APP_SETTINGS_KEY, value_json, now_unix_ms()],
+    )
+    .map_err(|error| format!("failed to persist settings: {error}"))?;
+    Ok(())
+}
+
 fn settings_from_conn(conn: &Connection) -> Result<AppSettings, String> {
     let value_json: Option<String> = conn
         .query_row(
@@ -2514,6 +2841,9 @@ fn settings_from_conn(conn: &Connection) -> Result<AppSettings, String> {
 }
 
 fn normalize_loaded_settings(settings: &mut AppSettings) {
+    if settings.picker.search_trigger_mode == SearchTriggerMode::Manual {
+        settings.picker.search_trigger_mode = SearchTriggerMode::Enter;
+    }
     let legacy_vscode_path = settings.tray.vscode_path.trim();
     let scripts_vscode_path = settings.scripts.vscode_path.trim();
     if scripts_vscode_path.is_empty() && !legacy_vscode_path.is_empty() {
@@ -2736,6 +3066,38 @@ mod tests {
     }
 
     #[test]
+    fn search_trigger_settings_normalize_legacy_manual_to_enter() {
+        let storage = test_storage_with_migrations();
+        let mut legacy = AppSettings::default();
+        legacy.picker.search_trigger_mode = SearchTriggerMode::Manual;
+        legacy.picker.defer_structured_search_until_enter = true;
+        legacy.history.retention_count = 777;
+        let legacy_json = serde_json::to_string(&legacy).expect("legacy settings should encode");
+        storage
+            .conn
+            .lock()
+            .expect("test sqlite connection lock should work")
+            .execute(
+                "INSERT INTO app_settings (key, value_json, updated_at_unix_ms) VALUES (?1, ?2, 0)",
+                params![APP_SETTINGS_KEY, legacy_json],
+            )
+            .expect("legacy settings should persist");
+
+        let loaded = storage.get_settings().expect("legacy settings should load");
+        assert_eq!(loaded.picker.search_trigger_mode, SearchTriggerMode::Enter);
+        let persisted = storage
+            .update_settings(loaded)
+            .expect("legacy search settings should save as Enter");
+
+        assert_eq!(
+            persisted.picker.search_trigger_mode,
+            SearchTriggerMode::Enter
+        );
+        assert_eq!(persisted.history.retention_count, 777);
+        assert!(persisted.picker.defer_structured_search_until_enter);
+    }
+
+    #[test]
     fn settings_validation_rejects_invalid_retention_count() {
         let mut settings = AppSettings::default();
         settings.history.retention_count = 99;
@@ -2771,6 +3133,7 @@ mod tests {
             settings.picker.search_trigger_mode,
             SearchTriggerMode::Realtime
         );
+        assert!(!settings.picker.defer_structured_search_until_enter);
         assert_eq!(settings.picker.settings_shortcut, "Ctrl+,");
         validate_settings(&settings).expect("old settings with script defaults should validate");
     }
@@ -3005,6 +3368,36 @@ mod tests {
             .unwrap_or_default()
             .contains("Structured local history search"));
         assert!(page.warnings.iter().any(|warning| warning.contains("AI")));
+    }
+
+    #[test]
+    fn malformed_known_search_filter_returns_diagnostics_without_broadening_results() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "first clip");
+
+        let page = storage
+            .history_search(HistorySearchRequest {
+                query: "kind:".to_string(),
+                cursor: None,
+                limit: Some(10),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: true,
+                explain: true,
+                ai_context: None,
+            })
+            .expect("malformed query should return a diagnostic page");
+
+        assert!(page.items.is_empty());
+        assert_eq!(page.filtered_count, Some(0));
+        assert!(page
+            .query_explanation
+            .as_ref()
+            .expect("explain response")
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "missingValue" && diagnostic.severity == "error"));
     }
 
     #[test]
@@ -3273,6 +3666,40 @@ mod tests {
         assert_eq!(ids(&page.items), vec![1, 2]);
         assert_eq!(page.items[0].copy_count, 2);
         assert!(page.items[0].last_copied_at_unix_ms >= page.items[1].last_copied_at_unix_ms);
+    }
+
+    #[test]
+    fn history_neighbor_uses_capture_order_and_wraps() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "oldest");
+        insert_test_text_item(&storage, 3, 10_003, "middle");
+        insert_test_text_item(&storage, 7, 10_007, "newest");
+
+        let older = storage
+            .get_neighbor_item(7, HistoryNeighborDirection::Older, true)
+            .expect("older neighbor lookup should work")
+            .expect("older neighbor should exist");
+        let newer = storage
+            .get_neighbor_item(3, HistoryNeighborDirection::Newer, true)
+            .expect("newer neighbor lookup should work")
+            .expect("newer neighbor should exist");
+        let wrapped_older = storage
+            .get_neighbor_item(1, HistoryNeighborDirection::Older, true)
+            .expect("older wrap lookup should work")
+            .expect("older wrap should exist");
+        let wrapped_newer = storage
+            .get_neighbor_item(7, HistoryNeighborDirection::Newer, true)
+            .expect("newer wrap lookup should work")
+            .expect("newer wrap should exist");
+
+        assert_eq!(older.id, 3);
+        assert_eq!(newer.id, 7);
+        assert_eq!(wrapped_older.id, 7);
+        assert_eq!(wrapped_newer.id, 1);
+        assert!(storage
+            .get_neighbor_item(1, HistoryNeighborDirection::Older, false)
+            .expect("non-wrapping lookup should work")
+            .is_none());
     }
 
     #[test]
@@ -3991,6 +4418,23 @@ mod tests {
     }
 
     #[test]
+    fn set_query_marked_rejects_malformed_query_even_with_plain_text() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 30_001, "first clip");
+        insert_test_text_item(&storage, 2, 30_002, "second clip");
+
+        let error = storage
+            .set_query_marked(SetHistoryQueryMarkedRequest {
+                query: "kind: clip".to_string(),
+                marked: true,
+            })
+            .expect_err("malformed structured query must not update matching text globally");
+
+        assert!(error.contains("invalid structured syntax"));
+        assert_eq!(storage.count_marked().expect("marked count should load"), 0);
+    }
+
+    #[test]
     fn list_page_filters_marked_and_unmarked_items() {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 30_001, "first checked clip");
@@ -4038,6 +4482,25 @@ mod tests {
                 limit: Some(10),
             })
             .expect("date query should load");
+
+        assert_eq!(ids(&page.items), vec![2]);
+    }
+
+    #[test]
+    fn list_page_applies_iso_datetime_offsets_in_manual_queries() {
+        let storage = test_storage_with_migrations();
+        let june_seventh = days_from_civil(2026, 6, 7).expect("valid date") * MILLIS_PER_DAY;
+        let offset_time = june_seventh + 17 * 3_600_000 + 32 * 60_000;
+        insert_test_text_item(&storage, 1, offset_time - 1, "before offset");
+        insert_test_text_item(&storage, 2, offset_time, "at offset");
+
+        let page = storage
+            .list_page(HistoryPageRequest {
+                query: "after:2026-06-07T14:32:00-03:00".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("datetime query should load");
 
         assert_eq!(ids(&page.items), vec![2]);
     }
@@ -4267,6 +4730,72 @@ mod tests {
     }
 
     #[test]
+    fn history_search_rejects_cursor_with_custom_sort_until_cursor_is_sort_aware() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 30_001, "first clip");
+        insert_test_text_item(&storage, 2, 30_002, "second clip");
+
+        let result = storage.history_search(HistorySearchRequest {
+            query: String::new(),
+            cursor: Some(HistoryPageCursor {
+                after_sort_unix_ms: 30_001,
+                after_id: 1,
+            }),
+            limit: Some(1),
+            plan: Some(SearchPlanV1 {
+                schema_version: 1,
+                sort: vec![SearchPlanSortV1 {
+                    field: SearchPlanSortFieldV1::Created,
+                    direction: SearchPlanSortDirectionV1::Asc,
+                }],
+                ..SearchPlanV1::default()
+            }),
+            mode: HistorySearchMode::Structured,
+            include_content: false,
+            include_counts: false,
+            explain: false,
+            ai_context: None,
+        });
+        let error = match result {
+            Ok(_) => panic!("custom sort cursor must be rejected until it is sort-aware"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("custom sort"));
+    }
+
+    #[test]
+    fn custom_sort_first_page_does_not_return_an_incompatible_cursor() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 30_001, "first clip");
+        insert_test_text_item(&storage, 2, 30_002, "second clip");
+
+        let page = storage
+            .history_search(HistorySearchRequest {
+                query: String::new(),
+                cursor: None,
+                limit: Some(1),
+                plan: Some(SearchPlanV1 {
+                    schema_version: 1,
+                    sort: vec![SearchPlanSortV1 {
+                        field: SearchPlanSortFieldV1::Created,
+                        direction: SearchPlanSortDirectionV1::Asc,
+                    }],
+                    ..SearchPlanV1::default()
+                }),
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: false,
+                explain: false,
+                ai_context: None,
+            })
+            .expect("custom sort first page should load");
+
+        assert_eq!(ids(&page.items), vec![1]);
+        assert!(page.next_cursor.is_none());
+    }
+
+    #[test]
     fn history_search_plan_accepts_scoped_metadata_filters() {
         let storage = test_storage_with_migrations();
         insert_test_item(
@@ -4339,6 +4868,63 @@ mod tests {
             .expect("scoped plan search should load");
 
         assert_eq!(ids(&page.items), vec![1]);
+    }
+
+    #[test]
+    fn saved_history_views_validate_query_and_round_trip_hotkey() {
+        let storage = test_storage_with_migrations();
+
+        let error = storage
+            .create_saved_history_view(CreateSavedHistoryViewRequest {
+                title: "Work clips".to_string(),
+                query: "tag:work kind:".to_string(),
+                hotkey: Some("Ctrl+Alt+W".to_string()),
+            })
+            .expect_err("malformed saved-view query must fail");
+        assert!(error.contains("invalid saved history view query"));
+        assert!(storage
+            .list_saved_history_views()
+            .expect("saved views should list")
+            .is_empty());
+
+        let saved = storage
+            .create_saved_history_view(CreateSavedHistoryViewRequest {
+                title: "Work clips".to_string(),
+                query: "tag:work kind:text".to_string(),
+                hotkey: Some("Ctrl+Alt+W".to_string()),
+            })
+            .expect("valid saved view should persist");
+        assert_eq!(saved.title, "Work clips");
+        assert_eq!(saved.query, "tag:work kind:text");
+        assert_eq!(saved.open_mode, "browse");
+        assert_eq!(saved.hotkey.as_deref(), Some("Ctrl+Alt+W"));
+
+        let updated = storage
+            .update_saved_history_view(UpdateSavedHistoryViewRequest {
+                id: saved.id,
+                title: "Pinned work clips".to_string(),
+                query: "tag:work kind:text".to_string(),
+                hotkey: None,
+                pinned: true,
+                sort_order: Some(1),
+            })
+            .expect("valid saved view should update");
+        assert!(updated.pinned);
+        assert!(updated.hotkey.is_none());
+        assert_eq!(updated.title, "Pinned work clips");
+
+        let saved_views = storage
+            .list_saved_history_views()
+            .expect("saved views should list");
+        assert_eq!(saved_views.len(), 1);
+        assert_eq!(saved_views[0].id, saved.id);
+        storage
+            .delete_saved_history_view(saved.id)
+            .expect("saved view should delete");
+        assert!(storage
+            .list_saved_history_views()
+            .expect("saved views should list")
+            .is_empty());
     }
 
     fn test_storage() -> AppStorage {

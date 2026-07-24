@@ -67,6 +67,8 @@ const NOTIFICATIONS_WINDOW_LABEL: &str = "notifications";
 const NOTIFICATION_TOAST_EVENT: &str = "copicu://toast";
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
+const PICKER_ACTIVE_ITEM_EVENT: &str = "copicu://picker/active-item";
+#[cfg(not(test))]
 const SCRIPT_RUNNER_TIMEOUT: Duration = Duration::from_secs(15);
 const SCRIPT_RUNNER_TIMEOUT_ERROR_PREFIX: &str = "script runner timed out after";
 
@@ -127,7 +129,7 @@ fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
             continue;
         };
 
-        if shortcut == "Ctrl+Shift+," {
+        if matches!(shortcut.as_str(), "Ctrl+Shift+," | "Ctrl+Shift+Space") {
             action.diagnostics.push(ActionDiagnostic {
                 severity: DiagnosticSeverity::Error,
                 message: "global shortcut is reserved for opening Copicu".to_string(),
@@ -491,6 +493,7 @@ fn run_script_action_definition<R: Runtime + 'static>(
                 effects.push(ActionEffect::PickerFilter { query });
             }
             ScriptOperation::PickerActivate { item_id, options } => {
+                let item_id = parse_script_item_id(&item_id)?;
                 crate::host::activate_item(
                     app,
                     window,
@@ -498,7 +501,7 @@ fn run_script_action_definition<R: Runtime + 'static>(
                     suppression,
                     previous_window,
                     crate::host::ActivateItemRequest {
-                        item_id: parse_script_item_id(&item_id)?,
+                        item_id,
                         copy: options.copy,
                         mark_used: options.mark_used,
                         hide_picker: options.hide_picker,
@@ -507,6 +510,14 @@ fn run_script_action_definition<R: Runtime + 'static>(
                         paste_shortcut: options.paste_shortcut,
                     },
                 )?;
+                if runner_request.context.trigger == Trigger::GlobalShortcut {
+                    app.emit_to(
+                        MAIN_WINDOW_LABEL,
+                        PICKER_ACTIVE_ITEM_EVENT,
+                        json!({ "itemId": item_id }),
+                    )
+                    .map_err(|error| format!("picker active item emit failed: {error}"))?;
+                }
             }
             ScriptOperation::PickerShow => {
                 let window =
@@ -805,6 +816,10 @@ fn emit_script_toast_on_main_thread<R: Runtime + 'static>(
     let app = app.clone();
     let app_for_main_thread = app.clone();
     if let Err(error) = app.run_on_main_thread(move || {
+        if let Err(error) = crate::setup_notifications_window(&app_for_main_thread) {
+            eprintln!("{source} toast window setup failed: {error}");
+            return;
+        }
         if let Err(error) = app_for_main_thread.emit_to(
             NOTIFICATIONS_WINDOW_LABEL,
             NOTIFICATION_TOAST_EVENT,
@@ -1073,6 +1088,25 @@ struct HistorySearchPayload {
 struct HistoryGetPayload {
     id: String,
     content: Option<bool>,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryNeighborPayload {
+    id: String,
+    direction: HistoryNeighborDirectionPayload,
+    #[serde(default)]
+    wrap: bool,
+    content: Option<bool>,
+}
+
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum HistoryNeighborDirectionPayload {
+    Older,
+    Newer,
 }
 
 #[cfg(not(test))]
@@ -1380,6 +1414,26 @@ fn script_history_get(
         payload.content.unwrap_or(false),
     ))
     .map_err(|error| format!("failed to encode history.get result: {error}"))
+}
+
+#[cfg(not(test))]
+fn script_history_neighbor(
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: HistoryNeighborPayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid history.neighbor payload: {error}"))?;
+    let direction = match payload.direction {
+        HistoryNeighborDirectionPayload::Older => crate::storage::HistoryNeighborDirection::Older,
+        HistoryNeighborDirectionPayload::Newer => crate::storage::HistoryNeighborDirection::Newer,
+    };
+    let item =
+        storage.get_neighbor_item(parse_script_item_id(&payload.id)?, direction, payload.wrap)?;
+    serde_json::to_value(
+        item.as_ref()
+            .map(|item| script_item_from_history(item, payload.content.unwrap_or(false))),
+    )
+    .map_err(|error| format!("failed to encode history.neighbor result: {error}"))
 }
 
 #[cfg(not(test))]

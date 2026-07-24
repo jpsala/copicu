@@ -207,6 +207,10 @@ declare const copicu: {
   history: {
     search(query: string, options?: { limit?: number; content?: boolean }): Promise<HistoryItem[]>;
     get(id: string, options?: { content?: boolean }): Promise<HistoryItem>;
+    neighbor(
+      id: string,
+      options: { direction: "older" | "newer"; wrap?: boolean; content?: boolean },
+    ): Promise<HistoryItem | null>;
     update(id: string, patch: Partial<Pick<HistoryItem, "title" | "notes" | "tags" | "text" | "marked">>): Promise<void>;
     remove(id: string): Promise<void>;
     promote(id: string): Promise<void>;

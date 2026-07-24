@@ -126,9 +126,12 @@ const syntheticMarkdownScrollHistory = Array.from({ length: 80 }, (_, index) => 
 
 type MockTauriOptions = {
   historySearchDelayMs?: number;
+  historySearchFailOnCursor?: boolean;
   pickerSessionDelayMs?: number;
   pickerSessionSnapshots?: Array<{ reset: boolean; generation: number }>;
   searchTriggerMode?: "realtime" | "enter" | "manual";
+  deferStructuredSearchUntilEnter?: boolean;
+  searchTriggerUpdateDelayMs?: number;
 };
 
 async function mockTauriInvoke(
@@ -187,6 +190,19 @@ async function mockTauriInvoke(
         status: "hotkeyPending",
       },
     ];
+    (window as any).__copicuTestSavedHistoryViews = [
+      {
+        id: 1,
+        title: "Work clips",
+        query: "tag:work kind:text",
+        hotkey: null,
+        openMode: "browse",
+        pinned: true,
+        sortOrder: null,
+        createdAtUnixMs: 1,
+        updatedAtUnixMs: 1,
+      },
+    ];
     (window as any).__copicuTestSettings = {
       schemaVersion: 1,
       general: {
@@ -199,6 +215,7 @@ async function mockTauriInvoke(
         pinToggleShortcut: "F8",
         settingsShortcut: "Ctrl+,",
         searchTriggerMode: mockOptions.searchTriggerMode ?? "realtime",
+        deferStructuredSearchUntilEnter: mockOptions.deferStructuredSearchUntilEnter ?? false,
       },
       history: {
         retentionCount: 1000,
@@ -461,13 +478,35 @@ async function mockTauriInvoke(
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
             const query = args?.query?.toLocaleLowerCase() ?? "";
             const request = args?.request ?? {};
+            if (request.cursor && (window as any).__copicuTestMockOptions?.historySearchFailOnCursor) {
+              throw new Error("Synthetic page failure");
+            }
             const aiMode = request.mode === "ai";
             const includeCounts = request.includeCounts !== false;
             const interpretedQuery = aiMode ? "long" : request.query ?? "";
             const requestQuery = (aiMode ? interpretedQuery : request.query?.toLocaleLowerCase()) ?? query;
+            const queryTokens = (request.query ?? "").trim().split(/\s+/).filter(Boolean);
+            const knownChip = (token: string) => /^(?:-?(?:tag|tags|kind|type|is|mime|has|meta|metadata|title|note|notes|ctx|context|app|program|process|window|domain|site|source|format|fmt|after|since|before|until|on):.+|#.+)$/i.test(token);
+            const diagnostics = queryTokens.includes("kind:")
+              ? [{ severity: "error", code: "missingValue", message: "Add a value after `kind:`." }]
+              : [];
+            const queryExplanation = request.explain
+              ? {
+                  version: 1,
+                  chips: queryTokens
+                    .filter(knownChip)
+                    .map((token: string, index: number) => ({
+                      label: token,
+                      queryWithoutClause: queryTokens.filter((_: string, candidateIndex: number) => candidateIndex !== index).join(" "),
+                    })),
+                  diagnostics,
+                }
+              : null;
             const limit = request.limit ?? 60;
             const includeContent = Boolean(request.includeContent);
-            const filteredItems = requestQuery
+            const filteredItems = diagnostics.length > 0
+              ? []
+              : requestQuery
               ? sourceItems.filter((item: any) => {
                   if (requestQuery === "is:marked") {
                     return Boolean(item.is_marked);
@@ -489,7 +528,7 @@ async function mockTauriInvoke(
             const cursor = request.cursor;
             const startIndex = cursor
               ? filteredItems.findIndex(
-                  (item) =>
+                  (item: any) =>
                     (item.last_copied_at_unix_ms ?? item.created_at_unix_ms) === cursor.afterSortUnixMs &&
                     item.id === cursor.afterId,
                 ) + 1
@@ -512,10 +551,13 @@ async function mockTauriInvoke(
               filteredCount: includeCounts ? filteredItems.length : null,
               interpretedQuery: request.explain ? interpretedQuery : null,
               explanation: request.explain
-                ? aiMode
-                  ? "Synthetic AI interpreted long text search."
-                  : "Structured local history search."
+                ? diagnostics.length > 0
+                  ? "Fix the structured search syntax before searching."
+                  : aiMode
+                    ? "Synthetic AI interpreted long text search."
+                    : "Structured local history search."
                 : null,
+              queryExplanation,
               warnings: aiMode ? ["Synthetic unsupported source filter ignored."] : [],
             };
           }
@@ -531,6 +573,8 @@ async function mockTauriInvoke(
             return items;
           case "list_tags":
             return (window as any).__copicuTestTags;
+          case "list_saved_history_views":
+            return (window as any).__copicuTestSavedHistoryViews;
           case "pending_metadata_editor":
             return {
               item: withHistoryPreview(((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0], true),
@@ -709,6 +753,21 @@ async function mockTauriInvoke(
           case "update_settings":
             (window as any).__copicuTestSettings = args.settings;
             return args.settings;
+          case "set_picker_search_trigger_mode":
+            if ((window as any).__copicuTestMockOptions?.searchTriggerUpdateDelayMs > 0) {
+              await new Promise((resolve) => window.setTimeout(
+                resolve,
+                (window as any).__copicuTestMockOptions.searchTriggerUpdateDelayMs,
+              ));
+            }
+            (window as any).__copicuTestSettings = {
+              ...(window as any).__copicuTestSettings,
+              picker: {
+                ...(window as any).__copicuTestSettings.picker,
+                searchTriggerMode: args.mode,
+              },
+            };
+            return (window as any).__copicuTestSettings;
           default:
             throw new Error(`Unhandled mocked Tauri command: ${cmd}`);
         }
@@ -846,6 +905,28 @@ test("command palette exposes new item action", async ({ page }) => {
   await page.keyboard.press("Enter");
 
   await expect(page.getByRole("dialog", { name: "Create new item" })).toBeVisible();
+});
+
+test("command palette navigates history, saved views, and pinned tags", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await expect(palette.getByText("History", { exact: true })).toBeVisible();
+  await expect(palette.getByRole("option", { name: /All history/ })).toBeVisible();
+  await expect(palette.getByRole("option", { name: /Work clips/ })).toBeVisible();
+  await expect(palette.locator("#command-palette-entry-tag\\.1")).toBeVisible();
+  await expect(palette.getByRole("option", { name: /Backend/ })).toHaveCount(0);
+
+  await palette.getByRole("option", { name: /Work clips/ }).click();
+  await expect(palette).toBeHidden();
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "tag:work kind:text",
+    ),
+  );
 });
 
 test("WhichKey overlay reveals pending compound shortcuts", async ({ page }) => {
@@ -1271,6 +1352,24 @@ test("scrolling to the loader fetches the next history page", async ({ page }) =
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
 });
 
+test("failed pagination stops automatic retries", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, { historySearchFailOnCursor: true });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await page.locator(".history-feed-scroll").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.getByText("Error: Synthetic page failure")).toBeVisible();
+  const callsAfterFailure = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  );
+  await page.waitForTimeout(350);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  )).toBe(callsAfterFailure);
+});
+
 test("loaded page count stays stable while idle", async ({ page }) => {
   await mockTauriInvoke(page, syntheticPagedHistory);
   await gotoShell(page);
@@ -1296,6 +1395,28 @@ test("loaded page count stays stable while idle", async ({ page }) => {
   expect(after).toEqual(before);
 });
 
+test("explicit search survives a delayed picker reset snapshot", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    historySearchDelayMs: 120,
+    pickerSessionDelayMs: 250,
+    pickerSessionSnapshots: [{ reset: true, generation: 1 }],
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(20);
+  await search.fill("unbroken");
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+  await page.waitForTimeout(180);
+  await expect(search).toHaveValue("unbroken");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+});
+
 test("keyboard selection survives delayed picker reset refresh", async ({ page }) => {
   await mockTauriInvoke(page, syntheticPagedHistory, null, {
     historySearchDelayMs: 250,
@@ -1317,6 +1438,39 @@ test("keyboard selection survives delayed picker reset refresh", async ({ page }
 
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_06/ })).toHaveClass(/is-selected/);
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_01/ })).not.toHaveClass(/is-selected/);
+});
+
+test("picker navigation clears a pending compound shortcut without consuming ArrowDown", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, {
+    prefixLabel: "Ctrl+Alt+C",
+    nextSteps: ["T"],
+    entries: [
+      {
+        key: "T",
+        label: "compound hotkey toast",
+        group: "Scripts",
+        routeId: "jp.compoundHotkeyToast",
+        disabled: false,
+        diagnostic: null,
+      },
+    ],
+    expiresAtUnixMs: Date.now() + 3000,
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.focus();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "get_compound_hotkey_pending",
+    ),
+  );
+  await page.keyboard.press("ArrowDown");
+
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-selected/);
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.filter((call: any) => call.cmd === "clear_compound_hotkey_pending")).toHaveLength(1);
+  expect(calls.filter((call: any) => call.cmd === "handle_compound_hotkey_step")).toHaveLength(0);
 });
 
 test("manual scroll keeps moving downward while variable rows are measured", async ({ page }) => {
@@ -1401,6 +1555,120 @@ test("ai search shows interpretation and keeps activation enabled", async ({ pag
   expect(activatedItemId).toBe(101);
 });
 
+test("applied structured chips remove only their clause", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("tag:work kind:text");
+  const kindChip = page.getByRole("button", { name: "Remove filter kind:text" });
+  await expect(kindChip).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+
+  await kindChip.click();
+  await expect(search).toHaveValue("tag:work");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "history_search")
+      .some((call: any) => call.args.request.query === "tag:work"),
+  );
+  await expect(page.getByRole("button", { name: "Remove filter tag:work" })).toBeVisible();
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  )).toBe(1);
+});
+
+test("malformed structured filters show a diagnostic without activating stale results", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("kind:");
+  await expect(page.getByText("Add a value after `kind:`.")).toBeVisible();
+  await expect(page.locator("[title='Result count']")).toHaveText("0 / 4 matches");
+
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "activate_item").length,
+  )).toBe(0);
+});
+
+test("plain applied search stays quiet when it has no filters or warnings", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").fill("unbroken");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+  await expect(page.getByText("Interpreted", { exact: true })).toHaveCount(0);
+});
+
+test("search autocomplete suggests tags, operators, and closed values", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("#");
+  const suggestions = page.getByRole("listbox", { name: "Search suggestions" });
+  await expect(suggestions.getByRole("option", { name: "#work" })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: "#backend" })).toBeVisible();
+
+  await search.fill("ki");
+  await expect(suggestions.getByRole("option", { name: "kind:" })).toBeVisible();
+
+  await search.fill("kind:");
+  await expect(suggestions.getByRole("option", { name: "kind:text" })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: "kind:image" })).toBeVisible();
+});
+
+test("search autocomplete accepts keyboard and click selections and dismisses Escape", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.getByRole("listbox", { name: "Search suggestions" });
+  await search.fill("#");
+  await expect(suggestions.getByRole("option", { name: "#work" })).toHaveAttribute("aria-selected", "true");
+  await search.press("ArrowDown");
+  await expect(suggestions.getByRole("option", { name: "#backend" })).toHaveAttribute("aria-selected", "true");
+  await search.press("Tab");
+  await expect(search).toHaveValue("#backend");
+  await expect(suggestions).toHaveCount(0);
+
+  await search.fill("tag:");
+  await suggestions.getByRole("option", { name: "tag:work" }).click();
+  await expect(search).toHaveValue("tag:work");
+  await expect(suggestions).toHaveCount(0);
+
+  await search.fill("#");
+  await expect(suggestions).toBeVisible();
+  await search.press("Escape");
+  await expect(search).toHaveValue("#");
+  await expect(suggestions).toHaveCount(0);
+});
+
+test("Enter executes the current autocomplete query without accepting it", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("kind:");
+  await expect(page.getByRole("option", { name: "kind:text" })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+
+  await search.press("Enter");
+  await expect(search).toHaveValue("kind:");
+  await expect(page.getByRole("listbox", { name: "Search suggestions" })).toHaveCount(0);
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "kind:",
+    ),
+  );
+});
+
 test("search composer mode toggles with icon button", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1447,7 +1715,7 @@ test("plain query in AI composer still runs local search", async ({ page }) => {
 });
 
 test("plain query in AI composer search button still runs local search", async ({ page }) => {
-  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "manual" });
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
   await gotoShell(page);
 
   await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
@@ -1458,6 +1726,266 @@ test("plain query in AI composer search button still runs local search", async (
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
   await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
+});
+
+test("enter mode keeps its draft unapplied during focus refresh", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await search.fill("unbroken");
+  await expect(page.locator("[title='Result count']")).toHaveText("Press Enter");
+
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+    window.dispatchEvent(new Event("focus"));
+  });
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "history_search"),
+  );
+
+  const refreshedQuery = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "history_search")
+      .at(-1).args.request.query,
+  );
+  expect(refreshedQuery).toBe("");
+  await expect(page.locator("[title='Result count']")).toHaveText("Press Enter");
+});
+
+test("bulk mark refuses an unapplied Enter draft", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await page.getByLabel("Search clipboard history").fill("unbroken");
+  await page.getByLabel("Mark options").click();
+  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "All results" }).click();
+
+  await expect(page.getByText("Apply the current search before changing all results.")).toBeVisible();
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "set_history_query_marked").length,
+  )).toBe(0);
+});
+
+test("action mutation refresh keeps an Enter draft unapplied", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await page.getByLabel("Search clipboard history").fill("unbroken");
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await page.keyboard.press("Control+Alt+Q");
+  await page.getByLabel("Search quick actions").fill("toast-hello");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "history_search"),
+  );
+
+  const refreshedQuery = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "history_search")
+      .at(-1).args.request.query,
+  );
+  expect(refreshedQuery).toBe("");
+  await expect(page.locator("[title='Result count']")).toHaveText("Press Enter");
+});
+
+test("focus refresh cannot supersede an explicit Enter search", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    historySearchDelayMs: 250,
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await search.fill("unbroken");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(140);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+  const requestQueries = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "history_search")
+      .map((call: any) => call.args.request.query),
+  );
+  expect(requestQueries.length).toBeGreaterThanOrEqual(1);
+  expect(requestQueries).not.toContain("");
+});
+
+test("pagination keeps using the applied query while an Enter draft is pending", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await page.getByLabel("Search clipboard history").fill("draft-with-no-matches");
+  await page.locator(".history-feed-scroll").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length >= 2,
+  );
+
+  const pagedQuery = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "history_search")
+      .at(-1).args.request.query,
+  );
+  expect(pagedQuery).toBe("");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+});
+
+test("overlapping first-page refresh does not leave pagination stuck", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, {
+    historySearchDelayMs: 180,
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  const feed = page.locator(".history-feed-scroll");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total", { timeout: 5000 });
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length >= 2,
+  );
+
+  await search.fill("COPICU_SYNTH_PAGE_01");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 80 matches", { timeout: 5000 });
+  await search.fill("");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total", { timeout: 5000 });
+
+  const callsBeforeFinalPage = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  );
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.waitForFunction((before) =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length > before,
+  callsBeforeFinalPage);
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached({ timeout: 5000 });
+});
+
+test("background refresh deferred during realtime search is replayed", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 250 });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await page.getByLabel("Search clipboard history").fill("unbroken");
+  await page.waitForTimeout(140);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ).length >= 2,
+  );
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+});
+
+test("search trigger control cycles and persists Realtime and Enter only", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const realtime = page.getByRole("button", { name: "Search trigger: Realtime, switch to Enter" });
+  await expect(realtime).toHaveAttribute("data-mode", "realtime");
+  await realtime.click();
+
+  const enter = page.getByRole("button", { name: "Search trigger: Enter, switch to Realtime" });
+  await expect(enter).toHaveAttribute("data-mode", "enter");
+  await enter.click();
+  await expect(page.getByRole("button", { name: "Search trigger: Realtime, switch to Enter" })).toBeVisible();
+
+  const modes = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "set_picker_search_trigger_mode")
+      .map((call: any) => call.args.mode),
+  );
+  expect(modes).toEqual(["enter", "realtime"]);
+});
+
+test("legacy Button only setting normalizes to Enter", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "manual" });
+  await gotoShell(page);
+
+  await expect(page.getByRole("button", { name: "Search trigger: Enter, switch to Realtime" })).toBeVisible();
+});
+
+test("search trigger control locks while persistence is in flight", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerUpdateDelayMs: 180 });
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: "Search trigger: Realtime, switch to Enter" }).click();
+  const pending = page.getByRole("button", { name: "Search trigger: Enter, switch to Realtime" });
+  await expect(pending).toBeDisabled();
+  await expect(pending).toBeEnabled({ timeout: 1000 });
+});
+
+test("Enter coalesces the pending realtime debounce", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 250 });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await page.getByLabel("Search clipboard history").fill("unbroken");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(420);
+
+  const matchingSearches = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ).length,
+  );
+  expect(matchingSearches).toBe(1);
+});
+
+test("structured realtime query waits for Enter when configured", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    searchTriggerMode: "realtime",
+    deferStructuredSearchUntilEnter: true,
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await search.fill("tag:work");
+  await expect(page.locator("[title='Result count']")).toHaveText("Structured query, press Enter");
+  await page.waitForTimeout(180);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  )).toBe(0);
+
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "tag:work",
+    ),
+  );
+  await expect(page.locator("[title='Result count']")).toHaveText("0 / 4 matches");
+
+  await search.fill('"tag:work"');
+  await expect(page.locator("[title='Result count']")).toHaveText("Structured query, press Enter");
 });
 
 test("single click selects item without activating it", async ({ page }) => {
@@ -1606,6 +2134,7 @@ test("item hover actions appear only while hovering row", async ({ page }) => {
 test("dots menu uses pointer position too", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
 
   const firstRow = page.locator(".history-feed.has-items > li").first();
   const menuButton = firstRow.locator(".item-menu-button");
@@ -2055,6 +2584,8 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
 
   await gotoShell(page, "/?window=settings");
   await expect(page.getByLabel("Search settings")).toBeVisible();
+  await page.getByLabel("Search settings").fill("structured");
+  await expect(page.getByRole("switch", { name: "Confirm structured filters with Enter" })).toBeVisible();
   await page.getByLabel("Search settings").fill("automatic updates");
   await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeChecked();
   await page.getByLabel("Search settings").fill("scripts");
@@ -2206,4 +2737,13 @@ test("metadata window focuses title input on open", async ({ page }) => {
   await expect(title).toBeVisible();
   await expect(title).toBeFocused();
   await expect(page.getByRole("textbox", { name: "Notes and tags" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Detected tags" })).toContainText("No tags yet");
+  await expect(page.getByLabel("Capture context").getByText("Read-only searchable metadata")).toBeVisible();
+
+  const overflow = await page.locator(".metadata-window-app").evaluate((element) =>
+    Array.from(element.querySelectorAll<HTMLElement>("*")).some(
+      (child) => child.scrollWidth > Math.ceil(child.clientWidth) + 1,
+    ),
+  );
+  expect(overflow).toBe(false);
 });

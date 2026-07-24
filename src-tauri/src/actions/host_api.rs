@@ -4,9 +4,10 @@ use tauri::{AppHandle, Runtime, WebviewWindow};
 use super::{
     script_ai_respond_markdown, script_clipboard_read, script_commands_run,
     script_enrichment_get_result, script_enrichment_run_for_item, script_history_get,
-    script_history_move, script_history_promote, script_history_remove, script_history_search,
-    script_history_update, script_metadata_edit_active, script_metadata_list_tags, script_ui_alert,
-    script_ui_confirm, script_ui_input, ActionDefinition, ScriptHostCall,
+    script_history_move, script_history_neighbor, script_history_promote, script_history_remove,
+    script_history_search, script_history_update, script_metadata_edit_active,
+    script_metadata_list_tags, script_ui_alert, script_ui_confirm, script_ui_input,
+    ActionDefinition, ScriptHostCall,
 };
 
 pub(super) fn dispatch_script_host_call<R: Runtime + 'static>(
@@ -25,6 +26,7 @@ pub(super) fn dispatch_script_host_call<R: Runtime + 'static>(
     let result = match call.method.as_str() {
         "history.search" => script_history_search(storage, call.payload.clone()),
         "history.get" => script_history_get(storage, call.payload.clone()),
+        "history.neighbor" => script_history_neighbor(storage, call.payload.clone()),
         "history.update" => script_history_update(storage, call.payload.clone()),
         "history.move" => script_history_move(storage, call.payload.clone()),
         "history.promote" => script_history_promote(storage, call.payload.clone()),

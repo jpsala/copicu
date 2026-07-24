@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     escape_like, normalize_tag_label, now_unix_ms, HistoryItem, HistoryPage, HistoryPageCursor,
+    HistorySearchChip, HistorySearchDiagnostic, HistorySearchExplanation,
     HISTORY_PREVIEW_CHAR_LIMIT, MAX_HISTORY_PAGE_LIMIT, MILLIS_PER_DAY, MIN_HISTORY_PAGE_LIMIT,
 };
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -241,10 +242,11 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
     let mut parsed = ParsedHistoryQuery::default();
     for token in tokenize_query(query) {
         let (negated, raw_token) = token
+            .value
             .strip_prefix('-')
             .filter(|value| !value.is_empty())
             .map(|value| (true, value))
-            .unwrap_or((false, token.as_str()));
+            .unwrap_or((false, token.value.as_str()));
 
         if let Some(tag) = raw_token.strip_prefix('#') {
             push_tag_filter(&mut parsed, tag, negated);
@@ -402,13 +404,22 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
     parsed
 }
 
-fn tokenize_query(query: &str) -> Vec<String> {
+#[derive(Clone)]
+struct QueryToken {
+    value: String,
+    start: usize,
+    end: usize,
+    has_unclosed_quote: bool,
+}
+
+fn tokenize_query(query: &str) -> Vec<QueryToken> {
     let mut tokens = Vec::new();
     let mut current = String::new();
+    let mut start = None;
     let mut in_quote = false;
     let mut escaped = false;
 
-    for ch in query.chars() {
+    for (index, ch) in query.char_indices() {
         if escaped {
             current.push(ch);
             escaped = false;
@@ -417,18 +428,34 @@ fn tokenize_query(query: &str) -> Vec<String> {
 
         match ch {
             '\\' if in_quote => escaped = true,
-            '"' => in_quote = !in_quote,
+            '"' => {
+                start.get_or_insert(index);
+                in_quote = !in_quote;
+            }
             ch if ch.is_whitespace() && !in_quote => {
                 if !current.is_empty() {
-                    tokens.push(std::mem::take(&mut current));
+                    tokens.push(QueryToken {
+                        value: std::mem::take(&mut current),
+                        start: start.take().unwrap_or(index),
+                        end: index,
+                        has_unclosed_quote: false,
+                    });
                 }
             }
-            _ => current.push(ch),
+            _ => {
+                start.get_or_insert(index);
+                current.push(ch);
+            }
         }
     }
 
-    if !current.is_empty() {
-        tokens.push(current);
+    if !current.is_empty() || in_quote {
+        tokens.push(QueryToken {
+            value: current,
+            start: start.unwrap_or(query.len()),
+            end: query.len(),
+            has_unclosed_quote: in_quote,
+        });
     }
 
     tokens
@@ -621,7 +648,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
         filters.date.push(SearchPlanDateFilterV1 {
             field: SearchPlanDateFieldV1::Created,
             op: SearchPlanDateOpV1::After,
-            value: Some(format_unix_ms_ymd(after_unix_ms)),
+            value: Some(format_unix_ms_iso_utc(after_unix_ms)),
             end_value: None,
             relative: None,
         });
@@ -630,7 +657,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
         filters.date.push(SearchPlanDateFilterV1 {
             field: SearchPlanDateFieldV1::Created,
             op: SearchPlanDateOpV1::Before,
-            value: Some(format_unix_ms_ymd(before_unix_ms)),
+            value: Some(format_unix_ms_iso_utc(before_unix_ms)),
             end_value: None,
             relative: None,
         });
@@ -1312,6 +1339,7 @@ pub(super) fn finish_history_page(
     filtered_count: Option<i64>,
     interpreted_query: Option<String>,
     explanation: Option<String>,
+    query_explanation: Option<HistorySearchExplanation>,
     warnings: Vec<String>,
 ) -> Result<HistoryPage, String> {
     let next_cursor = if items.len() as i64 > limit {
@@ -1331,6 +1359,7 @@ pub(super) fn finish_history_page(
         filtered_count,
         interpreted_query,
         explanation,
+        query_explanation,
         warnings,
     })
 }
@@ -1343,13 +1372,162 @@ pub(super) fn explain_history_query(query: &str) -> String {
     }
 }
 
+pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation {
+    let mut chips = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    for token in tokenize_query(query) {
+        if token.has_unclosed_quote {
+            diagnostics.push(search_diagnostic(
+                "error",
+                "unclosedQuote",
+                "Close the quoted search value.",
+            ));
+        }
+        let (negated, raw_token) = token
+            .value
+            .strip_prefix('-')
+            .filter(|value| !value.is_empty())
+            .map(|value| (true, value))
+            .unwrap_or((false, token.value.as_str()));
+        if let Some(tag) = raw_token.strip_prefix('#') {
+            if tag.trim().is_empty() {
+                diagnostics.push(search_diagnostic(
+                    "error",
+                    "missingValue",
+                    "Add a tag after `#`.",
+                ));
+            } else {
+                push_search_chip(&mut chips, query, &token);
+            }
+            continue;
+        }
+        let Some((key, value)) = raw_token.split_once(':') else {
+            continue;
+        };
+        let key = key.to_ascii_lowercase();
+        let known = matches!(
+            key.as_str(),
+            "tag"
+                | "tags"
+                | "kind"
+                | "type"
+                | "is"
+                | "mime"
+                | "has"
+                | "meta"
+                | "metadata"
+                | "title"
+                | "note"
+                | "notes"
+                | "ctx"
+                | "context"
+                | "app"
+                | "program"
+                | "process"
+                | "window"
+                | "domain"
+                | "site"
+                | "source"
+                | "format"
+                | "fmt"
+                | "after"
+                | "since"
+                | "before"
+                | "until"
+                | "on"
+        );
+        if !known {
+            diagnostics.push(search_diagnostic(
+                "warning",
+                "unknownFilter",
+                &format!("`{key}:` is treated as plain text."),
+            ));
+            continue;
+        }
+        if value.trim().is_empty() {
+            diagnostics.push(search_diagnostic(
+                "error",
+                "missingValue",
+                &format!("Add a value after `{key}:`."),
+            ));
+            continue;
+        }
+        let values = split_filter_values(value).collect::<Vec<_>>();
+        let valid = !values.is_empty()
+            && match key.as_str() {
+                "kind" | "type" => values
+                    .iter()
+                    .all(|value| parse_search_plan_kind(value).is_some()),
+                "is" => values.iter().all(|value| {
+                    matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "marked" | "checked" | "unmarked" | "unchecked"
+                    )
+                }),
+                "has" => values.iter().all(|value| parse_has_filter(value).is_some()),
+                "after" | "since" | "before" | "until" | "on" => {
+                    !negated
+                        && values.len() == 1
+                        && parse_date_or_relative_ms(value, DateBound::Start).is_some()
+                }
+                "source" | "format" | "fmt" => !negated,
+                _ => true,
+            };
+        if !valid {
+            diagnostics.push(search_diagnostic(
+                "error",
+                "invalidValue",
+                &format!(
+                    "`{token_value}` is not a supported {key} filter.",
+                    token_value = token.value
+                ),
+            ));
+            continue;
+        }
+        push_search_chip(&mut chips, query, &token);
+    }
+
+    HistorySearchExplanation {
+        version: 1,
+        chips,
+        diagnostics,
+    }
+}
+
+fn search_diagnostic(severity: &str, code: &str, message: &str) -> HistorySearchDiagnostic {
+    HistorySearchDiagnostic {
+        severity: severity.to_string(),
+        code: code.to_string(),
+        message: message.to_string(),
+    }
+}
+
+fn push_search_chip(chips: &mut Vec<HistorySearchChip>, query: &str, token: &QueryToken) {
+    chips.push(HistorySearchChip {
+        label: query[token.start..token.end].to_string(),
+        query_without_clause: remove_query_token(query, token),
+    });
+}
+
+fn remove_query_token(query: &str, token: &QueryToken) -> String {
+    let before = query[..token.start].trim_end();
+    let after = query[token.end..].trim_start();
+    if before.is_empty() || after.is_empty() {
+        format!("{before}{after}")
+    } else {
+        format!("{before} {after}")
+    }
+}
+
 #[derive(Clone, Copy)]
 enum DateBound {
     Start,
 }
 
 fn parse_date_or_relative_ms(value: &str, _bound: DateBound) -> Option<i64> {
-    let value = value.trim().to_ascii_lowercase();
+    let original = value.trim();
+    let value = original.to_ascii_lowercase();
     if value.is_empty() {
         return None;
     }
@@ -1368,38 +1546,72 @@ fn parse_date_or_relative_ms(value: &str, _bound: DateBound) -> Option<i64> {
         return Some(now_ms.saturating_sub(days.saturating_mul(MILLIS_PER_DAY)));
     }
 
-    parse_ymd_start_unix_ms(&value)
+    parse_ymd_start_unix_ms(&value).or_else(|| parse_iso_datetime_unix_ms(original))
 }
 
 fn parse_iso_datetime_unix_ms(value: &str) -> Option<i64> {
     let value = value.trim();
-    let (date, time) = value.split_once('T')?;
+    let (date, time_with_zone) = value.split_once('T')?;
     let date_ms = parse_ymd_start_unix_ms(date)?;
-    let time = time.trim_end_matches('Z');
-    let time = time
-        .split_once(['+', '-'])
-        .map(|(time, _)| time)
-        .unwrap_or(time);
+    let (time, offset_minutes) = if let Some(time) = time_with_zone
+        .strip_suffix('Z')
+        .or_else(|| time_with_zone.strip_suffix('z'))
+    {
+        (time, 0)
+    } else if let Some(offset_index) = time_with_zone.rfind(['+', '-']) {
+        let time = &time_with_zone[..offset_index];
+        let sign = if time_with_zone.as_bytes()[offset_index] == b'+' {
+            1
+        } else {
+            -1
+        };
+        let (offset_hours, offset_minutes) = time_with_zone[offset_index + 1..].split_once(':')?;
+        let offset_hours = offset_hours.parse::<i64>().ok()?;
+        let offset_minutes = offset_minutes.parse::<i64>().ok()?;
+        if !(0..=23).contains(&offset_hours) || !(0..=59).contains(&offset_minutes) {
+            return None;
+        }
+        (time, sign * (offset_hours * 60 + offset_minutes))
+    } else {
+        (time_with_zone, 0)
+    };
     let mut parts = time.split(':');
     let hour = parts.next()?.parse::<i64>().ok()?;
     let minute = parts.next().unwrap_or("0").parse::<i64>().ok()?;
     let second_part = parts.next().unwrap_or("0");
-    let second = second_part
-        .split_once('.')
-        .map(|(second, _)| second)
-        .unwrap_or(second_part)
-        .parse::<i64>()
-        .ok()?;
-    if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=59).contains(&second) {
+    let (second, millisecond) = if let Some((second, fraction)) = second_part.split_once('.') {
+        let millisecond = format!("{fraction:0<3}")
+            .chars()
+            .take(3)
+            .collect::<String>()
+            .parse::<i64>()
+            .ok()?;
+        (second.parse::<i64>().ok()?, millisecond)
+    } else {
+        (second_part.parse::<i64>().ok()?, 0)
+    };
+    if !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute)
+        || !(0..=59).contains(&second)
+        || !(0..=999).contains(&millisecond)
+    {
         return None;
     }
-    Some(date_ms + hour * 3_600_000 + minute * 60_000 + second * 1_000)
+    Some(
+        date_ms + hour * 3_600_000 + minute * 60_000 + second * 1_000 + millisecond
+            - offset_minutes * 60_000,
+    )
 }
 
-fn format_unix_ms_ymd(unix_ms: i64) -> String {
+fn format_unix_ms_iso_utc(unix_ms: i64) -> String {
     let days = unix_ms.div_euclid(MILLIS_PER_DAY);
     let (year, month, day) = civil_from_days(days);
-    format!("{year:04}-{month:02}-{day:02}")
+    let time = unix_ms.rem_euclid(MILLIS_PER_DAY);
+    let hour = time / 3_600_000;
+    let minute = (time % 3_600_000) / 60_000;
+    let second = (time % 60_000) / 1_000;
+    let millisecond = time % 1_000;
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millisecond:03}Z")
 }
 
 fn day_start_unix_ms(unix_ms: i64) -> i64 {
@@ -1465,4 +1677,61 @@ fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
 
 fn is_leap_year(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_iso_datetime_unix_ms, search_query_explanation};
+
+    #[test]
+    fn iso_datetime_applies_explicit_timezone_offset() {
+        let utc = parse_iso_datetime_unix_ms("2026-06-07T14:32:00Z").expect("UTC datetime");
+        let buenos_aires =
+            parse_iso_datetime_unix_ms("2026-06-07T14:32:00-03:00").expect("offset datetime");
+
+        assert_eq!(buenos_aires, utc + 3 * 3_600_000);
+    }
+
+    #[test]
+    fn explanation_chips_preserve_unicode_when_removing_a_clause() {
+        let explanation = search_query_explanation("meta:señal kind:text");
+
+        assert_eq!(explanation.chips.len(), 2);
+        assert_eq!(explanation.chips[0].label, "meta:señal");
+        assert_eq!(explanation.chips[0].query_without_clause, "kind:text");
+        assert_eq!(explanation.chips[1].query_without_clause, "meta:señal");
+    }
+
+    #[test]
+    fn explanation_reports_malformed_known_filters() {
+        let explanation = search_query_explanation("kind:, after:today,yesterday foo:bar");
+
+        assert!(explanation
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "invalidValue" && diagnostic.severity == "error"));
+        assert!(explanation
+            .diagnostics
+            .iter()
+            .any(
+                |diagnostic| diagnostic.code == "unknownFilter" && diagnostic.severity == "warning"
+            ));
+    }
+
+    #[test]
+    fn explanation_rejects_unclosed_quotes_and_preserves_alias_negation() {
+        let unclosed = search_query_explanation("\"");
+        assert!(
+            unclosed
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "unclosedQuote"
+                    && diagnostic.severity == "error")
+        );
+
+        let explanation = search_query_explanation("-metadata:private #work");
+        assert_eq!(explanation.chips.len(), 2);
+        assert_eq!(explanation.chips[0].label, "-metadata:private");
+        assert_eq!(explanation.chips[1].label, "#work");
+    }
 }

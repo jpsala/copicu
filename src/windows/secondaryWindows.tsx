@@ -43,6 +43,9 @@ import type {
   SetHistoryItemsMarkedRequest,
   SetHistoryQueryMarkedRequest,
   SetItemTagsRequest,
+  SavedHistoryView,
+  CreateSavedHistoryViewRequest,
+  UpdateSavedHistoryViewRequest,
   TagSummary,
   ToastItem,
   ToastOptions,
@@ -69,6 +72,7 @@ import {
 import { ShortcutBadge } from "../ui/ShortcutBadge";
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
+import { SavedHistoryViews } from "./SavedHistoryViews";
 import { checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
 
 
@@ -195,14 +199,7 @@ function isSubmitShortcut(event: ReactKeyboardEvent<HTMLElement> | globalThis.Ke
 }
 
 function searchTriggerModeLabel(mode: SearchTriggerMode) {
-  switch (mode) {
-    case "enter":
-      return "Search on Enter";
-    case "manual":
-      return "Search by button";
-    case "realtime":
-      return "Realtime search";
-  }
+  return mode === "enter" ? "Search on Enter" : "Realtime search";
 }
 
 function normalizeRetentionCount(value: number | string): number {
@@ -349,6 +346,26 @@ function refreshScriptActionCache() {
 
 function listTags() {
   return invoke<TagSummary[]>("list_tags");
+}
+
+function listSavedHistoryViews() {
+  return invoke<SavedHistoryView[]>("list_saved_history_views");
+}
+
+function createSavedHistoryView(request: CreateSavedHistoryViewRequest) {
+  return invoke<SavedHistoryView>("create_saved_history_view", { request });
+}
+
+function updateSavedHistoryView(request: UpdateSavedHistoryViewRequest) {
+  return invoke<SavedHistoryView>("update_saved_history_view", { request });
+}
+
+function deleteSavedHistoryView(id: number) {
+  return invoke<void>("delete_saved_history_view", { id });
+}
+
+function openSavedHistoryView(id: number) {
+  return invoke<void>("open_saved_history_view", { id });
 }
 
 function createTag(request: CreateTagRequest) {
@@ -705,11 +722,14 @@ export function MetadataWindowApp() {
                 autosize={false}
               />
             </label>
-            <section className="metadata-window-preview" aria-label="Metadata preview">
-              <span>Tags</span>
-              <strong>{metadataTags(notes) ?? "No tags"}</strong>
+            <section className="metadata-window-preview" aria-label="Detected tags">
+              <span>Detected tags</span>
+              <strong>{metadataTags(notes) ?? "No tags yet"}</strong>
             </section>
-            <section className="metadata-capture-context" aria-label="Capture context">
+            <section
+              className={`metadata-capture-context${latestCaptureContext ? "" : " is-empty"}`}
+              aria-label="Capture context"
+            >
               <div className="metadata-capture-context-heading">
                 <div>
                   <span>Capture context</span>
@@ -755,7 +775,9 @@ export function MetadataWindowApp() {
                   ) : null}
                 </details>
               ) : (
-                <p>No capture context recorded yet. Older items will show it after they are recaptured.</p>
+                <p className="metadata-capture-context-empty">
+                  <strong>No capture context yet.</strong> It is recorded when this clip is captured again.
+                </p>
               )}
             </section>
             {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
@@ -792,6 +814,8 @@ export function SettingsWindowApp() {
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const [tags, setTags] = useState<TagSummary[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
+  const [savedViews, setSavedViews] = useState<SavedHistoryView[]>([]);
+  const [savedViewsLoading, setSavedViewsLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextToastIdRef = useRef(1);
 
@@ -960,6 +984,43 @@ export function SettingsWindowApp() {
       setCheckingForUpdates(false);
     }
   }, [appInfo, checkingForUpdates, pushToast]);
+
+  const refreshSavedViews = useCallback(async () => {
+    setSavedViewsLoading(true);
+    try {
+      setSavedViews((await listSavedHistoryViews()) ?? []);
+      setError(null);
+    } catch (loadError) {
+      setError(String(loadError));
+      throw loadError;
+    } finally {
+      setSavedViewsLoading(false);
+    }
+  }, []);
+
+  const createSettingsSavedView = useCallback(async (draft: { title: string; query: string; hotkey: string; pinned: boolean }) => {
+    try {
+      await createSavedHistoryView({ title: draft.title, query: draft.query, hotkey: nullableTrim(draft.hotkey) });
+      await refreshSavedViews();
+    } catch (saveError) { setError(String(saveError)); throw saveError; }
+  }, [refreshSavedViews]);
+
+  const updateSettingsSavedView = useCallback(async (id: number, draft: { title: string; query: string; hotkey: string; pinned: boolean }) => {
+    try {
+      await updateSavedHistoryView({ id, title: draft.title, query: draft.query, hotkey: nullableTrim(draft.hotkey), pinned: draft.pinned, sortOrder: null });
+      await refreshSavedViews();
+    } catch (saveError) { setError(String(saveError)); throw saveError; }
+  }, [refreshSavedViews]);
+
+  const deleteSettingsSavedView = useCallback(async (id: number) => {
+    try { await deleteSavedHistoryView(id); await refreshSavedViews(); }
+    catch (deleteError) { setError(String(deleteError)); throw deleteError; }
+  }, [refreshSavedViews]);
+
+  const openSettingsSavedView = useCallback(async (id: number) => {
+    try { await openSavedHistoryView(id); }
+    catch (openError) { setError(String(openError)); throw openError; }
+  }, []);
 
   const refreshTags = useCallback(async () => {
     setTagsLoading(true);
@@ -1193,6 +1254,10 @@ export function SettingsWindowApp() {
         }
       });
 
+    listSavedHistoryViews().then((nextViews) => {
+      if (active) setSavedViews(nextViews ?? []);
+    }).catch((loadError) => { if (active) setError(String(loadError)); });
+
     listTags()
       .then((nextTags) => {
         if (active) {
@@ -1207,6 +1272,34 @@ export function SettingsWindowApp() {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event: Event<AppSettings>) => {
+      if (!active) {
+        return;
+      }
+      const nextSettings = normalizeSettings(event.payload);
+      setSettings(nextSettings);
+      setDraft((current) => ({
+        ...current,
+        picker: {
+          ...current.picker,
+          searchTriggerMode: nextSettings.picker.searchTriggerMode,
+        },
+      }));
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+    return () => {
+      active = false;
+      unlisten?.();
     };
   }, []);
 
@@ -1237,6 +1330,8 @@ export function SettingsWindowApp() {
           scriptActions={scriptActions}
           tags={tags}
           tagsLoading={tagsLoading}
+          savedViews={savedViews}
+          savedViewsLoading={savedViewsLoading}
           tagSummary={tagSummary}
           shortcutStatus={shortcutStatus}
           autostartStatus={autostartStatus}
@@ -1249,6 +1344,10 @@ export function SettingsWindowApp() {
           onCreateTag={createSettingsTag}
           onUpdateTag={updateSettingsTag}
           onOpenTagFiltered={openTagFiltered}
+          onCreateSavedView={createSettingsSavedView}
+          onUpdateSavedView={updateSettingsSavedView}
+          onDeleteSavedView={deleteSettingsSavedView}
+          onOpenSavedView={openSettingsSavedView}
           onEditScripts={() => void openScriptsInEditor()}
           onEditScript={(action) => void openScriptInEditor(action)}
           onRefreshScripts={() => void refreshScriptActions()}
@@ -1431,6 +1530,8 @@ type SettingsPanelProps = {
   scriptActions: ActionDefinition[];
   tags: TagSummary[];
   tagsLoading: boolean;
+  savedViews: SavedHistoryView[];
+  savedViewsLoading: boolean;
   tagSummary: {
     pinnedCount: number;
     itemCount: number;
@@ -1449,6 +1550,10 @@ type SettingsPanelProps = {
     request: Omit<UpdateTagConfigRequest, "tagId">,
   ) => Promise<TagSummary>;
   onOpenTagFiltered: (tag: TagSummary) => void;
+  onCreateSavedView: (draft: { title: string; query: string; hotkey: string; pinned: boolean }) => Promise<void>;
+  onUpdateSavedView: (id: number, draft: { title: string; query: string; hotkey: string; pinned: boolean }) => Promise<void>;
+  onDeleteSavedView: (id: number) => Promise<void>;
+  onOpenSavedView: (id: number) => Promise<void>;
   onEditScripts: () => void;
   onEditScript: (action: ActionDefinition) => void;
   onRefreshScripts: () => void;
@@ -1484,6 +1589,8 @@ function SettingsPanel({
   scriptActions,
   tags,
   tagsLoading,
+  savedViews,
+  savedViewsLoading,
   tagSummary,
   shortcutStatus,
   autostartStatus,
@@ -1496,6 +1603,10 @@ function SettingsPanel({
   onCreateTag,
   onUpdateTag,
   onOpenTagFiltered,
+  onCreateSavedView,
+  onUpdateSavedView,
+  onDeleteSavedView,
+  onOpenSavedView,
   onEditScripts,
   onEditScript,
   onRefreshScripts,
@@ -1557,6 +1668,11 @@ function SettingsPanel({
     "F2",
     "Shift+F2",
     scriptHotkeySearchText,
+  ].join(" ");
+  const pickerSearchText = [
+    "search trigger realtime enter",
+    "confirm structured filters with enter",
+    "in realtime mode tags and conditions wait for enter",
   ].join(" ");
   const aboutSearchText = [
     appInfo?.name ?? "Copicu",
@@ -1633,6 +1749,7 @@ function SettingsPanel({
     `${section.id} ${section.label} ${section.description}`.toLocaleLowerCase().includes(normalizedQuery) ||
     (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "picker" && pickerSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "scripts" && scriptSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "about" && aboutSearchText.toLocaleLowerCase().includes(normalizedQuery));
@@ -1900,15 +2017,14 @@ function SettingsPanel({
                     />
                   </SettingRow>
                 ) : null}
-                {visible("picker", "Search trigger", "Realtime Enter button manual run filter search") ? (
-                  <SettingRow label="Search trigger" description="Choose whether typing filters immediately, Enter applies the query, or only the Search button runs it.">
+                {visible("picker", "Search trigger", "Realtime Enter run filter search") ? (
+                  <SettingRow label="Search trigger" description="Choose whether typing filters immediately or Enter applies the query.">
                     <UiSelect
                       aria-label="Search trigger"
                       value={draft.picker.searchTriggerMode}
                       data={[
                         { value: "realtime", label: "Realtime while typing" },
                         { value: "enter", label: "When pressing Enter" },
-                        { value: "manual", label: "Only Search button" },
                       ]}
                       allowDeselect={false}
                       onChange={(value) =>
@@ -1917,6 +2033,27 @@ function SettingsPanel({
                           picker: {
                             ...draft.picker,
                             searchTriggerMode: (value ?? "realtime") as SearchTriggerMode,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("picker", "Structured queries", "Wait for Enter before running tags and conditions in realtime mode") ? (
+                  <SettingRow
+                    label="Confirm structured filters with Enter"
+                    description="In Realtime mode, tags and conditions wait for Enter for the current query only."
+                  >
+                    <UiSwitch
+                      label="Confirm structured filters with Enter"
+                      disabled={draft.picker.searchTriggerMode !== "realtime"}
+                      checked={draft.picker.deferStructuredSearchUntilEnter}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            deferStructuredSearchUntilEnter: checked,
                           },
                         })
                       }
@@ -2184,6 +2321,21 @@ function SettingsPanel({
                     />
                   </SettingRow>
                 ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "history") ? (
+              <SettingsSection title="Saved history views" description="Reusable browse scopes with optional native global hotkeys.">
+                <SettingRow label="Saved views" description="Queries are validated before saving. A blank query explicitly means all history; opening keeps the saved scope while you refine.">
+                  <SavedHistoryViews
+                    views={savedViews}
+                    loading={savedViewsLoading}
+                    onCreate={onCreateSavedView}
+                    onUpdate={onUpdateSavedView}
+                    onDelete={onDeleteSavedView}
+                    onOpen={onOpenSavedView}
+                  />
+                </SettingRow>
               </SettingsSection>
             ) : null}
 

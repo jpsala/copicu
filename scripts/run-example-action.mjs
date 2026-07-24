@@ -103,6 +103,19 @@ globalThis.copicu = {
       }
       return content ? item : withoutContent(item);
     },
+    async neighbor(id, { direction, wrap = false, content = false } = {}) {
+      const currentIndex = mockItems.findIndex((candidate) => candidate.id === id);
+      if (currentIndex < 0 || mockItems.length === 0) {
+        return null;
+      }
+      const delta = direction === "older" ? 1 : -1;
+      let targetIndex = currentIndex + delta;
+      if (wrap) {
+        targetIndex = (targetIndex + mockItems.length) % mockItems.length;
+      }
+      const item = mockItems[targetIndex] ?? null;
+      return item && !content ? withoutContent(item) : item;
+    },
     async update(id, patch) {
       const item = mockItems.find((candidate) => candidate.id === id);
       if (!item) {

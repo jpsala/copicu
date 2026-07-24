@@ -47,6 +47,7 @@ fn required_script_host_capabilities(method: &str) -> Option<&'static [&'static 
     match method {
         "history.search" => Some(&["history:search"]),
         "history.get" => Some(&["history:read-content"]),
+        "history.neighbor" => Some(&["history:search"]),
         "history.update" => Some(&["history:write-metadata"]),
         "history.move" => Some(&["history:promote"]),
         "history.promote" => Some(&["history:promote"]),

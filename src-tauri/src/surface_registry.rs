@@ -198,7 +198,7 @@ pub const SURFACES: &[SurfaceWindow] = &[
         width: 340,
         height: 430,
         min_width: 340,
-        min_height: 430,
+        min_height: 1,
         max_width: Some(340),
         max_height: Some(430),
         decorations: false,

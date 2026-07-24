@@ -151,11 +151,30 @@ No incluir todavia:
 - embeddings;
 - joins de tags normalizados.
 
+## Search Trigger Hardening
+
+Antes de sumar UX nueva, la query aplicada debe ser el snapshot coherente de `inputQuery + effectiveQuery + cursor`:
+
+- refreshes de foco/clipboard y paginas siguientes reutilizan la query aplicada, nunca un draft pendiente;
+- una nueva primera pagina invalida cualquier `load more` en vuelo;
+- cursores con un sort no soportado se rechazan explicitamente hasta tener cursor sort-aware;
+- una mutacion por query no vacia que no produce filtros efectivos falla cerrada y nunca se convierte en una mutacion global.
+
+El picker conserva los tres modos persistentes actuales: `realtime`, `enter` y `manual`. Un control compacto puede recorrerlos y persiste sobre el mismo setting.
+
+Setting adicional: en `realtime`, una query con sintaxis estructurada explicita puede usar `enter` como trigger efectivo solo para el draft actual. Ese override:
+
+- no muta `searchTriggerMode`;
+- termina al aplicar o limpiar la query;
+- muestra feedback accesible, por ejemplo `Structured query, press Enter`;
+- usa una deteccion frontend conservadora solo para UX; Rust sigue siendo la autoridad semantica.
+
 ## Done
 
 - Tests Rust cubren compiler para fechas relativas, metadata, kind, texto y marked.
 - `ai: ultimos 3 dias con metadata` produce plan relativo de 3 dias y no aproxima a 7 dias.
 - La UI muestra el plan/explanation de forma legible.
+- `explain: true` entrega chips estructurados removibles y diagnosticos tipados; los operadores conocidos malformados no pueden ensanchar la busqueda.
 - Fallback en falla AI sigue dejando Copicu usable con busqueda local estructurada.
 
 ## Implementation Notes
@@ -168,4 +187,5 @@ No incluir todavia:
 - The Rust compiler emits only whitelisted SQL fragments plus SQLite parameters.
 - Supported first-slice fields: text, kind, MIME, metadata presence/missing, marked, dates, sort, limit.
 - Compatibility fields keep current query syntax exact for tags and negated kind/MIME/tag filters.
-- Pending: update the Node AI planner to return `SearchPlanV1` instead of query syntax, then expose an explainable plan summary in UI.
+- `explain: true` now exposes a versioned summary with removable chips and typed diagnostics.
+- Pending: update the Node AI planner to return `SearchPlanV1` instead of query syntax.

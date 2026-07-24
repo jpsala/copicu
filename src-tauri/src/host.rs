@@ -1,5 +1,7 @@
 use serde::Deserialize;
 #[cfg(not(test))]
+use clipboard_rs::common::{RustImage, RustImageData};
+#[cfg(not(test))]
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 #[cfg(not(test))]
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -66,8 +68,26 @@ pub fn write_item<R: Runtime>(
 
     if item.content_kind() == "image" {
         let png_bytes = storage.read_blob_for_item(&item)?;
-        crate::image_capture::write_png_to_clipboard(&png_bytes).inspect_err(|_| {
+        let decoded = RustImageData::from_bytes(&png_bytes)
+            .map_err(|error| format!("failed to decode stored PNG: {error}"))?;
+        let (width, height) = decoded.get_size();
+        let rgba = decoded
+            .to_rgba8()
+            .map_err(|error| format!("failed to convert stored PNG to RGBA: {error}"))?;
+        let image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+        crate::image_capture::retry_clipboard_operation(
+            || app.clipboard().write_image(&image),
+            &[
+                std::time::Duration::from_millis(40),
+                std::time::Duration::from_millis(80),
+                std::time::Duration::from_millis(160),
+                std::time::Duration::from_millis(320),
+                std::time::Duration::from_millis(640),
+            ],
+        )
+        .map_err(|error| {
             suppression.clear_if_hash(item.normalized_hash());
+            format!("image clipboard write failed: {error}")
         })?;
     } else {
         app.clipboard().write_text(item.text()).map_err(|error| {

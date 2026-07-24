@@ -1,5 +1,6 @@
 import {
   Component,
+  Fragment,
   StrictMode,
   Suspense,
   type ChangeEvent,
@@ -31,12 +32,14 @@ import ClipboardCheck from "lucide-react/dist/esm/icons/clipboard-check.mjs";
 import ClipboardPaste from "lucide-react/dist/esm/icons/clipboard-paste.mjs";
 import Command from "lucide-react/dist/esm/icons/command.mjs";
 import Copy from "lucide-react/dist/esm/icons/copy.mjs";
+import CornerDownLeft from "lucide-react/dist/esm/icons/corner-down-left.mjs";
 import FileCode2 from "lucide-react/dist/esm/icons/file-code-2.mjs";
 import ListChecks from "lucide-react/dist/esm/icons/list-checks.mjs";
 import ListRestart from "lucide-react/dist/esm/icons/list-restart.mjs";
 import MoreVertical from "lucide-react/dist/esm/icons/more-vertical.mjs";
 import Pencil from "lucide-react/dist/esm/icons/pencil.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
+import Radio from "lucide-react/dist/esm/icons/radio.mjs";
 import Search from "lucide-react/dist/esm/icons/search.mjs";
 import Settings2 from "lucide-react/dist/esm/icons/settings-2.mjs";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.mjs";
@@ -62,6 +65,7 @@ import type {
   EnterAction,
   MarkdownOutputPayload,
   RunActionRequest,
+  SavedHistoryView,
   SetHistoryItemsMarkedRequest,
   SetHistoryQueryMarkedRequest,
   SetItemTagsRequest,
@@ -75,7 +79,17 @@ import type {
   WhichKeyState,
 } from "./shared/contracts";
 import { setupAutomaticUpdates, type AutoUpdateStatus } from "./autoUpdate";
-import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "./shared/settings";
+import {
+  replaceActiveSearchToken,
+  searchSuggestions,
+  usesStructuredSearchSyntax,
+} from "./shared/search";
+import {
+  DEFAULT_SETTINGS,
+  normalizeSettings,
+  type AppSettings,
+  type SearchTriggerMode,
+} from "./shared/settings";
 import {
   UiBadge,
   UiButton,
@@ -232,6 +246,23 @@ type HistorySearchRequest = HistoryPageRequest & {
   aiContext?: AiScriptContext | null;
 };
 
+type SearchQueryChip = {
+  label: string;
+  queryWithoutClause: string;
+};
+
+type SearchQueryDiagnostic = {
+  severity: "warning" | "error";
+  code: string;
+  message: string;
+};
+
+type SearchQueryExplanation = {
+  version: number;
+  chips: SearchQueryChip[];
+  diagnostics: SearchQueryDiagnostic[];
+};
+
 type HistoryPage = {
   items: HistoryItem[];
   nextCursor: HistoryPageCursor | null;
@@ -239,6 +270,7 @@ type HistoryPage = {
   filteredCount?: number;
   interpretedQuery?: string | null;
   explanation?: string | null;
+  queryExplanation?: SearchQueryExplanation | null;
   warnings?: string[];
 };
 
@@ -246,6 +278,8 @@ type SearchInterpretation = {
   mode: "ai" | "structured";
   query: string;
   explanation: string | null;
+  chips: SearchQueryChip[];
+  diagnostics: SearchQueryDiagnostic[];
   warnings: string[];
 } | null;
 
@@ -326,6 +360,22 @@ type ActionPickerEntry = {
   contextLabel: string;
 };
 
+type CommandPaletteEntry =
+  | {
+      id: string;
+      kind: "navigation";
+      group: "History" | "Saved views" | "Tags";
+      title: string;
+      description: string;
+      query: string;
+    }
+  | {
+      id: string;
+      kind: "action";
+      group: "Actions";
+      action: ActionDefinition;
+    };
+
 const outcomeLabel: Record<CaptureEvent["outcome"], string> = {
   captured_text: "Captured",
   captured_image: "Image",
@@ -355,9 +405,10 @@ const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
 const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
 const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
-const QUICK_ACTIONS_OPEN_EVENT = "copicu://quick-actions/open";
+const COMMAND_PALETTE_OPEN_EVENT = "copicu://command-palette/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
+const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
 const NOTIFICATION_ROW_HEIGHT = 78;
@@ -499,6 +550,18 @@ function historySearchInput(
   };
 }
 
+function nextSearchTriggerMode(mode: SearchTriggerMode): SearchTriggerMode {
+  return mode === "realtime" ? "enter" : "realtime";
+}
+
+function searchTriggerModeName(mode: SearchTriggerMode) {
+  return mode === "realtime" ? "Realtime" : "Enter";
+}
+
+function setPickerSearchTriggerMode(mode: SearchTriggerMode) {
+  return invoke<AppSettings>("set_picker_search_trigger_mode", { mode });
+}
+
 function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
   return invoke("set_history_items_marked", { request });
 }
@@ -542,6 +605,10 @@ function listActions() {
 
 function listTags() {
   return invoke<TagSummary[]>("list_tags");
+}
+
+function listSavedHistoryViews() {
+  return invoke<SavedHistoryView[]>("list_saved_history_views");
 }
 
 function createTag(request: CreateTagRequest) {
@@ -829,6 +896,7 @@ function App() {
   const [searchInterpretation, setSearchInterpretation] = useState<SearchInterpretation>(null);
   const [aiComposerMode, setAiComposerMode] = useState(false);
   const [historyPending, setHistoryPending] = useState(false);
+  const [foregroundSearchInFlight, setForegroundSearchInFlight] = useState(false);
   const [aiPlanning, setAiPlanning] = useState(false);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyNextCursor, setHistoryNextCursor] = useState<HistoryPageCursor | null>(null);
@@ -837,6 +905,11 @@ function App() {
   const [markedTotalCount, setMarkedTotalCount] = useState<number | null>(null);
   const [newClipsAvailable, setNewClipsAvailable] = useState(false);
   const [query, setQuery] = useState("");
+  const [knownTagSlugs, setKnownTagSlugs] = useState<string[]>([]);
+  const [paletteTags, setPaletteTags] = useState<TagSummary[]>([]);
+  const [savedHistoryViews, setSavedHistoryViews] = useState<SavedHistoryView[]>([]);
+  const [activeSearchSuggestion, setActiveSearchSuggestion] = useState(0);
+  const [dismissedAutocompleteQuery, setDismissedAutocompleteQuery] = useState<string | null>(null);
   const [pickerPinned, setPickerPinned] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -853,6 +926,7 @@ function App() {
   const [commandPalette, setCommandPalette] = useState<CommandPaletteState | null>(null);
   const [actionPicker, setActionPicker] = useState<ActionPickerState | null>(null);
   const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const [searchTriggerUpdating, setSearchTriggerUpdating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -866,6 +940,13 @@ function App() {
   const historyRequestSeqRef = useRef(0);
   const historyLoadMoreSeqRef = useRef(0);
   const queryRef = useRef(query);
+  const queryInteractionSeqRef = useRef(0);
+  const historyInputQueryRef = useRef(historyInputQuery);
+  const pickerSearchSettingsRef = useRef(settings.picker);
+  const searchDebounceTimerRef = useRef<number | null>(null);
+  const skipNextRealtimeSearchRef = useRef(false);
+  const foregroundSearchInFlightRef = useRef(false);
+  const deferredAppliedRefreshRef = useRef(false);
   const selectedIdsRef = useRef<Set<number>>(new Set());
   const selectedItemIdRef = useRef<number | null>(selectedItemId);
   const selectionAnchorItemIdRef = useRef<number | null>(null);
@@ -904,6 +985,20 @@ function App() {
         : "unchecked";
   const hasNextHistoryPage = historyNextCursor !== null;
   const searchTriggerMode = settings.picker.searchTriggerMode;
+  const structuredSearchHold =
+    searchTriggerMode === "realtime" &&
+    settings.picker.deferStructuredSearchUntilEnter &&
+    query.trim() !== historyInputQuery &&
+    usesStructuredSearchSyntax(query);
+  const effectiveSearchTriggerMode: SearchTriggerMode = structuredSearchHold ? "enter" : searchTriggerMode;
+  const nextTriggerMode = nextSearchTriggerMode(searchTriggerMode);
+  const searchTriggerAriaLabel = `Search trigger: ${searchTriggerModeName(searchTriggerMode)}, switch to ${searchTriggerModeName(nextTriggerMode)}`;
+  const autocompleteSuggestions = useMemo(
+    () => (aiComposerMode ? [] : searchSuggestions(query, knownTagSlugs)),
+    [aiComposerMode, knownTagSlugs, query],
+  );
+  const autocompleteOpen =
+    autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
   const virtualRowCount = hasNextHistoryPage ? history.length + 1 : history.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
@@ -945,7 +1040,21 @@ function App() {
 
   useEffect(() => {
     queryRef.current = query;
+    queryInteractionSeqRef.current += 1;
+    setActiveSearchSuggestion(0);
   }, [query]);
+
+  useEffect(() => {
+    setActiveSearchSuggestion((current) => Math.min(current, Math.max(autocompleteSuggestions.length - 1, 0)));
+  }, [autocompleteSuggestions.length]);
+
+  useEffect(() => {
+    historyInputQueryRef.current = historyInputQuery;
+  }, [historyInputQuery]);
+
+  useEffect(() => {
+    pickerSearchSettingsRef.current = settings.picker;
+  }, [settings.picker]);
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
@@ -1023,6 +1132,7 @@ function App() {
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
     queryRef.current = "";
+    historyInputQueryRef.current = "";
     setQuery("");
     setHistoryInputQuery("");
     setHistoryQuery("");
@@ -1046,6 +1156,13 @@ function App() {
     closeTransientEditors();
     setCommandPalette({ query: "", activeIndex: 0 });
     setActionPicker(null);
+    void Promise.all([listTags(), listSavedHistoryViews()])
+      .then(([tags, views]) => {
+        setPaletteTags(tags);
+        setKnownTagSlugs(tags.map((tag) => tag.slug));
+        setSavedHistoryViews(views);
+      })
+      .catch(() => undefined);
   }, [closeTransientEditors]);
 
   const openActionPicker = useCallback(() => {
@@ -1091,6 +1208,44 @@ function App() {
         console.warn("picker keep-open setting update failed", error);
       });
   }, [settings]);
+
+  const cycleSearchTriggerMode = useCallback(() => {
+    if (searchTriggerUpdating) {
+      return;
+    }
+    const previousMode = settings.picker.searchTriggerMode;
+    const mode = nextSearchTriggerMode(previousMode);
+    setSearchTriggerUpdating(true);
+    setSettings((current) => ({
+      ...current,
+      picker: {
+        ...current.picker,
+        searchTriggerMode: mode,
+      },
+    }));
+    void setPickerSearchTriggerMode(mode)
+      .then((nextSettings) => {
+        const persistedMode = normalizeSettings(nextSettings).picker.searchTriggerMode;
+        setSettings((current) => ({
+          ...current,
+          picker: {
+            ...current.picker,
+            searchTriggerMode: persistedMode,
+          },
+        }));
+      })
+      .catch((error) => {
+        setSettings((current) => ({
+          ...current,
+          picker: {
+            ...current.picker,
+            searchTriggerMode: previousMode,
+          },
+        }));
+        setSettingsError(String(error));
+      })
+      .finally(() => setSearchTriggerUpdating(false));
+  }, [searchTriggerUpdating, settings]);
 
   const clearWhichKeyRevealTimer = useCallback(() => {
     if (whichKeyRevealTimerRef.current !== null) {
@@ -1218,9 +1373,9 @@ function App() {
 
     let active = true;
     let unlisten: (() => void) | null = null;
-    void listen(QUICK_ACTIONS_OPEN_EVENT, () => {
+    void listen(COMMAND_PALETTE_OPEN_EVENT, () => {
       if (active) {
-        openActionPicker();
+        openCommandPalette();
       }
     }).then((nextUnlisten) => {
       unlisten = nextUnlisten;
@@ -1230,7 +1385,7 @@ function App() {
       active = false;
       unlisten?.();
     };
-  }, [openActionPicker]);
+  }, [openCommandPalette]);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -1285,6 +1440,13 @@ function App() {
         void clearCompoundHotkeyPending();
         return;
       }
+      if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(event.key)) {
+        compoundHotkeyPendingRef.current = false;
+        compoundHotkeyArmedAtRef.current = 0;
+        dismissWhichKey();
+        void clearCompoundHotkeyPending();
+        return;
+      }
       if (event.ctrlKey || event.altKey || event.metaKey || Date.now() < compoundHotkeyArmedAtRef.current) {
         return;
       }
@@ -1332,15 +1494,44 @@ function App() {
     () => new Map(actionDefinitions.map((action) => [action.id, action])),
     [actionDefinitions],
   );
-  const commandPaletteActions = useMemo(
-    () => [
+  const commandPaletteEntries = useMemo((): CommandPaletteEntry[] => {
+    const navigation: CommandPaletteEntry[] = [
+      { id: "history.all", kind: "navigation", group: "History", title: "All history", description: "Browse every clipboard item.", query: "" },
+      { id: "history.text", kind: "navigation", group: "History", title: "Text", description: "Browse text clips.", query: "kind:text" },
+      { id: "history.images", kind: "navigation", group: "History", title: "Images", description: "Browse image clips.", query: "kind:image" },
+      { id: "history.marked", kind: "navigation", group: "History", title: "Marked", description: "Browse marked clips.", query: "is:marked" },
+      ...savedHistoryViews.map((view): CommandPaletteEntry => ({
+        id: `saved-view.${view.id}`,
+        kind: "navigation",
+        group: "Saved views",
+        title: view.title,
+        description: view.query || "All history",
+        query: view.query,
+      })),
+      ...paletteTags
+        .filter((tag) => tag.pinned)
+        .map((tag): CommandPaletteEntry => ({
+          id: `tag.${tag.id}`,
+          kind: "navigation",
+          group: "Tags",
+          title: tag.label,
+          description: `Filter history by #${tag.slug}.`,
+          query: `tag:${tag.slug}`,
+        })),
+    ];
+    const actions = [
       NEW_ITEM_ACTION,
       ...actionDefinitions.filter((action) =>
         actionRunnableForTrigger(action, "commandPalette", itemsForActionContext(action, effectiveSelection, selectedItem)),
       ),
-    ],
-    [actionDefinitions, effectiveSelection, selectedItem],
-  );
+    ].map((action): CommandPaletteEntry => ({
+      id: `action.${action.id}`,
+      kind: "action",
+      group: "Actions",
+      action,
+    }));
+    return [...navigation, ...actions];
+  }, [actionDefinitions, effectiveSelection, paletteTags, savedHistoryViews, selectedItem]);
   const actionPickerEntries = useMemo(
     () => actionDefinitions.flatMap((action): ActionPickerEntry[] => {
       if (isSupersededMetadataEditAction(action)) {
@@ -1365,12 +1556,12 @@ function App() {
       currentItemId: items[0]?.id ?? selectedItem?.id ?? null,
       selectedItemIds: selectedContextItems.map((item) => item.id),
       view: {
-        query,
+        query: historyQuery,
         visibleItemIds: history.map((item) => item.id),
         currentIndex: selectedIndex >= 0 ? selectedIndex : null,
       },
     }),
-    [history, query, selectedIndex, selectedItem],
+    [history, historyQuery, selectedIndex, selectedItem],
   );
 
   const applyActionEffects = useCallback(
@@ -1379,6 +1570,7 @@ function App() {
 
       for (const effect of effects ?? []) {
         if (effect.type === "picker.filter") {
+          queryRef.current = effect.query;
           setQuery(effect.query);
           setSelectedIds(new Set());
           setSelectedItemId(null);
@@ -1452,12 +1644,14 @@ function App() {
       showPending = true,
       queryOverride = null,
       allowAi = true,
+      source = "foreground",
     }: {
       resetScroll?: boolean;
       respectManualScroll?: boolean;
       showPending?: boolean;
       queryOverride?: string | null;
       allowAi?: boolean;
+      source?: "foreground" | "background";
     } = {}) => {
       const trimmed = (queryOverride ?? query).trim();
       const originalSearchInput = historySearchInput(trimmed, aiComposerMode);
@@ -1469,7 +1663,18 @@ function App() {
           return;
         }
       }
+      if (source === "background" && foregroundSearchInFlightRef.current) {
+        deferredAppliedRefreshRef.current = true;
+        return;
+      }
+      const foreground = source === "foreground";
+      if (foreground) {
+        foregroundSearchInFlightRef.current = true;
+        setForegroundSearchInFlight(true);
+      }
       const requestSeq = ++historyRequestSeqRef.current;
+      historyLoadMoreSeqRef.current += 1;
+      setHistoryLoadingMore(false);
       const selectionInteractionSeq = selectionInteractionSeqRef.current;
       const planningAi = allowAi && searchInput.mode === "ai";
       if (showPending) {
@@ -1488,7 +1693,7 @@ function App() {
           mode: searchInput.mode,
           includeContent: false,
           includeCounts: true,
-          explain: searchInput.mode === "ai",
+          explain: true,
           aiContext: searchInput.mode === "ai"
             ? {
                 currentQuery: historyQuery,
@@ -1502,8 +1707,10 @@ function App() {
       } catch (error) {
         if (requestSeq === historyRequestSeqRef.current) {
           setHistoryPending(false);
-          if (planningAi) {
-            setAiPlanning(false);
+          setAiPlanning(false);
+          if (foreground) {
+            foregroundSearchInFlightRef.current = false;
+            setForegroundSearchInFlight(false);
           }
           setHistoryError(String(error));
           setSearchInterpretation(
@@ -1514,6 +1721,8 @@ function App() {
                   explanation: searchInput.mode === "ai"
                     ? "AI search failed before Copicu could run local structured search."
                     : null,
+                  chips: [],
+                  diagnostics: [],
                   warnings: [String(error)],
                 }
               : null,
@@ -1524,6 +1733,10 @@ function App() {
 
       if (requestSeq !== historyRequestSeqRef.current) {
         return;
+      }
+      if (foreground) {
+        foregroundSearchInFlightRef.current = false;
+        setForegroundSearchInFlight(false);
       }
 
       const scrollTop = historyScrollRef.current?.scrollTop ?? 0;
@@ -1545,9 +1758,7 @@ function App() {
         }
         void refreshMarkedCount().catch(() => undefined);
         setHistoryPending(false);
-        if (planningAi) {
-          setAiPlanning(false);
-        }
+        setAiPlanning(false);
         setHistoryError(null);
         return;
       }
@@ -1560,24 +1771,32 @@ function App() {
       if (typeof page.filteredCount === "number") {
         setHistoryFilteredCount(page.filteredCount);
       }
+      historyInputQueryRef.current = trimmed;
       setHistoryInputQuery(trimmed);
       setHistoryQuery(
         originalSearchInput.mode === "ai" ? (page.interpretedQuery ?? searchInput.query) : searchInput.query,
       );
+      const queryExplanation = page.queryExplanation;
+      const showInterpretation = trimmed && (
+        searchInput.mode === "ai" ||
+        (queryExplanation?.chips.length ?? 0) > 0 ||
+        (queryExplanation?.diagnostics.length ?? 0) > 0 ||
+        (page.warnings?.length ?? 0) > 0
+      );
       setSearchInterpretation(
-        trimmed && (page.interpretedQuery || page.explanation || (page.warnings?.length ?? 0) > 0)
+        showInterpretation
           ? {
               mode: searchInput.mode === "ai" ? "ai" : "structured",
               query: page.interpretedQuery ?? searchInput.query,
               explanation: page.explanation ?? null,
+              chips: page.queryExplanation?.chips ?? [],
+              diagnostics: page.queryExplanation?.diagnostics ?? [],
               warnings: page.warnings ?? [],
             }
           : null,
       );
       setHistoryPending(false);
-      if (planningAi) {
-        setAiPlanning(false);
-      }
+      setAiPlanning(false);
       setNewClipsAvailable(false);
       setHistoryError(null);
       const canResetSelection = resetScroll && selectionInteractionSeq === selectionInteractionSeqRef.current;
@@ -1612,6 +1831,60 @@ function App() {
     [aiComposerMode, historyInputQuery, historyQuery, query, refreshMarkedCount],
   );
 
+  const openPaletteNavigation = useCallback((nextQuery: string) => {
+    setCommandPalette(null);
+    setAiComposerMode(false);
+    queryRef.current = nextQuery;
+    setQuery(nextQuery);
+    setSearchInterpretation(null);
+    setSelectedIds(new Set());
+    setSelectedItemId(null);
+    selectionAnchorItemIdRef.current = null;
+    void refreshHistory({
+      resetScroll: true,
+      queryOverride: nextQuery,
+      allowAi: false,
+    }).then(focusSearch);
+  }, [focusSearch, refreshHistory]);
+
+  const refreshAppliedHistory = useCallback(
+    async (options: {
+      resetScroll?: boolean;
+      respectManualScroll?: boolean;
+      showPending?: boolean;
+    } = {}) => {
+      const draft = queryRef.current.trim();
+      const applied = historyInputQueryRef.current;
+      const pickerSearch = pickerSearchSettingsRef.current;
+      const structuredHold =
+        pickerSearch.deferStructuredSearchUntilEnter && usesStructuredSearchSyntax(draft);
+      if (
+        pickerSearch.searchTriggerMode === "realtime" &&
+        draft !== applied &&
+        !structuredHold
+      ) {
+        deferredAppliedRefreshRef.current = true;
+        return;
+      }
+      deferredAppliedRefreshRef.current = false;
+      await refreshHistory({
+        ...options,
+        queryOverride: applied,
+        allowAi: false,
+        source: "background",
+      });
+    },
+    [refreshHistory],
+  );
+
+  useEffect(() => {
+    if (foregroundSearchInFlight || historyPending || !deferredAppliedRefreshRef.current) {
+      return;
+    }
+    deferredAppliedRefreshRef.current = false;
+    void refreshAppliedHistory({ showPending: false });
+  }, [foregroundSearchInFlight, historyInputQuery, historyPending, refreshAppliedHistory]);
+
   useEffect(() => {
     if (!isTauriRuntime()) {
       return undefined;
@@ -1626,6 +1899,7 @@ function App() {
       }
       const nextQuery = event.payload.query.trim();
       setAiComposerMode(false);
+      queryRef.current = nextQuery;
       setQuery(nextQuery);
       setSearchInterpretation(null);
       setSelectedIds(new Set());
@@ -1640,6 +1914,7 @@ function App() {
       unlisten = nextUnlisten;
     });
 
+
     return () => {
       active = false;
       unlisten?.();
@@ -1651,15 +1926,15 @@ function App() {
       return;
     }
 
-    const trimmed = query.trim();
-    const searchInput = historySearchInput(trimmed, aiComposerMode);
+    const appliedQuery = historyQuery;
     const cursor = historyNextCursor;
+    const firstPageSeq = historyRequestSeqRef.current;
     const loadSeq = ++historyLoadMoreSeqRef.current;
     setHistoryLoadingMore(true);
 
     try {
       const page = await historySearch({
-        query: searchInput.mode === "ai" ? historyQuery : searchInput.query,
+        query: appliedQuery,
         cursor,
         limit: HISTORY_PAGE_LIMIT,
         mode: "structured",
@@ -1667,7 +1942,10 @@ function App() {
         includeCounts: false,
       });
 
-      if (loadSeq !== historyLoadMoreSeqRef.current || trimmed !== queryRef.current.trim()) {
+      if (
+        loadSeq !== historyLoadMoreSeqRef.current ||
+        firstPageSeq !== historyRequestSeqRef.current
+      ) {
         return;
       }
 
@@ -1685,10 +1963,11 @@ function App() {
       if (typeof page.filteredCount === "number") {
         setHistoryFilteredCount(page.filteredCount);
       }
-      setHistoryQuery(searchInput.mode === "ai" ? historyQuery : trimmed);
+      setHistoryQuery(appliedQuery);
       setHistoryError(null);
     } catch (error) {
       if (loadSeq === historyLoadMoreSeqRef.current) {
+        setHistoryNextCursor(null);
         setHistoryError(String(error));
       }
     } finally {
@@ -1697,12 +1976,11 @@ function App() {
         setHistoryPending(false);
       }
     }
-  }, [aiComposerMode, historyLoadingMore, historyNextCursor, historyQuery, query]);
+  }, [historyLoadingMore, historyNextCursor, historyQuery]);
 
   const historyMatchesQuery = historyInputQuery === query.trim() && !historyPending;
   const aiDraftActive = historySearchInput(query.trim(), aiComposerMode).mode === "ai" && !historyMatchesQuery;
-  const visibleSearchInterpretation =
-    query.trim().length > 0 && searchInterpretation ? searchInterpretation : null;
+  const visibleSearchInterpretation = historyMatchesQuery ? searchInterpretation : null;
 
   const setSingleSelection = useCallback((index: number) => {
     selectionInteractionSeqRef.current += 1;
@@ -1844,7 +2122,11 @@ function App() {
             });
           }
         }
-        await refreshHistory({ showPending: false, queryOverride: effectQuery });
+        if (effectQuery !== null) {
+          await refreshHistory({ showPending: false, queryOverride: effectQuery });
+        } else {
+          await refreshAppliedHistory({ showPending: false });
+        }
         focusSearch();
       } catch (error) {
         const message = String(error);
@@ -1858,7 +2140,14 @@ function App() {
         focusSearch();
       }
     },
-    [actionContext, applyActionEffects, focusSearch, pushToast, refreshHistory],
+    [
+      actionContext,
+      applyActionEffects,
+      focusSearch,
+      pushToast,
+      refreshAppliedHistory,
+      refreshHistory,
+    ],
   );
 
   const runLocalShortcutAction = useCallback(
@@ -1966,21 +2255,21 @@ function App() {
           await invoke("delete_history_item", { id: item.id });
         }
         setSelectedIds(new Set());
-        await refreshHistory();
+        await refreshAppliedHistory();
         focusSearch();
       } catch (error) {
         setActionError(String(error));
         focusSearch();
       }
     },
-    [focusSearch, refreshHistory],
+    [focusSearch, refreshAppliedHistory],
   );
 
   const refreshAfterMarkedChange = useCallback(async () => {
-    await refreshHistory({ respectManualScroll: true, showPending: false });
+    await refreshAppliedHistory({ showPending: false });
     await refreshMarkedCount();
     focusSearch();
-  }, [focusSearch, refreshHistory, refreshMarkedCount]);
+  }, [focusSearch, refreshAppliedHistory, refreshMarkedCount]);
 
   const setItemsMarked = useCallback(
     async (items: HistoryItem[], marked: boolean) => {
@@ -2026,13 +2315,14 @@ function App() {
       try {
         setActionError(null);
         setOpenMarkMenu(null);
-        const trimmed = query.trim();
-        const markQuery =
-          aiComposerMode && historyInputQuery === trimmed && historyQuery.trim()
-            ? historyQuery.trim()
-            : trimmed;
-        if (aiComposerMode && markQuery === trimmed) {
-          setActionError("Mark all results needs a structured filter outside AI mode.");
+        if (!historyMatchesQuery) {
+          setActionError("Apply the current search before changing all results.");
+          focusSearch();
+          return;
+        }
+        const markQuery = historyQuery.trim();
+        if (aiComposerMode && !markQuery) {
+          setActionError("Mark all results needs an applied structured filter outside AI mode.");
           focusSearch();
           return;
         }
@@ -2043,7 +2333,7 @@ function App() {
         focusSearch();
       }
     },
-    [aiComposerMode, focusSearch, historyInputQuery, historyQuery, query, refreshAfterMarkedChange],
+    [aiComposerMode, focusSearch, historyMatchesQuery, historyQuery, refreshAfterMarkedChange],
   );
 
   const showMarkMenu = useCallback((event: React.MouseEvent) => {
@@ -2064,6 +2354,7 @@ function App() {
       mode === "all"
         ? baseQuery
         : appendMarkedQueryTerm(baseQuery, mode === "marked" ? "is:marked" : "-is:marked");
+    queryRef.current = nextQuery;
     setQuery(nextQuery);
     void refreshHistory({ resetScroll: true, queryOverride: nextQuery, allowAi: false }).catch((error) => {
       setHistoryPending(false);
@@ -2246,13 +2537,13 @@ function App() {
       setEditError(null);
       await invoke("update_history_item", { request });
       setEditDraft(null);
-      await refreshHistory();
+      await refreshAppliedHistory();
       focusSearch();
     } catch (error) {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [editDraft, focusSearch, refreshHistory]);
+  }, [editDraft, focusSearch, refreshAppliedHistory]);
 
   const saveCreateItem = useCallback(async () => {
     if (!createItemDraft || !createItemDraft.text.trim()) {
@@ -2273,6 +2564,7 @@ function App() {
       setCreateItemDraft(null);
       setAiComposerMode(false);
       setSearchInterpretation(null);
+      queryRef.current = "";
       setQuery("");
       setSelectedIds(new Set());
       await refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
@@ -2323,13 +2615,13 @@ function App() {
         await invoke("update_history_item", { request });
       }
       setBatchMetadataDraft(null);
-      await refreshHistory();
+      await refreshAppliedHistory();
       focusSearch();
     } catch (error) {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, refreshHistory]);
+  }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, refreshAppliedHistory]);
 
   useEffect(() => {
     let active = true;
@@ -2355,6 +2647,39 @@ function App() {
       active = false;
     };
   }, [pushToast]);
+
+  useEffect(() => {
+    let active = true;
+
+    listTags()
+      .then((tags) => {
+        if (active) {
+          setKnownTagSlugs(tags.map((tag) => tag.slug));
+          setPaletteTags(tags);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    listSavedHistoryViews()
+      .then((views) => {
+        if (active) {
+          setSavedHistoryViews(views);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2495,10 +2820,20 @@ function App() {
 
   useEffect(() => {
     let active = true;
+    if (skipNextRealtimeSearchRef.current) {
+      skipNextRealtimeSearchRef.current = false;
+      return () => {
+        active = false;
+      };
+    }
     const trimmedQuery = query.trim();
     const queryChanged = trimmedQuery !== historyInputQuery;
     const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
-    if (searchInput.mode === "ai" || searchTriggerMode !== "realtime") {
+    if (searchInput.mode === "ai" || effectiveSearchTriggerMode !== "realtime") {
+      if (searchDebounceTimerRef.current !== null) {
+        window.clearTimeout(searchDebounceTimerRef.current);
+        searchDebounceTimerRef.current = null;
+      }
       setHistoryPending(false);
       setHistoryError(null);
       if (historyTotalCount === null && historyInputQuery === "" && trimmedQuery === "") {
@@ -2513,6 +2848,10 @@ function App() {
       };
     }
     if (!queryChanged && historyTotalCount !== null) {
+      if (searchDebounceTimerRef.current !== null) {
+        window.clearTimeout(searchDebounceTimerRef.current);
+        searchDebounceTimerRef.current = null;
+      }
       setHistoryPending(false);
       setHistoryError(null);
       return () => {
@@ -2520,7 +2859,11 @@ function App() {
       };
     }
     setHistoryPending(true);
+    if (searchDebounceTimerRef.current !== null) {
+      window.clearTimeout(searchDebounceTimerRef.current);
+    }
     const timeoutId = window.setTimeout(() => {
+      searchDebounceTimerRef.current = null;
       refreshHistory({ resetScroll: queryChanged }).catch((error) => {
         if (active) {
           setHistoryPending(false);
@@ -2528,12 +2871,66 @@ function App() {
         }
       });
     }, 120);
+    searchDebounceTimerRef.current = timeoutId;
 
     return () => {
       active = false;
       window.clearTimeout(timeoutId);
+      if (searchDebounceTimerRef.current === timeoutId) {
+        searchDebounceTimerRef.current = null;
+      }
     };
-  }, [aiComposerMode, historyInputQuery, historyTotalCount, query, refreshHistory, searchTriggerMode]);
+  }, [aiComposerMode, effectiveSearchTriggerMode, historyInputQuery, historyTotalCount, query, refreshHistory]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen<{ itemId: number }>(PICKER_ACTIVE_ITEM_EVENT, (event) => {
+      if (!active || document.visibilityState === "hidden") {
+        return;
+      }
+
+      const itemId = event.payload.itemId;
+      const activationSelectionSeq = ++selectionInteractionSeqRef.current;
+      void refreshAppliedHistory({
+        respectManualScroll: false,
+        showPending: false,
+      }).then(() => {
+        if (!active || activationSelectionSeq !== selectionInteractionSeqRef.current) {
+          return;
+        }
+        const targetIndex = historyRef.current.findIndex((item) => item.id === itemId);
+        if (targetIndex < 0) {
+          return;
+        }
+        const nextSelection = new Set([itemId]);
+        selectedIdsRef.current = nextSelection;
+        selectedItemIdRef.current = itemId;
+        selectionAnchorItemIdRef.current = itemId;
+        setSelectedIds(nextSelection);
+        setSelectedItemId(itemId);
+        if (targetIndex === 0) {
+          historyScrollRef.current?.scrollTo({ top: 0 });
+        }
+      }).catch((error) => {
+        if (active) {
+          setHistoryPending(false);
+          setHistoryError(String(error));
+        }
+      });
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [refreshAppliedHistory]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -2550,7 +2947,10 @@ function App() {
         pickerWasHiddenRef.current = true;
         return;
       }
-      void refreshHistory({ respectManualScroll: true, showPending: false, allowAi: false }).catch((error) => {
+      void refreshAppliedHistory({
+        respectManualScroll: true,
+        showPending: false,
+      }).catch((error) => {
         if (active) {
           setHistoryPending(false);
           setHistoryError(String(error));
@@ -2570,6 +2970,8 @@ function App() {
       }
 
       const focusSelectionSeq = selectionInteractionSeqRef.current;
+      const focusQueryInteractionSeq = queryInteractionSeqRef.current;
+      const focusRequestSeq = historyRequestSeqRef.current;
       void (async () => {
         let resetFromHost = false;
         try {
@@ -2585,18 +2987,27 @@ function App() {
           pickerWasHiddenRef.current = true;
         }
         const pendingHiddenReset = pickerWasHiddenRef.current;
-        const resetAfterHidden = pendingHiddenReset && focusSelectionSeq === selectionInteractionSeqRef.current;
+        const resetAfterHidden =
+          pendingHiddenReset &&
+          focusSelectionSeq === selectionInteractionSeqRef.current &&
+          focusQueryInteractionSeq === queryInteractionSeqRef.current &&
+          focusRequestSeq === historyRequestSeqRef.current;
         pickerWasHiddenRef.current = false;
         if (resetAfterHidden) {
           resetPickerSession();
         }
-        void refreshHistory({
-          resetScroll: resetAfterHidden,
-          respectManualScroll: !resetAfterHidden,
-          showPending: false,
-          queryOverride: resetAfterHidden ? "" : null,
-          allowAi: false,
-        }).catch((error) => {
+        const refresh = resetAfterHidden
+          ? refreshHistory({
+              resetScroll: true,
+              showPending: false,
+              queryOverride: "",
+              allowAi: false,
+            })
+          : refreshAppliedHistory({
+              respectManualScroll: true,
+              showPending: false,
+            });
+        void refresh.catch((error) => {
           if (active) {
             setHistoryPending(false);
             setHistoryError(String(error));
@@ -2613,7 +3024,7 @@ function App() {
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [refreshHistory, resetPickerSession]);
+  }, [refreshAppliedHistory, refreshHistory, resetPickerSession]);
 
   useEffect(() => {
     const [lastVirtualRow] = [...virtualRows].reverse();
@@ -2635,7 +3046,7 @@ function App() {
     virtualRows,
   ]);
 
-  const isFilteringHistory = searchTriggerMode === "realtime" && !historyMatchesQuery && !aiDraftActive;
+  const isFilteringHistory = effectiveSearchTriggerMode === "realtime" && !historyMatchesQuery && !aiDraftActive;
   const searchStatus = useMemo(() => {
     if (historyError) {
       return "Storage unavailable";
@@ -2647,11 +3058,11 @@ function App() {
       return "AI draft";
     }
     if (!historyMatchesQuery) {
-      if (searchTriggerMode === "enter") {
-        return "Press Enter";
+      if (structuredSearchHold) {
+        return "Structured query, press Enter";
       }
-      if (searchTriggerMode === "manual") {
-        return "Click Search";
+      if (effectiveSearchTriggerMode === "enter") {
+        return "Press Enter";
       }
       return "Filtering";
     }
@@ -2674,7 +3085,8 @@ function App() {
     historyTotalCount,
     newClipsAvailable,
     query,
-    searchTriggerMode,
+    effectiveSearchTriggerMode,
+    structuredSearchHold,
   ]);
   const markMenuCountLabel = query.trim()
     ? formatCount(historyFilteredCount ?? history.length)
@@ -2685,21 +3097,79 @@ function App() {
   const checkedActionItems = markedActionItems ?? visibleMarkedItems;
   const checkedActionCount = markedTotalCount ?? checkedActionItems.length;
   const runSearchNow = useCallback(() => {
+    if (searchDebounceTimerRef.current !== null) {
+      window.clearTimeout(searchDebounceTimerRef.current);
+      searchDebounceTimerRef.current = null;
+    }
     void refreshHistory({ resetScroll: true, allowAi: true });
   }, [refreshHistory]);
+  const removeSearchChip = useCallback((chip: SearchQueryChip) => {
+    skipNextRealtimeSearchRef.current = true;
+    queryRef.current = chip.queryWithoutClause;
+    setQuery(chip.queryWithoutClause);
+    setSearchInterpretation(null);
+    setSelectedItemId(null);
+    setSelectedIds(new Set());
+    selectionAnchorItemIdRef.current = null;
+    void refreshHistory({
+      resetScroll: true,
+      queryOverride: chip.queryWithoutClause,
+      allowAi: false,
+    });
+  }, [refreshHistory]);
+  const acceptSearchSuggestion = useCallback((index = activeSearchSuggestion) => {
+    const suggestion = autocompleteSuggestions[index];
+    if (!suggestion) {
+      return;
+    }
+    const nextQuery = replaceActiveSearchToken(query, suggestion.replacement);
+    const nextStructuredHold =
+      searchTriggerMode === "realtime" &&
+      settings.picker.deferStructuredSearchUntilEnter &&
+      nextQuery.trim() !== historyInputQuery &&
+      usesStructuredSearchSyntax(nextQuery);
+    queryRef.current = nextQuery;
+    setDismissedAutocompleteQuery(nextQuery);
+    setQuery(nextQuery);
+    setHistoryPending(searchTriggerMode === "realtime" && !nextStructuredHold);
+    setAiPlanning(false);
+    setActionError(null);
+    setSearchInterpretation(null);
+    setSelectedItemId(null);
+    setSelectedIds(new Set());
+    selectionAnchorItemIdRef.current = null;
+  }, [
+    activeSearchSuggestion,
+    autocompleteSuggestions,
+    historyInputQuery,
+    query,
+    searchTriggerMode,
+    settings.picker.deferStructuredSearchUntilEnter,
+  ]);
   const searchControlBaseProps = {
     className: "search-input",
     variant: "unstyled" as const,
     "aria-label": "Search clipboard history",
-    "aria-controls": "clipboard-feed",
-    "aria-activedescendant": selectedItem ? `history-item-${selectedItem.id}` : undefined,
+    "aria-autocomplete": aiComposerMode ? "none" as const : "list" as const,
+    "aria-controls": autocompleteOpen ? "search-autocomplete" : "clipboard-feed",
+    "aria-expanded": autocompleteOpen,
+    "aria-activedescendant": autocompleteOpen
+      ? `search-suggestion-${activeSearchSuggestion}`
+      : selectedItem ? `history-item-${selectedItem.id}` : undefined,
     value: query,
     placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — meta:work, #tag, ai:find invoices',
     title:
       'Search help: use plain text, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setQuery(event.currentTarget.value);
-      setHistoryPending(searchTriggerMode === "realtime");
+      const nextQuery = event.currentTarget.value;
+      const nextStructuredHold =
+        searchTriggerMode === "realtime" &&
+        settings.picker.deferStructuredSearchUntilEnter &&
+        nextQuery.trim() !== historyInputQuery &&
+        usesStructuredSearchSyntax(nextQuery);
+      queryRef.current = nextQuery;
+      setQuery(nextQuery);
+      setHistoryPending(searchTriggerMode === "realtime" && !nextStructuredHold);
       setAiPlanning(false);
       setActionError(null);
       setSearchInterpretation(null);
@@ -2752,13 +3222,29 @@ function App() {
       }
 
       switch (event.key) {
+        case "Tab":
+          if (autocompleteOpen) {
+            event.preventDefault();
+            acceptSearchSuggestion();
+          }
+          break;
         case "ArrowDown":
           event.preventDefault();
-          moveSelection(1, event.shiftKey);
+          if (autocompleteOpen) {
+            setActiveSearchSuggestion((current) => (current + 1) % autocompleteSuggestions.length);
+          } else {
+            moveSelection(1, event.shiftKey);
+          }
           break;
         case "ArrowUp":
           event.preventDefault();
-          moveSelection(-1, event.shiftKey);
+          if (autocompleteOpen) {
+            setActiveSearchSuggestion((current) =>
+              (current - 1 + autocompleteSuggestions.length) % autocompleteSuggestions.length,
+            );
+          } else {
+            moveSelection(-1, event.shiftKey);
+          }
           break;
         case "PageDown":
           event.preventDefault();
@@ -2791,6 +3277,10 @@ function App() {
           break;
         case "Escape":
           event.preventDefault();
+          if (autocompleteOpen) {
+            setDismissedAutocompleteQuery(query);
+            break;
+          }
           setActionError(null);
           if (openMarkMenu !== null) {
             setOpenMarkMenu(null);
@@ -2806,10 +3296,11 @@ function App() {
           break;
         case "Enter":
           event.preventDefault();
+          setDismissedAutocompleteQuery(query);
           if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
             runSearchNow();
           } else if (!historyMatchesQuery) {
-            if (searchTriggerMode === "enter" || searchTriggerMode === "realtime") {
+            if (effectiveSearchTriggerMode === "enter" || effectiveSearchTriggerMode === "realtime") {
               runSearchNow();
             }
           } else if (!hasMultiSelection) {
@@ -2946,24 +3437,45 @@ function App() {
               </Menu.Dropdown>
             </Menu>
           </div>
-          {aiComposerMode ? (
-            <UiTextarea
-              {...searchTextareaProps}
-              ref={(node) => {
-                searchRef.current = node;
-              }}
-              minRows={3}
-              maxRows={6}
-              autosize
-            />
-          ) : (
-            <UiTextInput
-              {...searchTextInputProps}
-              ref={(node) => {
-                searchRef.current = node;
-              }}
-            />
-          )}
+          <div className="search-field">
+            {aiComposerMode ? (
+              <UiTextarea
+                {...searchTextareaProps}
+                ref={(node) => {
+                  searchRef.current = node;
+                }}
+                minRows={3}
+                maxRows={6}
+                autosize
+              />
+            ) : (
+              <UiTextInput
+                {...searchTextInputProps}
+                ref={(node) => {
+                  searchRef.current = node;
+                }}
+              />
+            )}
+            {autocompleteOpen ? (
+              <div id="search-autocomplete" className="search-autocomplete" role="listbox" aria-label="Search suggestions">
+                {autocompleteSuggestions.map((suggestion, index) => (
+                  <button
+                    key={`${suggestion.label}:${index}`}
+                    id={`search-suggestion-${index}`}
+                    type="button"
+                    className="search-autocomplete-option"
+                    role="option"
+                    aria-selected={index === activeSearchSuggestion}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveSearchSuggestion(index)}
+                    onClick={() => acceptSearchSuggestion(index)}
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <UiTooltip
             label={(
               <span className="tooltip-shortcut-label">
@@ -3009,6 +3521,32 @@ function App() {
                 <Sparkles size={15} strokeWidth={2.3} aria-hidden="true" />
               ) : (
                 <Search size={15} strokeWidth={2.3} aria-hidden="true" />
+              )}
+            </UiIconButton>
+          </UiTooltip>
+          <UiTooltip
+            label={structuredSearchHold
+              ? "Realtime is paused for this structured query. Press Enter to search."
+              : `${searchTriggerModeName(searchTriggerMode)} search. Click for ${searchTriggerModeName(nextTriggerMode)}.`}
+          >
+            <UiIconButton
+              type="button"
+              className="search-trigger-button"
+              variant="default"
+              aria-label={searchTriggerAriaLabel}
+              data-mode={searchTriggerMode}
+              disabled={searchTriggerUpdating}
+              data-structured-hold={structuredSearchHold ? "true" : undefined}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                cycleSearchTriggerMode();
+                window.setTimeout(() => searchRef.current?.focus(), 0);
+              }}
+            >
+              {searchTriggerMode === "realtime" ? (
+                <Radio size={15} strokeWidth={2.3} aria-hidden="true" />
+              ) : (
+                <CornerDownLeft size={15} strokeWidth={2.3} aria-hidden="true" />
               )}
             </UiIconButton>
           </UiTooltip>
@@ -3107,9 +3645,30 @@ function App() {
               {visibleSearchInterpretation.mode === "ai" ? "AI interpreted" : "Interpreted"}
             </span>
             <span className="search-interpretation-query">{visibleSearchInterpretation.query}</span>
+            {visibleSearchInterpretation.chips.map((chip) => (
+              <button
+                key={`${chip.label}:${chip.queryWithoutClause}`}
+                type="button"
+                className="search-interpretation-chip"
+                aria-label={`Remove filter ${chip.label}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => removeSearchChip(chip)}
+              >
+                <span>{chip.label}</span>
+                <X size={12} strokeWidth={2.5} aria-hidden="true" />
+              </button>
+            ))}
             {visibleSearchInterpretation.explanation ? (
               <span className="search-interpretation-detail">{visibleSearchInterpretation.explanation}</span>
             ) : null}
+            {visibleSearchInterpretation.diagnostics.map((diagnostic) => (
+              <span
+                key={`${diagnostic.code}:${diagnostic.message}`}
+                className={`search-interpretation-diagnostic is-${diagnostic.severity}`}
+              >
+                {diagnostic.message}
+              </span>
+            ))}
             {visibleSearchInterpretation.warnings.map((warning) => (
               <span key={warning} className="search-interpretation-warning">
                 {warning}
@@ -3203,6 +3762,8 @@ function App() {
                       item.is_marked ? " is-marked" : ""
                     }`}
                     type="button"
+                    aria-current={itemIsSelected ? "true" : undefined}
+                    aria-pressed={itemIsMultiSelected}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={(event) => {
                       if (event.shiftKey) {
@@ -3417,7 +3978,7 @@ function App() {
           <CommandPalette
             query={commandPalette.query}
             activeIndex={commandPalette.activeIndex}
-            actions={commandPaletteActions}
+            entries={commandPaletteEntries}
             onQueryChange={(nextQuery) =>
               setCommandPalette((current) =>
                 current ? { query: nextQuery, activeIndex: 0 } : current,
@@ -3432,12 +3993,16 @@ function App() {
               setCommandPalette(null);
               focusSearch();
             }}
-            onRun={(action) => {
-              if (action.id === BUILTIN_ACTIONS.newItem) {
+            onRun={(entry) => {
+              if (entry.kind === "navigation") {
+                openPaletteNavigation(entry.query);
+                return;
+              }
+              if (entry.action.id === BUILTIN_ACTIONS.newItem) {
                 beginCreateItem();
                 return;
               }
-              void runActionDefinition(action, effectiveSelection, "commandPalette");
+              void runActionDefinition(entry.action, effectiveSelection, "commandPalette");
             }}
           />
         ) : null}
@@ -3919,7 +4484,7 @@ function LoadingSpinner() {
 function CommandPalette({
   query,
   activeIndex,
-  actions,
+  entries,
   onQueryChange,
   onActiveIndexChange,
   onCancel,
@@ -3927,20 +4492,23 @@ function CommandPalette({
 }: {
   query: string;
   activeIndex: number;
-  actions: ActionDefinition[];
+  entries: CommandPaletteEntry[];
   onQueryChange: (query: string) => void;
   onActiveIndexChange: (index: number) => void;
   onCancel: () => void;
-  onRun: (action: ActionDefinition) => void;
+  onRun: (entry: CommandPaletteEntry) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredActions = actions.filter((action) =>
-    actionSearchText(action).includes(normalizedQuery),
-  );
-  const safeActiveIndex = filteredActions.length === 0
+  const filteredEntries = entries.filter((entry) => {
+    const searchText = entry.kind === "action"
+      ? actionSearchText(entry.action)
+      : [entry.title, entry.description, entry.group, entry.query].join(" ").toLocaleLowerCase();
+    return searchText.includes(normalizedQuery);
+  });
+  const safeActiveIndex = filteredEntries.length === 0
     ? -1
-    : clamp(activeIndex, 0, filteredActions.length - 1);
+    : clamp(activeIndex, 0, filteredEntries.length - 1);
 
   useEffect(() => {
     window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -3952,10 +4520,10 @@ function CommandPalette({
     }
   }, [activeIndex, onActiveIndexChange, safeActiveIndex]);
 
-  const runActiveAction = () => {
-    const action = filteredActions[safeActiveIndex];
-    if (action) {
-      onRun(action);
+  const runActiveEntry = () => {
+    const entry = filteredEntries[safeActiveIndex];
+    if (entry) {
+      onRun(entry);
     }
   };
 
@@ -3980,10 +4548,10 @@ function CommandPalette({
           aria-controls="command-palette-results"
           aria-expanded="true"
           aria-activedescendant={
-            safeActiveIndex >= 0 ? `command-palette-action-${filteredActions[safeActiveIndex].id}` : undefined
+            safeActiveIndex >= 0 ? `command-palette-entry-${filteredEntries[safeActiveIndex].id}` : undefined
           }
           value={query}
-          placeholder="Run action"
+          placeholder="Search history, views, tags, and actions"
           onChange={(event) => onQueryChange(event.currentTarget.value)}
           onKeyDown={(event) => {
             switch (event.key) {
@@ -3993,59 +4561,67 @@ function CommandPalette({
                 break;
               case "ArrowDown":
                 event.preventDefault();
-                if (filteredActions.length > 0) {
-                  onActiveIndexChange((safeActiveIndex + 1) % filteredActions.length);
+                if (filteredEntries.length > 0) {
+                  onActiveIndexChange((safeActiveIndex + 1) % filteredEntries.length);
                 }
                 break;
               case "ArrowUp":
                 event.preventDefault();
-                if (filteredActions.length > 0) {
+                if (filteredEntries.length > 0) {
                   onActiveIndexChange(
-                    (safeActiveIndex - 1 + filteredActions.length) % filteredActions.length,
+                    (safeActiveIndex - 1 + filteredEntries.length) % filteredEntries.length,
                   );
                 }
                 break;
               case "Enter":
                 event.preventDefault();
-                runActiveAction();
+                runActiveEntry();
                 break;
             }
           }}
         />
         <ol id="command-palette-results" className="command-palette-results" role="listbox">
-          {filteredActions.length === 0 ? (
+          {filteredEntries.length === 0 ? (
             <li>
               <UiAlert className="command-empty" variant="light">
-                No ready actions match.
+                No history, view, tag, or action matches.
               </UiAlert>
             </li>
           ) : (
-            filteredActions.map((action, index) => (
-              <li
-                key={action.id}
-                id={`command-palette-action-${action.id}`}
-                role="option"
-                aria-selected={index === safeActiveIndex}
-              >
-                <UiUnstyledButton
-                  component="button"
-                  type="button"
-                  className={index === safeActiveIndex ? "is-active" : ""}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => onRun(action)}
+            filteredEntries.map((entry, index) => (
+              <Fragment key={entry.id}>
+                {(index === 0 || filteredEntries[index - 1].group !== entry.group) ? (
+                  <li className="command-palette-group" role="presentation">{entry.group}</li>
+                ) : null}
+                <li
+                  id={`command-palette-entry-${entry.id}`}
+                  role="option"
+                  aria-selected={index === safeActiveIndex}
                 >
-                  <span>
-                    <strong>{action.title}</strong>
-                    {action.description ? <small>{action.description}</small> : null}
-                  </span>
-                  <span className="action-badges">
-                    <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
-                    <UiBadge className="action-source-badge" variant="default">
-                      {action.source === "script" ? "Script" : "Built-in"}
-                    </UiBadge>
-                  </span>
-                </UiUnstyledButton>
-              </li>
+                  <UiUnstyledButton
+                    component="button"
+                    type="button"
+                    className={index === safeActiveIndex ? "is-active" : ""}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => onRun(entry)}
+                  >
+                    <span>
+                      <strong>{entry.kind === "action" ? entry.action.title : entry.title}</strong>
+                      <small>{entry.kind === "action" ? entry.action.description : entry.description}</small>
+                    </span>
+                    {entry.kind === "action" ? (
+                      <span className="action-badges">
+                        <ShortcutBadge shortcut={normalizeShortcutString(entry.action.shortcut)} />
+                        <UiBadge className="action-source-badge" variant="default">
+                          {entry.action.source === "script" ? "Script" : "Built-in"}
+                        </UiBadge>
+                      </span>
+                    ) : (
+                      <UiBadge className="action-source-badge" variant="default">Browse</UiBadge>
+                    )}
+                  </UiUnstyledButton>
+                </li>
+              </Fragment>
             ))
           )}
         </ol>

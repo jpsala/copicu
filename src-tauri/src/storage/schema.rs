@@ -348,5 +348,24 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
         ON clipboard_item_capture_events(domain, captured_at_unix_ms DESC);
     "#,
     ),
+    M::up(
+        r#"
+    CREATE TABLE saved_history_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        query TEXT NOT NULL,
+        open_mode TEXT NOT NULL DEFAULT 'browse' CHECK(open_mode = 'browse'),
+        hotkey TEXT,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER,
+        created_at_unix_ms INTEGER NOT NULL,
+        updated_at_unix_ms INTEGER NOT NULL
+    );
+
+    CREATE UNIQUE INDEX idx_saved_history_views_hotkey
+        ON saved_history_views(hotkey)
+        WHERE hotkey IS NOT NULL AND TRIM(hotkey) != '';
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

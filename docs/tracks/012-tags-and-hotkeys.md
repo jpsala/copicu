@@ -80,15 +80,14 @@ await copicu.commands.run("picker.open", {
 - Ejemplos de scripts filtrados agregados: `020`-`024` (`tag:context`, work/context/marked/prompt variants).
 - Showcase publico de acciones locales con shortcuts locales agregados/documentados: `028` clean URL (`Ctrl+Alt+U`), `029` format JSON (`Ctrl+Alt+F`), `010` normalize whitespace (`Ctrl+Alt+N`), `030` extract URLs (`Ctrl+Alt+L`) y `031` join selected as Markdown (`Ctrl+Alt+M`).
 
-### Quick Actions / WhichKey Contextual
+### Command Palette global
 
-Actualizacion 2026-06-29:
+Actualizacion 2026-07-12:
 
-- `Ctrl+Alt+Q` abre un overlay **Quick Actions** dentro del picker principal cuando el search tiene foco. Se probo primero `Alt+Q`, pero Windows/dev reporto `HotKey already registered`; `Ctrl+Shift+Q` se descarto porque mutea en el entorno de JP.
-- El overlay usa el registry existente y lista solo acciones/scripts compatibles con el contexto actual, priorizando `localShortcut`, luego `itemMenu`, luego `commandPalette`.
-- Ajuste de contexto validado: `Open URL` solo aparece si el texto seleccionado contiene `http(s)://`, y clips de texto legacy sin MIME se tratan como `text/plain` para que multi-seleccion muestre acciones como `Join selected`.
-- Se puede buscar, ejecutar con Enter o usar `1`-`9` para las primeras acciones.
-- Este corte evita crear mas shortcuts individuales y esquiva por ahora el bug historico de ventana secundaria WhichKey negra en WebView2/Tauri.
+- `Ctrl+Shift+Space` abre y enfoca la **Command Palette** en el picker principal. Rust solo registra el hotkey, muestra/enfoca la ventana y emite el evento; el renderer mantiene el catalogo y despacha acciones existentes.
+- La palette agrupa navegacion por History (`All history`, `Text`, `Images`, `Marked`), saved views persistidas y tags pinned, ademas de las acciones ejecutables actuales. La busqueda local filtra todas las entradas.
+- Elegir navegacion cierra la palette y aplica la query al picker normal editable; las acciones conservan su ejecucion actual.
+- El overlay local **Quick Actions** contextual (`Ctrl+Alt+Q` con el picker enfocado) se conserva separado: lista solo acciones/scripts compatibles con la seleccion actual.
 
 ### Shortcuts Nativos Del Picker
 

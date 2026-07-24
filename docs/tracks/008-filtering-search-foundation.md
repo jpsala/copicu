@@ -1,7 +1,7 @@
 ---
 id: filtering-search-foundation
 status: active
-updated: 2026-06-29
+updated: 2026-07-10
 ---
 
 # Filtering Search Foundation
@@ -13,6 +13,40 @@ Topic estable: `docs/topics/filtering-and-query-syntax.md`.
 Topic de arquitectura nueva: `docs/topics/search-plan-engine.md`.
 
 ## Estado Actual
+
+Actualizacion 2026-07-10 autocomplete (pendiente de validacion integrada):
+
+- el worktree agrega sugerencias locales keyboard-first para `#`/`tag:`, operadores conocidos y valores cerrados; Tab/click aceptan, flechas/Escape navegan o cierran y Enter conserva aplicar la busqueda;
+- el popup no debe aparecer para texto plain ni modo AI; no cambia Rust/SQLite ni envia contenido fuera del equipo;
+- el long task reporto `npm run build` y seis Playwright focalizados verdes, pero falta validacion independiente completa, smoke CUA y revisar el diff antes de promoverlo como aplicado;
+- Settings ahora indexa los controles internos de Picker, para que buscar `structured` encuentre `Confirm structured filters with Enter`.
+
+Actualizacion 2026-07-10 chips/explain y diagnostico sintactico:
+
+- `history_search(..., explain: true)` devuelve `queryExplanation` versionado con chips removibles y diagnosticos `{ severity, code, message }`;
+- la UI muestra chips solo para la query aplicada, no para un draft pendiente; remover uno reemplaza el input, reinicia cursor y aplica una primera pagina explicita;
+- comillas abiertas, valores faltantes y valores invalidos de operadores conocidos no ensanchan la busqueda: devuelven cero resultados con diagnostico; `foo:bar` desconocido sigue como texto plain con warning no bloqueante;
+- tests focalizados cubren remocion de chip, diagnostico visible sin activacion stale, Unicode y fail-closed del backend.
+
+Proximo slice recomendado: autocompletado contextual, saved searches o highlighting. No sumar FTS5, embeddings ni query builder pesado sin medicion/decision.
+
+Actualizacion 2026-07-10 search trigger hardening:
+
+- el picker incorpora un control rapido accesible con iconos/tooltip para alternar `realtime` y `enter`; el legacy persistido `manual` se normaliza a `enter`;
+- nuevo setting `Confirm structured filters with Enter`: en realtime, tags/condiciones esperan Enter solo para la query pendiente y muestran feedback explicito;
+- refreshes de foco/clipboard y `load more` reutilizan la query aplicada, no drafts pendientes; una primera pagina invalida paginas viejas en vuelo;
+- cursor + sort custom se rechaza hasta tener cursor sort-aware;
+- datetimes ISO ya aplican offsets explicitos en vez de descartarlos;
+- bulk mark queda autorizado solo para `main`, opera sobre la query aplicada y falla cerrado si una query no vacia no compila filtros;
+- checks: `npm run build`, `npm run rust:test` (114/0, 1 ignored), `cargo check --manifest-path src-tauri/Cargo.toml --tests`, Playwright `tests/visual/shell.spec.ts` 140/0, LSP de produccion 0, `bun run context:audit` y `git diff --check`.
+
+Riesgos retomables no bloqueantes:
+
+- sort custom queda sin `nextCursor` hasta implementar cursor sort-aware;
+- Settings completo y quick trigger pueden resolver last-writer-wins solo si ambos se guardan simultaneamente;
+- la deteccion UX de sintaxis estructurada en TypeScript debe mantenerse alineada con el tokenizer/parser Rust.
+
+Despues del hardening, el corte de chips/explain y diagnostico sintactico quedo aplicado. Siguiente: autocompletado, saved searches o highlighting; evaluar FTS5 solo con medicion y no sumar embeddings/query builder pesado todavia.
 
 Actualizacion 2026-07-09 dogfood:
 
@@ -27,7 +61,7 @@ Actualizacion 2026-06-29:
 
 - scoped search implementado y documentado: `meta:/metadata:` busca metadata visible (`title`, `notes`, `tags`), `title:` solo titulo editable, `notes:/note:` notas, y `ctx:/context:` contexto oculto de captura; formas negadas como `-meta:` tambien funcionan.
 - `title:` dejo de ser alias conceptual de window title capturado; para ventana origen usar `window:`. Esto evita mezclar titulo editable del item con contexto automatico.
-- Search trigger configurable en `Settings > Picker`: realtime default, buscar con Enter o buscar solo con boton `Search`; `Ctrl+Enter` fuerza ejecucion.
+- Search trigger configurable en `Settings > Picker`: realtime default o buscar con Enter; el boton `Search` aplica explicitamente desde ambos modos.
 - UI de ayuda in-app agregada desde boton `?` y menu del picker, con sintaxis deterministica, filtros de contexto, fechas, AI `ai:` y shortcuts relevantes; luego se separo la ayuda de `Keyboard` para no mezclar metadata shortcuts con AI.
 - Planner AI actualizado para entender/promover `meta:/title:/notes:/ctx:` sobre el contrato local.
 - Fix dogfood 2026-06-29: en modos `When pressing Enter`/`Only Search button`, el picker debe cargar historial inicial aunque no haga busqueda realtime por cada tecla; se corrigio el efecto para refrescar solo el estado inicial vacio y no cada cambio de query.
@@ -183,14 +217,12 @@ Razon:
 
 ### Slice Search UX Explain/Chips
 
-Objetivo: hacer visible el contrato sin saturar el input.
+Estado: implementado 2026-07-10.
 
-Candidatos:
-
-- chips/facets editables para `meta`, `title`, `notes`, `ctx`, `kind`, fechas y marked;
-- explain/plan serializable para mostrar como se interpreto una query;
-- ejemplos contextuales dentro de la ayuda in-app segun modo structured vs AI;
-- tests focalizados para que `Enter` no active resultados viejos cuando la query esta pendiente en modo manual.
+- `history_search(..., explain: true)` entrega chips removibles y diagnosticos tipados;
+- chips solo de query aplicada; la remocion reinicia cursor sin disparar una segunda busqueda realtime;
+- operadores conocidos malformados fallan cerrados, mientras filtros desconocidos siguen como texto plain con warning;
+- pendiente real: autocompletado contextual, saved searches o highlighting, no un query builder pesado.
 
 ### Slice AI Script Mode Hardening
 

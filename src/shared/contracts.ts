@@ -9,6 +9,33 @@ export type TagSummary = {
   autoApplyEnabled: boolean;
 };
 
+export type SavedHistoryView = {
+  id: number;
+  title: string;
+  query: string;
+  openMode: "browse";
+  hotkey: string | null;
+  pinned: boolean;
+  sortOrder: number | null;
+  createdAtUnixMs: number;
+  updatedAtUnixMs: number;
+};
+
+export type CreateSavedHistoryViewRequest = {
+  title: string;
+  query: string;
+  hotkey?: string | null;
+};
+
+export type UpdateSavedHistoryViewRequest = {
+  id: number;
+  title: string;
+  query: string;
+  hotkey?: string | null;
+  pinned: boolean;
+  sortOrder?: number | null;
+};
+
 export type CreateTagRequest = {
   label: string;
   color?: string | null;

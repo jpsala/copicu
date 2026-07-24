@@ -61,7 +61,7 @@ No pasar payloads grandes si no se pidieron. Para contenido completo usar APIs e
 
 Familias utiles:
 
-- `history.search`, `history.get`, metadata/tags;
+- `history.search`, `history.get`, `history.neighbor`, metadata/tags;
 - `clipboard.read/write` segun capability;
 - `picker.filter`, `picker.activate`;
 - `ui.toast`, `ui.alert`, `ui.confirm`, `ui.input`, `ui.markdownOutput`;

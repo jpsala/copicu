@@ -25,8 +25,10 @@ export function NotificationsApp() {
   }, []);
 
   useEffect(() => {
+    document.documentElement.classList.add("notifications-window-root");
     document.body.classList.add("notifications-window");
     return () => {
+      document.documentElement.classList.remove("notifications-window-root");
       document.body.classList.remove("notifications-window");
     };
   }, []);

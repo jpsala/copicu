@@ -418,6 +418,12 @@ await copicu.history.get("123", {
   content: true,
 });
 
+await copicu.history.neighbor("123", {
+  direction: "older",
+  wrap: true,
+  content: true,
+});
+
 await copicu.history.update("123", {
   title: "Ticket summary",
   tags: ["#todo", "#work"],
@@ -431,6 +437,8 @@ await copicu.history.move("123", { position: "top" });
 ```
 
 `history.search()` reuses the picker query syntax. It does not change the visible picker query.
+
+`history.neighbor(id, options)` returns the immediately older or newer item in stable capture order. Set `wrap: true` to cycle at either end of history.
 
 `history.promote(id)` is shorthand for `history.move(id, { position: "top" })`.
 

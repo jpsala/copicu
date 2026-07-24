@@ -552,7 +552,7 @@ try {
       }
     }
 
-    $releaseArgs = @("release", "create", $Tag, $installer, $latestJsonPath, "--target", $head, "--title", $Title, "--notes-file", $NotesFile)
+    $releaseArgs = @("release", "create", $Tag, $installer, $signaturePath, $latestJsonPath, "--target", $head, "--title", $Title, "--notes-file", $NotesFile)
     if ($PreRelease) {
       $releaseArgs += "--prerelease"
     }
@@ -560,7 +560,7 @@ try {
       $releaseArgs += "--latest"
     }
 
-    Confirm-Step "Create GitHub release '$Tag' and upload asset '$assetName'?"
+    Confirm-Step "Create GitHub release '$Tag' and upload installer, updater signature, and latest.json?"
     Invoke-Checked "gh.exe" $releaseArgs
   }
 

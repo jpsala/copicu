@@ -25,6 +25,7 @@ pub(crate) enum HotkeyModifier {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ShortcutRoute {
     PickerOpen,
+    SavedViewOpen { view_id: i64 },
     ScriptRun { action_id: String },
     Command { command_id: String },
     WhichKeyOpen { prefix: Option<HotkeySequence> },
@@ -459,6 +460,23 @@ mod tests {
             Some(&ShortcutRoute::ScriptRun {
                 action_id: "join-lines".to_string()
             })
+        );
+    }
+
+    #[test]
+    fn resolves_saved_view_open_route() {
+        let mut registry = ShortcutRegistry::default();
+        registry
+            .register(
+                "saved-view.42",
+                "Ctrl+Alt+W",
+                ShortcutRoute::SavedViewOpen { view_id: 42 },
+            )
+            .expect("register saved view");
+
+        assert_eq!(
+            registry.resolve(&HotkeySequence::parse("Ctrl+Alt+W").unwrap()),
+            Some(&ShortcutRoute::SavedViewOpen { view_id: 42 })
         );
     }
 

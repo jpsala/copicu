@@ -63,11 +63,13 @@ const AI_OUTPUT_OPEN_EVENT: &str = "copicu://ai-output/open";
 #[cfg(not(test))]
 const COMPOUND_HOTKEY_PENDING_EVENT: &str = "copicu://hotkeys/compound-pending";
 #[cfg(not(test))]
-const QUICK_ACTIONS_OPEN_EVENT: &str = "copicu://quick-actions/open";
+const COMMAND_PALETTE_OPEN_EVENT: &str = "copicu://command-palette/open";
 #[cfg(not(test))]
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
 const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
+#[cfg(not(test))]
+const SETTINGS_UPDATED_EVENT: &str = "copicu://settings/updated";
 const PICKER_PIN_STATE_EVENT: &str = "copicu://picker/pin-state";
 #[cfg(not(test))]
 const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
@@ -90,7 +92,7 @@ const TRAY_QUIT_ID: &str = "quit";
 #[cfg(not(test))]
 const PICKER_SHORTCUT_LABEL: &str = "Ctrl+Shift+,";
 #[cfg(not(test))]
-const QUICK_ACTIONS_SHORTCUT_LABEL: &str = "Ctrl+Alt+Q";
+const COMMAND_PALETTE_SHORTCUT_LABEL: &str = "Ctrl+Shift+Space";
 #[cfg(not(test))]
 const HIDE_ON_FOCUS_LOST_DELAY: Duration = Duration::from_millis(320);
 #[cfg(not(test))]
@@ -141,6 +143,7 @@ struct InitialMainWindowHide {
 #[derive(Clone, Default)]
 struct GlobalScriptShortcuts {
     actions_by_shortcut: Arc<Mutex<HashMap<Shortcut, GlobalScriptShortcutAction>>>,
+    saved_views_by_shortcut: Arc<Mutex<HashMap<Shortcut, GlobalSavedViewShortcut>>>,
 }
 
 #[cfg(not(test))]
@@ -249,6 +252,14 @@ struct GlobalScriptShortcutAction {
     action_id: String,
     shortcut_label: String,
     selection: actions::SelectionRequirement,
+}
+
+#[cfg(not(test))]
+#[derive(Clone)]
+struct GlobalSavedViewShortcut {
+    view_id: i64,
+    query: String,
+    shortcut_label: String,
 }
 
 #[cfg(not(test))]
@@ -1412,9 +1423,11 @@ fn set_history_items_marked(
 #[cfg(not(test))]
 #[tauri::command]
 fn set_history_query_marked(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::SetHistoryQueryMarkedRequest,
 ) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_history_query_marked")?;
     storage.set_query_marked(request)
 }
 
@@ -1545,6 +1558,37 @@ fn set_picker_keep_open(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn set_picker_search_trigger_mode(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    mode: storage::SearchTriggerMode,
+) -> Result<storage::AppSettings, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL],
+        "set_picker_search_trigger_mode",
+    )?;
+    let next_settings = storage.update_search_trigger_mode(mode)?;
+    if let Err(error) = app.emit_to(
+        SETTINGS_WINDOW_LABEL,
+        SETTINGS_UPDATED_EVENT,
+        next_settings.clone(),
+    ) {
+        diag_log(
+            "picker.search_trigger_mode.sync_failed",
+            format!("error={error}"),
+        );
+    }
+    diag_log(
+        "picker.search_trigger_mode",
+        format!("mode={:?}", next_settings.picker.search_trigger_mode),
+    );
+    Ok(next_settings)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn edit_scripts_in_vscode(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -1602,9 +1646,128 @@ fn normalize_optional_single_shortcut(input: &str, label: &str) -> Result<String
 }
 
 #[cfg(not(test))]
+fn normalize_saved_view_hotkey<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    storage: &storage::AppStorage,
+    hotkey: Option<String>,
+    editing_id: Option<i64>,
+) -> Result<Option<String>, String> {
+    let Some(input) = hotkey else { return Ok(None) };
+    let normalized = normalize_optional_single_shortcut(&input, "saved view")?;
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    if normalized.starts_with("Ctrl+Alt+") {
+        return Err(format!(
+            "saved view shortcut uses Ctrl+Alt, which is AltGr on many keyboard layouts: {normalized}. Use Ctrl+Shift instead"
+        ));
+    }
+    let shortcut = shortcut_from_label(&normalized)
+        .ok_or_else(|| format!("unsupported saved view shortcut: {normalized}"))?;
+    let settings = storage.get_settings()?;
+    if normalized == settings.general.global_shortcut
+        || normalized == settings.picker.pin_toggle_shortcut
+        || normalized == settings.picker.settings_shortcut
+        || normalized == COMMAND_PALETTE_SHORTCUT_LABEL
+    {
+        return Err(format!("saved view shortcut conflicts with an app shortcut: {normalized}"));
+    }
+    let existing_views = storage.list_saved_history_views()?;
+    let retains_own_hotkey = existing_views.iter().any(|view| {
+        Some(view.id) == editing_id && view.hotkey.as_deref() == Some(normalized.as_str())
+    });
+    for view in &existing_views {
+        if Some(view.id) != editing_id && view.hotkey.as_deref() == Some(normalized.as_str()) {
+            return Err(format!("saved view shortcut already belongs to {}", view.title));
+        }
+    }
+    if retains_own_hotkey {
+        return Ok(Some(normalized));
+    }
+    for action in actions::list_actions(storage)? {
+        if actions::normalize_shortcut_string(action.shortcut.as_deref()).as_deref() == Some(&normalized) {
+            return Err(format!("saved view shortcut conflicts with script action {}", action.title));
+        }
+    }
+    if app.global_shortcut().is_registered(shortcut) {
+        return Err(format!("saved view shortcut is already registered: {normalized}"));
+    }
+    app.global_shortcut().register(shortcut)
+        .map_err(|error| format!("saved view shortcut registration failed for {normalized}: {error}"))?;
+    if let Err(error) = app.global_shortcut().unregister(shortcut) {
+        return Err(format!("saved view shortcut registration cleanup failed for {normalized}: {error}"));
+    }
+    Ok(Some(normalized))
+}
+
+#[cfg(not(test))]
 #[tauri::command]
 fn list_tags(storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::TagSummary>, String> {
     storage.list_tags()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn list_saved_history_views(
+    storage: State<'_, storage::AppStorage>,
+) -> Result<Vec<storage::SavedHistoryView>, String> {
+    storage.list_saved_history_views()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn create_saved_history_view(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    mut request: storage::CreateSavedHistoryViewRequest,
+) -> Result<storage::SavedHistoryView, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "create_saved_history_view")?;
+    request.hotkey = normalize_saved_view_hotkey(&app, &storage, request.hotkey, None)?;
+    let view = storage.create_saved_history_view(request)?;
+    refresh_global_shortcuts_from_storage(&app, &storage)?;
+    Ok(view)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn update_saved_history_view(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    mut request: storage::UpdateSavedHistoryViewRequest,
+) -> Result<storage::SavedHistoryView, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_saved_history_view")?;
+    request.hotkey = normalize_saved_view_hotkey(&app, &storage, request.hotkey, Some(request.id))?;
+    let view = storage.update_saved_history_view(request)?;
+    refresh_global_shortcuts_from_storage(&app, &storage)?;
+    Ok(view)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn delete_saved_history_view(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "delete_saved_history_view")?;
+    storage.delete_saved_history_view(id)?;
+    refresh_global_shortcuts_from_storage(&app, &storage)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn open_saved_history_view(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "open_saved_history_view")?;
+    let view = storage.get_saved_history_view(id)?;
+    open_picker_for_saved_history_view(app, view.query)
 }
 
 #[cfg(not(test))]
@@ -1679,8 +1842,7 @@ fn list_actions(
     storage: State<'_, storage::AppStorage>,
 ) -> Result<Vec<actions::ActionDefinition>, String> {
     let actions = actions::list_actions(&storage)?;
-    let settings = storage.get_settings()?;
-    refresh_global_shortcuts(&app, &actions, &settings);
+    refresh_global_shortcuts_from_storage(&app, &storage)?;
     Ok(actions)
 }
 
@@ -1692,8 +1854,7 @@ fn refresh_script_action_cache(
 ) -> Result<Vec<actions::ActionDefinition>, String> {
     actions::refresh_script_action_cache(&storage)?;
     let actions = actions::list_actions(&storage)?;
-    let settings = storage.get_settings()?;
-    refresh_global_shortcuts(&app, &actions, &settings);
+    refresh_global_shortcuts_from_storage(&app, &storage)?;
     Ok(actions)
 }
 
@@ -1758,7 +1919,7 @@ fn handle_compound_hotkey_step(
 ) -> CompoundHotkeyStepResponse {
     if let Err(error) = require_surface_window(
         &window,
-        &[WHICHKEY_WINDOW_LABEL],
+        &[MAIN_WINDOW_LABEL, WHICHKEY_WINDOW_LABEL],
         "handle_compound_hotkey_step",
     ) {
         return CompoundHotkeyStepResponse {
@@ -2107,9 +2268,15 @@ pub fn run() {
             get_settings,
             update_settings,
             set_picker_keep_open,
+            set_picker_search_trigger_mode,
             edit_scripts_in_vscode,
             edit_script_in_vscode,
             list_tags,
+            list_saved_history_views,
+            create_saved_history_view,
+            update_saved_history_view,
+            delete_saved_history_view,
+            open_saved_history_view,
             create_tag,
             update_tag_config,
             open_picker_for_tag,
@@ -2198,6 +2365,9 @@ pub fn run() {
                 if let Err(error) = previous_window.register_own_window(&window) {
                     eprintln!("own window registration failed: {error}");
                 }
+            }
+            if let Err(error) = setup_notifications_window(app.handle()) {
+                eprintln!("notifications window prewarm failed: {error}");
             }
             previous_window.spawn_foreground_tracker();
             app.manage(previous_window.clone());
@@ -3068,7 +3238,7 @@ fn spawn_toggle_main_window_without_focus<R: tauri::Runtime + 'static>(app: taur
 }
 
 #[cfg(not(test))]
-fn spawn_open_quick_actions<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+fn spawn_open_command_palette<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
     thread::spawn(move || {
         thread::sleep(NATIVE_WINDOW_TASK_DELAY);
         let app_for_main_thread = app.clone();
@@ -3076,11 +3246,11 @@ fn spawn_open_quick_actions<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R
             if let Err(error) = show_main_window(&app_for_main_thread, true) {
                 eprintln!("{error}");
             }
-            if let Err(error) = app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, QUICK_ACTIONS_OPEN_EVENT, ()) {
-                eprintln!("quick actions open event failed: {error}");
+            if let Err(error) = app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, COMMAND_PALETTE_OPEN_EVENT, ()) {
+                eprintln!("command palette open event failed: {error}");
             }
         }) {
-            eprintln!("quick actions dispatch failed: {error}");
+            eprintln!("command palette dispatch failed: {error}");
         }
     });
 }
@@ -3146,11 +3316,19 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         return;
     }
 
-    if shortcut_from_label(QUICK_ACTIONS_SHORTCUT_LABEL).is_some_and(|quick_actions_shortcut| {
-        *shortcut == quick_actions_shortcut
+    if shortcut_from_label(COMMAND_PALETTE_SHORTCUT_LABEL).is_some_and(|command_palette_shortcut| {
+        *shortcut == command_palette_shortcut
     }) {
-        eprintln!("quick actions shortcut pressed: {shortcut:?}");
-        spawn_open_quick_actions(app.clone());
+        eprintln!("command palette shortcut pressed: {shortcut:?}");
+        spawn_open_command_palette(app.clone());
+        return;
+    }
+
+    if let Some(saved_view) = app
+        .try_state::<GlobalScriptShortcuts>()
+        .and_then(|shortcuts| shortcuts.saved_view_for(shortcut))
+    {
+        spawn_open_saved_history_view(app.clone(), saved_view);
         return;
     }
 
@@ -3206,26 +3384,36 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
 #[cfg(not(test))]
 impl GlobalScriptShortcuts {
     fn current_shortcuts(&self) -> Vec<Shortcut> {
-        self.actions_by_shortcut
-            .lock()
-            .map(|current| current.keys().copied().collect())
-            .unwrap_or_default()
+        let mut shortcuts = self.actions_by_shortcut.lock()
+            .map(|current| current.keys().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        shortcuts.extend(self.saved_views_by_shortcut.lock()
+            .map(|current| current.keys().copied().collect::<Vec<_>>())
+            .unwrap_or_default());
+        shortcuts
     }
 
-    fn replace(&self, next: HashMap<Shortcut, GlobalScriptShortcutAction>) {
+    fn replace(
+        &self,
+        actions: HashMap<Shortcut, GlobalScriptShortcutAction>,
+        saved_views: HashMap<Shortcut, GlobalSavedViewShortcut>,
+    ) {
         match self.actions_by_shortcut.lock() {
-            Ok(mut current) => {
-                *current = next;
-            }
+            Ok(mut current) => *current = actions,
             Err(_) => eprintln!("global script shortcuts mutex poisoned"),
+        }
+        match self.saved_views_by_shortcut.lock() {
+            Ok(mut current) => *current = saved_views,
+            Err(_) => eprintln!("global saved view shortcuts mutex poisoned"),
         }
     }
 
     fn action_for(&self, shortcut: &Shortcut) -> Option<GlobalScriptShortcutAction> {
-        self.actions_by_shortcut
-            .lock()
-            .ok()
-            .and_then(|current| current.get(shortcut).cloned())
+        self.actions_by_shortcut.lock().ok().and_then(|current| current.get(shortcut).cloned())
+    }
+
+    fn saved_view_for(&self, shortcut: &Shortcut) -> Option<GlobalSavedViewShortcut> {
+        self.saved_views_by_shortcut.lock().ok().and_then(|current| current.get(shortcut).cloned())
     }
 }
 
@@ -3486,6 +3674,9 @@ impl CompoundShortcutState {
 fn whichkey_route_label(route: &hotkeys::ShortcutRoute, fallback_id: &str) -> (String, String) {
     let (group, label) = match route {
         hotkeys::ShortcutRoute::PickerOpen => ("Picker".to_string(), "Open picker".to_string()),
+        hotkeys::ShortcutRoute::SavedViewOpen { view_id } => {
+            ("Saved views".to_string(), format!("Open saved view {view_id}"))
+        }
         hotkeys::ShortcutRoute::ScriptRun { action_id } => {
             ("Scripts".to_string(), readable_route_label(action_id))
         }
@@ -3528,7 +3719,8 @@ fn refresh_global_shortcuts_from_storage<R: tauri::Runtime>(
 ) -> Result<(), String> {
     let actions = actions::list_actions(storage)?;
     let settings = storage.get_settings()?;
-    refresh_global_shortcuts(app, &actions, &settings);
+    let saved_views = storage.list_saved_history_views()?;
+    refresh_global_shortcuts(app, &actions, &saved_views, &settings);
     Ok(())
 }
 
@@ -3536,11 +3728,12 @@ fn refresh_global_shortcuts_from_storage<R: tauri::Runtime>(
 fn refresh_global_shortcuts<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     actions: &[actions::ActionDefinition],
+    saved_views: &[storage::SavedHistoryView],
     settings: &storage::AppSettings,
 ) {
     refresh_picker_shortcut_from_settings(app, settings);
     refresh_picker_pin_shortcut_from_settings(app, settings);
-    refresh_quick_actions_shortcut(app);
+    refresh_command_palette_shortcut(app);
 
     if let Some(shortcuts) = app.try_state::<GlobalScriptShortcuts>() {
         for shortcut in shortcuts.current_shortcuts() {
@@ -3668,8 +3861,31 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
         }
     }
 
+    let mut registered_saved_views = HashMap::new();
+    for view in saved_views {
+        let Some(shortcut_label) = view.hotkey.as_deref() else { continue };
+        let Some(shortcut) = shortcut_from_label(shortcut_label) else {
+            eprintln!("saved view shortcut not registered for {}: unsupported shortcut {}", view.title, shortcut_label);
+            continue;
+        };
+        if app.global_shortcut().is_registered(shortcut) {
+            eprintln!("saved view shortcut not registered for {}: already registered {}", view.title, shortcut_label);
+            continue;
+        }
+        match app.global_shortcut().register(shortcut) {
+            Ok(()) => {
+                registered_saved_views.insert(shortcut, GlobalSavedViewShortcut {
+                    view_id: view.id,
+                    query: view.query.clone(),
+                    shortcut_label: shortcut_label.to_string(),
+                });
+            }
+            Err(error) => eprintln!("saved view shortcut registration failed for {} ({}): {error}", view.title, shortcut_label),
+        }
+    }
+
     if let Some(shortcuts) = app.try_state::<GlobalScriptShortcuts>() {
-        shortcuts.replace(registered);
+        shortcuts.replace(registered, registered_saved_views);
     }
     if let Some(compound) = app.try_state::<CompoundShortcutRuntime>() {
         compound.replace(compound_registry, compound_prefixes);
@@ -3715,9 +3931,9 @@ fn register_simple_global_script_shortcut<R: tauri::Runtime>(
 }
 
 #[cfg(not(test))]
-fn refresh_quick_actions_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    let Some(shortcut) = shortcut_from_label(QUICK_ACTIONS_SHORTCUT_LABEL) else {
-        eprintln!("quick actions shortcut not refreshed: unsupported shortcut {QUICK_ACTIONS_SHORTCUT_LABEL}");
+fn refresh_command_palette_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(shortcut) = shortcut_from_label(COMMAND_PALETTE_SHORTCUT_LABEL) else {
+        eprintln!("command palette shortcut not refreshed: unsupported shortcut {COMMAND_PALETTE_SHORTCUT_LABEL}");
         return;
     };
 
@@ -3726,9 +3942,9 @@ fn refresh_quick_actions_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) 
     }
 
     match app.global_shortcut().register(shortcut) {
-        Ok(()) => eprintln!("quick actions shortcut registered: {QUICK_ACTIONS_SHORTCUT_LABEL}"),
+        Ok(()) => eprintln!("command palette shortcut registered: {COMMAND_PALETTE_SHORTCUT_LABEL}"),
         Err(error) => eprintln!(
-            "quick actions shortcut registration failed for {QUICK_ACTIONS_SHORTCUT_LABEL}: {error}"
+            "command palette shortcut registration failed for {COMMAND_PALETTE_SHORTCUT_LABEL}: {error}"
         ),
     }
 }
@@ -4075,6 +4291,40 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
 }
 
 #[cfg(not(test))]
+fn open_picker_for_saved_history_view<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    query: String,
+) -> Result<(), String> {
+    let app_for_main_thread = app.clone();
+    app.run_on_main_thread(move || {
+        if let Err(error) = show_main_window(&app_for_main_thread, true) {
+            eprintln!("saved history view picker show failed: {error}");
+            return;
+        }
+        if let Err(error) = app_for_main_thread.emit_to(
+            MAIN_WINDOW_LABEL,
+            PICKER_FILTER_EVENT,
+            serde_json::json!({ "query": query }),
+        ) {
+            eprintln!("saved history view picker emit failed: {error}");
+        }
+    }).map_err(|error| format!("saved history view picker dispatch failed: {error}"))
+}
+
+#[cfg(not(test))]
+fn spawn_open_saved_history_view<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    saved_view: GlobalSavedViewShortcut,
+) {
+    thread::spawn(move || {
+        eprintln!("saved history view shortcut pressed: {} -> {}", saved_view.shortcut_label, saved_view.view_id);
+        if let Err(error) = open_picker_for_saved_history_view(app, saved_view.query) {
+            eprintln!("saved history view shortcut open failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
 fn open_picker_for_tag_slug<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     slug: String,
@@ -4225,6 +4475,10 @@ fn emit_toast_on_main_thread<R: tauri::Runtime + 'static>(
 ) {
     let app_for_main_thread = app.clone();
     if let Err(error) = app.run_on_main_thread(move || {
+        if let Err(error) = setup_notifications_window(&app_for_main_thread) {
+            eprintln!("{source} toast window setup failed: {error}");
+            return;
+        }
         if let Err(error) = app_for_main_thread.emit_to(
             NOTIFICATIONS_WINDOW_LABEL,
             NOTIFICATION_TOAST_EVENT,
@@ -4275,6 +4529,20 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
     match route {
         hotkeys::ShortcutRoute::PickerOpen => {
             spawn_toggle_main_window(app);
+        }
+        hotkeys::ShortcutRoute::SavedViewOpen { view_id } => {
+            let Some(storage) = app.try_state::<storage::AppStorage>().map(|state| state.inner().clone()) else {
+                eprintln!("saved view shortcut route storage unavailable");
+                return;
+            };
+            thread::spawn(move || match storage.get_saved_history_view(view_id) {
+                Ok(view) => {
+                    if let Err(error) = open_picker_for_saved_history_view(app, view.query) {
+                        eprintln!("saved view shortcut route open failed: {error}");
+                    }
+                }
+                Err(error) => eprintln!("saved view shortcut route lookup failed: {error}"),
+            });
         }
         hotkeys::ShortcutRoute::ScriptRun { action_id } => {
             thread::spawn(move || {

@@ -22,6 +22,17 @@ These examples are the launch-readiness path for showing that Copicu is more tha
 | `030-extract-urls-copy.ts` | `Ctrl+Alt+L` | Notes containing one or more `http(s)` URLs | Copies one URL per line. |
 | `031-join-selected-markdown-copy.ts` | `Ctrl+Alt+M` | Multiple selected text clips with titles/tags | Copies one Markdown document with headings and tag metadata. |
 
+## Global History Cycling
+
+The following scripts activate clipboard items without opening the picker. They
+cycle through the complete history in stable capture order and show feedback
+with the direction and item preview:
+
+| Script | Shortcut | Direction |
+| --- | --- | --- |
+| `032-activate-previous-global.ts` | `Ctrl+Alt+ArrowUp` | `← Previous` |
+| `033-activate-next-global.ts` | `Ctrl+Alt+ArrowDown` | `Next item →` (newer) |
+
 Copicu can execute ready scripts manually from Settings with the `Run` button when the script declares `devRun` or `commandPalette`. The current real bridge supports:
 
 - `copicu.log.*`;
@@ -31,7 +42,7 @@ Copicu can execute ready scripts manually from Settings with the `Run` button wh
 - `copicu.ui.confirm/input`;
 - `copicu.selection.*`;
 - `copicu.clipboard.writeText/writeItem`;
-- `copicu.history.search/get/update`;
+- `copicu.history.search/get/neighbor/update/promote/move`;
 - `copicu.enrichment.getResult/runForItem`;
 - `copicu.picker.open/filter/activate/show/hide`;
 - `copicu.commands.run("picker.open", params)`;
@@ -73,6 +84,10 @@ Recommended test order:
 22. `029-format-json-copy.ts`: parses the selected text clip as JSON and copies a pretty-printed version.
 23. `030-extract-urls-copy.ts`: extracts http(s) URLs from the selected text clip and copies one URL per line.
 24. `031-join-selected-markdown-copy.ts`: joins selected text clips as one Markdown document with headings and tags.
+25. `032-activate-previous-global.ts`: globally activates the previous (older)
+    clipboard item and shows directional feedback.
+26. `033-activate-next-global.ts`: globally activates the next (newer) clipboard
+    item and shows directional feedback.
 
 Logging contract:
 

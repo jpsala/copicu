@@ -2,7 +2,7 @@
 id: actions-scripting
 status: active-dogfood
 priority: 4
-updated: 2026-06-09
+updated: 2026-07-24
 ---
 
 # Actions And Scripting
@@ -27,8 +27,16 @@ Pendiente actual:
 
 - dogfood real de `clipboardChange`, `ui.confirm`/`ui.input` y scripts con escritura sintética para validar anti-loop;
 - dogfood real de `ui.alert`/`clipboard.read` con ejemplo `017-alert-clipboard-text-length.ts`;
-- toast custom global en `ui-host` en vez de seguir puliendo la ventana `notifications`;
 - completar/pulir capabilities restantes solo cuando lo pidan scripts reales.
+
+Actualizacion 2026-07-24:
+
+- `history.neighbor(id, { direction, wrap, content })` recorre todo el historial por orden estable de captura, sin depender de la pagina reciente ni de indices visibles.
+- Los scripts `032`/`033` asignan `Ctrl+Alt+ArrowUp/ArrowDown` al vecino anterior/siguiente y usan el `ToastStack` propio, con lo nuevo arriba.
+- `notifications` se mantiene oculta y precargada; su raiz es transparente y su altura se ajusta al contenido para mostrar solo las tarjetas. La activacion de imagen usa `tauri-plugin-clipboard-manager` con retry acotado ante clipboard ocupado.
+- `picker.activate` desde `globalShortcut` emite `copicu://picker/active-item`; un picker visible refresca el orden y selecciona el ID activado sin pisar una interaccion posterior del usuario.
+- Si `Ctrl+Alt+C` abre el picker con un hotkey compuesto pendiente, las teclas de navegacion limpian ese pending y siguen hacia el picker; los pasos compuestos reales se aceptan tanto desde `main` como desde `whichkey`.
+- Smoke reusable: con picker oculto y visible, recorrer ambos sentidos debe cambiar el clipboard, apilar feedback sin marco y reflejar el ID activo cuando sea visible.
 
 Actualizacion 2026-06-07:
 
@@ -474,6 +482,7 @@ triggers: ["itemMenu", "commandPalette", "localShortcut"],
 ```
 
 se descubre con `shortcut` visible.
+
 - Con picker enfocado y selección compatible, `Ctrl+Alt+J` ejecuta el script con `trigger: "localShortcut"`.
 - Si la selección no cumple `input`, no ejecuta y no rompe navegación.
 - Command palette sigue funcionando con `Ctrl+K`.
