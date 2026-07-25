@@ -94,6 +94,10 @@ const PICKER_SHORTCUT_LABEL: &str = "Ctrl+Shift+,";
 #[cfg(not(test))]
 const COMMAND_PALETTE_SHORTCUT_LABEL: &str = "Ctrl+Shift+Space";
 #[cfg(not(test))]
+const METADATA_SHORTCUT_LABEL: &str = "Ctrl+Shift+C";
+#[cfg(not(test))]
+const METADATA_EDIT_ACTIVE_EVENT: &str = "copicu://metadata/edit-active";
+#[cfg(not(test))]
 const HIDE_ON_FOCUS_LOST_DELAY: Duration = Duration::from_millis(320);
 #[cfg(not(test))]
 const STARTUP_HIDE_ENFORCE_INTERVAL: Duration = Duration::from_millis(100);
@@ -1152,6 +1156,7 @@ struct OpenMetadataWindowRequest {
 #[serde(rename_all = "camelCase")]
 struct MetadataEditorPayload {
     item: storage::HistoryItem,
+    item_tags: Vec<String>,
     capture_context_events: Vec<storage::CaptureContextEvent>,
 }
 
@@ -1209,6 +1214,7 @@ fn open_metadata_window(
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_metadata_window")?;
     let fetch_started_at = Instant::now();
     let item = storage.get_item(request.item_id)?;
+    let item_tags = storage.get_item_tags(request.item_id)?;
     let capture_context_events = storage.list_capture_context_events(request.item_id, 12)?;
     diag_log(
         "metadata.open.item-fetch.done",
@@ -1227,6 +1233,7 @@ fn open_metadata_window(
                 &app_for_main_thread,
                 MetadataEditorPayload {
                     item,
+                    item_tags,
                     capture_context_events,
                 },
             ) {
@@ -1460,6 +1467,21 @@ fn update_history_item(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn update_item_metadata(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::UpdateItemMetadataRequest,
+) -> Result<(), String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
+        "update_item_metadata",
+    )?;
+    storage.update_item_metadata(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn create_history_item(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -1669,6 +1691,7 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
         || normalized == settings.picker.pin_toggle_shortcut
         || normalized == settings.picker.settings_shortcut
         || normalized == COMMAND_PALETTE_SHORTCUT_LABEL
+        || normalized == METADATA_SHORTCUT_LABEL
     {
         return Err(format!("saved view shortcut conflicts with an app shortcut: {normalized}"));
     }
@@ -2284,6 +2307,7 @@ pub fn run() {
             clear_marked_history_items,
             count_marked_history_items,
             update_history_item,
+            update_item_metadata,
             create_history_item,
             delete_history_item,
             get_history_item,
@@ -3280,6 +3304,25 @@ fn spawn_open_command_palette<R: tauri::Runtime + 'static>(app: tauri::AppHandle
 }
 
 #[cfg(not(test))]
+fn spawn_edit_active_metadata<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = app_for_main_thread.emit_to(
+                MAIN_WINDOW_LABEL,
+                METADATA_EDIT_ACTIVE_EVENT,
+                (),
+            ) {
+                eprintln!("metadata edit-active event failed: {error}");
+            }
+        }) {
+            eprintln!("metadata edit-active dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
 fn spawn_toggle_main_window_pin<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
     thread::spawn(move || {
         thread::sleep(NATIVE_WINDOW_TASK_DELAY);
@@ -3345,6 +3388,14 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     }) {
         eprintln!("command palette shortcut pressed: {shortcut:?}");
         spawn_open_command_palette(app.clone());
+        return;
+    }
+
+    if shortcut_from_label(METADATA_SHORTCUT_LABEL)
+        .is_some_and(|metadata_shortcut| *shortcut == metadata_shortcut)
+    {
+        eprintln!("metadata shortcut pressed: {shortcut:?}");
+        spawn_edit_active_metadata(app.clone());
         return;
     }
 
@@ -3758,6 +3809,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
     refresh_picker_shortcut_from_settings(app, settings);
     refresh_picker_pin_shortcut_from_settings(app, settings);
     refresh_command_palette_shortcut(app);
+    refresh_metadata_shortcut(app);
 
     if let Some(shortcuts) = app.try_state::<GlobalScriptShortcuts>() {
         for shortcut in shortcuts.current_shortcuts() {
@@ -3969,6 +4021,23 @@ fn refresh_command_palette_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>
         Ok(()) => eprintln!("command palette shortcut registered: {COMMAND_PALETTE_SHORTCUT_LABEL}"),
         Err(error) => eprintln!(
             "command palette shortcut registration failed for {COMMAND_PALETTE_SHORTCUT_LABEL}: {error}"
+        ),
+    }
+}
+
+#[cfg(not(test))]
+fn refresh_metadata_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(shortcut) = shortcut_from_label(METADATA_SHORTCUT_LABEL) else {
+        eprintln!("metadata shortcut not refreshed: unsupported shortcut {METADATA_SHORTCUT_LABEL}");
+        return;
+    };
+    if app.global_shortcut().is_registered(shortcut) {
+        return;
+    }
+    match app.global_shortcut().register(shortcut) {
+        Ok(()) => eprintln!("metadata shortcut registered: {METADATA_SHORTCUT_LABEL}"),
+        Err(error) => eprintln!(
+            "metadata shortcut registration failed for {METADATA_SHORTCUT_LABEL}: {error}"
         ),
     }
 }

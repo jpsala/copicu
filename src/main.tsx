@@ -416,6 +416,7 @@ const COMMAND_PALETTE_OPEN_EVENT = "copicu://command-palette/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
+const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
 const NOTIFICATION_ROW_HEIGHT = 78;
@@ -962,6 +963,8 @@ function App() {
   const deferredAppliedRefreshRef = useRef(false);
   const selectedIdsRef = useRef<Set<number>>(new Set());
   const selectedItemIdRef = useRef<number | null>(selectedItemId);
+  const lastActivatedItemIdRef = useRef<number | null>(null);
+  const metadataShortcutHandledAtRef = useRef(0);
   const selectionAnchorItemIdRef = useRef<number | null>(null);
   const selectionInteractionSeqRef = useRef(0);
   const nextToastIdRef = useRef(1);
@@ -2085,6 +2088,7 @@ function App() {
           itemId: item.id,
           ...effectiveActivation,
         });
+        lastActivatedItemIdRef.current = item.id;
         if (effectiveActivation.hidePicker) {
           pickerWasHiddenRef.current = true;
           resetPickerSession();
@@ -2257,6 +2261,31 @@ function App() {
     },
     [ensureFullHistoryItem, focusSearch],
   );
+
+  const openActiveMetadata = useCallback(() => {
+    const now = Date.now();
+    if (now - metadataShortcutHandledAtRef.current < 250) {
+      return;
+    }
+    metadataShortcutHandledAtRef.current = now;
+    const activeItemId = selectedItemIdRef.current ?? lastActivatedItemIdRef.current;
+    const activeItem = historyRef.current.find((item) => item.id === activeItemId)
+      ?? historyRef.current[0];
+    if (activeItem) {
+      void beginEdit(activeItem, "metadata");
+    }
+  }, [beginEdit]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+    let unlisten: (() => void) | null = null;
+    void listen(METADATA_EDIT_ACTIVE_EVENT, openActiveMetadata).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+    return () => unlisten?.();
+  }, [openActiveMetadata]);
 
   const deleteItems = useCallback(
     async (items: HistoryItem[]) => {
@@ -3298,7 +3327,7 @@ function App() {
       }
       if (shortcut === TAG_EDIT_SHORTCUT) {
         event.preventDefault();
-        void beginTagEdit(effectiveSelection);
+        openActiveMetadata();
         return;
       }
       if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
@@ -4050,6 +4079,16 @@ function App() {
                             <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit tags</span>
                             <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
+                          </UiUnstyledButton>
+                          <UiUnstyledButton
+                            type="button"
+                            role="menuitem"
+                            className="item-menu-action"
+                            onClick={() => void beginEdit(item, "metadata")}
+                          >
+                            <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
+                            <span>Edit metadata</span>
+                            <ShortcutBadge shortcut="Shift+F2" />
                           </UiUnstyledButton>
                         </>
                       )}

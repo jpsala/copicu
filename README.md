@@ -29,12 +29,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.3.8](https://github.com/jpsala/copicu/releases/tag/v0.3.8)
-- Asset: `Copicu_0.3.8_x64-setup.exe`
+- [v0.3.9](https://github.com/jpsala/copicu/releases/tag/v0.3.9)
+- Asset: `Copicu_0.3.9_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `A53268AF683211283CB67CA7EFBCE45D79EA9D660DCEB66D8B3485EB420089AA`
+- SHA256: `370C25C84D440357CA03CC5D32A553D30C146960819D98B15C4709995CF7FEC4`
 
-`v0.3.8` updates the Windows installer and current release notes for this cut.
+Compact inline metadata editing with #tag autocomplete, reliable keyboard selection, and correct last-activated item targeting.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

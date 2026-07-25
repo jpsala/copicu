@@ -66,9 +66,11 @@ No mantener dos fuentes de verdad para shortcuts filtrados. Si existe `tag_confi
 - Settings tiene una seccion `Tags` con resumen, lista/counts, create tag, pin y `Open filtered`.
 - La UI de hotkeys por tag con `HotkeyRecorder` fue eliminada. Settings > Tags no edita, valida ni muestra estado de hotkeys.
 - `tag_configs.hotkey` queda como compatibilidad historica de DB, pero `list_tags` ya no lo expone y el runtime no lo registra.
-- `Ctrl+Shift+C` usa chips/autocomplete sobre tags normalizados: single reemplaza el conjunto exacto y batch agrega de forma atomica; el campo legacy queda solo en el editor avanzado de metadata.
+- `Ctrl+Shift+C` es app-owned global y abre una utility chica para el item activo, con fallback al primer item visible. La UI usa un solo textarea: cualquier `#token` se extrae a tags normalizados y se quita de `notes`; `title` no se muestra y se preserva sin cambios.
+- El editor rapido de tags sigue disponible desde menu: single reemplaza el conjunto exacto y batch agrega de forma atomica.
 - El backend registra global shortcuts para:
   - abrir picker (`general.globalShortcut`);
+  - editar metadata activa (`Ctrl+Shift+C`);
   - scripts con trigger `globalShortcut`.
 - Los wrappers de filtros/hotkeys viven en `scripts/examples/020-open-tag-filtered.ts` a `024-open-prompt-filtered.ts` y deben copiarse a `Documents/Copicu/Scripts` para dogfood.
 - Cierre de validacion: los wrappers ya fueron copiados a `Documents/Copicu/Scripts`; Settings > Tags fue verificado sin recorder/status; `examples.openTagFiltered` abre `tag:context` via `commands.run("picker.open", ...)` sin activar ni pegar items. Para validar hotkeys globales fisicos, usar Computer Use/tecla fisica; las inyecciones sinteticas no siempre disparan el hook global de Tauri.
@@ -329,7 +331,7 @@ Usar `tag:<slug>` para abrir. Si hay espacios o caracteres especiales en el labe
 - al filtrar, usar `tag:<slug>`;
 - al editar metadata, seguir aceptando `#slug`.
 
-Pregunta abierta: si un item tiene `#Very Important` en notas, el primer corte no debe intentar soportarlo como tag canonical hasta normalizar tags.
+Decision 2026-07-25: `#` queda reservado para tags en el textarea de metadata, sin distinguir hashtags de prosa. Los tokens aceptan letras, numeros, `_`, `/` y `-`; un mecanismo de escape y futuros prefijos `@` / `*` se decidiran solo cuando exista un caso real.
 
 ## Privacidad
 

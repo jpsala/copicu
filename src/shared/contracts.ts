@@ -56,6 +56,13 @@ export type SetItemTagsRequest = {
   tags: string[];
 };
 
+export type UpdateItemMetadataRequest = {
+  id: number;
+  title: string | null;
+  notes: string | null;
+  tags: string[];
+};
+
 export type ApplyItemTagsRequest = {
   itemIds: number[];
   tags: string[];

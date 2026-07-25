@@ -119,6 +119,15 @@ pub struct UpdateHistoryItemRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateItemMetadataRequest {
+    pub id: i64,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateHistoryItemRequest {
     pub text: String,
     pub title: Option<String>,
@@ -1499,6 +1508,31 @@ impl AppStorage {
             sync_item_tags_from_legacy_string(&conn, request.id, next_tags.as_deref())?;
             Ok(())
         }
+    }
+
+    pub fn update_item_metadata(&self, request: UpdateItemMetadataRequest) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let transaction = conn
+            .transaction()
+            .map_err(|error| format!("failed to begin metadata update: {error}"))?;
+        ensure_item_exists(&transaction, request.id)?;
+        transaction
+            .execute(
+                "UPDATE clipboard_items SET title = ?1, notes = ?2 WHERE id = ?3",
+                params![
+                    normalize_optional_text(request.title),
+                    normalize_optional_text(request.notes),
+                    request.id,
+                ],
+            )
+            .map_err(|error| format!("failed to update clipboard item metadata: {error}"))?;
+        set_item_tags_from_values(&transaction, request.id, &request.tags)?;
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to commit metadata update: {error}"))
     }
 
     pub fn delete_item(&self, id: i64) -> Result<(), String> {
@@ -4074,6 +4108,33 @@ mod tests {
         assert!(tags
             .iter()
             .any(|tag| tag.slug == "backend" && tag.item_count == 1));
+    }
+
+    #[test]
+    fn update_item_metadata_keeps_notes_and_tags_independent_and_atomic() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "synthetic metadata item");
+
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: 1,
+                title: Some("Reference".to_string()),
+                notes: Some("Markdown note with #not-a-tag".to_string()),
+                tags: vec!["Work".to_string(), "Very Important".to_string()],
+            })
+            .expect("metadata should update");
+
+        let item = storage.get_item(1).expect("item should load");
+        assert_eq!(item.title.as_deref(), Some("Reference"));
+        assert_eq!(item.notes.as_deref(), Some("Markdown note with #not-a-tag"));
+        assert_eq!(
+            storage.get_item_tags(1).expect("tags should load"),
+            vec!["Very Important".to_string(), "Work".to_string()]
+        );
+        assert!(!storage
+            .get_item_tags(1)
+            .expect("tags should reload")
+            .contains(&"not-a-tag".to_string()));
     }
 
     #[test]

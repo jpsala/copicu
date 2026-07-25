@@ -243,6 +243,7 @@ async function mockTauriInvoke(
           case "plugin:event|unlisten":
             return null;
           case "plugin:event|unregisterListener":
+          case "plugin:event|emit_to":
             return null;
           case "record_renderer_diagnostic":
             return null;
@@ -603,9 +604,14 @@ async function mockTauriInvoke(
           }
           case "list_saved_history_views":
             return (window as any).__copicuTestSavedHistoryViews;
-          case "pending_metadata_editor":
+          case "pending_metadata_editor": {
+            const item = ((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0];
             return {
-              item: withHistoryPreview(((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0], true),
+              item: withHistoryPreview(item, true),
+              itemTags: (item.tags ?? "")
+                .split(/\s+/)
+                .map((tag: string) => tag.replace(/^#/, "").trim())
+                .filter(Boolean),
               captureContextEvents: [
                 {
                   id: 1,
@@ -629,6 +635,21 @@ async function mockTauriInvoke(
                 },
               ],
             };
+          }
+          case "update_item_metadata": {
+            const request = args.request;
+            (window as any).__copicuTestHistoryItems = (
+              (window as any).__copicuTestHistoryItems ?? items
+            ).map((item: any) => item.id === request.id
+              ? {
+                  ...item,
+                  title: request.title,
+                  notes: request.notes,
+                  tags: request.tags.map((tag: string) => `#${tag}`).join(" ") || null,
+                }
+              : item);
+            return null;
+          }
           case "create_tag": {
             const label = args.request.label.trim();
             const nextTag = {
@@ -1293,12 +1314,16 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   expect(getCalls).toHaveLength(1);
 });
 
-test("F2 edits content only and Shift+F2 edits metadata", async ({ page }) => {
+test("F2 edits content and Shift+F2 opens the metadata window from shortcut or menu", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
   await expect(search).toBeVisible();
+  await page.locator(".feed-item").first().click({ button: "right" });
+  const metadataMenuItem = page.getByRole("menuitem", { name: /Edit metadata/ });
+  await expect(metadataMenuItem).toBeVisible();
+  await expect(metadataMenuItem.getByLabel("Shift+F2")).toBeVisible();
   await search.click();
 
   await page.keyboard.press("F2");
@@ -1317,33 +1342,27 @@ test("F2 edits content only and Shift+F2 edits metadata", async ({ page }) => {
   await expect(metadataDialog.getByRole("textbox", { name: "Content" })).toHaveCount(0);
 });
 
-test("Ctrl+Shift+C opens the compact built-in tag editor", async ({ page }) => {
+test("Ctrl+Shift+C targets the last item activated with Enter", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByLabel("Search clipboard history");
-  await search.click();
+  const activatedItem = syntheticLongHistory[1];
+  await page.locator(".feed-item").nth(1).click();
+  await page.keyboard.press("Enter");
   await page.keyboard.press("Control+Shift+C");
 
-  const dialog = page.getByRole("dialog", { name: "Edit tags" });
+  const dialog = page.getByRole("dialog", { name: "Edit item metadata" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("textbox", { name: "Tag" })).toBeFocused();
-  await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveCount(0);
-  await expect(dialog.getByRole("textbox", { name: "Metadata" })).toHaveCount(0);
+  const metadata = dialog.getByRole("textbox", { name: "Metadata" });
+  await expect(metadata).toBeFocused();
+  await expect(dialog.getByRole("textbox", { name: "Content" })).toHaveCount(0);
+  await metadata.fill("last activated #verified");
+  await dialog.getByRole("button", { name: "Save" }).click();
 
-  const input = dialog.getByRole("textbox", { name: "Tag" });
-  await input.fill("focus-tag");
-  await expect(dialog.getByRole("option", { name: /Create “focus-tag”/ })).toBeVisible();
-  await input.press("Enter");
-  await input.press("Control+Enter");
-
-  const call = await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "apply_item_tags"),
+  const update = await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "update_history_item"),
   );
-  const request = (await call.jsonValue() as any).args.request;
-  expect(request.itemIds).toHaveLength(1);
-  expect(request.mode).toBe("replace");
-  expect(request.tags).toContain("focus-tag");
+  expect((await update.jsonValue() as any).args.request.id).toBe(activatedItem.id);
 });
 
 test("manual scroll is not reset by history refresh", async ({ page }) => {
@@ -2783,21 +2802,61 @@ test("ai-output renders markdown and actions without overflow", async ({ page })
   expect(overflow).toBe(false);
 });
 
-test("metadata window focuses title input on open", async ({ page }) => {
+test("metadata window parses one text input into notes and inline tags", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 260 });
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=metadata");
 
-  const title = page.getByRole("textbox", { name: "Title" });
-  await expect(title).toBeVisible();
-  await expect(title).toBeFocused();
-  await expect(page.getByRole("textbox", { name: "Notes and tags" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Detected tags" })).toContainText("No tags yet");
-  await expect(page.getByLabel("Capture context").getByText("Read-only searchable metadata")).toBeVisible();
+  const editor = page.getByRole("textbox", { name: "Metadata" });
+  await expect(editor).toBeVisible();
+  await expect(editor).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Notes" })).toHaveCount(0);
+  await expect(page.getByLabel("Capture context")).toHaveCount(0);
+  await expect(page.locator(".metadata-text-suggestions")).toHaveCount(0);
 
-  const overflow = await page.locator(".metadata-window-app").evaluate((element) =>
-    Array.from(element.querySelectorAll<HTMLElement>("*")).some(
-      (child) => child.scrollWidth > Math.ceil(child.clientWidth) + 1,
-    ),
+  await editor.fill("Markdown note #wo");
+  const suggestionList = page.locator(".metadata-text-suggestions");
+  await expect(suggestionList).toBeVisible();
+  const [suggestionBox, appBox] = await Promise.all([
+    suggestionList.boundingBox(),
+    page.locator(".metadata-window-app").boundingBox(),
+  ]);
+  expect(suggestionBox).not.toBeNull();
+  expect(appBox).not.toBeNull();
+  expect(suggestionBox!.y + suggestionBox!.height).toBeLessThanOrEqual(appBox!.y + appBox!.height);
+  await editor.press("Tab");
+  await expect(suggestionList).toHaveCount(0);
+  await expect(editor).toHaveValue("Markdown note #work ");
+
+  await editor.pressSequentially("anywhere #ba");
+  await expect(suggestionList).toBeVisible();
+  await editor.press("Enter");
+  await expect(suggestionList).toHaveCount(0);
+  await expect(editor).toHaveValue("Markdown note #work anywhere #backend ");
+
+  await editor.pressSequentially("#fresh");
+  await editor.press("Control+Enter");
+
+  const update = await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "update_item_metadata"),
   );
-  expect(overflow).toBe(false);
+  const request = (await update.jsonValue() as any).args.request;
+  expect(request.title).toBe("Multiline sample");
+  expect(request.notes).toBe("Markdown note anywhere");
+  expect(request.tags).toContain("Work");
+  expect(request.tags).toContain("Backend");
+  expect(request.tags).toContain("fresh");
+  await expect(page.locator(".metadata-window-buttons .mantine-Loader-root")).toHaveCount(0);
+
+  const overflowing = await page.locator(".metadata-window-app").evaluate((element) =>
+    Array.from(element.querySelectorAll<HTMLElement>("*"))
+      .filter((child) => child.scrollWidth > Math.ceil(child.clientWidth) + 1)
+      .map((child) => ({
+        className: child.className,
+        clientWidth: child.clientWidth,
+        scrollWidth: child.scrollWidth,
+      })),
+  );
+  expect(overflowing).toEqual([]);
 });

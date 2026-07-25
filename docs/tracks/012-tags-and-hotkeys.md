@@ -1,6 +1,7 @@
 ---
-status: active
-updated: 2026-06-29
+status: complete
+updated: 2026-07-25
+execution_route: balanced
 topic: docs/topics/tag-management-hotkeys.md
 related:
   - docs/topics/hotkeys.md
@@ -57,7 +58,7 @@ await copicu.commands.run("picker.open", {
   - renderer consulta pending con polling liviano y captura el siguiente paso con `keydown`.
 - Callbacks nativos/global-shortcut deben retornar rapido; cualquier UI/ventana/plugin debe ir por main thread o primitiva segura.
 - Scripts con `shortcut` son read-only desde Settings: se editan en el archivo fuente y luego se refresca cache/diagnosticos.
-- `Ctrl+Shift+C` queda reservado por backend para el editor built-in local de tags: single reemplaza el conjunto exacto; multiseleccion agrega tags sin quitar los existentes. No depende del script historico `examples.assignMetadataToActive` ni se registra globalmente.
+- `Ctrl+Shift+C` queda reservado y registrado globalmente por Copicu: abre el editor completo de metadata para el item activo del picker, con fallback al primer item visible. No depende del script historico `examples.assignMetadataToActive`.
 - Patch preview para shortcuts de scripts queda opcional/futuro; no es pendiente inmediato.
 
 ## Implementado
@@ -89,17 +90,19 @@ Actualizacion 2026-07-12:
 - Elegir navegacion cierra la palette y aplica la query al picker normal editable; las acciones conservan su ejecucion actual.
 - El overlay local **Quick Actions** contextual (`Ctrl+Alt+Q` con el picker enfocado) se conserva separado: lista solo acciones/scripts compatibles con la seleccion actual.
 
-### Shortcuts Nativos Del Picker
+### Shortcuts Nativos De Metadata
 
 Actualizacion 2026-07-25:
 
-- `Ctrl+Shift+C` es un handler built-in local del picker para tags, no un global shortcut.
-- Single item abre chips con el conjunto actual; multiseleccion abre `Add tags` y conserva los tags existentes.
-- Autocomplete prioriza exact/prefix, permite contains y separa visualmente `Create tag`; `Enter`, `Tab`, `Backspace`, `Escape` y `Ctrl+Enter` cubren el flujo keyboard-first.
-- El menu contextual muestra el badge en `Edit tags` y `Add tags to selected/checked`.
-- Rust aplica batches en una transaccion SQLite y permite limpiar todos los tags en modo single.
-- El backend rechaza `Ctrl+Shift+C` en scripts globales. El ejemplo `examples.assignMetadataToActive` queda solo como `devRun` del editor avanzado.
-- `Shift+F2` conserva por ahora el editor avanzado de metadata sin competir con el flujo rapido.
+- `Ctrl+Shift+C` es un global shortcut app-owned y read-only en Settings; abre el editor completo de metadata sin mostrar ni agrandar el picker.
+- El item objetivo es el activo del picker; despues de `Enter` y hide/reset, conserva el ultimo item activado. Solo cae al primer item visible si no existe seleccion ni activacion previa.
+- El editor global es una utility chica con un unico textarea auto-grow; no expone `title` ni contexto de captura.
+- Cualquier `#token` en cualquier posicion se extrae como tag y se elimina de `notes` al guardar; al reabrir, tags y notas se serializan otra vez en el mismo texto.
+- `title` preexistente se preserva internamente sin mostrarse. Escape de `#` y prefijos `@` / `*` quedan fuera de este corte.
+- Autocomplete aparece al escribir `#`, prioriza exact/prefix y acepta teclado; un tag nuevo se crea simplemente guardando su token.
+- `Edit tags` y `Add tags to selected/checked` conservan el flujo rapido single/multi desde menu.
+- Rust aplica batches y guardados completos en transacciones SQLite.
+- El backend rechaza `Ctrl+Shift+C` en scripts globales. `Shift+F2` sigue abriendo el mismo editor completo para el item activo.
 
 ### Settings > Hotkeys
 
@@ -126,6 +129,87 @@ Actualizacion 2026-07-25:
 - Decision 2026-06-18: el hotkey global del picker abre con foco por defecto para mantener el producto keyboard-first. La ruta no-activate queda solo como fallback diagnostico (`COPICU_PICKER_NO_ACTIVATE=1`) porque mostraba el picker sin que el search recibiera teclado.
 - Oracle de regresion: enfocar app externa -> disparar `Ctrl+Shift+.` -> tipear token sin llamar a `focus` -> screenshot debe mostrar el token en el search. La validacion de 2026-06-18 paso con `.codex-run/computer-use/focus-hotkey-after-type-2.png`.
 
+## Brief Historico Superado: Editor De Metadata Con Modos
+
+> Superado el 2026-07-25 por la decision de textbox unico con `#tags` inline. Esta seccion conserva solamente el contexto del corte anterior.
+
+### Objetivo
+
+Compartir la experiencia de tags entre el editor rapido y el editor completo de metadata, manteniendo notas y tags como campos independientes.
+
+### Comportamiento Observable
+
+- `Ctrl+Shift+C` funciona globalmente y abre metadata para el item activo: titulo, tags, notas Markdown libres y contexto de captura read-only.
+- `Shift+F2` abre el mismo editor completo desde el picker.
+- Escribir `#algo` en notas no modifica tags; guardar y reabrir conserva ambos campos por separado.
+- El menu conserva `Edit tags` para el flujo rapido y ofrece `Edit metadata` con `Shift+F2`.
+
+### Limites Explicitos
+
+- No cambiar `F2`, creacion de items, metadata batch ni semantica de multiseleccion.
+- No reescribir notas existentes, importar hashtags automaticamente ni ampliar el esquema de metadata.
+- No tocar release, updater ni app instalada.
+
+### Criterios De Terminado
+
+1. El editor rapido mantiene su semantica single/multi desde menu.
+2. `Ctrl+Shift+C` global y `Shift+F2` abren el editor completo para el item activo.
+3. El editor completo reutiliza la experiencia de tags y permite editar notas independientemente.
+4. Un guardado persiste titulo, notas y tags normalizados sin estado parcial; al reabrir se recuperan los mismos valores.
+
+### Checks Focales Minimos
+
+- `npm run build`
+- `npm run visual:check -- --grep "Ctrl\\+Shift\\+C opens|multi selection tag editor|metadata window"`
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib metadata`
+
+### Resultado 2026-07-25
+
+Implementado el editor completo con el mismo control normalizado de tags, notas Markdown independientes, titulo y captura read-only. El guardado dedicado persiste titulo, notas y tags en una unica transaccion. `Ctrl+Shift+C` quedo registrado globalmente para el item activo, `Shift+F2` abre la misma superficie y el menu conserva los flujos rapido/completo.
+
+Validado con build, 8/8 casos visuales focales y 8/8 tests Rust filtrados por `metadata`. En Windows GNU el test focal requiere el mismo manifest Common Controls v6 y limpieza de Miniconda que aplica `tests/manual/run-rust-tests.ps1`; `cargo test` crudo no es evidencia valida en esta maquina.
+
+## Brief De Dogfood: Metadata Completa
+
+### Objetivo
+
+Validar en Windows real el editor completo de metadata y pulir solo defectos observados sin tocar la app instalada.
+
+### Comportamiento Observable
+
+- `Ctrl+Shift+C` global y `Shift+F2` abren el editor completo con foco util.
+- Titulo, tags y una nota con `#texto` se guardan y reaparecen independientes al reabrir.
+- El menu conserva `Edit tags` y su semantica rapida single/multi.
+
+### Limites Explicitos
+
+- Usar datos sinteticos y app-data dev aislada; no promover ni modificar la instalada.
+- No abrir otra feature, ampliar la bateria general ni pulir fuera de evidencia visual/teclado observada.
+- No cambiar metadata batch, `F2` ni semantica de seleccion.
+
+### Criterios De Terminado
+
+1. Ambos accesos al editor completo funcionan con foco y teclado en la app real.
+2. Guardar y reabrir conserva titulo, notas y tags independientes.
+3. El editor rapido de tags sigue funcionando en single y multi.
+4. Todo defecto observado queda corregido y revalidado, o registrado como gate concreto si requiere decision externa.
+
+### Checks Focales Minimos
+
+- Smoke interactivo en dev aislado con Computer Use/AHK y fixtures sinteticos.
+- Si hay cambios de producto: `npm run build`.
+- Si hay cambios de producto: `npm run visual:check -- --grep "Ctrl\\+Shift\\+C opens|multi selection tag editor|metadata window"`.
+
+### Resultado 2026-07-25
+
+Dogfood completado sobre un perfil temporal aislado con seis fixtures sinteticos. `Shift+F2` y `Ctrl+Shift+C` abrieron la ventana nativa; titulo, `#dogfood-meta` y una nota con `#note` persistieron como campos independientes al guardar y reabrir. El menu single conservo `Edit tags` / `Edit metadata`, y el menu de tres items checked conservo `Add tags to checked` sin reemplazar tags existentes.
+
+El smoke detecto que la ventana recibia foco nativo pero dejaba `document.activeElement` en `BODY`. El titulo ahora usa autofocus al montar y un refocus en el siguiente frame al cambiar de payload; la revalidacion AHK + CDP dejo el input `Optional title` activo en ambos accesos. Pasaron `npm run build` y los 8/8 visuales focales.
+
+### Resultado Del Rediseño Inline 2026-07-25
+
+La ventana `metadata` quedo reducida a 480×260 por defecto, con un solo textarea auto-grow enfocado, autocomplete contextual al escribir `#`, `Ctrl+Enter` para guardar y acciones compactas. El parser mantiene la arquitectura SQLite vigente: envia texto sin tokens a `notes`, tags normalizados a `tags` y preserva `title` sin exponerlo. Los 8 visuales focales y `cargo check --lib` pasan.
+
 ## Validaciones De Referencia
 
 Ultimos checks relevantes:
@@ -133,7 +217,8 @@ Ultimos checks relevantes:
 - Corte built-in tags 2026-07-25: `npm run build` y `cargo check --manifest-path src-tauri/Cargo.toml --lib` pasan.
 - `npm run visual:check`: 160/160; incluye `Ctrl+Shift+C` single y batch en desktop/narrow.
 - LSP/lens sin errores y `bun run context:audit` pasa.
-- Dev reiniciado con backend nuevo; smoke fisico pendiente porque el bridge AHK de Computer Use fallo durante el cierre.
+- Dogfood visual/teclado 2026-07-25 en dev aislado: single creo, aplico, reabrio y limpio un tag; multi agrego un tag a dos clips y conservo los tags distintos preexistentes; `Escape` cancelo y `Ctrl+Enter` aplico. El bridge AHK-MCP estaba ausente, por lo que se uso AHK local para foco/teclas y CDP WebView2 para inspeccion visual.
+- Pulido observado: el titulo single ahora dice `Edit tags` y la ayuda muestra `Ctrl+Enter` de forma consistente.
 - Dogfood Settings script shortcut edit en perfil dev aislado:
   - script temporal `dogfood.shortcutEdit` registro `Ctrl+Alt+Shift+9`;
   - cambiar a `Ctrl+Alt+Shift+T` produjo conflicto;
@@ -151,10 +236,3 @@ Ultimos checks relevantes:
 - Clicks por coordenadas sobre esquina superior derecha pueden contaminarse por overlays de herramientas; preferir logs y `GetWindowRect`.
 - `npm run rust:test` puede fallar por infraestructura local `STATUS_ENTRYPOINT_NOT_FOUND`; contrastar con `cargo check`.
 - No persistir payloads reales del clipboard en logs/docs.
-
-## Proximo Corte Recomendado
-
-1. Dogfoodear el editor built-in de tags con teclado real: single exact/clear, create/autocomplete y multi add preservando tags.
-2. Ajustar densidad, copy o foco solo segun evidencia visual; mantener title/notes/context fuera de `Ctrl+Shift+C`.
-3. La instalada `v0.3.8` sigue con el flujo viejo. Promover dev solo si JP pide explicitamente `npm run install:current`.
-4. Despues retomar el gate pendiente de `Ctrl+Alt+Up/Down`; no mezclar ambos diagnosticos.

@@ -644,6 +644,7 @@ fn open_ai_output_window_on_main_thread<R: Runtime + 'static>(
 fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
     app: &AppHandle<R>,
     item: crate::storage::HistoryItem,
+    item_tags: Vec<String>,
 ) -> Result<(), String> {
     let app = app.clone();
     app.clone()
@@ -652,6 +653,7 @@ fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
                 &app,
                 crate::MetadataEditorPayload {
                     item,
+                    item_tags,
                     capture_context_events: Vec::new(),
                 },
             ) {
@@ -1318,8 +1320,10 @@ fn script_metadata_edit_active<R: Runtime + 'static>(
 ) -> Result<serde_json::Value, String> {
     let payload: MetadataEditActivePayload = serde_json::from_value(payload)
         .map_err(|error| format!("invalid metadata.editActive payload: {error}"))?;
-    let item = storage.get_item(parse_script_item_id(&payload.id)?)?;
-    open_metadata_editor_window_on_main_thread(app, item)?;
+    let item_id = parse_script_item_id(&payload.id)?;
+    let item = storage.get_item(item_id)?;
+    let item_tags = storage.get_item_tags(item_id)?;
+    open_metadata_editor_window_on_main_thread(app, item, item_tags)?;
     Ok(json!(null))
 }
 

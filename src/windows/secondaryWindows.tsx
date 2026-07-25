@@ -18,7 +18,6 @@ import Pin from "lucide-react/dist/esm/icons/pin.mjs";
 import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import Search from "lucide-react/dist/esm/icons/search.mjs";
-import Tags from "lucide-react/dist/esm/icons/tags.mjs";
 import Terminal from "lucide-react/dist/esm/icons/terminal.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import {
@@ -50,7 +49,7 @@ import type {
   ToastItem,
   ToastOptions,
   UiHostRequest,
-  UpdateHistoryItemRequest,
+  UpdateItemMetadataRequest,
   UpdateTagConfigRequest,
 } from "../shared/contracts";
 import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings, type SearchTriggerMode } from "../shared/settings";
@@ -70,6 +69,11 @@ import {
   UiTooltip,
 } from "../ui/controls";
 import { ShortcutBadge } from "../ui/ShortcutBadge";
+import {
+  formatMetadataText,
+  MetadataTextInput,
+  parseMetadataText,
+} from "../ui/TagEditor";
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
 import { SavedHistoryViews } from "./SavedHistoryViews";
@@ -141,6 +145,7 @@ type AutostartStatus = {
 
 type MetadataEditorPayload = {
   item: HistoryItem;
+  itemTags: string[];
   captureContextEvents: CaptureContextEvent[];
 };
 
@@ -223,13 +228,6 @@ function applyAppearance(appearance: AppSettings["appearance"]) {
 function nullableTrim(value: string) {
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
-}
-
-function metadataTags(value: string | null) {
-  const tags = new Set(
-    Array.from(value?.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu) ?? [], (match) => `#${match[2]}`),
-  );
-  return tags.size === 0 ? null : Array.from(tags).join(" ");
 }
 
 function formatCaptureTimestamp(value: number) {
@@ -384,8 +382,8 @@ function pendingMetadataEditor() {
   return invoke<MetadataEditorPayload | null>("pending_metadata_editor");
 }
 
-function updateHistoryItem(request: UpdateHistoryItemRequest) {
-  return invoke<void>("update_history_item", { request });
+function updateItemMetadata(request: UpdateItemMetadataRequest) {
+  return invoke<void>("update_item_metadata", { request });
 }
 
 function closeMetadataWindow() {
@@ -559,12 +557,22 @@ if (isTauriRuntime()) {
 
 export function MetadataWindowApp() {
   const [payload, setPayload] = useState<MetadataEditorPayload | null>(null);
-  const [notes, setNotes] = useState("");
-  const [title, setTitle] = useState("");
+  const [metadataText, setMetadataText] = useState("");
+  const [editorSession, setEditorSession] = useState(0);
+  const [availableTags, setAvailableTags] = useState<TagSummary[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const titleRef = useRef<HTMLInputElement>(null);
-  const latestCaptureContext = payload?.captureContextEvents[0] ?? null;
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+
+  const focusEditor = useCallback((itemId: number | null) => {
+    window.requestAnimationFrame(() => {
+      editorRef.current?.focus();
+      recordRendererDiagnostic(
+        "metadata.input-focused",
+        `item_id=${itemId ?? "none"} active=${document.activeElement === editorRef.current}`,
+      );
+    });
+  }, []);
 
   useEffect(() => {
     document.body.classList.add("metadata-window");
@@ -578,19 +586,14 @@ export function MetadataWindowApp() {
     const itemId = nextPayload?.item.id ?? null;
     recordRendererDiagnostic("metadata.loadPayload", `item_id=${itemId ?? "none"}`);
     setPayload(nextPayload);
-    setTitle(nextPayload?.item.title ?? "");
-    setNotes(nextPayload?.item.notes ?? "");
+    setMetadataText(formatMetadataText(nextPayload?.item.notes, nextPayload?.itemTags ?? []));
+    setEditorSession((current) => current + 1);
     setError(null);
-    [0, 80, 220, 500].forEach((delayMs) => {
-      window.setTimeout(() => {
-        titleRef.current?.focus();
-        recordRendererDiagnostic(
-          "metadata.title-focused",
-          `item_id=${itemId ?? "none"} delay_ms=${delayMs} active=${document.activeElement === titleRef.current}`,
-        );
-      }, delayMs);
-    });
-  }, []);
+    void listTags()
+      .then(setAvailableTags)
+      .catch((loadError) => setError(String(loadError)));
+    focusEditor(itemId);
+  }, [focusEditor]);
 
   useEffect(() => {
     let active = true;
@@ -633,16 +636,15 @@ export function MetadataWindowApp() {
     }
     setSaving(true);
     setError(null);
-    const request: UpdateHistoryItemRequest = {
+    const parsed = parseMetadataText(metadataText, availableTags, payload.itemTags);
+    const request: UpdateItemMetadataRequest = {
       id: payload.item.id,
-      text: payload.item.text,
-      title: nullableTrim(title),
-      notes: nullableTrim(notes),
-      tags: metadataTags(notes),
-      mimePrimary: payload.item.mime_primary,
+      title: payload.item.title,
+      notes: nullableTrim(parsed.notes),
+      tags: parsed.tags,
     };
     try {
-      await updateHistoryItem(request);
+      await updateItemMetadata(request);
       await emitTo("main", HISTORY_CHANGED_EVENT, {
         itemId: payload.item.id,
         contentKind: payload.item.content_kind,
@@ -653,7 +655,7 @@ export function MetadataWindowApp() {
     } finally {
       setSaving(false);
     }
-  }, [notes, payload, saving, title]);
+  }, [availableTags, metadataText, payload, saving]);
 
   const handleEditorKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLFormElement>) => {
@@ -681,17 +683,9 @@ export function MetadataWindowApp() {
       <main className="metadata-window-app" aria-label="Metadata editor">
         <header className="metadata-window-header">
           <div className="metadata-window-title">
-            <Tags size={18} strokeWidth={2.2} aria-hidden="true" />
-            <div>
-              <strong>Edit metadata</strong>
-              <span>{payload ? `Item #${payload.item.id}` : "Waiting for item"}</span>
-            </div>
+            <strong>Metadata</strong>
+            <span>{payload ? `#${payload.item.id}` : "Waiting for item"}</span>
           </div>
-          {payload?.item.content_kind ? (
-            <UiBadge className="settings-summary-badge" variant="light">
-              {payload.item.content_kind}
-            </UiBadge>
-          ) : null}
         </header>
 
         {payload ? (
@@ -703,91 +697,24 @@ export function MetadataWindowApp() {
               void save();
             }}
           >
-            <label>
-              <span>Title</span>
-              <UiTextInput
-                ref={titleRef}
-                value={title}
-                placeholder="Optional title"
-                onChange={(event) => setTitle(event.currentTarget.value)}
-              />
-            </label>
-            <label>
-              <span>Notes and tags</span>
-              <UiTextarea
-                className="notes-input"
-                value={notes}
-                placeholder="#work&#10;Markdown notes about this clip"
-                onChange={(event) => setNotes(event.currentTarget.value)}
-                autosize={false}
-              />
-            </label>
-            <section className="metadata-window-preview" aria-label="Detected tags">
-              <span>Detected tags</span>
-              <strong>{metadataTags(notes) ?? "No tags yet"}</strong>
-            </section>
-            <section
-              className={`metadata-capture-context${latestCaptureContext ? "" : " is-empty"}`}
-              aria-label="Capture context"
-            >
-              <div className="metadata-capture-context-heading">
-                <div>
-                  <span>Capture context</span>
-                  <strong>Read-only searchable metadata</strong>
-                </div>
-                <UiBadge variant="light">
-                  {payload.captureContextEvents.length === 1
-                    ? "1 event"
-                    : `${payload.captureContextEvents.length} events`}
-                </UiBadge>
-              </div>
-              {latestCaptureContext ? (
-                <details open>
-                  <summary>
-                    Latest: {latestCaptureContext.sourceAppName ?? latestCaptureContext.sourceKind}
-                    {latestCaptureContext.sourceWindowTitle
-                      ? ` · ${latestCaptureContext.sourceWindowTitle}`
-                      : ""}
-                  </summary>
-                  <dl className="metadata-capture-context-grid">
-                    {captureContextRows(latestCaptureContext).map(([label, value]) => (
-                      <div key={label}>
-                        <dt>{label}</dt>
-                        <dd>{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <div className="metadata-capture-context-chips" aria-label="Search filters">
-                    {captureSearchChips(latestCaptureContext).map((chip) => (
-                      <code key={chip}>{chip}</code>
-                    ))}
-                  </div>
-                  {payload.captureContextEvents.length > 1 ? (
-                    <ol className="metadata-capture-context-events">
-                      {payload.captureContextEvents.slice(1).map((event) => (
-                        <li key={event.id}>
-                          <span>{formatCaptureTimestamp(event.capturedAtUnixMs)}</span>
-                          <strong>{event.sourceAppName ?? event.sourceKind}</strong>
-                          <em>{event.sourceWindowTitle ?? event.domain ?? event.mimePrimary ?? "No window"}</em>
-                        </li>
-                      ))}
-                    </ol>
-                  ) : null}
-                </details>
-              ) : (
-                <p className="metadata-capture-context-empty">
-                  <strong>No capture context yet.</strong> It is recorded when this clip is captured again.
-                </p>
-              )}
-            </section>
+            <MetadataTextInput
+              key={editorSession}
+              ref={editorRef}
+              value={metadataText}
+              availableTags={availableTags}
+              onChange={setMetadataText}
+            />
             {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
-            <div className="metadata-window-buttons">
-              <UiButton type="button" variant="default" onClick={closeWindow}>
-                Cancel
-              </UiButton>
-              <UiButton type="submit" variant="filled" loading={saving}>
-                Save metadata
-              </UiButton>
+            <div className="metadata-window-footer">
+              <span><code>#tag</code> anywhere · <code>Ctrl+Enter</code> save</span>
+              <div className="metadata-window-buttons">
+                <UiButton type="button" variant="default" onClick={closeWindow}>
+                  Cancel
+                </UiButton>
+                <UiButton type="submit" variant="filled" loading={saving}>
+                  Save
+                </UiButton>
+              </div>
             </div>
           </form>
         ) : (
@@ -2951,9 +2878,9 @@ function AppShortcutInventory({
           shortcut: "Enter, Shift+Enter",
         },
         {
-          id: "picker.editTags",
-          title: "Edit tags",
-          description: "Opens the built-in tag editor. Multi-selection adds tags without removing existing ones.",
+          id: "metadata.editActive",
+          title: "Edit active metadata",
+          description: "Global shortcut. Opens tags and notes for the active clipboard item.",
           shortcut: "Ctrl+Shift+C",
         },
         {
@@ -2972,9 +2899,14 @@ function AppShortcutInventory({
             <p>{entry.description}</p>
           </div>
           <div className="hotkey-meta">
-            <ReadOnlyStatus value="Picker local" tone="success" />
+            <ReadOnlyStatus
+              value={entry.id === "metadata.editActive" ? "Global" : "Picker local"}
+              tone="success"
+            />
             <ReadOnlyStatus value="Read-only" />
-            <ReadOnlyStatus value="Renderer source" />
+            <ReadOnlyStatus
+              value={entry.id === "metadata.editActive" ? "Native source" : "Renderer source"}
+            />
           </div>
         </section>
       ))}

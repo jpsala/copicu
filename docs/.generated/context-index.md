@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-25T15:21:09.302Z
+Generated: 2026-07-25T23:53:15.578Z
 
 ## Topics
 
@@ -57,7 +57,7 @@ Generated: 2026-07-25T15:21:09.302Z
 - first-slice-implemented: [UI Host Custom Surface](../tracks/009-ui-host-custom-surface.md)
 - active: [010 UI Rethink](../tracks/010-ui-rethink.md)
 - active-next-theme-contrast-polish: [011 Mantine Component Migration](../tracks/011-mantine-component-migration.md)
-- active: [012 Hotkeys, WhichKey And Tags](../tracks/012-tags-and-hotkeys.md)
+- complete: [012 Hotkeys, WhichKey And Tags](../tracks/012-tags-and-hotkeys.md)
 - active: [Open Source Growth](../tracks/013-open-source-growth.md)
 - active: [Performance And Memory](../tracks/014-performance-memory.md)
 - parked: [015 macOS Port Spike](../tracks/015-macos-port-spike.md)
