@@ -471,8 +471,13 @@ Checkpoint 2026-07-09 `v0.3.7`:
 - Checks: frontend build, 114 Playwright, 109 Rust (+1 ignored), scripts/capabilities/AI planner, context audit, cargo check y Tauri release build verdes.
 - Signing Authenticode sigue pendiente; workflow y policy SignPath permanecen drafts, no claims activos.
 
+Checkpoint 2026-07-24 `v0.3.8`:
+
+- `v0.3.8` es el release estable vigente; tag y release apuntan a `d6f68ede1f9a868c397888fdb0b59eb80b0d3fc7`. Publica instalador NSIS x64, firma Tauri Updater y `latest.json`; SHA256 del instalador: `A53268AF683211283CB67CA7EFBCE45D79EA9D660DCEB66D8B3485EB420089AA`.
+- Los scripts personales siguen fuera del instalador. La continuidad entre PCs consiste en copiar la carpeta configurada en `scripts.folderPath`; el default es `%USERPROFILE%\Documents\Copicu\Scripts`. En destino, verificar esa ruta en Settings y refrescar diagnostics.
+
 Pendiente inmediato:
 
-1. Respaldar fuera del repo la nueva key/password de `.codex-run/secrets/`.
-2. Dogfood instalada `v0.3.7` y validar el proximo updater desde esta trust root.
+1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.
+2. Validar un updater posterior desde la trust root introducida en `v0.3.7`.
 3. Continuar Authenticode/SignPath sin publicar claims de firma antes de verificar el artifact final.
