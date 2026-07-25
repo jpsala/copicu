@@ -1820,6 +1820,17 @@ fn normalize_hotkey_sequence(input: String) -> HotkeyNormalizationResult {
 
 #[cfg(not(test))]
 #[tauri::command]
+fn get_item_tags(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+) -> Result<Vec<String>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_item_tags")?;
+    storage.get_item_tags(id)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn set_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
@@ -1827,6 +1838,17 @@ fn set_item_tags(
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_item_tags")?;
     storage.set_item_tags(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn apply_item_tags(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::ApplyItemTagsRequest,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "apply_item_tags")?;
+    storage.apply_item_tags(request)
 }
 
 #[cfg(not(test))]
@@ -2281,7 +2303,9 @@ pub fn run() {
             update_tag_config,
             open_picker_for_tag,
             normalize_hotkey_sequence,
+            get_item_tags,
             set_item_tags,
+            apply_item_tags,
             list_builtin_actions,
             list_actions,
             refresh_script_action_cache,

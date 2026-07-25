@@ -2951,9 +2951,15 @@ function AppShortcutInventory({
           shortcut: "Enter, Shift+Enter",
         },
         {
+          id: "picker.editTags",
+          title: "Edit tags",
+          description: "Opens the built-in tag editor. Multi-selection adds tags without removing existing ones.",
+          shortcut: "Ctrl+Shift+C",
+        },
+        {
           id: "picker.editSelection",
           title: "Edit active item",
-          description: "F2 edits content. Shift+F2 opens metadata edit for the current item.",
+          description: "F2 edits content. Shift+F2 opens the advanced metadata editor.",
           shortcut: "F2, Shift+F2",
         },
       ].map((entry) => (

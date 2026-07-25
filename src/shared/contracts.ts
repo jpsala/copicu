@@ -56,6 +56,12 @@ export type SetItemTagsRequest = {
   tags: string[];
 };
 
+export type ApplyItemTagsRequest = {
+  itemIds: number[];
+  tags: string[];
+  mode: "replace" | "add";
+};
+
 export type ActivateItemRequest = {
   itemId: number;
   copy: boolean;

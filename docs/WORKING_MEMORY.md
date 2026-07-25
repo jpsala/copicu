@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-07-24. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-07-25. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -11,20 +11,20 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 ## Foco Único De Ejecución
 
 - **Estado:** `waiting_gate`.
-- **Referencia:** `docs/tracks/004-actions-scripting.md`.
-- **Gate:** JP valida físicamente que, tras abrir con `Ctrl+Alt+C`, `Up/Down` simples navegan sin toast de hotkey y que `Ctrl+Alt+Up/Down` activan vecinos con feedback, tanto oculto como visible.
-- **Siguiente acción:** Si el gate pasa, cerrar el corte y volver a `/flow → Planear`; si falla, diagnosticar sólo el comportamiento observado.
+- **Referencia:** `docs/tracks/012-tags-and-hotkeys.md`.
+- **Gate:** JP valida el nuevo `Ctrl+Shift+C`: single edita/crea/quita tags; multi agrega sin borrar existentes; `Escape` cancela y `Ctrl+Enter` aplica.
+- **Siguiente acción:** abrir la sesion nueva con dogfood visual/teclado y ajustar solo lo observado. No promover a instalada sin pedido explicito.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
-| Actions/scripts/hotkeys | active/dogfood | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `docs/tracks/022-reusable-quick-pick.md` | Validar navegación simple tras `Ctrl+Alt+C` y activación global con `Ctrl+Alt+Up/Down`; luego cerrar o diagnosticar sólo el fallo observado. |
+| Actions/scripts/hotkeys | active/dogfood | `docs/tracks/012-tags-and-hotkeys.md`, `docs/topics/tag-management-hotkeys.md`, `docs/tracks/004-actions-scripting.md` | Primero dogfoodear `Ctrl+Shift+C` single/multi; luego retomar el gate pendiente de `Ctrl+Alt+Up/Down`. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `specs/005-search-plan-engine/` | Triggers, chips/explain y diagnostico sintactico listos. Autocomplete local esta en worktree y requiere validacion independiente antes de marcarlo aplicado; luego saved searches o highlighting. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.7`; `<=0.3.6` requiere salto manual por rotacion updater. Proximo: backup de clave y Authenticode/SignPath. |
+| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.8` vigente; `<=0.3.6` requiere salto manual por rotacion updater. Proximo: backup de clave y Authenticode/SignPath. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md`, `docs/topics/agentic-os-operations.md` | Copicu es downstream AOS; mantener ruta caliente corta. Pendiente: compactar TOPICS/topics grandes cuando molesten. |
 
@@ -34,11 +34,11 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Decisiones Vigentes
 
-Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release vigente `v0.3.7` (SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`). Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
+Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release vigente `v0.3.8`. Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
 
 ## Riesgos / Pendientes Tecnicos
 
-Updater: trust root rotada en `v0.3.7`; `<=0.3.6` requiere instalacion manual. Clave local en `.codex-run/secrets/copicu-updater.*`; falta backup externo. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` metadata no depende de `examples.assignMetadataToActive`. Dogfood/dev: `npm run dev:restart`/built-dev; si target frio falla por `WebView2Loader.dll`, ver `docs/DEVELOPMENT.md`. Enrichment `026` pendiente por `Ctrl+Alt+E`. Picker dev sincronizado: `Ctrl+Alt+C`; `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
+Updater: trust root rotada en `v0.3.7`; `<=0.3.6` requiere instalacion manual. Clave local en `.codex-run/secrets/copicu-updater.*`; falta backup externo. Hang instalada: revisar `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` antes de reiniciar. Evitar colisiones instalada/dev en shortcuts/autostart; `Ctrl+Shift+C` es el editor built-in local de tags y queda reservado contra scripts globales. Dogfood/dev: `npm run dev:restart`/built-dev; si target frio falla por `WebView2Loader.dll`, ver `docs/DEVELOPMENT.md`. Enrichment `026` pendiente por `Ctrl+Alt+E`. Picker dev sincronizado: `Ctrl+Alt+C`; `Shift+Delete` borra seleccion, no usar no-activate default. Pi lento: usar scopes y evitar docs hot grandes/referencias/monolitos salvo necesidad.
 
 ## Comandos De Contexto
 
@@ -47,8 +47,9 @@ Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai
 
 ## Proximo Paso Probable
 
-1. Completar la validacion fisica de `Ctrl+Alt+Up/Down` definida en el foco unico.
-2. Si pasa, cerrar este corte y usar `/flow → Planear` para elegir entre firma/distribucion, autocomplete u otra prioridad de JP.
+1. Abrir dev, seleccionar un clip y probar `Ctrl+Shift+C`: sugerir/crear/quitar/aplicar tags y limpiar todos en single.
+2. Probar multiseleccion: agregar un tag y confirmar que los tags previos se conservan.
+3. Ajustar el editor segun dogfood; no promover a instalada sin pedido explicito de JP.
 
 ## Promocion De Memoria
 

@@ -3,9 +3,8 @@
 export default defineAction({
   id: "examples.assignMetadataToActive",
   title: "Assign metadata",
-  description: "Opens the rich metadata editor for the active picker item.",
-  shortcut: "Ctrl+Shift+C",
-  triggers: ["itemMenu", "commandPalette", "localShortcut", "globalShortcut", "devRun"],
+  description: "Developer example that opens the advanced metadata editor for the active picker item.",
+  triggers: ["devRun"],
   input: {
     source: "pickerSelection",
     selection: "active",

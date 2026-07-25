@@ -66,7 +66,7 @@ No mantener dos fuentes de verdad para shortcuts filtrados. Si existe `tag_confi
 - Settings tiene una seccion `Tags` con resumen, lista/counts, create tag, pin y `Open filtered`.
 - La UI de hotkeys por tag con `HotkeyRecorder` fue eliminada. Settings > Tags no edita, valida ni muestra estado de hotkeys.
 - `tag_configs.hotkey` queda como compatibilidad historica de DB, pero `list_tags` ya no lo expone y el runtime no lo registra.
-- La UI permite editar metadata/tags por item y batch con el campo legacy; falta migrarla a chips/autocomplete usando `set_item_tags`.
+- `Ctrl+Shift+C` usa chips/autocomplete sobre tags normalizados: single reemplaza el conjunto exacto y batch agrega de forma atomica; el campo legacy queda solo en el editor avanzado de metadata.
 - El backend registra global shortcuts para:
   - abrir picker (`general.globalShortcut`);
   - scripts con trigger `globalShortcut`.
@@ -192,7 +192,7 @@ Auto-tagging debe correr async despues de persistir el item. Nunca debe bloquear
 
 ## Autocomplete De Metadata
 
-Decision 2026-06-08: el editor de metadata debe migrar a tags como chips/autocomplete.
+Decision 2026-06-08, implementada para `Ctrl+Shift+C` el 2026-07-25: el editor cotidiano de tags usa chips/autocomplete y storage normalizado.
 
 Comportamiento:
 
@@ -340,7 +340,7 @@ Pregunta abierta: si un item tiene `#Very Important` en notas, el primer corte n
 ## Evolucion
 
 1. Primer slice: `tags` + `clipboard_item_tags` + `tag_configs` + Settings Tags con list/count/config.
-2. Migrar metadata editor a chips/autocomplete y `set_item_tags`.
+2. Implementado: editor built-in de tags con chips/autocomplete y apply single/batch atomico.
 3. Hotkey/secuencia por tag abre picker filtrado.
 4. Renombrar/merge/delete tags con operaciones batch seguras.
 5. Smart tagger interno como action/command `clipboardChange`, default off.

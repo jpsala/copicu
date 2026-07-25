@@ -348,6 +348,21 @@ pub struct SetItemTagsRequest {
     pub tags: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ApplyItemTagsMode {
+    Replace,
+    Add,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyItemTagsRequest {
+    pub item_ids: Vec<i64>,
+    pub tags: Vec<String>,
+    pub mode: ApplyItemTagsMode,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedHistoryView {
@@ -1825,6 +1840,15 @@ impl AppStorage {
             .ok_or_else(|| format!("tag not found after update: {}", request.tag_id))
     }
 
+    pub fn get_item_tags(&self, item_id: i64) -> Result<Vec<String>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_item_exists(&conn, item_id)?;
+        item_tag_labels(&conn, item_id)
+    }
+
     pub fn set_item_tags(&self, request: SetItemTagsRequest) -> Result<(), String> {
         let conn = self
             .conn
@@ -1833,6 +1857,45 @@ impl AppStorage {
         ensure_item_exists(&conn, request.item_id)?;
         set_item_tags_from_values(&conn, request.item_id, &request.tags)?;
         Ok(())
+    }
+
+    pub fn apply_item_tags(&self, request: ApplyItemTagsRequest) -> Result<(), String> {
+        let normalized_tags = normalize_tag_values(&request.tags)?;
+        let normalized_values = normalized_tags
+            .iter()
+            .map(|(_, label)| label.clone())
+            .collect::<Vec<_>>();
+        let item_ids = request.item_ids.into_iter().collect::<BTreeSet<_>>();
+        if item_ids.is_empty() {
+            return Err("item tag update requires at least one item".to_string());
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("failed to start item tag update: {error}"))?;
+
+        for item_id in &item_ids {
+            ensure_item_exists(&tx, *item_id)?;
+        }
+        for item_id in item_ids {
+            match request.mode {
+                ApplyItemTagsMode::Replace => {
+                    set_item_tags_from_values(&tx, item_id, &normalized_values)?;
+                }
+                ApplyItemTagsMode::Add => {
+                    for (slug, label) in &normalized_tags {
+                        add_item_tag_relation(&tx, item_id, slug, label, "manual", None)?;
+                    }
+                    sync_legacy_tags_for_item(&tx, item_id)?;
+                }
+            }
+        }
+
+        tx.commit()
+            .map_err(|error| format!("failed to commit item tag update: {error}"))
     }
 
     pub fn apply_builtin_enrichment(
@@ -2410,21 +2473,25 @@ fn set_item_tags_from_values(
     Ok(())
 }
 
-fn sync_legacy_tags_for_item(conn: &Connection, item_id: i64) -> Result<(), String> {
-    let mut labels_statement = conn
+fn item_tag_labels(conn: &Connection, item_id: i64) -> Result<Vec<String>, String> {
+    let mut statement = conn
         .prepare(
             "SELECT tags.label
              FROM clipboard_item_tags
              JOIN tags ON tags.id = clipboard_item_tags.tag_id
              WHERE clipboard_item_tags.item_id = ?1
-             ORDER BY tags.label COLLATE NOCASE ASC",
+             ORDER BY tags.label COLLATE NOCASE ASC, tags.id ASC",
         )
-        .map_err(|error| format!("failed to prepare legacy tag labels: {error}"))?;
-    let labels = labels_statement
+        .map_err(|error| format!("failed to prepare item tag labels: {error}"))?;
+    let rows = statement
         .query_map(params![item_id], |row| row.get::<_, String>(0))
-        .map_err(|error| format!("failed to query legacy tag labels: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read legacy tag label row: {error}"))?;
+        .map_err(|error| format!("failed to query item tag labels: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read item tag label row: {error}"))
+}
+
+fn sync_legacy_tags_for_item(conn: &Connection, item_id: i64) -> Result<(), String> {
+    let labels = item_tag_labels(conn, item_id)?;
     conn.execute(
         "UPDATE clipboard_items SET tags = ?1 WHERE id = ?2",
         params![legacy_tag_string_from_labels(&labels), item_id],
@@ -4051,6 +4118,96 @@ mod tests {
             })
             .expect("tag search should load");
         assert_eq!(ids(&page.items), vec![1]);
+    }
+
+    #[test]
+    fn apply_item_tags_replace_sets_exact_tags_and_empty_clears_them() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "first tagged item");
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: 1,
+                tags: vec!["Old".to_string()],
+            })
+            .expect("initial item tags should save");
+
+        storage
+            .apply_item_tags(ApplyItemTagsRequest {
+                item_ids: vec![1, 1],
+                tags: vec![
+                    "#Work".to_string(),
+                    "Backend".to_string(),
+                    "work".to_string(),
+                ],
+                mode: ApplyItemTagsMode::Replace,
+            })
+            .expect("replacement tags should save");
+        assert_eq!(
+            storage.get_item_tags(1).expect("item tags should load"),
+            vec!["Backend".to_string(), "Work".to_string()]
+        );
+
+        storage
+            .apply_item_tags(ApplyItemTagsRequest {
+                item_ids: vec![1],
+                tags: Vec::new(),
+                mode: ApplyItemTagsMode::Replace,
+            })
+            .expect("empty replacement should clear tags");
+        assert!(storage
+            .get_item_tags(1)
+            .expect("cleared item tags should load")
+            .is_empty());
+        assert!(storage
+            .get_item(1)
+            .expect("item should load")
+            .tags
+            .is_none());
+    }
+
+    #[test]
+    fn apply_item_tags_add_preserves_multiple_items_and_is_idempotent() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "first tagged item");
+        insert_test_text_item(&storage, 2, 40_002, "second tagged item");
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: 1,
+                tags: vec!["First".to_string()],
+            })
+            .expect("first item tags should save");
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: 2,
+                tags: vec!["Second".to_string()],
+            })
+            .expect("second item tags should save");
+
+        for _ in 0..2 {
+            storage
+                .apply_item_tags(ApplyItemTagsRequest {
+                    item_ids: vec![2, 1, 2],
+                    tags: vec!["Shared".to_string(), "#shared".to_string()],
+                    mode: ApplyItemTagsMode::Add,
+                })
+                .expect("additive tags should save idempotently");
+        }
+
+        assert_eq!(
+            storage.get_item_tags(1).expect("first tags should load"),
+            vec!["First".to_string(), "Shared".to_string()]
+        );
+        assert_eq!(
+            storage.get_item_tags(2).expect("second tags should load"),
+            vec!["Second".to_string(), "Shared".to_string()]
+        );
+        let shared = storage
+            .list_tags()
+            .expect("tags should list")
+            .into_iter()
+            .find(|tag| tag.slug == "shared")
+            .expect("shared tag should exist");
+        assert_eq!(shared.item_count, 2);
     }
 
     #[test]

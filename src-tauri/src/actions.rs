@@ -129,10 +129,13 @@ fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
             continue;
         };
 
-        if matches!(shortcut.as_str(), "Ctrl+Shift+," | "Ctrl+Shift+Space") {
+        if matches!(
+            shortcut.as_str(),
+            "Ctrl+Shift+," | "Ctrl+Shift+Space" | "Ctrl+Shift+C"
+        ) {
             action.diagnostics.push(ActionDiagnostic {
                 severity: DiagnosticSeverity::Error,
-                message: "global shortcut is reserved for opening Copicu".to_string(),
+                message: "global shortcut is reserved by Copicu".to_string(),
             });
         }
 
@@ -2153,7 +2156,7 @@ mod tests {
         let mut actions = vec![
             test_script_action(
                 "examples.reserved",
-                "Ctrl+Shift+,",
+                "Ctrl+Shift+C",
                 SelectionRequirement::None,
             ),
             test_script_action("examples.one", "Ctrl+Alt+J", SelectionRequirement::None),

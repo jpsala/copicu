@@ -57,7 +57,7 @@ await copicu.commands.run("picker.open", {
   - renderer consulta pending con polling liviano y captura el siguiente paso con `keydown`.
 - Callbacks nativos/global-shortcut deben retornar rapido; cualquier UI/ventana/plugin debe ir por main thread o primitiva segura.
 - Scripts con `shortcut` son read-only desde Settings: se editan en el archivo fuente y luego se refresca cache/diagnosticos.
-- `Ctrl+Shift+C` queda reservado de facto para metadata del picker: abre metadata del item activo o batch metadata de seleccion multiple. No debe depender del script historico `examples.assignMetadataToActive`.
+- `Ctrl+Shift+C` queda reservado por backend para el editor built-in local de tags: single reemplaza el conjunto exacto; multiseleccion agrega tags sin quitar los existentes. No depende del script historico `examples.assignMetadataToActive` ni se registra globalmente.
 - Patch preview para shortcuts de scripts queda opcional/futuro; no es pendiente inmediato.
 
 ## Implementado
@@ -91,12 +91,15 @@ Actualizacion 2026-07-12:
 
 ### Shortcuts Nativos Del Picker
 
-Actualizacion 2026-06-29:
+Actualizacion 2026-07-25:
 
-- `Ctrl+Shift+C` es handler React/nativo del picker para metadata: single item -> editor de metadata; multiseleccion -> batch metadata.
-- El menu contextual muestra el badge `Ctrl+Shift+C` en `Edit metadata` y `Assign metadata to selected/checked`.
-- El script `examples.assignMetadataToActive` queda oculto en item menu para no competir con la accion nativa; puede seguir existiendo como ejemplo/script si no molesta.
-- Razon: metadata es una accion core del picker y necesita soportar multi-seleccion; el script viejo solo apuntaba al active item.
+- `Ctrl+Shift+C` es un handler built-in local del picker para tags, no un global shortcut.
+- Single item abre chips con el conjunto actual; multiseleccion abre `Add tags` y conserva los tags existentes.
+- Autocomplete prioriza exact/prefix, permite contains y separa visualmente `Create tag`; `Enter`, `Tab`, `Backspace`, `Escape` y `Ctrl+Enter` cubren el flujo keyboard-first.
+- El menu contextual muestra el badge en `Edit tags` y `Add tags to selected/checked`.
+- Rust aplica batches en una transaccion SQLite y permite limpiar todos los tags en modo single.
+- El backend rechaza `Ctrl+Shift+C` en scripts globales. El ejemplo `examples.assignMetadataToActive` queda solo como `devRun` del editor avanzado.
+- `Shift+F2` conserva por ahora el editor avanzado de metadata sin competir con el flujo rapido.
 
 ### Settings > Hotkeys
 
@@ -125,11 +128,12 @@ Actualizacion 2026-06-29:
 
 ## Validaciones De Referencia
 
-Ultimos checks historicos relevantes:
+Ultimos checks relevantes:
 
-- `npm run build`: pasa.
-- `npm run visual:check`: paso 84/84 en cortes de Settings Hotkeys.
-- `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check`: pasa en cortes documentados.
+- Corte built-in tags 2026-07-25: `npm run build` y `cargo check --manifest-path src-tauri/Cargo.toml --lib` pasan.
+- `npm run visual:check`: 160/160; incluye `Ctrl+Shift+C` single y batch en desktop/narrow.
+- LSP/lens sin errores y `bun run context:audit` pasa.
+- Dev reiniciado con backend nuevo; smoke fisico pendiente porque el bridge AHK de Computer Use fallo durante el cierre.
 - Dogfood Settings script shortcut edit en perfil dev aislado:
   - script temporal `dogfood.shortcutEdit` registro `Ctrl+Alt+Shift+9`;
   - cambiar a `Ctrl+Alt+Shift+T` produjo conflicto;
@@ -150,7 +154,7 @@ Ultimos checks historicos relevantes:
 
 ## Proximo Corte Recomendado
 
-1. Si se retoma Hotkeys/Tags: dogfoodear Settings > Hotkeys con scripts reales y diagnosticos de conflictos, sin reintroducir hotkeys nativos por tag.
-2. Si JP pide edicion mas comoda de scripts: disenar patch preview explicito para cambiar `shortcut` en archivo, con diff/confirmacion, rollback y refresh de diagnosticos.
-3. Si se toca WhichKey: tratarlo como investigacion de composicion de ventana secundaria, no como cambio al runtime compuesto.
-4. Si se toca codigo: correr `npm run build`, `npm run visual:check` y `cd src-tauri; $env:CARGO_TARGET_DIR='target-codex-check'; cargo check`; luego relanzar/recargar app dev segun corresponda.
+1. Dogfoodear el editor built-in de tags con teclado real: single exact/clear, create/autocomplete y multi add preservando tags.
+2. Ajustar densidad, copy o foco solo segun evidencia visual; mantener title/notes/context fuera de `Ctrl+Shift+C`.
+3. La instalada `v0.3.8` sigue con el flujo viejo. Promover dev solo si JP pide explicitamente `npm run install:current`.
+4. Despues retomar el gate pendiente de `Ctrl+Alt+Up/Down`; no mezclar ambos diagnosticos.

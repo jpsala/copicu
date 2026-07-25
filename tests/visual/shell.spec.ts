@@ -573,6 +573,34 @@ async function mockTauriInvoke(
             return items;
           case "list_tags":
             return (window as any).__copicuTestTags;
+          case "get_item_tags": {
+            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
+            const item = sourceItems.find((candidate: any) => candidate.id === args.id);
+            return (item?.tags ?? "")
+              .split(/\s+/)
+              .map((tag: string) => tag.replace(/^#/, "").trim())
+              .filter(Boolean);
+          }
+          case "apply_item_tags": {
+            const request = args.request;
+            const ids = new Set(request.itemIds);
+            (window as any).__copicuTestHistoryItems = (
+              (window as any).__copicuTestHistoryItems ?? items
+            ).map((item: any) => {
+              if (!ids.has(item.id)) {
+                return item;
+              }
+              const existing = (item.tags ?? "")
+                .split(/\s+/)
+                .map((tag: string) => tag.replace(/^#/, "").trim())
+                .filter(Boolean);
+              const nextTags = request.mode === "add"
+                ? [...new Set([...existing, ...request.tags])]
+                : request.tags;
+              return { ...item, tags: nextTags.map((tag: string) => `#${tag}`).join(" ") || null };
+            });
+            return null;
+          }
           case "list_saved_history_views":
             return (window as any).__copicuTestSavedHistoryViews;
           case "pending_metadata_editor":
@@ -1160,7 +1188,7 @@ test("mark menu shows global marked count and checkbox states", async ({ page })
   await expect(menu.getByText("Checked items")).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Join checked" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Assign metadata to checked" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Add tags to checked" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete 4 checked" })).toHaveCount(0);
 });
 
@@ -1245,10 +1273,9 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   const initialSearchCall = await initialSearch.jsonValue() as any;
   expect(initialSearchCall.args.request.includeContent).toBe(false);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click({
-    button: "right",
-  });
-  await page.getByRole("menuitem", { name: "Edit metadata" }).click();
+  await page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click();
+  await page.getByLabel("Search clipboard history").click();
+  await page.keyboard.press("Shift+F2");
   await expect(page.getByRole("dialog", { name: "Edit item metadata" })).toBeVisible();
   await page.getByRole("textbox", { name: "Metadata" }).fill("#perf metadata note");
   await page.getByRole("button", { name: "Save" }).click();
@@ -1288,6 +1315,35 @@ test("F2 edits content only and Shift+F2 edits metadata", async ({ page }) => {
   await expect(metadataDialog).toBeVisible();
   await expect(metadataDialog.getByRole("textbox", { name: "Metadata" })).toBeVisible();
   await expect(metadataDialog.getByRole("textbox", { name: "Content" })).toHaveCount(0);
+});
+
+test("Ctrl+Shift+C opens the compact built-in tag editor", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.click();
+  await page.keyboard.press("Control+Shift+C");
+
+  const dialog = page.getByRole("dialog", { name: "Edit tags" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Tag" })).toBeFocused();
+  await expect(dialog.getByRole("textbox", { name: "Title" })).toHaveCount(0);
+  await expect(dialog.getByRole("textbox", { name: "Metadata" })).toHaveCount(0);
+
+  const input = dialog.getByRole("textbox", { name: "Tag" });
+  await input.fill("focus-tag");
+  await expect(dialog.getByRole("option", { name: /Create “focus-tag”/ })).toBeVisible();
+  await input.press("Enter");
+  await input.press("Control+Enter");
+
+  const call = await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "apply_item_tags"),
+  );
+  const request = (await call.jsonValue() as any).args.request;
+  expect(request.itemIds).toHaveLength(1);
+  expect(request.mode).toBe("replace");
+  expect(request.tags).toContain("focus-tag");
 });
 
 test("manual scroll is not reset by history refresh", async ({ page }) => {
@@ -2083,7 +2139,7 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await expect(menu.getByRole("menuitem", { name: "copy-current-title" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Edit metadata" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Edit tags" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
 
   await menu.getByRole("menuitem", { name: "Paste", exact: true }).click();
@@ -2175,7 +2231,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu.getByRole("menuitem", { name: "Join selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Assign metadata to selected" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Add tags to selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete 2 selected" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Clear selection" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Activate" })).toHaveCount(0);
@@ -2510,7 +2566,7 @@ test("shift delete deletes selected items", async ({ page }) => {
   expect(deletedIds).toEqual([101, 102]);
 });
 
-test("batch metadata uses textarea and extracts hash tags", async ({ page }) => {
+test("multi selection tag editor adds tags without replace modes", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
@@ -2518,25 +2574,23 @@ test("batch metadata uses textarea and extracts hash tags", async ({ page }) => 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
-  await page.getByRole("menuitem", { name: "Assign metadata to selected" }).click();
+  await page.getByRole("menuitem", { name: "Add tags to selected" }).click();
 
-  const metadata = page.getByLabel("Metadata for 2 items");
-  await expect(metadata).toBeVisible();
-  await metadata.fill("#work\nMarkdown note");
-  await page.getByRole("button", { name: "Append metadata" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add tags" });
+  await expect(dialog.getByText("Add tags to 2 clips")).toBeVisible();
+  await expect(dialog.getByText("Existing tags will be kept.")).toBeVisible();
+  const input = dialog.getByRole("textbox", { name: "Tag" });
+  await input.fill("batch-tag");
+  await input.press("Enter");
+  await dialog.getByRole("button", { name: "Add tags", exact: true }).click();
 
-  await page.waitForFunction(() => {
-    const calls = (window as any).__copicuTestInvocations;
-    return calls.filter((call: any) => call.cmd === "update_history_item").length >= 2;
-  });
-  const requests = await page.evaluate(() =>
-    (window as any).__copicuTestInvocations
-      .filter((call: any) => call.cmd === "update_history_item")
-      .map((call: any) => call.args.request),
+  const call = await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "apply_item_tags"),
   );
-  expect(requests.map((request: any) => request.id)).toEqual([101, 102]);
-  expect(requests.every((request: any) => request.notes.includes("#work"))).toBe(true);
-  expect(requests.every((request: any) => request.tags === "#work")).toBe(true);
+  const request = (await call.jsonValue() as any).args.request;
+  expect(request.itemIds).toEqual([101, 102]);
+  expect(request.mode).toBe("add");
+  expect(request.tags).toEqual(["batch-tag"]);
 });
 
 test("dark color scheme uses dark surfaces", async ({ page }) => {

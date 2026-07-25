@@ -57,6 +57,7 @@ import type {
   ActionTrigger,
   ActivateItemRequest,
   ActivationOptions,
+  ApplyItemTagsRequest,
   ClipKind,
   CompoundHotkeyPendingEvent,
   CreateHistoryItemRequest,
@@ -68,7 +69,6 @@ import type {
   SavedHistoryView,
   SetHistoryItemsMarkedRequest,
   SetHistoryQueryMarkedRequest,
-  SetItemTagsRequest,
   TagSummary,
   ToastItem,
   ToastOptions,
@@ -107,6 +107,7 @@ import {
 } from "./ui/controls";
 import { ShortcutBadge } from "./ui/ShortcutBadge";
 import { ToastStack } from "./ui/ToastStack";
+import { TagEditor, type TagEditorMode } from "./ui/TagEditor";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
 import "@mantine/core/styles.css";
@@ -321,6 +322,12 @@ type BatchMetadataDraft = {
   mode: BatchMetadataMode;
   commonMetadata: string | null;
   hasMixedMetadata: boolean;
+};
+
+type TagEditorDraft = {
+  itemIds: number[];
+  mode: TagEditorMode;
+  initialTags: string[];
 };
 
 type MarkdownImage = {
@@ -619,8 +626,12 @@ function updateTagConfig(request: UpdateTagConfigRequest) {
   return invoke<TagSummary>("update_tag_config", { request });
 }
 
-function setItemTags(request: SetItemTagsRequest) {
-  return invoke<void>("set_item_tags", { request });
+function getItemTags(id: number) {
+  return invoke<string[]>("get_item_tags", { id });
+}
+
+function applyItemTags(request: ApplyItemTagsRequest) {
+  return invoke<void>("apply_item_tags", { request });
 }
 
 function countMarkedHistoryItems() {
@@ -918,6 +929,8 @@ function App() {
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [createItemDraft, setCreateItemDraft] = useState<CreateItemDraft | null>(null);
   const [batchMetadataDraft, setBatchMetadataDraft] = useState<BatchMetadataDraft | null>(null);
+  const [tagEditorDraft, setTagEditorDraft] = useState<TagEditorDraft | null>(null);
+  const [tagEditorSaving, setTagEditorSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [openMarkMenu, setOpenMarkMenu] = useState<MarkMenuAnchor | null>(null);
   const [markedActionItems, setMarkedActionItems] = useState<HistoryItem[] | null>(null);
@@ -1116,6 +1129,8 @@ function App() {
     setEditDraft(null);
     setCreateItemDraft(null);
     setBatchMetadataDraft(null);
+    setTagEditorDraft(null);
+    setTagEditorSaving(false);
     setOpenItemMenu(null);
     setActionPicker(null);
     setEditError(null);
@@ -1400,6 +1415,7 @@ function App() {
         !editDraft &&
         !createItemDraft &&
         !batchMetadataDraft &&
+        !tagEditorDraft &&
         !searchHelpOpen
       ) {
         event.preventDefault();
@@ -1418,6 +1434,7 @@ function App() {
     commandPalette,
     createItemDraft,
     editDraft,
+    tagEditorDraft,
     openActionPicker,
     searchHelpOpen,
   ]);
@@ -2387,6 +2404,42 @@ function App() {
     setOpenItemMenu((current) => (current?.itemId === item.id ? null : nextAnchor));
   }, [selectForContextMenu]);
 
+  const beginTagEdit = useCallback(async (items: HistoryItem[]) => {
+    if (items.length === 0) {
+      pushToast({
+        title: "No clip selected",
+        message: "Select a clip before editing tags.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    closeTransientEditors();
+    setCommandPalette(null);
+    setOpenMarkMenu(null);
+    setEditError(null);
+    try {
+      const [availableTags, initialTags] = await Promise.all([
+        listTags(),
+        items.length === 1 ? getItemTags(items[0].id) : Promise.resolve([]),
+      ]);
+      setPaletteTags(availableTags);
+      setKnownTagSlugs(availableTags.map((tag) => tag.slug));
+      setTagEditorDraft({
+        itemIds: items.map((item) => item.id),
+        mode: items.length === 1 ? "replace" : "add",
+        initialTags,
+      });
+    } catch (error) {
+      pushToast({
+        title: "Tags unavailable",
+        message: String(error),
+        tone: "danger",
+      });
+      focusSearch();
+    }
+  }, [closeTransientEditors, focusSearch, pushToast]);
+
   const beginBatchMetadataEdit = useCallback((items: HistoryItem[]) => {
     if (items.length === 0) {
       return;
@@ -2460,13 +2513,13 @@ function App() {
             disabled={!hasItems}
             onClick={() => {
               if (hasItems) {
-                beginBatchMetadataEdit(items);
+                void beginTagEdit(items);
               }
             }}
           >
             <Plus size={14} strokeWidth={2.2} aria-hidden="true" />
-            <span>Assign metadata to {noun}</span>
-            <ShortcutBadge shortcut={METADATA_EDIT_SHORTCUT} />
+            <span>Add tags to {noun}</span>
+            <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
           </UiUnstyledButton>
           {scriptActions.map((action) => (
             <UiUnstyledButton
@@ -2498,7 +2551,7 @@ function App() {
     [
       actionById,
       actionDefinitions,
-      beginBatchMetadataEdit,
+      beginTagEdit,
       runActionDefinition,
       runBuiltinAction,
       selectedItem,
@@ -2622,6 +2675,42 @@ function App() {
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
   }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, refreshAppliedHistory]);
+
+  const saveTagEditor = useCallback(async (tags: string[]) => {
+    if (!tagEditorDraft || tagEditorSaving) {
+      return;
+    }
+
+    setTagEditorSaving(true);
+    setEditError(null);
+    try {
+      await applyItemTags({
+        itemIds: tagEditorDraft.itemIds,
+        tags,
+        mode: tagEditorDraft.mode,
+      });
+      const itemCount = tagEditorDraft.itemIds.length;
+      setTagEditorDraft(null);
+      const [availableTags] = await Promise.all([
+        listTags(),
+        refreshAppliedHistory(),
+      ]);
+      setPaletteTags(availableTags);
+      setKnownTagSlugs(availableTags.map((tag) => tag.slug));
+      if (itemCount > 1) {
+        pushToast({
+          title: "Tags added",
+          message: `Updated ${itemCount} clips.`,
+          tone: "success",
+        });
+      }
+      focusSearch();
+    } catch (error) {
+      setEditError(String(error));
+    } finally {
+      setTagEditorSaving(false);
+    }
+  }, [focusSearch, pushToast, refreshAppliedHistory, tagEditorDraft, tagEditorSaving]);
 
   useEffect(() => {
     let active = true;
@@ -3207,9 +3296,9 @@ function App() {
         void openSettingsWindow();
         return;
       }
-      if (shortcut === METADATA_EDIT_SHORTCUT) {
+      if (shortcut === TAG_EDIT_SHORTCUT) {
         event.preventDefault();
-        beginSelectedItemEdit("metadata");
+        void beginTagEdit(effectiveSelection);
         return;
       }
       if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
@@ -3956,11 +4045,11 @@ function App() {
                             type="button"
                             role="menuitem"
                             className="item-menu-action"
-                            onClick={() => void beginEdit(item, "metadata")}
+                            onClick={() => void beginTagEdit([item])}
                           >
                             <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Edit metadata</span>
-                            <ShortcutBadge shortcut={METADATA_EDIT_SHORTCUT} />
+                            <span>Edit tags</span>
+                            <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
                           </UiUnstyledButton>
                         </>
                       )}
@@ -4030,6 +4119,22 @@ function App() {
                 ? normalizeShortcutString(entry.action.shortcut ?? "")
                 : null;
               void runActionDefinition(entry.action, effectiveSelection, entry.trigger, shortcut);
+            }}
+          />
+        ) : null}
+        {tagEditorDraft ? (
+          <TagEditor
+            itemCount={tagEditorDraft.itemIds.length}
+            mode={tagEditorDraft.mode}
+            initialTags={tagEditorDraft.initialTags}
+            availableTags={paletteTags}
+            saving={tagEditorSaving}
+            error={editError}
+            onApply={(tags) => void saveTagEditor(tags)}
+            onCancel={() => {
+              setTagEditorDraft(null);
+              setEditError(null);
+              focusSearch();
             }}
           />
         ) : null}
@@ -4418,7 +4523,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
             <h3>Keyboard</h3>
             <dl>
               <div><dt><code>Search</code> / <code>Ctrl+Enter</code></dt><dd>Run the current query.</dd></div>
-              <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit metadata for the active or selected clips.</dd></div>
+              <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit tags for the active clip or add tags to a selection.</dd></div>
               <div><dt><code>F2</code> / <code>Shift+F2</code></dt><dd>Edit content or metadata.</dd></div>
               <div><dt><code>Settings → Picker</code></dt><dd>Choose realtime, Enter, or button-triggered search.</dd></div>
             </dl>
@@ -4969,7 +5074,7 @@ function mimePatternMatches(pattern: string, mime: string) {
   return false;
 }
 
-const METADATA_EDIT_SHORTCUT = "Ctrl+Shift+C";
+const TAG_EDIT_SHORTCUT = "Ctrl+Shift+C";
 
 function actionSearchText(action: ActionDefinition) {
   return [

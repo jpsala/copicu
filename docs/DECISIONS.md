@@ -12,15 +12,23 @@ Motivo: Un repo publico temprano transmite mas confianza con pocos issues reales
 
 Proximo paso: si hace falta abrir `good first issue`, escribirlo como tarea real y verificable, preferentemente derivada de dogfood o feedback externo.
 
+### 2026-07-25 - `Ctrl+Shift+C` es el editor built-in simple de tags
+
+Estado: accepted; reemplaza el alcance del shortcut definido el 2026-06-29.
+
+Decision: `Ctrl+Shift+C` es local al picker y abre un editor compacto dedicado solo a tags. Un item edita su conjunto exacto; una multiseleccion agrega tags de forma atomica y conserva los existentes. El control usa chips, autocomplete, creacion inline y teclado completo. Title, notes, capture context y los modos append/replace/merge quedan fuera de este flujo. El shortcut se reserva en backend para que scripts no puedan registrarlo globalmente.
+
+Motivo: La accion cotidiana es etiquetar rapido. El editor general de metadata era demasiado pesado y el script historico producia un segundo dueño global, mas lento, sin seleccion real y conflictivo con shortcuts de otras aplicaciones.
+
+Proximo paso: mantener `Shift+F2` como acceso al editor avanzado mientras siga siendo util; validar el nuevo flujo single/batch en dogfood y decidir despues si la superficie avanzada merece conservarse.
+
 ### 2026-06-29 - Metadata y search como flujo core del picker
 
-Estado: accepted
+Estado: superseded parcialmente por la decision de tags del 2026-07-25.
 
-Decision: La metadata editable se trata como superficie core del picker: `Ctrl+Shift+C` abre metadata nativa para el item activo o batch metadata para multiseleccion; batch metadata ofrece append, replace y smart merge; `meta:` busca metadata visible editable (`title`, `notes`, `tags`), mientras `ctx:` queda para contexto automatico oculto. Por ahora no se expone provenance user/assistant/enrichment en UX; se puede modelar mas adelante sin complicar el flujo actual.
+Decision historica: La metadata editable se trato como superficie core del picker y `Ctrl+Shift+C` abria metadata single/batch con append, replace y smart merge. Sigue vigente que `meta:` busca metadata visible (`title`, `notes`, `tags`) y `ctx:` contexto automatico oculto; cambia el shortcut, que ahora edita solo tags.
 
-Motivo: JP necesita editar/buscar metadata rapidamente, incluso en batches. El script historico active-only no cubria multiseleccion y mezclaba una accion core con automation opcional.
-
-Proximo paso: mantener ayuda in-app, topic de search y shortcuts sincronizados; si se agrega provenance, primero definir storage/source por entrada/tag antes de exponer filtros como `meta.by:*`.
+Motivo: El script historico active-only no cubria multiseleccion y mezclaba una accion core con automation opcional.
 
 ### 2026-06-18 - El hotkey del picker debe abrir con foco
 

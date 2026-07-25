@@ -81,7 +81,7 @@ Copicu is early-stage, but the core is functional:
 - paste the selected item into the previous Windows app;
 - edit item content and metadata;
 - add titles, tags, notes, and MIME hints;
-- assign metadata from the picker with `Ctrl+Shift+C`, including batch append/replace/merge for multi-selection;
+- edit tags from the picker with built-in `Ctrl+Shift+C`, using keyboard autocomplete and additive batch tagging;
 - open tag-filtered picker routes;
 - run built-in actions and trusted local TypeScript/JavaScript scripts;
 - use a command palette and local/global shortcut routes;

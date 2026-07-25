@@ -174,7 +174,8 @@ Navegacion por teclado:
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
 - `F2`: edita contenido del item activo.
-- `Shift+F2` / `Ctrl+Shift+C`: edita metadata del item activo o abre batch metadata si hay multiseleccion.
+- `Shift+F2`: abre el editor avanzado de metadata del item activo o el batch legacy.
+- `Ctrl+Shift+C`: abre el editor built-in simple de tags; single reemplaza el conjunto y multiseleccion agrega tags.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 
 Crear item manual:
@@ -190,12 +191,10 @@ Crear item manual:
 Metadata editable:
 
 - `title`, `notes` y tags visibles son metadata editable del usuario; el contexto de captura automatico queda separado y read-only.
-- Batch metadata soporta tres modos explicitos: append, replace y smart merge.
-- Append conserva metadata existente y agrega lineas nuevas.
-- Replace reemplaza metadata de todos los items seleccionados.
-- Smart merge deduplica lineas y tags case-insensitively preservando texto original de tags nuevos.
-- El editor batch muestra si la seleccion tiene metadata comun, metadata mixta o metadata vacia en todos los items.
-- El shortcut core para metadata es `Ctrl+Shift+C`; no debe depender de scripts active-only.
+- El editor avanzado/batch legacy conserva append, replace y smart merge bajo `Shift+F2`, sin ser el flujo cotidiano.
+- El shortcut core para tags es `Ctrl+Shift+C`: chips + autocomplete, creacion inline y apply explicito.
+- En single permite agregar/quitar y limpiar todos los tags; en multi solo agrega de forma atomica, idempotente y no destructiva.
+- El shortcut es local al picker y reservado en backend; no depende de scripts active-only ni roba `Ctrl+Shift+C` a otras aplicaciones.
 - Provenance user/assistant/enrichment queda diferida: `meta:` busca metadata visible sin exponer origen, `ctx:` busca contexto oculto automatico.
 
 Activacion:
