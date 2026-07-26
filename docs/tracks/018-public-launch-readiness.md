@@ -476,6 +476,13 @@ Checkpoint 2026-07-24 `v0.3.8`:
 - `v0.3.8` es el release estable vigente; tag y release apuntan a `d6f68ede1f9a868c397888fdb0b59eb80b0d3fc7`. Publica instalador NSIS x64, firma Tauri Updater y `latest.json`; SHA256 del instalador: `A53268AF683211283CB67CA7EFBCE45D79EA9D660DCEB66D8B3485EB420089AA`.
 - Los scripts personales siguen fuera del instalador. La continuidad entre PCs consiste en copiar la carpeta configurada en `scripts.folderPath`; el default es `%USERPROFILE%\Documents\Copicu\Scripts`. En destino, verificar esa ruta en Settings y refrescar diagnostics.
 
+Checkpoint 2026-07-25 `v0.4.0-rc.1`:
+
+- Primer release candidate tras uso diario sostenido y validacion de clean install, updater, smoke multi-aplicacion y dogfood externo.
+- Feature freeze activo: solo regresiones bloqueantes o bugs importantes antes de promover a `v0.4.0`.
+- `v0.3.9` permanece como stable/latest; el RC se publica como prerelease y no reemplaza el canal estable del updater.
+- Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `1C32FA56433C68E70A7D8E10D8764B75A108E4436A695B4E9EE3ACCEB8AF3951`; Authenticode sigue pendiente y debe comunicarse como tal.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.
