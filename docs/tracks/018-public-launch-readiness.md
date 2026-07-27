@@ -504,6 +504,14 @@ Checkpoint 2026-07-27 `v0.4.0-rc.4`:
 - Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `AF2E7FA4DFF207F22AB1542178264718F23D20B482D425FCB57B65E3365C005F`.
 - Validacion fisica 100%/150% queda asignada a otra PC; `v0.3.9` sigue stable/latest y `rc.4` permanece prerelease.
 
+Checkpoint 2026-07-27 `v0.4.0-rc.5`:
+
+- `Ctrl+D` borra la seleccion efectiva del picker y mantiene `Delete` para edicion nativa del search.
+- El candado inline y `Ctrl+Shift+L` conservan el filtro aplicado entre cierres y reinicios, sin mezclarlo con pin/keep-open.
+- Suite visual completa: 166/166; build frontend y `cargo check --tests` pasan.
+- Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `C1A4E47A6936AB2DCFCB669422786D636713AA6DEE7C25C1D36E1BDEC2796009`.
+- `v0.3.9` sigue stable/latest; `rc.5` permanece prerelease y Authenticode sigue pendiente.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.

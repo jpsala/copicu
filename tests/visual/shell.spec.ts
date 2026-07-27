@@ -2123,6 +2123,38 @@ test("pinned picker keeps filter when activating item", async ({ page }) => {
   await expect(search).toHaveValue("long");
 });
 
+test("filter lock survives picker hides and unlock restores normal reset", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  await search.fill("long");
+  await page.keyboard.press("Control+Shift+l");
+  await expect(page.getByRole("button", { name: "Unlock persistent filter" })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByLabel("Hide Copicu").click();
+  await expect(search).toHaveValue("long");
+
+  await search.focus();
+  await page.keyboard.press("Control+Shift+l");
+  await expect(page.getByRole("button", { name: "Lock filter across picker closes" })).toHaveAttribute("aria-pressed", "false");
+  await page.getByLabel("Hide Copicu").click();
+  await expect(search).toHaveValue("");
+});
+
+test("filter lock restores the applied query after renderer reload", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  await search.fill("long");
+  await page.getByRole("button", { name: "Lock filter across picker closes" }).click();
+  await page.reload();
+
+  await expect(page.getByRole("textbox", { name: "Search clipboard history" })).toHaveValue("long");
+  await expect(page.getByRole("button", { name: "Unlock persistent filter" })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("right click on item opens item actions menu", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -2572,6 +2604,25 @@ test("shift delete deletes selected items", async ({ page }) => {
 
   await selectLongSingleLineAndUnbroken(page);
   await page.keyboard.press("Shift+Delete");
+
+  await page.waitForFunction(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return calls.filter((call: any) => call.cmd === "delete_history_item").length >= 2;
+  });
+  const deletedIds = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "delete_history_item")
+      .map((call: any) => call.args.id),
+  );
+  expect(deletedIds).toEqual([101, 102]);
+});
+
+test("ctrl+d deletes selected items", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await selectLongSingleLineAndUnbroken(page);
+  await page.keyboard.press("Control+d");
 
   await page.waitForFunction(() => {
     const calls = (window as any).__copicuTestInvocations;

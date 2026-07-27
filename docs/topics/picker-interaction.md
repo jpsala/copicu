@@ -170,7 +170,8 @@ Navegacion por teclado:
 - `Escape`: limpiar filtro si hay texto; si no hay filtro, ocultar/cerrar ventana segun setting.
 - `Space`: candidato para expandir/contraer preview cuando haya truncado.
 - `Delete`: dentro del search input solo edita el texto del filtro; no borra items aunque haya seleccion de historial.
-- `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible; es el atajo explicito para no pelear con el input de busqueda.
+- `Ctrl+D` o `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible. `Ctrl+D` queda reservado por el picker; `Delete` solo conserva su semantica nativa dentro del input de busqueda.
+- `Ctrl+Shift+L`: fija/libera el filtro aplicado para que sobreviva hide/show y reinicios; el candado dentro del search refleja el estado.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
 - `F2`: edita contenido del item activo.
@@ -207,7 +208,7 @@ Activacion:
 Mouse y acciones contextuales:
 
 - Right click o tres puntitos por item abre acciones.
-- El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Shift+Delete` o trash icon.
+- El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Ctrl+D`, `Shift+Delete` o trash icon.
 - Las acciones hover por item aparecen al pasar por la fila; el trash icon borra sin confirmacion el item bajo hover o, si hay multiseleccion activa, los items seleccionados.
 - Acciones esperadas restantes: Copy, Paste, Paste as plain text, Pin/unpin, Open full preview/editor, Show details/formats, Move to tab.
 - Click fuera/focus lost debe respetar setting de ventana.
@@ -227,6 +228,7 @@ Estado actual 2026-06-22:
 - Dogfood 2026-07-09: los refresh/reset async del picker deben estar guardados por una generacion de interaccion de seleccion; un refresh viejo no puede devolver el item activo al primero ni scrollear arriba despues de que el usuario navego.
 - Dogfood 2026-07-09: el badge de conteos no debe caer a `history.length` cuando backend/Tauri omite conteos como `null`; solo numeros actualizan `totalCount`/`filteredCount`.
 - Decision dogfood 2026-07-09: con cursor pagination, la scrollbar del feed usa el patron seguro `filas cargadas + 1 loader`. El experimento de estimar altura por total conocido se revirtio; si se quiere scrollbar proporcional al total real, primero hace falta un contrato backend/windowing que soporte indices o ventanas estables.
+- Decision 2026-07-27: filter lock es independiente de window pin y keep-open. Conserva la query aplicada en hide/show y reinicios, usa candado inline + `Ctrl+Shift+L`, y al desbloquear recupera el reset normal.
 - Decision ajustada 2026-06-12: `Keep picker open` es la politica persistida para sesion persistente del picker. Cuando esta activa, perder foco no oculta, activar un item no oculta y no resetea query/sesion. El boton de barra del picker toggla esa politica persistida via comando host-owned `set_picker_keep_open` desde `main`; no llama `update_settings` porque ese comando esta guardado para `settings`. En modo transitorio el picker sigue fuera de taskbar/Alt-Tab; con `Keep picker open` activo el host aplica `skip_taskbar=false` para que se comporte como ventana recuperable. `Pin` queda como control generico de ventana para always-on-top; en picker tambien evita ocultado por foco como consecuencia de estar pinned, pero no es la unica forma de mantener abierto. Los intentos de hotkey renderer (`Ctrl+G`, `Ctrl+Shift+O`, `F8`) no fueron confiables en WebView/Computer Use; si se quiere hotkey, implementarlo nativo/global, no como handler React. Computer Use valido el 2026-06-12 que el boton cambia `Keep picker open is on/off`, persiste en backend, deshabilita focus-lost hide y permite activar un item sin ocultar.
 - Decision 2026-06-18: abrir el picker por hotkey global debe dejar el search listo para recibir teclado. Se removio el default no-activate porque hacia que el picker pudiera verse delante pero el input siguiera en la app previa. La ruta no-activate queda solo para diagnostico (`COPICU_PICKER_NO_ACTIVATE=1`).
 - Validacion stress 2026-06-14 con `copicu_computer_use`: flow usuario real paso con watcher activo en app-data aislada: seleccionar/copiar texto externo en una ventana AHK, abrir picker con `Ctrl+Shift+.`, filtrar por token (`ZETA`, `BETA`, `https stress-flow`), activar con `Enter` y pegar de vuelta en la app fuente. El empty state `0 / 2 matches` tambien se valido. Riesgos detectados: `Get-Clipboard` desde Pi/Session 0 no sirve como oracle del clipboard interactivo; `focus`/target screenshot no prueban foreground real, por lo que los checks de foco deben incluir screenshot de pantalla completa; `F8`/pin puede reportar target de ventana equivocada aunque el hotkey global llegue a Copicu; el wrapper `copicu_computer_use` tuvo un `PermissionError` leyendo temp output pese a que la accion se ejecuto.

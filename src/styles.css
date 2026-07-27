@@ -684,7 +684,41 @@ button {
 
 .search-row input {
   height: 28px;
-  padding: 0;
+  padding: 0 30px 0 0;
+}
+
+.filter-lock-button {
+  position: absolute;
+  z-index: 2;
+  top: 2px;
+  right: 0;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.filter-lock-button:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--accent);
+}
+
+.filter-lock-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-muted));
+  color: var(--accent);
+}
+
+.filter-lock-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: 1px;
 }
 
 .search-row.is-ai-mode textarea {
@@ -795,6 +829,7 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .filter-lock-button,
   .new-item-button,
   .composer-mode-button,
   .search-trigger-button,

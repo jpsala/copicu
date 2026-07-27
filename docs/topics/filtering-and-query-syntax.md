@@ -115,6 +115,18 @@ El picker soporta `Settings > Picker > Search trigger`:
 
 El boton `Search` aplica explicitamente desde ambos modos. El control rapido con icono y tooltip alterna solo entre los dos modos persistentes.
 
+## Filter Lock
+
+El icono de candado dentro del search, o `Ctrl+Shift+L`, fija el filtro aplicado actual. Mientras esta activo:
+
+- hide/show y activacion de items no limpian la query;
+- el icono usa `aria-pressed` y estado accent visible;
+- cambios posteriores de filtro actualizan el valor fijado cuando se aplican;
+- el filtro se restaura tambien tras reiniciar el renderer/app mediante storage local;
+- desbloquear restaura el reset normal en el siguiente cierre del picker.
+
+No se puede fijar una query vacia ni el composer AI. `Keep picker open` y `Pin on top` siguen siendo politicas de ventana separadas: filter lock solo conserva la query.
+
 `Confirm structured filters with Enter` es un setting independiente. Si esta activo y el modo persistente es `realtime`, un draft con sintaxis estructurada explicita (`#tag`, negacion o prefijos soportados como `tag:`, `kind:`, `has:`, `after:`) usa `enter` como trigger efectivo solo hasta aplicar o limpiar esa query. El setting global no cambia y el status anuncia `Structured query, press Enter`. La deteccion frontend es conservadora y solo decide UX; Rust sigue siendo la autoridad semantica.
 
 Invariante 2026-06-29: aunque el modo no sea realtime, el picker debe cargar historial inicial al abrir para mostrar total/resultados. Lo que se desactiva es buscar en cada tecla, no el primer load.

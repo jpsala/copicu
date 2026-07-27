@@ -36,6 +36,8 @@ import CornerDownLeft from "lucide-react/dist/esm/icons/corner-down-left.mjs";
 import FileCode2 from "lucide-react/dist/esm/icons/file-code-2.mjs";
 import ListChecks from "lucide-react/dist/esm/icons/list-checks.mjs";
 import ListRestart from "lucide-react/dist/esm/icons/list-restart.mjs";
+import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.mjs";
+import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.mjs";
 import MoreVertical from "lucide-react/dist/esm/icons/more-vertical.mjs";
 import Pencil from "lucide-react/dist/esm/icons/pencil.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
@@ -898,13 +900,40 @@ if (import.meta.env.DEV) {
   });
 }
 
+const FILTER_LOCK_STORAGE_KEY = "copicu.filter-lock.v1";
+const FILTER_LOCK_SHORTCUT = "Ctrl+Shift+L";
+
+function readLockedFilterQuery(): string | null {
+  try {
+    const value = window.localStorage?.getItem(FILTER_LOCK_STORAGE_KEY)?.trim() ?? "";
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLockedFilterQuery(query: string | null) {
+  try {
+    if (query) {
+      window.localStorage?.setItem(FILTER_LOCK_STORAGE_KEY, query);
+    } else {
+      window.localStorage?.removeItem(FILTER_LOCK_STORAGE_KEY);
+    }
+  } catch {
+    // A locked filter still survives picker hides when storage is unavailable.
+  }
+}
+
 function App() {
+  const initialLockedFilterQueryRef = useRef(readLockedFilterQuery());
+  const initialFilterQuery = initialLockedFilterQueryRef.current ?? "";
+  const [filterLocked, setFilterLocked] = useState(initialLockedFilterQueryRef.current !== null);
   const [stats, setStats] = useState<CaptureStats | null>(null);
   const [probe, setProbe] = useState<ClipboardProbe | null>(null);
   const [events, setEvents] = useState<CaptureEvent[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [historyInputQuery, setHistoryInputQuery] = useState("");
-  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyInputQuery, setHistoryInputQuery] = useState(initialFilterQuery);
+  const [historyQuery, setHistoryQuery] = useState(initialFilterQuery);
   const [searchInterpretation, setSearchInterpretation] = useState<SearchInterpretation>(null);
   const [aiComposerMode, setAiComposerMode] = useState(false);
   const [historyPending, setHistoryPending] = useState(false);
@@ -916,7 +945,7 @@ function App() {
   const [historyFilteredCount, setHistoryFilteredCount] = useState<number | null>(null);
   const [markedTotalCount, setMarkedTotalCount] = useState<number | null>(null);
   const [newClipsAvailable, setNewClipsAvailable] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialFilterQuery);
   const [knownTagSlugs, setKnownTagSlugs] = useState<string[]>([]);
   const [paletteTags, setPaletteTags] = useState<TagSummary[]>([]);
   const [savedHistoryViews, setSavedHistoryViews] = useState<SavedHistoryView[]>([]);
@@ -973,6 +1002,7 @@ function App() {
   const compoundHotkeyArmedAtRef = useRef(0);
   const whichKeyRevealTimerRef = useRef<number | null>(null);
   const pickerWasHiddenRef = useRef(false);
+  const filterLockedRef = useRef(filterLocked);
 
   const selectedIndex = useMemo(
     () => history.findIndex((item) => item.id === selectedItemId),
@@ -1070,6 +1100,15 @@ function App() {
   }, [historyInputQuery]);
 
   useEffect(() => {
+    filterLockedRef.current = filterLocked;
+    if (filterLocked) {
+      writeLockedFilterQuery(historyInputQuery.trim() || null);
+    } else {
+      writeLockedFilterQuery(null);
+    }
+  }, [filterLocked, historyInputQuery]);
+
+  useEffect(() => {
     pickerSearchSettingsRef.current = settings.picker;
   }, [settings.picker]);
 
@@ -1150,11 +1189,13 @@ function App() {
     setAiComposerMode(false);
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
-    queryRef.current = "";
-    historyInputQueryRef.current = "";
-    setQuery("");
-    setHistoryInputQuery("");
-    setHistoryQuery("");
+    if (!filterLockedRef.current) {
+      queryRef.current = "";
+      historyInputQueryRef.current = "";
+      setQuery("");
+      setHistoryInputQuery("");
+      setHistoryQuery("");
+    }
     setSelectedItemId(null);
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
@@ -3166,7 +3207,7 @@ function App() {
           ? refreshHistory({
               resetScroll: true,
               showPending: false,
-              queryOverride: "",
+              queryOverride: filterLockedRef.current ? historyInputQueryRef.current : "",
               allowAi: false,
             })
           : refreshAppliedHistory({
@@ -3269,6 +3310,26 @@ function App() {
     }
     void refreshHistory({ resetScroll: true, allowAi: true });
   }, [refreshHistory]);
+  const toggleFilterLock = useCallback(() => {
+    const nextLocked = !filterLockedRef.current;
+    if (nextLocked) {
+      const filterQuery = query.trim();
+      if (!filterQuery || aiComposerMode) {
+        return;
+      }
+      filterLockedRef.current = true;
+      writeLockedFilterQuery(filterQuery);
+      setFilterLocked(true);
+      if (filterQuery !== historyInputQuery.trim()) {
+        runSearchNow();
+      }
+    } else {
+      filterLockedRef.current = false;
+      writeLockedFilterQuery(null);
+      setFilterLocked(false);
+    }
+    window.setTimeout(() => searchRef.current?.focus(), 0);
+  }, [aiComposerMode, historyInputQuery, query, runSearchNow]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
     skipNextRealtimeSearchRef.current = true;
     queryRef.current = chip.queryWithoutClause;
@@ -3354,6 +3415,17 @@ function App() {
         openCommandPalette();
         return;
       }
+      if (
+        event.ctrlKey
+        && event.shiftKey
+        && !event.altKey
+        && !event.metaKey
+        && event.key.toLocaleLowerCase() === "l"
+      ) {
+        event.preventDefault();
+        toggleFilterLock();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "n") {
         event.preventDefault();
         beginCreateItem();
@@ -3376,6 +3448,17 @@ function App() {
       if (shortcut === TAG_EDIT_SHORTCUT) {
         event.preventDefault();
         openActiveMetadata();
+        return;
+      }
+      if (
+        event.ctrlKey
+        && !event.shiftKey
+        && !event.metaKey
+        && !event.altKey
+        && event.key.toLocaleLowerCase() === "d"
+      ) {
+        event.preventDefault();
+        void deleteItems(effectiveSelection);
         return;
       }
       if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
@@ -3622,6 +3705,33 @@ function App() {
                 }}
               />
             )}
+            {!aiComposerMode ? (
+              <UiTooltip
+                label={(
+                  <span className="tooltip-shortcut-label">
+                    <span>{filterLocked ? "Unlock persistent filter" : "Keep filter after closing"}</span>
+                    <ShortcutBadge shortcut={FILTER_LOCK_SHORTCUT} />
+                  </span>
+                )}
+              >
+                <UiIconButton
+                  type="button"
+                  className="filter-lock-button"
+                  variant="subtle"
+                  aria-label={filterLocked ? "Unlock persistent filter" : "Lock filter across picker closes"}
+                  aria-pressed={filterLocked}
+                  disabled={!filterLocked && !query.trim()}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={toggleFilterLock}
+                >
+                  {filterLocked ? (
+                    <LockKeyhole size={14} strokeWidth={2.2} aria-hidden="true" />
+                  ) : (
+                    <LockKeyholeOpen size={14} strokeWidth={2.2} aria-hidden="true" />
+                  )}
+                </UiIconButton>
+              </UiTooltip>
+            ) : null}
             {autocompleteOpen ? (
               <div id="search-autocomplete" className="search-autocomplete" role="listbox" aria-label="Search suggestions">
                 {autocompleteSuggestions.map((suggestion, index) => (

@@ -2,6 +2,13 @@
 
 All notable changes to Copicu are documented here.
 
+## [0.4.0-rc.5] - 2026-07-27
+
+### Added
+
+- Reserve `Ctrl+D` in the picker as a direct shortcut for deleting the effective item selection, alongside `Shift+Delete`.
+- Add a filter lock with an inline lock icon and `Ctrl+Shift+L`; locked queries survive picker hides and app/renderer restarts without changing window pin or keep-open behavior.
+
 ## [0.4.0-rc.4] - 2026-07-27
 
 ### Fixed
@@ -55,6 +62,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.0-rc.5]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.5
 [0.4.0-rc.4]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.4
 [0.4.0-rc.3]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.3
 [0.4.0-rc.2]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.2
