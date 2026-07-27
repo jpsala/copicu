@@ -174,8 +174,8 @@ Navegacion por teclado:
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
 - `F2`: edita contenido del item activo.
-- `Shift+F2`: abre el editor avanzado de metadata del item activo o el batch legacy.
-- `Ctrl+Shift+C`: abre el editor built-in simple de tags; single reemplaza el conjunto y multiseleccion agrega tags.
+- `Shift+F2`: abre el editor completo de metadata del item activo.
+- `Ctrl+Shift+C`: global app-owned; abre la utility de metadata para el item activo o el ultimo activado.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 
 Crear item manual:
@@ -190,15 +190,15 @@ Crear item manual:
 
 Metadata editable:
 
-- `title`, `notes` y tags visibles son metadata editable del usuario; el contexto de captura automatico queda separado y read-only.
-- El editor avanzado/batch legacy conserva append, replace y smart merge bajo `Shift+F2`, sin ser el flujo cotidiano.
-- El shortcut core para tags es `Ctrl+Shift+C`: chips + autocomplete, creacion inline y apply explicito.
-- En single permite agregar/quitar y limpiar todos los tags; en multi solo agrega de forma atomica, idempotente y no destructiva.
-- El shortcut es local al picker y reservado en backend; no depende de scripts active-only ni roba `Ctrl+Shift+C` a otras aplicaciones.
+- La utility muestra el contenido del item como preview read-only y mantiene el foco inicial en el textarea de metadata.
+- Un solo texto mezcla notas libres y `#tags`; al guardar, el parser separa tags normalizados de `notes` y preserva `title` sin exponerlo.
+- `Ctrl+Shift+C` es global app-owned y `Shift+F2` abre la misma utility desde el picker.
+- El flujo rapido `Edit tags` y el batch de seleccion multiple permanecen separados, atomicos e idempotentes.
 - Provenance user/assistant/enrichment queda diferida: `meta:` busca metadata visible sin exponer origen, `ctx:` busca contexto oculto automatico.
 
 Activacion:
 
+- Todo item nuevo capturado desde el clipboard pasa a ser el activo despues del refresh o en la proxima apertura del picker.
 - MVP inmediato: `Enter` copia el item seleccionado al clipboard y oculta la ventana.
 - Despues: setting para que `Enter` pegue en la ventana previa.
 - Click selecciona.

@@ -697,6 +697,10 @@ export function MetadataWindowApp() {
               void save();
             }}
           >
+            <section className="metadata-item-content" aria-label="Item content">
+              <span>Content</span>
+              <pre>{payload.item.text || (payload.item.content_kind === "image" ? "Image clip" : "Empty clip")}</pre>
+            </section>
             <MetadataTextInput
               key={editorSession}
               ref={editorRef}

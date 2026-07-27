@@ -2530,10 +2530,40 @@ kbd {
 
 .metadata-window-form {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 8px;
   min-height: 0;
   height: 100%;
+}
+
+.metadata-item-content {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+}
+
+.metadata-item-content > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.metadata-item-content pre {
+  min-height: 48px;
+  max-height: 76px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 
 .metadata-text-editor {
@@ -2542,8 +2572,8 @@ kbd {
 }
 
 .metadata-text-editor textarea {
-  min-height: 88px;
-  max-height: 168px;
+  min-height: 80px;
+  max-height: 144px;
   line-height: 1.45;
 }
 

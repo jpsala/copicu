@@ -2,6 +2,13 @@
 
 All notable changes to Copicu are documented here.
 
+## [0.4.0-rc.2] - 2026-07-27
+
+### Fixed
+
+- Make a newly captured clipboard item the active picker item after refresh or on the next picker opening, and prioritize it when `Ctrl+Shift+C` opens metadata before the picker refreshes.
+- Show the selected item's content in the metadata utility while keeping keyboard focus in the metadata editor.
+
 ## [0.4.0-rc.1] - 2026-07-25
 
 ### Release candidate
@@ -32,5 +39,6 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.0-rc.2]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.2
 [0.4.0-rc.1]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.1
 [0.3.9]: https://github.com/jpsala/copicu/releases/tag/v0.3.9

@@ -127,6 +127,7 @@ struct TextClipboardHandler<R: Runtime> {
 struct HistoryChangedEvent {
     item_id: i64,
     content_kind: &'static str,
+    activate: bool,
 }
 
 impl<R: Runtime> TextClipboardHandler<R> {
@@ -453,6 +454,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
             HistoryChangedEvent {
                 item_id,
                 content_kind,
+                activate: true,
             },
         ) {
             eprintln!("history changed emit failed: {error}");

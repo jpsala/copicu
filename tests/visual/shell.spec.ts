@@ -2802,14 +2802,17 @@ test("ai-output renders markdown and actions without overflow", async ({ page })
   expect(overflow).toBe(false);
 });
 
-test("metadata window parses one text input into notes and inline tags", async ({ page }) => {
-  await page.setViewportSize({ width: 480, height: 260 });
+test("metadata window shows item content and focuses inline metadata", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 340 });
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=metadata");
 
   const editor = page.getByRole("textbox", { name: "Metadata" });
   await expect(editor).toBeVisible();
   await expect(editor).toBeFocused();
+  const itemContent = page.getByLabel("Item content");
+  await expect(itemContent).toBeVisible();
+  await expect(itemContent).toContainText(syntheticLongHistory[3].text);
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Notes" })).toHaveCount(0);
   await expect(page.getByLabel("Capture context")).toHaveCount(0);

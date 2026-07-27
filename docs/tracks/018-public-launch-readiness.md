@@ -483,6 +483,13 @@ Checkpoint 2026-07-25 `v0.4.0-rc.1`:
 - `v0.3.9` permanece como stable/latest; el RC se publica como prerelease y no reemplaza el canal estable del updater.
 - Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `1C32FA56433C68E70A7D8E10D8764B75A108E4436A695B4E9EE3ACCEB8AF3951`; Authenticode sigue pendiente y debe comunicarse como tal.
 
+Checkpoint 2026-07-27 `v0.4.0-rc.2`:
+
+- Bugfix candidate: la captura nueva pasa a activa incluso con picker oculto y `Ctrl+Shift+C` prioriza esa captura antes del refresh visual.
+- Metadata muestra el contenido read-only y mantiene foco en el editor.
+- Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `4C6EE9827EC60A0934D6F21F050E51FB7051C647A04B009814FB233F2B57C5EB`.
+- `v0.3.9` sigue siendo stable/latest; `rc.2` permanece prerelease.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.

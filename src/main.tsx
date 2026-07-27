@@ -964,6 +964,7 @@ function App() {
   const selectedIdsRef = useRef<Set<number>>(new Set());
   const selectedItemIdRef = useRef<number | null>(selectedItemId);
   const lastActivatedItemIdRef = useRef<number | null>(null);
+  const pendingHistoryActivationItemIdRef = useRef<number | null>(null);
   const metadataShortcutHandledAtRef = useRef(0);
   const selectionAnchorItemIdRef = useRef<number | null>(null);
   const selectionInteractionSeqRef = useRef(0);
@@ -2268,13 +2269,29 @@ function App() {
       return;
     }
     metadataShortcutHandledAtRef.current = now;
-    const activeItemId = selectedItemIdRef.current ?? lastActivatedItemIdRef.current;
-    const activeItem = historyRef.current.find((item) => item.id === activeItemId)
-      ?? historyRef.current[0];
+    const pendingItemId = pendingHistoryActivationItemIdRef.current;
+    const activeItemId = pendingItemId
+      ?? selectedItemIdRef.current
+      ?? lastActivatedItemIdRef.current
+      ?? historyRef.current[0]?.id
+      ?? null;
+    if (activeItemId === null) {
+      return;
+    }
+    if (pendingItemId !== null) {
+      pendingHistoryActivationItemIdRef.current = null;
+      lastActivatedItemIdRef.current = pendingItemId;
+    }
+    const activeItem = historyRef.current.find((item) => item.id === activeItemId);
     if (activeItem) {
       void beginEdit(activeItem, "metadata");
+      return;
     }
-  }, [beginEdit]);
+    void openMetadataWindow(activeItemId).catch((error) => {
+      setEditError(String(error));
+      focusSearch();
+    });
+  }, [beginEdit, focusSearch]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -3057,24 +3074,55 @@ function App() {
 
     let active = true;
     let unlisten: (() => void) | null = null;
-    void listen<{ itemId: number; contentKind: "text" | "image" }>(HISTORY_CHANGED_EVENT, () => {
-      if (!active) {
+    const activatePendingHistoryItem = () => {
+      const itemId = pendingHistoryActivationItemIdRef.current;
+      if (itemId === null) {
         return;
       }
-      if (document.visibilityState === "hidden") {
-        pickerWasHiddenRef.current = true;
+      const targetIndex = historyRef.current.findIndex((item) => item.id === itemId);
+      if (targetIndex < 0) {
         return;
       }
-      void refreshAppliedHistory({
-        respectManualScroll: true,
-        showPending: false,
-      }).catch((error) => {
-        if (active) {
-          setHistoryPending(false);
-          setHistoryError(String(error));
+      pendingHistoryActivationItemIdRef.current = null;
+      const nextSelection = new Set([itemId]);
+      selectedIdsRef.current = nextSelection;
+      selectedItemIdRef.current = itemId;
+      selectionAnchorItemIdRef.current = itemId;
+      setSelectedIds(nextSelection);
+      setSelectedItemId(itemId);
+      if (targetIndex === 0) {
+        historyScrollRef.current?.scrollTo({ top: 0 });
+      }
+    };
+    void listen<{ itemId: number; contentKind: "text" | "image"; activate?: boolean }>(
+      HISTORY_CHANGED_EVENT,
+      (event) => {
+        if (!active) {
+          return;
         }
-      });
-    }).then((nextUnlisten) => {
+        if (event.payload.activate) {
+          pendingHistoryActivationItemIdRef.current = event.payload.itemId;
+        }
+        void getCurrentWindow().isVisible().then((visible) => {
+          if (!active) {
+            return;
+          }
+          if (!visible) {
+            pickerWasHiddenRef.current = true;
+            return;
+          }
+          return refreshAppliedHistory({
+            respectManualScroll: true,
+            showPending: false,
+          }).then(activatePendingHistoryItem);
+        }).catch((error) => {
+          if (active) {
+            setHistoryPending(false);
+            setHistoryError(String(error));
+          }
+        });
+      },
+    ).then((nextUnlisten) => {
       unlisten = nextUnlisten;
     });
 
@@ -3125,7 +3173,7 @@ function App() {
               respectManualScroll: true,
               showPending: false,
             });
-        void refresh.catch((error) => {
+        void refresh.then(activatePendingHistoryItem).catch((error) => {
           if (active) {
             setHistoryPending(false);
             setHistoryError(String(error));

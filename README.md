@@ -38,9 +38,9 @@ Compact inline metadata editing with #tag autocomplete, reliable keyboard select
 
 Release candidate for testers:
 
-- [v0.4.0-rc.1](https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.1)
+- [v0.4.0-rc.2](https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.2)
 - Asset: `Copicu_0.4.0_x64-setup.exe`
-- SHA256: `1C32FA56433C68E70A7D8E10D8764B75A108E4436A695B4E9EE3ACCEB8AF3951`
+- SHA256: `4C6EE9827EC60A0934D6F21F050E51FB7051C647A04B009814FB233F2B57C5EB`
 - Prerelease only: it does not replace `v0.3.9` on the stable updater channel.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.

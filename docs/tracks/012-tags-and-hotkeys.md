@@ -95,8 +95,8 @@ Actualizacion 2026-07-12:
 Actualizacion 2026-07-25:
 
 - `Ctrl+Shift+C` es un global shortcut app-owned y read-only en Settings; abre el editor completo de metadata sin mostrar ni agrandar el picker.
-- El item objetivo es el activo del picker; despues de `Enter` y hide/reset, conserva el ultimo item activado. Solo cae al primer item visible si no existe seleccion ni activacion previa.
-- El editor global es una utility chica con un unico textarea auto-grow; no expone `title` ni contexto de captura.
+- El item objetivo es el activo del picker; un item recien capturado pendiente tiene prioridad aunque el historial visual aun no haya refrescado. Despues de `Enter` y hide/reset, conserva el ultimo item activado. Solo cae al primer item visible si no existe seleccion, captura ni activacion previa.
+- El editor global es una utility chica: muestra el contenido del item como preview read-only y mantiene el foco en un unico textarea auto-grow de metadata; no expone `title` ni contexto de captura.
 - Cualquier `#token` en cualquier posicion se extrae como tag y se elimina de `notes` al guardar; al reabrir, tags y notas se serializan otra vez en el mismo texto.
 - `title` preexistente se preserva internamente sin mostrarse. Escape de `#` y prefijos `@` / `*` quedan fuera de este corte.
 - Autocomplete aparece al escribir `#`, prioriza exact/prefix y acepta teclado; un tag nuevo se crea simplemente guardando su token.
