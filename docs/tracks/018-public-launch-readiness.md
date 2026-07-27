@@ -497,6 +497,13 @@ Checkpoint 2026-07-27 `v0.4.0-rc.3`:
 - Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `E75236346760097330272D36516DD5742EB84F08071CE8E9A1200DF9C103A848`.
 - `v0.3.9` sigue siendo stable/latest; `rc.3` permanece prerelease y Authenticode sigue pendiente.
 
+Checkpoint 2026-07-27 `v0.4.0-rc.4`:
+
+- Corrige el roundtrip mixed-DPI: primero mueve la ventana oculta al monitor activo, luego aplica el tamano fisico exacto para evitar doble escalado por `WM_DPICHANGED`.
+- Cada perfil por monitor persiste `scaleFactor`; cambios de DPI del mismo monitor reescalan offset y tamano, con compatibilidad para estado legacy.
+- Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `AF2E7FA4DFF207F22AB1542178264718F23D20B482D425FCB57B65E3365C005F`.
+- Validacion fisica 100%/150% queda asignada a otra PC; `v0.3.9` sigue stable/latest y `rc.4` permanece prerelease.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.

@@ -59,13 +59,15 @@ struct PersistedWindow {
     bounds_by_monitor: HashMap<String, WindowBounds>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WindowBounds {
     x: i32,
     y: i32,
     width: u32,
     height: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scale_factor: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -168,16 +170,24 @@ impl WindowStateRegistry {
         let bounds = saved
             .as_ref()
             .and_then(|saved| saved_bounds_for_target(saved, &behavior, &target_monitor))
+            .map(|bounds| rescale_bounds_for_monitor(bounds, &target_monitor))
             .unwrap_or_else(|| default_bounds(&behavior, &target_monitor));
         let normalized = normalize_bounds(bounds, &behavior, &target_monitor);
-        window
-            .set_size(PhysicalSize::new(normalized.width, normalized.height))
-            .map_err(|error| format!("window {} restore size failed: {error}", behavior.label))?;
+
+        // Moving first lets Windows complete WM_DPICHANGED for the target monitor before
+        // applying the exact physical size saved for that monitor. Sizing first causes the
+        // subsequent cross-monitor move to scale the restored size a second time.
         window
             .set_position(PhysicalPosition::new(normalized.x, normalized.y))
             .map_err(|error| {
                 format!("window {} restore position failed: {error}", behavior.label)
             })?;
+        window
+            .set_size(PhysicalSize::new(normalized.width, normalized.height))
+            .map_err(|error| format!("window {} restore size failed: {error}", behavior.label))?;
+        window
+            .set_position(PhysicalPosition::new(normalized.x, normalized.y))
+            .map_err(|error| format!("window {} final position failed: {error}", behavior.label))?;
         Ok(())
     }
 
@@ -195,17 +205,15 @@ impl WindowStateRegistry {
         let size = window
             .outer_size()
             .map_err(|error| format!("window {} size read failed: {error}", behavior.label))?;
+        let current_monitor = window.current_monitor().ok().flatten();
         let bounds = WindowBounds {
             x: position.x,
             y: position.y,
-            width: size.width.max(behavior.min_width),
-            height: size.height.max(behavior.min_height),
+            width: size.width.max(1),
+            height: size.height.max(1),
+            scale_factor: current_monitor.as_ref().map(Monitor::scale_factor),
         };
-        let monitor_key = window
-            .current_monitor()
-            .ok()
-            .flatten()
-            .map(|monitor| monitor_key(&monitor));
+        let monitor_key = current_monitor.as_ref().map(monitor_key);
 
         {
             let mut state = self
@@ -308,6 +316,29 @@ fn physical_dimension(logical: u32, scale_factor: f64) -> u32 {
     ((logical as f64 * scale_factor).round()).clamp(1.0, u32::MAX as f64) as u32
 }
 
+fn rescale_bounds_for_monitor(bounds: WindowBounds, monitor: &MonitorSnapshot) -> WindowBounds {
+    let Some(saved_scale) = bounds
+        .scale_factor
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+    else {
+        return bounds;
+    };
+    if (saved_scale - monitor.scale_factor).abs() < f64::EPSILON {
+        return bounds;
+    }
+
+    let ratio = monitor.scale_factor / saved_scale;
+    let relative_x = bounds.x - monitor.work_x;
+    let relative_y = bounds.y - monitor.work_y;
+    WindowBounds {
+        x: monitor.work_x + (relative_x as f64 * ratio).round() as i32,
+        y: monitor.work_y + (relative_y as f64 * ratio).round() as i32,
+        width: ((bounds.width as f64 * ratio).round()).clamp(1.0, u32::MAX as f64) as u32,
+        height: ((bounds.height as f64 * ratio).round()).clamp(1.0, u32::MAX as f64) as u32,
+        scale_factor: Some(monitor.scale_factor),
+    }
+}
+
 fn normalize_bounds(
     bounds: WindowBounds,
     behavior: &WindowBehavior,
@@ -350,6 +381,7 @@ fn normalize_bounds(
         y,
         width,
         height,
+        scale_factor: Some(monitor.scale_factor),
     }
 }
 
@@ -367,6 +399,7 @@ fn default_bounds(behavior: &WindowBehavior, monitor: &MonitorSnapshot) -> Windo
         y: monitor.work_y + ((monitor.work_height.saturating_sub(height)) / 2) as i32,
         width,
         height,
+        scale_factor: Some(monitor.scale_factor),
     }
 }
 
@@ -447,6 +480,7 @@ mod tests {
             y: 100,
             width: 480,
             height: 340,
+            scale_factor: Some(1.0),
         };
         let saved = PersistedWindow {
             last_monitor_key: Some("left".to_string()),
@@ -475,6 +509,7 @@ mod tests {
                 y: 100,
                 width: 480,
                 height: 300,
+                scale_factor: Some(1.5),
             },
             &metadata_behavior(),
             &monitor("scaled", 1920, 1.5),
@@ -482,5 +517,34 @@ mod tests {
 
         assert_eq!(bounds.width, 570);
         assert_eq!(bounds.height, 450);
+    }
+
+    #[test]
+    fn legacy_bounds_without_scale_remain_compatible() {
+        let bounds: WindowBounds =
+            serde_json::from_str(r#"{"x":10,"y":20,"width":480,"height":340}"#)
+                .expect("legacy bounds");
+
+        assert_eq!(bounds.scale_factor, None);
+    }
+
+    #[test]
+    fn saved_bounds_follow_dpi_changes_on_the_same_monitor() {
+        let bounds = rescale_bounds_for_monitor(
+            WindowBounds {
+                x: 200,
+                y: 100,
+                width: 600,
+                height: 400,
+                scale_factor: Some(1.0),
+            },
+            &monitor("same-monitor", 0, 1.5),
+        );
+
+        assert_eq!(bounds.x, 300);
+        assert_eq!(bounds.y, 150);
+        assert_eq!(bounds.width, 900);
+        assert_eq!(bounds.height, 600);
+        assert_eq!(bounds.scale_factor, Some(1.5));
     }
 }

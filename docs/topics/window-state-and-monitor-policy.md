@@ -74,9 +74,9 @@ Formato conceptual:
   "windows": {
     "main": {
       "lastMonitorKey": "monitor@0,0:1920x1080",
-      "lastBounds": { "x": 100, "y": 100, "width": 820, "height": 620 },
+      "lastBounds": { "x": 100, "y": 100, "width": 820, "height": 620, "scaleFactor": 1.5 },
       "boundsByMonitor": {
-        "monitor@0,0:1920x1080": { "x": 100, "y": 100, "width": 820, "height": 620 }
+        "monitor@0,0:1920x1080": { "x": 100, "y": 100, "width": 820, "height": 620, "scaleFactor": 1.5 }
       }
     }
   }
@@ -96,12 +96,16 @@ Al mostrar una ventana persistente:
 3. Si hay bounds guardados para ese monitor, usarlos.
 4. Si no hay perfil para ese monitor, centrar con defaults en el monitor objetivo; no trasladar coordenadas del monitor anterior.
 5. Interpretar defaults y minimos como dimensiones logicas y escalarlos al DPI del monitor antes de aplicar `PhysicalSize`.
-6. Validar contra `workArea`:
+6. En Windows mixed-DPI, mover primero la ventana oculta al monitor objetivo para completar `WM_DPICHANGED`; aplicar despues el tamano fisico exacto y reafirmar la posicion. Aplicar size antes del move produce un segundo escalado del OS.
+7. Persistir `scaleFactor` junto a cada bounds. Si cambia el DPI configurado del mismo monitor, reescalar offset y tamano por `newScale / savedScale`; estados legacy sin ese campo siguen siendo validos.
+8. Validar contra `workArea`:
    - clamp de tamano a minimo y area disponible;
    - si la ventana queda casi fuera de pantalla, centrar;
    - si solo sobresale, empujarla dentro del area visible.
 
-Regla importante: `boundsByMonitor` conserva posiciones y tamanos fisicos por monitor. Si un monitor externo no esta conectado, la ventana abre centrada en el activo sin borrar el perfil previo del externo. En DPI 125/150/200%, defaults y minimos se escalan con `Monitor::scale_factor()` para evitar utilities fisicamente chicas.
+Regla importante: `boundsByMonitor` conserva posiciones, tamanos fisicos y escala por monitor. Si un monitor externo no esta conectado, la ventana abre centrada en el activo sin borrar el perfil previo del externo. En DPI 125/150/200%, defaults y minimos se escalan con `Monitor::scale_factor()` para evitar utilities fisicamente chicas.
+
+Referencia del incidente mixed-DPI: Tauri/TAO documentaron el mismo crecimiento/reduccion al cruzar monitores en [tauri#12626](https://github.com/tauri-apps/tauri/issues/12626), resuelto upstream alrededor de `WM_DPICHANGED` por [tao#1056](https://github.com/tauri-apps/tao/pull/1056). Copicu usa una version posterior de TAO, pero su restauracion propia tambien debe respetar ese orden.
 
 ## Resize En Frameless
 
