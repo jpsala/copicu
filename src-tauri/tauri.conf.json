@@ -38,6 +38,9 @@
     "resources": {
       "target/release/WebView2Loader.dll": "WebView2Loader.dll",
       "../scripts/copicu-script-runner.mjs": "scripts/copicu-script-runner.mjs",
+      "../scripts/examples/030-extract-urls-copy.ts": "bundled-scripts/030-extract-urls-copy.ts",
+      "../scripts/examples/031-join-selected-markdown-copy.ts": "bundled-scripts/031-join-selected-markdown-copy.ts",
+      "../scripts/examples/copicu-action.d.ts": "bundled-scripts/copicu-action.d.ts",
       "../node_modules/typescript": "node_modules/typescript"
     },
     "icon": [

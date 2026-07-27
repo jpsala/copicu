@@ -490,6 +490,13 @@ Checkpoint 2026-07-27 `v0.4.0-rc.2`:
 - Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `4C6EE9827EC60A0934D6F21F050E51FB7051C647A04B009814FB233F2B57C5EB`.
 - `v0.3.9` sigue siendo stable/latest; `rc.2` permanece prerelease.
 
+Checkpoint 2026-07-27 `v0.4.0-rc.3`:
+
+- Ventanas persistentes abren en el monitor activo, restauran bounds por monitor y escalan defaults/minimos para DPI 125/150/200%.
+- El instalador distribuye solo `030-extract-urls-copy.ts`, `031-join-selected-markdown-copy.ts` y tipos, sin sobrescribir archivos existentes.
+- Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `E75236346760097330272D36516DD5742EB84F08071CE8E9A1200DF9C103A848`.
+- `v0.3.9` sigue siendo stable/latest; `rc.3` permanece prerelease y Authenticode sigue pendiente.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.

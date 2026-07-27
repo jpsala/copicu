@@ -2,6 +2,16 @@
 
 All notable changes to Copicu are documented here.
 
+## [0.4.0-rc.3] - 2026-07-27
+
+### Added
+
+- Bundle the Extract URLs and Join Selected as Markdown scripts with the Windows installer. They are copied to the default scripts folder only when missing, preserving user-owned versions and files.
+
+### Fixed
+
+- Open persistent auxiliary windows on the active monitor, restore position and size per monitor, and scale default/minimum bounds correctly at 150% and other DPI settings.
+
 ## [0.4.0-rc.2] - 2026-07-27
 
 ### Fixed
@@ -39,6 +49,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.0-rc.3]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.3
 [0.4.0-rc.2]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.2
 [0.4.0-rc.1]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.1
 [0.3.9]: https://github.com/jpsala/copicu/releases/tag/v0.3.9

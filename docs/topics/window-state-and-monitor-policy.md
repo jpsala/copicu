@@ -42,9 +42,9 @@ Estado actual:
 | Label | Resize | Persist bounds | Por monitor | Nota |
 | --- | --- | --- | --- | --- |
 | `main` | si | si | si | Picker rapido; al abrir usa el monitor del cursor. |
-| `settings` | si | si | si | Ventana document; usa ultimo monitor disponible. |
-| `ai-output` | si | si | si | Ventana document para Markdown/output. |
-| `metadata` | si | si | si | Utility para metadata; prewarm/cached hidden. |
+| `settings` | si | si | si | Abre en monitor activo y restaura su perfil de bounds. |
+| `ai-output` | si | si | si | Abre en monitor activo y restaura su perfil de bounds. |
+| `metadata` | si | si | si | Utility prewarm/cached; al mostrar abre en monitor activo. |
 | `ui-host` | no | no | no | Prompt compacto; tamano calculado por request. |
 | `notifications` | no | no | no | Posicionada por codigo junto al monitor de `main`; tamano fijo. |
 | `whichkey` | no | no | no | Utility temporal; tamano fijo hasta reactivar/validar. |
@@ -54,13 +54,13 @@ Estado actual:
 Fuentes consultadas el 2026-06-09:
 
 - Microsoft documenta una preferencia de Windows para "Remember window locations based on monitor connection" y minimizacion al desconectar monitor. Esto confirma que el modelo esperado por usuarios multi-monitor no es solo coordenadas globales, sino posiciones asociadas a configuracion/monitor.
-  - https://support.microsoft.com/en-us/windows/how-to-use-multiple-monitors-in-windows-329c6962-5a4d-b481-7baa-bec9671f728a
+  - <https://support.microsoft.com/en-us/windows/how-to-use-multiple-monitors-in-windows-329c6962-5a4d-b481-7baa-bec9671f728a>
 - Tauri `window-state` guarda/restaura posiciones y tamanos, pero opera como plugin general. Copicu necesita control por ventana y por monitor, por eso se implementa una capa propia chica.
-  - https://v2.tauri.app/plugin/window-state/
+  - <https://v2.tauri.app/plugin/window-state/>
 - Tauri expone APIs de monitores: monitor actual, monitor por punto, monitores disponibles, cursor, `workArea`, posicion, tamano y escala.
-  - https://v2.tauri.app/reference/javascript/api/namespacewindow/
+  - <https://v2.tauri.app/reference/javascript/api/namespacewindow/>
 - Electron RFC de persistencia de estado valida el patron de comprobar display/work area y ajustar bounds si al restaurar quedan fuera o no entran en pantalla.
-  - https://github.com/electron/rfcs/blob/main/text/0016-save-restore-window-state.md
+  - <https://github.com/electron/rfcs/blob/main/text/0016-save-restore-window-state.md>
 
 ## Formato Persistido
 
@@ -87,23 +87,21 @@ Formato conceptual:
 
 ## Restauracion
 
-Estado observado 2026-06-29: la persistencia existe y guarda `lastMonitorKey`, `lastBounds` y `boundsByMonitor` en app data. Hay un matiz pendiente: la politica `LastMonitor` actualmente elige el monitor objetivo desde primario/disponible y luego considera bounds guardados; si el primario tiene bounds previos, puede no preferir exactamente `lastMonitorKey`. Si JP pide precision de ultimo monitor para `settings`/`metadata`/`ai-output`, ajustar `choose_target_monitor`/restore para priorizar `lastMonitorKey` conectado y caer al disponible solo si desaparecio.
+Decision 2026-07-27: todas las ventanas persistentes eligen el monitor activo con la misma politica `CursorMonitor` del picker. `LastMonitor` queda solo para restauraciones ocultas/prewarm que se vuelven a resolver al mostrar. Nunca se reutilizan coordenadas de otro monitor para una apertura visible.
 
 Al mostrar una ventana persistente:
 
 1. Resolver la politica de esa ventana desde `WindowStateRegistry`.
-2. Elegir monitor objetivo:
-   - `main`: monitor bajo el cursor al momento de abrir.
-   - `settings`/`ai-output`: monitor actual o primario disponible.
+2. Elegir monitor objetivo bajo el cursor al momento de abrir; si no se puede resolver, caer al primario/disponible.
 3. Si hay bounds guardados para ese monitor, usarlos.
-4. Si no hay bounds para ese monitor pero existe ultimo monitor conectado guardado, usar esos bounds ajustados.
-5. Si no hay estado, centrar con defaults en el monitor objetivo.
+4. Si no hay perfil para ese monitor, centrar con defaults en el monitor objetivo; no trasladar coordenadas del monitor anterior.
+5. Interpretar defaults y minimos como dimensiones logicas y escalarlos al DPI del monitor antes de aplicar `PhysicalSize`.
 6. Validar contra `workArea`:
    - clamp de tamano a minimo y area disponible;
    - si la ventana queda casi fuera de pantalla, centrar;
    - si solo sobresale, empujarla dentro del area visible.
 
-Regla importante: `boundsByMonitor` conserva posiciones por monitor. Si un monitor externo no esta conectado, la ventana puede abrir en el monitor disponible sin borrar la posicion previa del externo.
+Regla importante: `boundsByMonitor` conserva posiciones y tamanos fisicos por monitor. Si un monitor externo no esta conectado, la ventana abre centrada en el activo sin borrar el perfil previo del externo. En DPI 125/150/200%, defaults y minimos se escalan con `Monitor::scale_factor()` para evitar utilities fisicamente chicas.
 
 ## Resize En Frameless
 

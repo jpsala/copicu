@@ -2525,7 +2525,7 @@ fn open_settings_window_on_main_thread<R: tauri::Runtime>(
 
     if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
         registry
-            .restore(&window, window_state::RestoreTarget::LastMonitor)
+            .restore(&window, window_state::RestoreTarget::CursorMonitor)
             .map_err(|error| format!("settings window state restore failed: {error}"))?;
     }
     window
@@ -2595,7 +2595,7 @@ pub(crate) fn open_ai_output_window<R: tauri::Runtime>(
 
     if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
         registry
-            .restore(&window, window_state::RestoreTarget::LastMonitor)
+            .restore(&window, window_state::RestoreTarget::CursorMonitor)
             .map_err(|error| format!("ai-output window state restore failed: {error}"))?;
     }
     window
@@ -2654,7 +2654,7 @@ fn open_metadata_editor_window<R: tauri::Runtime>(
     if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
         let restore_started_at = Instant::now();
         registry
-            .restore(&window, window_state::RestoreTarget::LastMonitor)
+            .restore(&window, window_state::RestoreTarget::CursorMonitor)
             .map_err(|error| format!("metadata window state restore failed: {error}"))?;
         diag_log(
             "metadata.open.restore.done",

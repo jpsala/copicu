@@ -26,7 +26,6 @@ pub enum SurfaceLifecycle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoundsPolicy {
     CursorMonitor,
-    LastMonitor,
     FixedPosition,
     None,
 }
@@ -97,7 +96,7 @@ pub const SURFACES: &[SurfaceWindow] = &[
         kind: SurfaceKind::Document,
         chrome: ChromeVariant::Document,
         lifecycle: SurfaceLifecycle::CachedHidden,
-        bounds_policy: BoundsPolicy::LastMonitor,
+        bounds_policy: BoundsPolicy::CursorMonitor,
         capability: "surface-settings",
         width: 820,
         height: 620,
@@ -121,7 +120,7 @@ pub const SURFACES: &[SurfaceWindow] = &[
         kind: SurfaceKind::Document,
         chrome: ChromeVariant::Document,
         lifecycle: SurfaceLifecycle::CachedHidden,
-        bounds_policy: BoundsPolicy::LastMonitor,
+        bounds_policy: BoundsPolicy::CursorMonitor,
         capability: "surface-ai-output",
         width: 940,
         height: 680,
@@ -145,7 +144,7 @@ pub const SURFACES: &[SurfaceWindow] = &[
         kind: SurfaceKind::Utility,
         chrome: ChromeVariant::Utility,
         lifecycle: SurfaceLifecycle::CachedHidden,
-        bounds_policy: BoundsPolicy::LastMonitor,
+        bounds_policy: BoundsPolicy::CursorMonitor,
         capability: "surface-metadata",
         width: 480,
         height: 340,

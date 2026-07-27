@@ -38,9 +38,9 @@ Compact inline metadata editing with #tag autocomplete, reliable keyboard select
 
 Release candidate for testers:
 
-- [v0.4.0-rc.2](https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.2)
+- [v0.4.0-rc.3](https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.3)
 - Asset: `Copicu_0.4.0_x64-setup.exe`
-- SHA256: `4C6EE9827EC60A0934D6F21F050E51FB7051C647A04B009814FB233F2B57C5EB`
+- SHA256: `E75236346760097330272D36516DD5742EB84F08071CE8E9A1200DF9C103A848`
 - Prerelease only: it does not replace `v0.3.9` on the stable updater channel.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
@@ -149,6 +149,8 @@ The repo already includes runnable showcase examples under [scripts/examples/](s
 - [normalize whitespace and copy](scripts/examples/010-normalize-whitespace-copy.ts) — `Ctrl+Alt+N`;
 - [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) — `Ctrl+Alt+L`;
 - [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) — `Ctrl+Alt+M`.
+
+The Windows installer seeds only **Extract URLs** (`030`) and **Join Selected as Markdown** (`031`) into the default scripts folder, and only when those files are missing. Existing or customized scripts are never overwritten. The other files remain development examples and API fixtures in the repository.
 
 Press `Ctrl+Alt+Q` in the picker to open **Quick Actions**, a context-aware action picker that shows runnable scripts/actions for the current selection so you do not need to memorize every shortcut.
 

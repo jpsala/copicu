@@ -147,6 +147,16 @@ La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, ver
 
 `v0.2.8` agrego diagnostics persistente para release/instalada en `%APPDATA%\dev.jpsala.copicu\diagnostics.jsonl` con rotacion simple a `diagnostics.previous.jsonl` al pasar ~5 MB. Registra eventos sin payloads: `app.startup`, `storage.ready`, `window.*`, `updater.*`, `clipboard.event.*` con duracion/outcome/tamano y `renderer.heartbeat` cada ~30 s. Si una instancia instalada vuelve a quedar `Hung=True`, revisar el ultimo heartbeat/evento antes de reiniciar; el dump local del incidente previo quedo en `.codex-run\hang-dumps\copicu-installed-hung-20260623-113818.dmp`.
 
+## Scripts Incluidos
+
+El instalador NSIS distribuye una seleccion minima de scripts utiles:
+
+- `030-extract-urls-copy.ts`;
+- `031-join-selected-markdown-copy.ts`;
+- `copicu-action.d.ts`, necesario para tipos/autocomplete al editarlos.
+
+El hook copia estos archivos a `$DOCUMENTS\Copicu\Scripts` solo cuando cada destino no existe. Una actualizacion nunca sobrescribe scripts modificados por el usuario y el uninstall no los borra. Los demas archivos bajo `scripts/examples/` son fixtures y contratos de desarrollo, no contenido instalado.
+
 ## Launch On Windows Startup
 
 La opcion Settings -> General -> `Launch on Windows startup` usa `tauri-plugin-autostart`, que en Windows escribe `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con el app name de Tauri (`Copicu`) y marca `Explorer\StartupApproved\Run` como enabled cuando existe.

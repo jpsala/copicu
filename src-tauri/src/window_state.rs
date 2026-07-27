@@ -59,7 +59,7 @@ struct PersistedWindow {
     bounds_by_monitor: HashMap<String, WindowBounds>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WindowBounds {
     x: i32,
@@ -75,6 +75,7 @@ struct MonitorSnapshot {
     work_y: i32,
     work_width: u32,
     work_height: u32,
+    scale_factor: f64,
 }
 
 impl WindowStateRegistry {
@@ -164,46 +165,11 @@ impl WindowStateRegistry {
             state.windows.get(behavior.label).cloned()
         };
 
-        let (bounds, restore_monitor) = match saved {
-            Some(saved) if behavior.persist_by_monitor => {
-                if let Some(bounds) = saved.bounds_by_monitor.get(&target_monitor.key).copied() {
-                    (bounds, target_monitor.clone())
-                } else if let Some((monitor, bounds)) =
-                    saved.last_monitor_key.as_ref().and_then(|key| {
-                        monitors
-                            .iter()
-                            .find(|monitor| &monitor.key == key)
-                            .and_then(|monitor| {
-                                saved
-                                    .bounds_by_monitor
-                                    .get(&monitor.key)
-                                    .copied()
-                                    .map(|bounds| (monitor.clone(), bounds))
-                            })
-                    })
-                {
-                    (bounds, monitor)
-                } else {
-                    (
-                        saved
-                            .last_bounds
-                            .unwrap_or_else(|| default_bounds(&behavior, &target_monitor)),
-                        target_monitor.clone(),
-                    )
-                }
-            }
-            Some(saved) => (
-                saved
-                    .last_bounds
-                    .unwrap_or_else(|| default_bounds(&behavior, &target_monitor)),
-                target_monitor.clone(),
-            ),
-            None => (
-                default_bounds(&behavior, &target_monitor),
-                target_monitor.clone(),
-            ),
-        };
-        let normalized = normalize_bounds(bounds, &behavior, &restore_monitor);
+        let bounds = saved
+            .as_ref()
+            .and_then(|saved| saved_bounds_for_target(saved, &behavior, &target_monitor))
+            .unwrap_or_else(|| default_bounds(&behavior, &target_monitor));
+        let normalized = normalize_bounds(bounds, &behavior, &target_monitor);
         window
             .set_size(PhysicalSize::new(normalized.width, normalized.height))
             .map_err(|error| format!("window {} restore size failed: {error}", behavior.label))?;
@@ -326,15 +292,33 @@ fn monitor_for_point(
         .cloned()
 }
 
+fn saved_bounds_for_target(
+    saved: &PersistedWindow,
+    behavior: &WindowBehavior,
+    target_monitor: &MonitorSnapshot,
+) -> Option<WindowBounds> {
+    if behavior.persist_by_monitor {
+        saved.bounds_by_monitor.get(&target_monitor.key).copied()
+    } else {
+        saved.last_bounds
+    }
+}
+
+fn physical_dimension(logical: u32, scale_factor: f64) -> u32 {
+    ((logical as f64 * scale_factor).round()).clamp(1.0, u32::MAX as f64) as u32
+}
+
 fn normalize_bounds(
     bounds: WindowBounds,
     behavior: &WindowBehavior,
     monitor: &MonitorSnapshot,
 ) -> WindowBounds {
-    let max_width = monitor.work_width.max(behavior.min_width);
-    let max_height = monitor.work_height.max(behavior.min_height);
-    let width = bounds.width.clamp(behavior.min_width, max_width);
-    let height = bounds.height.clamp(behavior.min_height, max_height);
+    let max_width = monitor.work_width.max(1);
+    let max_height = monitor.work_height.max(1);
+    let min_width = physical_dimension(behavior.min_width, monitor.scale_factor).min(max_width);
+    let min_height = physical_dimension(behavior.min_height, monitor.scale_factor).min(max_height);
+    let width = bounds.width.clamp(min_width, max_width);
+    let height = bounds.height.clamp(min_height, max_height);
     let mut x = bounds.x;
     let mut y = bounds.y;
 
@@ -370,12 +354,14 @@ fn normalize_bounds(
 }
 
 fn default_bounds(behavior: &WindowBehavior, monitor: &MonitorSnapshot) -> WindowBounds {
-    let max_width = monitor.work_width.max(behavior.min_width);
-    let max_height = monitor.work_height.max(behavior.min_height);
-    let width = behavior.default_width.clamp(behavior.min_width, max_width);
-    let height = behavior
-        .default_height
-        .clamp(behavior.min_height, max_height);
+    let max_width = monitor.work_width.max(1);
+    let max_height = monitor.work_height.max(1);
+    let min_width = physical_dimension(behavior.min_width, monitor.scale_factor).min(max_width);
+    let min_height = physical_dimension(behavior.min_height, monitor.scale_factor).min(max_height);
+    let width = physical_dimension(behavior.default_width, monitor.scale_factor)
+        .clamp(min_width, max_width);
+    let height = physical_dimension(behavior.default_height, monitor.scale_factor)
+        .clamp(min_height, max_height);
     WindowBounds {
         x: monitor.work_x + ((monitor.work_width.saturating_sub(width)) / 2) as i32,
         y: monitor.work_y + ((monitor.work_height.saturating_sub(height)) / 2) as i32,
@@ -392,6 +378,7 @@ fn monitor_snapshot(monitor: &Monitor) -> MonitorSnapshot {
         work_y: work_area.position.y,
         work_width: work_area.size.width,
         work_height: work_area.size.height,
+        scale_factor: monitor.scale_factor(),
     }
 }
 
@@ -407,4 +394,93 @@ fn monitor_key(monitor: &Monitor) -> String {
         "{name}@{},{}:{}x{}",
         position.x, position.y, size.width, size.height
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn metadata_behavior() -> WindowBehavior {
+        WindowBehavior {
+            label: "metadata",
+            resizable: true,
+            persist_bounds: true,
+            persist_by_monitor: true,
+            default_width: 480,
+            default_height: 340,
+            min_width: 380,
+            min_height: 300,
+        }
+    }
+
+    fn monitor(key: &str, work_x: i32, scale_factor: f64) -> MonitorSnapshot {
+        MonitorSnapshot {
+            key: key.to_string(),
+            work_x,
+            work_y: 0,
+            work_width: 1920,
+            work_height: 1040,
+            scale_factor,
+        }
+    }
+
+    #[test]
+    fn cursor_target_uses_monitor_containing_cursor() {
+        let left = monitor("left", 0, 1.0);
+        let right = monitor("right", 1920, 1.5);
+        let selected = choose_target_monitor(
+            RestoreTarget::CursorMonitor,
+            &[left.clone(), right.clone()],
+            Some(PhysicalPosition::new(2400.0, 300.0)),
+            Some(left),
+        );
+
+        assert_eq!(selected.expect("target monitor").key, right.key);
+    }
+
+    #[test]
+    fn missing_monitor_profile_does_not_reuse_other_monitor_bounds() {
+        let behavior = metadata_behavior();
+        let target = monitor("right", 1920, 1.5);
+        let previous = WindowBounds {
+            x: 100,
+            y: 100,
+            width: 480,
+            height: 340,
+        };
+        let saved = PersistedWindow {
+            last_monitor_key: Some("left".to_string()),
+            last_bounds: Some(previous),
+            bounds_by_monitor: HashMap::from([("left".to_string(), previous)]),
+        };
+
+        assert_eq!(saved_bounds_for_target(&saved, &behavior, &target), None);
+    }
+
+    #[test]
+    fn default_bounds_scale_logical_dimensions_for_150_percent_dpi() {
+        let bounds = default_bounds(&metadata_behavior(), &monitor("scaled", 1920, 1.5));
+
+        assert_eq!(bounds.width, 720);
+        assert_eq!(bounds.height, 510);
+        assert_eq!(bounds.x, 2520);
+        assert_eq!(bounds.y, 265);
+    }
+
+    #[test]
+    fn restored_bounds_respect_scaled_minimum_size() {
+        let bounds = normalize_bounds(
+            WindowBounds {
+                x: 2100,
+                y: 100,
+                width: 480,
+                height: 300,
+            },
+            &metadata_behavior(),
+            &monitor("scaled", 1920, 1.5),
+        );
+
+        assert_eq!(bounds.width, 570);
+        assert_eq!(bounds.height, 450);
+    }
 }
