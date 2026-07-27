@@ -687,11 +687,15 @@ button {
   padding: 0 30px 0 0;
 }
 
-.filter-lock-button {
+.search-field.has-clear-button input {
+  padding-right: 56px;
+}
+
+.filter-lock-button,
+.filter-clear-button {
   position: absolute;
   z-index: 2;
   top: 2px;
-  right: 0;
   width: 24px;
   min-width: 24px;
   height: 24px;
@@ -705,7 +709,20 @@ button {
     color 160ms ease;
 }
 
-.filter-lock-button:hover:not(:disabled) {
+.filter-lock-button {
+  right: 0;
+}
+
+.search-field.has-clear-button .filter-lock-button {
+  right: 26px;
+}
+
+.filter-clear-button {
+  right: 0;
+}
+
+.filter-lock-button:hover:not(:disabled),
+.filter-clear-button:hover {
   background: var(--surface-muted);
   color: var(--accent);
 }
@@ -716,7 +733,8 @@ button {
   color: var(--accent);
 }
 
-.filter-lock-button:focus-visible {
+.filter-lock-button:focus-visible,
+.filter-clear-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
   outline-offset: 1px;
 }
@@ -830,6 +848,7 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .filter-lock-button,
+  .filter-clear-button,
   .new-item-button,
   .composer-mode-button,
   .search-trigger-button,

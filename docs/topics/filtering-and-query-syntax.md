@@ -125,7 +125,7 @@ El icono de candado dentro del search, o `Ctrl+Shift+L`, fija el filtro aplicado
 - el filtro se restaura tambien tras reiniciar el renderer/app mediante storage local;
 - desbloquear restaura el reset normal en el siguiente cierre del picker.
 
-No se puede fijar una query vacia ni el composer AI. `Keep picker open` y `Pin on top` siguen siendo politicas de ventana separadas: filter lock solo conserva la query.
+No se puede fijar una query vacia ni el composer AI. Cuando existe una query, la `X` dentro del search la limpia inmediatamente; si estaba fijada, tambien libera el lock y elimina su valor persistido para que no reaparezca. `Keep picker open` y `Pin on top` siguen siendo politicas de ventana separadas: filter lock solo conserva la query.
 
 `Confirm structured filters with Enter` es un setting independiente. Si esta activo y el modo persistente es `realtime`, un draft con sintaxis estructurada explicita (`#tag`, negacion o prefijos soportados como `tag:`, `kind:`, `has:`, `after:`) usa `enter` como trigger efectivo solo hasta aplicar o limpiar esa query. El setting global no cambia y el status anuncia `Structured query, press Enter`. La deteccion frontend es conservadora y solo decide UX; Rust sigue siendo la autoridad semantica.
 

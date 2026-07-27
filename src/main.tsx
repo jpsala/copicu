@@ -3330,6 +3330,26 @@ function App() {
     }
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [aiComposerMode, historyInputQuery, query, runSearchNow]);
+  const clearSearchFilter = useCallback(() => {
+    if (searchDebounceTimerRef.current !== null) {
+      window.clearTimeout(searchDebounceTimerRef.current);
+      searchDebounceTimerRef.current = null;
+    }
+    filterLockedRef.current = false;
+    writeLockedFilterQuery(null);
+    setFilterLocked(false);
+    skipNextRealtimeSearchRef.current = true;
+    queryRef.current = "";
+    setQuery("");
+    setDismissedAutocompleteQuery(null);
+    setSearchInterpretation(null);
+    setActionError(null);
+    setSelectedItemId(null);
+    setSelectedIds(new Set());
+    selectionAnchorItemIdRef.current = null;
+    void refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
+    window.setTimeout(() => searchRef.current?.focus(), 0);
+  }, [refreshHistory]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
     skipNextRealtimeSearchRef.current = true;
     queryRef.current = chip.queryWithoutClause;
@@ -3686,7 +3706,7 @@ function App() {
               </Menu.Dropdown>
             </Menu>
           </div>
-          <div className="search-field">
+          <div className={`search-field${!aiComposerMode && query ? " has-clear-button" : ""}`}>
             {aiComposerMode ? (
               <UiTextarea
                 {...searchTextareaProps}
@@ -3729,6 +3749,20 @@ function App() {
                   ) : (
                     <LockKeyholeOpen size={14} strokeWidth={2.2} aria-hidden="true" />
                   )}
+                </UiIconButton>
+              </UiTooltip>
+            ) : null}
+            {!aiComposerMode && query ? (
+              <UiTooltip label="Clear filter">
+                <UiIconButton
+                  type="button"
+                  className="filter-clear-button"
+                  variant="subtle"
+                  aria-label="Clear filter"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={clearSearchFilter}
+                >
+                  <X size={14} strokeWidth={2.3} aria-hidden="true" />
                 </UiIconButton>
               </UiTooltip>
             ) : null}

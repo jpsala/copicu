@@ -2155,6 +2155,21 @@ test("filter lock restores the applied query after renderer reload", async ({ pa
   await expect(page.getByRole("button", { name: "Unlock persistent filter" })).toHaveAttribute("aria-pressed", "true");
 });
 
+test("clear filter button clears and unlocks a persistent filter", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  await search.fill("long");
+  await page.getByRole("button", { name: "Lock filter across picker closes" }).click();
+  await page.getByRole("button", { name: "Clear filter" }).click();
+
+  await expect(search).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Clear filter" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Lock filter across picker closes" })).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("copicu.filter-lock.v1"))).toBeNull();
+});
+
 test("right click on item opens item actions menu", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);

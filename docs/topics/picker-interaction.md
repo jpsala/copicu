@@ -171,7 +171,7 @@ Navegacion por teclado:
 - `Space`: candidato para expandir/contraer preview cuando haya truncado.
 - `Delete`: dentro del search input solo edita el texto del filtro; no borra items aunque haya seleccion de historial.
 - `Ctrl+D` o `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible. `Ctrl+D` queda reservado por el picker; `Delete` solo conserva su semantica nativa dentro del input de busqueda.
-- `Ctrl+Shift+L`: fija/libera el filtro aplicado para que sobreviva hide/show y reinicios; el candado dentro del search refleja el estado.
+- `Ctrl+Shift+L`: fija/libera el filtro aplicado para que sobreviva hide/show y reinicios; el candado dentro del search refleja el estado. La `X` del input limpia la query y libera ese lock.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
 - `F2`: edita contenido del item activo.

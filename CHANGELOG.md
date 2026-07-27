@@ -2,6 +2,12 @@
 
 All notable changes to Copicu are documented here.
 
+## [0.4.0-rc.6] - 2026-07-27
+
+### Added
+
+- Add an inline clear button to the filter input; clearing also unlocks a persistent filter so it cannot reappear on the next picker opening.
+
 ## [0.4.0-rc.5] - 2026-07-27
 
 ### Added
@@ -62,6 +68,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.0-rc.6]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.6
 [0.4.0-rc.5]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.5
 [0.4.0-rc.4]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.4
 [0.4.0-rc.3]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.3

@@ -512,6 +512,13 @@ Checkpoint 2026-07-27 `v0.4.0-rc.5`:
 - Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `C1A4E47A6936AB2DCFCB669422786D636713AA6DEE7C25C1D36E1BDEC2796009`.
 - `v0.3.9` sigue stable/latest; `rc.5` permanece prerelease y Authenticode sigue pendiente.
 
+Checkpoint 2026-07-27 `v0.4.0-rc.6`:
+
+- La `X` inline limpia el filtro, devuelve historial completo, conserva foco y libera cualquier filter lock persistido.
+- Suite visual completa: 168/168; build frontend y `cargo check --tests` pasan.
+- Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `192C86972BDF1B6806914DD06C42AA2F89B5A48B1B163A34A1A39497740805F7`.
+- `v0.3.9` sigue stable/latest; `rc.6` permanece prerelease y Authenticode sigue pendiente.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.
