@@ -29,12 +29,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.1-rc.1](https://github.com/jpsala/copicu/releases/tag/v0.4.1-rc.1)
+- [v0.4.1-rc.2](https://github.com/jpsala/copicu/releases/tag/v0.4.1-rc.2)
 - Asset: `Copicu_0.4.1_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `32E24D6207D74A059AA64D63008ABE0A830B0800B76285C81881D110548A11D6`
+- SHA256: `5D56EE4826FC8E469DE32CD7029D36B5D9F7D964C9E408CEA07F143ED4A2AC2C`
 
-Adds explicit full-item previews, hover preview/edit actions, clipboard capture pause controls, shortcut affordances, reliable cached-window closing, and contextual-menu/search polish.
+Fixes hidden-picker capture ordering so the newest clipboard item is restored first and active instead of replaying the stale pre-close selection.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

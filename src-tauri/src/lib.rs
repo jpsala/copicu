@@ -10,6 +10,7 @@ mod host;
 mod hotkeys;
 mod image_capture;
 mod markdown_output;
+mod picker_session;
 mod script_editor;
 pub mod storage;
 mod surface_registry;
@@ -129,19 +130,9 @@ struct PickerFocusPolicy {
 }
 
 #[cfg(not(test))]
-#[derive(Clone, Default)]
-pub(crate) struct PickerSessionController {
-    reset_pending: Arc<AtomicBool>,
-    generation: Arc<AtomicU64>,
-}
-
+pub(crate) use picker_session::PickerSessionController;
 #[cfg(not(test))]
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PickerSessionSnapshot {
-    reset: bool,
-    generation: u64,
-}
+use picker_session::PickerSessionSnapshot;
 
 #[cfg(not(test))]
 #[derive(Clone)]
@@ -408,12 +399,12 @@ impl PickerFocusPolicy {
                     return;
                 }
 
+                if let Some(session) = reset_app.try_state::<PickerSessionController>() {
+                    session.mark_transient_hidden();
+                }
                 if let Err(error) = window.hide() {
                     eprintln!("window delayed hide on focus lost failed: {error}");
                 } else {
-                    if let Some(session) = reset_app.try_state::<PickerSessionController>() {
-                        session.mark_transient_hidden();
-                    }
                     hide_item_preview_for_app(&reset_app);
                     diag_log("window.focus.hide", "focus lost");
                 }
@@ -421,21 +412,6 @@ impl PickerFocusPolicy {
                 eprintln!("window delayed hide dispatch failed: {error}");
             }
         });
-    }
-}
-
-#[cfg(not(test))]
-impl PickerSessionController {
-    pub(crate) fn mark_transient_hidden(&self) {
-        self.reset_pending.store(true, Ordering::SeqCst);
-        self.generation.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn consume_snapshot(&self) -> PickerSessionSnapshot {
-        PickerSessionSnapshot {
-            reset: self.reset_pending.swap(false, Ordering::SeqCst),
-            generation: self.generation.load(Ordering::SeqCst),
-        }
     }
 }
 
@@ -3352,6 +3328,11 @@ fn hide_cached_surface_on_close<R: tauri::Runtime>(window: &tauri::Window<R>) {
         return;
     }
 
+    if window.label() == MAIN_WINDOW_LABEL {
+        if let Some(session) = window.app_handle().try_state::<PickerSessionController>() {
+            session.mark_transient_hidden();
+        }
+    }
     if let Err(error) = window_focus::hide_tauri_window(window) {
         eprintln!("{} window hide on close failed: {error}", window.label());
     }

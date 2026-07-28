@@ -297,6 +297,7 @@ type AiScriptContext = {
 type PickerSessionSnapshot = {
   reset: boolean;
   generation: number;
+  pendingActivationItemId: number | null;
 };
 
 type EditMode = "content" | "metadata";
@@ -1209,8 +1210,12 @@ function App() {
       setHistoryInputQuery("");
       setHistoryQuery("");
     }
+    selectionInteractionSeqRef.current += 1;
+    const emptySelection = new Set<number>();
+    selectedItemIdRef.current = null;
+    selectedIdsRef.current = emptySelection;
     setSelectedItemId(null);
-    setSelectedIds(new Set());
+    setSelectedIds(emptySelection);
     selectionAnchorItemIdRef.current = null;
     if (searchRef.current) {
       searchRef.current.value = "";
@@ -1838,6 +1843,7 @@ function App() {
         return;
       }
 
+      historyRef.current = page.items;
       setHistory(page.items);
       setHistoryNextCursor(page.nextCursor);
       if (typeof page.totalCount === "number") {
@@ -3195,8 +3201,15 @@ function App() {
       void (async () => {
         let resetFromHost = false;
         try {
+          if (!(await getCurrentWindow().isVisible())) {
+            pickerWasHiddenRef.current = true;
+            return;
+          }
           const session = await consumePickerSessionSnapshot();
           resetFromHost = session.reset;
+          if (session.pendingActivationItemId !== null) {
+            pendingHistoryActivationItemIdRef.current = session.pendingActivationItemId;
+          }
         } catch (error) {
           console.warn("consume picker session failed", error);
         }

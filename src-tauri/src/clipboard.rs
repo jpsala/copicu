@@ -12,6 +12,8 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(not(test))]
+use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime};
 
 const COALESCE_WINDOW: Duration = Duration::from_millis(150);
@@ -461,6 +463,10 @@ impl<R: Runtime> TextClipboardHandler<R> {
     }
 
     fn emit_history_changed(&self, item_id: i64, content_kind: &'static str) {
+        #[cfg(not(test))]
+        if let Some(session) = self.app.try_state::<crate::PickerSessionController>() {
+            session.remember_activation_if_hidden(item_id);
+        }
         if let Err(error) = self.app.emit(
             HISTORY_CHANGED_EVENT,
             HistoryChangedEvent {

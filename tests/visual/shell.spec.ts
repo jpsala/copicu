@@ -133,7 +133,11 @@ type MockTauriOptions = {
   historySearchDelayMs?: number;
   historySearchFailOnCursor?: boolean;
   pickerSessionDelayMs?: number;
-  pickerSessionSnapshots?: Array<{ reset: boolean; generation: number }>;
+  pickerSessionSnapshots?: Array<{
+    reset: boolean;
+    generation: number;
+    pendingActivationItemId?: number | null;
+  }>;
   searchTriggerMode?: "realtime" | "enter" | "manual";
   deferStructuredSearchUntilEnter?: boolean;
   searchTriggerUpdateDelayMs?: number;
@@ -166,7 +170,21 @@ async function mockTauriInvoke(
     (window as any).__copicuTestHistoryItems = items;
     (window as any).__copicuTestCompoundPending = pending;
     (window as any).__copicuTestMockOptions = mockOptions;
-    (window as any).__copicuTestPickerSessionSnapshots = [...(mockOptions.pickerSessionSnapshots ?? [])];
+    (window as any).__copicuTestWindowVisible = true;
+    (window as any).__copicuTestPickerSessionSnapshots = (mockOptions.pickerSessionSnapshots ?? []).map(
+      (snapshot) => ({
+        ...snapshot,
+        pendingActivationItemId: snapshot.pendingActivationItemId ?? null,
+      }),
+    );
+    const eventCallbacks = new Map<number, (event: unknown) => unknown>();
+    const eventHandlers = new Map<string, number[]>();
+    let nextCallbackId = 1;
+    (window as any).__copicuTestEmitEvent = async (event: string, payload: unknown) => {
+      for (const callbackId of eventHandlers.get(event) ?? []) {
+        await eventCallbacks.get(callbackId)?.({ event, id: callbackId, payload });
+      }
+    };
     (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
       unregisterListener: () => undefined,
     };
@@ -245,8 +263,12 @@ async function mockTauriInvoke(
       invoke: async (cmd: string, args?: any) => {
         (window as any).__copicuTestInvocations.push({ cmd, args });
         switch (cmd) {
-          case "plugin:event|listen":
-            return 1;
+          case "plugin:event|listen": {
+            const handlers = eventHandlers.get(args.event) ?? [];
+            handlers.push(args.handler);
+            eventHandlers.set(args.event, handlers);
+            return args.handler;
+          }
           case "plugin:event|unlisten":
             return null;
           case "plugin:event|unregisterListener":
@@ -802,8 +824,14 @@ async function mockTauriInvoke(
             if (delayMs > 0) {
               await new Promise((resolve) => window.setTimeout(resolve, delayMs));
             }
-            return (window as any).__copicuTestPickerSessionSnapshots.shift() ?? { reset: false, generation: 0 };
+            return (window as any).__copicuTestPickerSessionSnapshots.shift() ?? {
+              reset: false,
+              generation: 0,
+              pendingActivationItemId: null,
+            };
           }
+          case "plugin:window|is_visible":
+            return (window as any).__copicuTestWindowVisible;
           case "open_item_preview":
           case "toggle_item_preview":
             return true;
@@ -850,8 +878,12 @@ async function mockTauriInvoke(
             throw new Error(`Unhandled mocked Tauri command: ${cmd}`);
         }
       },
-      transformCallback: () => 0,
-      unregisterCallback: () => undefined,
+      transformCallback: (callback: (event: unknown) => unknown) => {
+        const callbackId = nextCallbackId++;
+        eventCallbacks.set(callbackId, callback);
+        return callbackId;
+      },
+      unregisterCallback: (callbackId: number) => eventCallbacks.delete(callbackId),
       unregisterListener: () => undefined,
       callbacks: {},
       convertFileSrc: (filePath: string) => filePath,
@@ -2527,6 +2559,50 @@ test("hiding picker resets transient selection to first item on next focus", asy
   );
   expect(request.context.trigger).toBe("localShortcut");
   expect(request.context.selectedItemIds).toEqual([100]);
+});
+
+test("capture while picker is hidden becomes the active first item on reopen", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
+  await page.getByLabel("Hide Copicu").click();
+
+  const newItemId = 9901;
+  const newItemText = "COPICU_SYNTH_CAPTURED_WHILE_HIDDEN";
+  await page.evaluate(({ newItemId, newItemText }) => {
+    (window as any).__copicuTestWindowVisible = false;
+    const sourceItems = (window as any).__copicuTestHistoryItems;
+    (window as any).__copicuTestHistoryItems = [{
+      ...sourceItems[0],
+      id: newItemId,
+      text: newItemText,
+      preview_text: newItemText,
+      normalized_hash: `hidden-${newItemId}`,
+      created_at_unix_ms: Date.now(),
+      last_used_at_unix_ms: Date.now(),
+      last_copied_at_unix_ms: Date.now(),
+    }, ...sourceItems];
+    (window as any).__copicuTestPickerSessionSnapshots.push({
+      reset: true,
+      generation: 1,
+      pendingActivationItemId: newItemId,
+    });
+  }, { newItemId, newItemText });
+  await page.evaluate(async ({ newItemId }) => {
+    await (window as any).__copicuTestEmitEvent("copicu://history/changed", {
+      itemId: newItemId,
+      contentKind: "text",
+      activate: true,
+    });
+    (window as any).__copicuTestWindowVisible = true;
+    window.dispatchEvent(new Event("focus"));
+  }, { newItemId });
+
+  const capturedItem = page.getByRole("button", { name: newItemText });
+  await expect(capturedItem).toBeVisible();
+  await expect(capturedItem).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".history-feed.has-items > li").first()).toContainText(newItemText);
 });
 
 test("active item action uses current item even with multi selection", async ({ page }) => {
