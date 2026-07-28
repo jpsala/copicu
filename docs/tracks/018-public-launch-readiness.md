@@ -528,6 +528,12 @@ Checkpoint 2026-07-28 `v0.4.1-rc.1`:
 - Checks: 180/180 Playwright, 128 Rust + 1 ignored, build/cargo check, scripts, capabilities, AI planner, routing y context audit.
 - Instalador `Copicu_0.4.1_x64-setup.exe`; SHA256 `32E24D6207D74A059AA64D63008ABE0A830B0800B76285C81881D110548A11D6`; prerelease publicado sin reemplazar `v0.3.9` como latest estable.
 
+Checkpoint 2026-07-28 `v0.4.1-rc.2`:
+
+- Corrige la carrera entre cierre/reset, refresh y captura: el host conserva el ID de la captura más reciente mientras el picker está oculto y el renderer la activa después de sincronizar el historial al reabrir.
+- Checks: 182/182 Playwright, 130 Rust + 1 ignored, build frontend, cargo check, context audit y test focal desktop/narrow.
+- Instalador `Copicu_0.4.1_x64-setup.exe`; SHA256 `5D56EE4826FC8E469DE32CD7029D36B5D9F7D964C9E408CEA07F143ED4A2AC2C`; prerelease publicado sin reemplazar `v0.3.9` como latest estable.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.
