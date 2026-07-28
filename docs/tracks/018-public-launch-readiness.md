@@ -519,12 +519,14 @@ Checkpoint 2026-07-27 `v0.4.0-rc.6`:
 - Instalador `Copicu_0.4.0_x64-setup.exe`; SHA256 `192C86972BDF1B6806914DD06C42AA2F89B5A48B1B163A34A1A39497740805F7`.
 - `v0.3.9` sigue stable/latest; `rc.6` permanece prerelease y Authenticode sigue pendiente.
 
-Checkpoint unreleased post `v0.4.0-rc.6`:
+Checkpoint 2026-07-28 `v0.4.1-rc.1`:
 
 - Clipboard capture puede pausarse desde Settings o tray sin leer nuevas copias ni ejecutar capture actions; reusar items existentes sigue habilitado.
+- Item preview explícito agrega imagen full-resolution con zoom/pan, Markdown seguro, texto completo, atajo configurable y acciones hover/contextuales.
+- La X de superficies cacheadas sigue `SurfaceLifecycle` y el hide nativo corrige ventanas no-activate; el menú contextual mantiene labels y shortcuts legibles.
 - Los accesos a Settings muestran el shortcut configurado: keycaps mono en menus WebView y accelerators nativos sincronizados en tray.
-- Evidencia durable: el roundtrip real pause -> copia externa ignorada -> resume -> copia capturada confirmo el cambio runtime sin reiniciar el watcher.
-- Este batch permanece local y requiere autorizacion explicita antes de commit/release.
+- Checks: 180/180 Playwright, 128 Rust + 1 ignored, build/cargo check, scripts, capabilities, AI planner, routing y context audit.
+- Instalador `Copicu_0.4.1_x64-setup.exe`; SHA256 `32E24D6207D74A059AA64D63008ABE0A830B0800B76285C81881D110548A11D6`; prerelease publicado sin reemplazar `v0.3.9` como latest estable.
 
 Pendiente inmediato:
 
