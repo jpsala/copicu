@@ -2,6 +2,21 @@
 
 All notable changes to Copicu are documented here.
 
+## [0.4.0-rc.7] - 2026-07-28
+
+### Added
+
+- Add a persistent clipboard-capture toggle in Settings and the tray. Paused capture leaves the watcher alive but skips clipboard reads and history/actions while preserving manual reuse of existing items.
+- Add an explicit full-item preview window with configurable `Alt+Enter`, contextual and hover affordances, full-resolution image zoom/pan, safe local Markdown, and complete text rendering.
+- Add hover actions for preview, content editing, and deletion without requiring the item to be active.
+- Show shortcuts as compact mono keycaps in picker menus, including the configured Settings shortcut; native tray entries use OS accelerators for the picker and Settings and stay synchronized after Settings changes.
+
+### Fixed
+
+- Apply close behavior centrally from each surface lifecycle and reliably hide no-activate Windows surfaces at the native HWND level.
+- Keep contextual-menu labels and shortcut badges readable without vertical character wrapping.
+- Dismiss exact-match search autocomplete suggestions so applied structured-filter chips remain clickable.
+
 ## [0.4.0-rc.6] - 2026-07-27
 
 ### Added

@@ -60,6 +60,7 @@ pub const MAIN: &str = "main";
 pub const SETTINGS: &str = "settings";
 pub const AI_OUTPUT: &str = "ai-output";
 pub const METADATA: &str = "metadata";
+pub const ITEM_PREVIEW: &str = "item-preview";
 pub const UI_HOST: &str = "ui-host";
 pub const NOTIFICATIONS: &str = "notifications";
 pub const WHICHKEY: &str = "whichkey";
@@ -162,6 +163,30 @@ pub const SURFACES: &[SurfaceWindow] = &[
         persist_by_monitor: true,
     },
     SurfaceWindow {
+        label: ITEM_PREVIEW,
+        route: "index.html?window=item-preview",
+        title: "Copicu Preview",
+        kind: SurfaceKind::Document,
+        chrome: ChromeVariant::Document,
+        lifecycle: SurfaceLifecycle::CachedHidden,
+        bounds_policy: BoundsPolicy::CursorMonitor,
+        capability: "surface-item-preview",
+        width: 760,
+        height: 560,
+        min_width: 420,
+        min_height: 320,
+        max_width: None,
+        max_height: None,
+        decorations: false,
+        transparent: false,
+        resizable: true,
+        shadow: false,
+        skip_taskbar: true,
+        always_on_top: false,
+        persist_bounds: true,
+        persist_by_monitor: true,
+    },
+    SurfaceWindow {
         label: UI_HOST,
         route: "index.html?window=ui-host",
         title: "Copicu",
@@ -241,4 +266,25 @@ pub fn get(label: &str) -> Option<&'static SurfaceWindow> {
 
 pub fn require(label: &str) -> Result<&'static SurfaceWindow, String> {
     get(label).ok_or_else(|| format!("unknown surface: {label}"))
+}
+
+pub fn hides_on_close(label: &str) -> bool {
+    get(label)
+        .map(|surface| surface.lifecycle == SurfaceLifecycle::CachedHidden)
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn close_behavior_follows_surface_lifecycle() {
+        for label in [MAIN, SETTINGS, AI_OUTPUT, METADATA, ITEM_PREVIEW, NOTIFICATIONS] {
+            assert!(hides_on_close(label), "{label} should hide on close");
+        }
+        for label in [UI_HOST, WHICHKEY, "unknown"] {
+            assert!(!hides_on_close(label), "{label} should not hide on close");
+        }
+    }
 }

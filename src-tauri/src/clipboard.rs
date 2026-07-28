@@ -5,7 +5,10 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::VecDeque,
     error::Error,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -101,6 +104,7 @@ struct ClipboardCaptureState {
 
 pub struct ClipboardCapture {
     state: Arc<Mutex<ClipboardCaptureState>>,
+    enabled: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Default)]
@@ -117,6 +121,7 @@ struct TextClipboardHandler<R: Runtime> {
     app: AppHandle<R>,
     clipboard: ClipboardContext,
     state: Arc<Mutex<ClipboardCaptureState>>,
+    enabled: Arc<AtomicBool>,
     suppression: SelfWriteSuppression,
     storage: crate::storage::AppStorage,
     previous_window: crate::window_focus::PreviousWindow,
@@ -134,6 +139,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
     fn new(
         app: AppHandle<R>,
         state: Arc<Mutex<ClipboardCaptureState>>,
+        enabled: Arc<AtomicBool>,
         suppression: SelfWriteSuppression,
         storage: crate::storage::AppStorage,
         previous_window: crate::window_focus::PreviousWindow,
@@ -142,6 +148,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
             app,
             clipboard: ClipboardContext::new()?,
             state,
+            enabled,
             suppression,
             storage,
             previous_window,
@@ -151,6 +158,11 @@ impl<R: Runtime> TextClipboardHandler<R> {
 
 impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
     fn on_clipboard_change(&mut self) {
+        if !self.enabled.load(Ordering::Acquire) {
+            persistent_log("clipboard.event.skipped", "capture_paused=true");
+            return;
+        }
+
         let started_at = Instant::now();
         let probe_result = crate::clipboard_probe::probe_clipboard();
         let has_image_without_text = probe_result
@@ -463,6 +475,19 @@ impl<R: Runtime> TextClipboardHandler<R> {
 }
 
 impl ClipboardCapture {
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::Release);
+        persistent_log(
+            "clipboard.capture.state",
+            format!("enabled={enabled}"),
+        );
+    }
+
+    #[cfg(test)]
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Acquire)
+    }
+
     pub fn stats(&self) -> CaptureStats {
         let state = self.state.lock().expect("clipboard state mutex poisoned");
 
@@ -535,11 +560,14 @@ pub fn spawn_text_watcher<R: Runtime>(
     storage: crate::storage::AppStorage,
     suppression: SelfWriteSuppression,
     previous_window: crate::window_focus::PreviousWindow,
+    enabled: bool,
 ) -> clipboard_rs::Result<ClipboardCapture> {
     let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
+    let capture_enabled = Arc::new(AtomicBool::new(enabled));
     let handler = TextClipboardHandler::new(
         app,
         Arc::clone(&state),
+        Arc::clone(&capture_enabled),
         suppression,
         storage,
         previous_window,
@@ -548,6 +576,7 @@ pub fn spawn_text_watcher<R: Runtime>(
     watcher.add_handler(handler);
     let capture = ClipboardCapture {
         state: Arc::clone(&state),
+        enabled: capture_enabled,
     };
 
     thread::Builder::new()
@@ -691,11 +720,11 @@ mod windows_clipboard_text {
 
     unsafe fn read_null_terminated_utf16(ptr: *const u16) -> clipboard_rs::Result<String> {
         let mut len = 0usize;
-        while *ptr.add(len) != 0 {
+        while unsafe { *ptr.add(len) } != 0 {
             len += 1;
         }
 
-        let units = std::slice::from_raw_parts(ptr, len);
+        let units = unsafe { std::slice::from_raw_parts(ptr, len) };
         Ok(String::from_utf16_lossy(units))
     }
 
@@ -703,12 +732,12 @@ mod windows_clipboard_text {
         global: HGLOBAL,
         ptr: *const u8,
     ) -> clipboard_rs::Result<Vec<u8>> {
-        let size = GlobalSize(global);
+        let size = unsafe { GlobalSize(global) };
         if size == 0 {
             return Err("CF_TEXT has empty global memory".into());
         }
 
-        let bytes = std::slice::from_raw_parts(ptr, size);
+        let bytes = unsafe { std::slice::from_raw_parts(ptr, size) };
         let len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
         Ok(bytes[..len].to_vec())
     }
@@ -962,6 +991,20 @@ mod tests {
         assert_eq!(state.captured_count, 1);
         assert_eq!(state.ignored_duplicate_count, 1);
         assert_eq!(state.event_count, 2);
+    }
+
+    #[test]
+    fn capture_enabled_state_can_pause_and_resume_without_stopping_watcher() {
+        let capture = ClipboardCapture {
+            state: Arc::new(Mutex::new(ClipboardCaptureState::default())),
+            enabled: Arc::new(AtomicBool::new(true)),
+        };
+
+        assert!(capture.is_enabled());
+        capture.set_enabled(false);
+        assert!(!capture.is_enabled());
+        capture.set_enabled(true);
+        assert!(capture.is_enabled());
     }
 
     #[test]

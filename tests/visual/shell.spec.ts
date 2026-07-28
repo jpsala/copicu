@@ -1,4 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+declare const Buffer: {
+  from(input: string): { toString(encoding: "base64"): string };
+};
+declare const process: { platform: string };
 
 const svgDataUrl = (width: number, height: number, color: string) =>
   `data:image/svg+xml;base64,${Buffer.from(
@@ -132,11 +137,12 @@ type MockTauriOptions = {
   searchTriggerMode?: "realtime" | "enter" | "manual";
   deferStructuredSearchUntilEnter?: boolean;
   searchTriggerUpdateDelayMs?: number;
+  previewShortcut?: string;
 };
 
 async function mockTauriInvoke(
-  page: Parameters<typeof test>[0]["page"],
-  historyItems = syntheticLongHistory,
+  page: Page,
+  historyItems: any[] = syntheticLongHistory,
   initialCompoundPending: unknown = null,
   options: MockTauriOptions = {},
 ) {
@@ -216,6 +222,7 @@ async function mockTauriInvoke(
         settingsShortcut: "Ctrl+,",
         searchTriggerMode: mockOptions.searchTriggerMode ?? "realtime",
         deferStructuredSearchUntilEnter: mockOptions.deferStructuredSearchUntilEnter ?? false,
+        previewShortcut: mockOptions.previewShortcut ?? "Alt+Enter",
       },
       history: {
         retentionCount: 1000,
@@ -234,7 +241,7 @@ async function mockTauriInvoke(
         apiKey: "",
       },
     };
-    window.__TAURI_INTERNALS__ = {
+    (window as any).__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args?: any) => {
         (window as any).__copicuTestInvocations.push({ cmd, args });
         switch (cmd) {
@@ -797,6 +804,28 @@ async function mockTauriInvoke(
             }
             return (window as any).__copicuTestPickerSessionSnapshots.shift() ?? { reset: false, generation: 0 };
           }
+          case "open_item_preview":
+          case "toggle_item_preview":
+            return true;
+          case "pending_item_preview": {
+            const item = items[0];
+            return item ? {
+              itemId: item.id,
+              contentKind: item.content_kind,
+              text: item.text,
+              mimePrimary: item.mime_primary ?? null,
+              thumbnailDataUrl: item.thumbnail_data_url ?? null,
+              width: item.width ?? null,
+              height: item.height ?? null,
+              title: item.title ?? null,
+            } : null;
+          }
+          case "load_item_preview_image": {
+            const item = items.find((candidate: any) => candidate.id === args.itemId);
+            return item?.full_image_data_url ?? item?.thumbnail_data_url ?? null;
+          }
+          case "normalize_hotkey_sequence":
+            return { normalized: args.input, valid: Boolean(args.input), error: null };
           case "get_settings":
             return (window as any).__copicuTestSettings;
           case "update_settings":
@@ -834,23 +863,23 @@ async function mockTauriInvoke(
   }, { items: historyItems, pending: initialCompoundPending, mockOptions: options });
 }
 
-function gotoShell(page: Parameters<typeof test>[0]["page"], url = "/") {
+function gotoShell(page: Page, url = "/") {
   return page.goto(url, { waitUntil: "domcontentloaded" });
 }
 
-async function waitForDefaultHistoryReady(page: Parameters<typeof test>[0]["page"]) {
+async function waitForDefaultHistoryReady(page: Page) {
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toHaveClass(/is-selected/);
 }
 
-async function selectLongSingleLine(page: Parameters<typeof test>[0]["page"]) {
+async function selectLongSingleLine(page: Page) {
   await waitForDefaultHistoryReady(page);
   const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.click();
   await expect(item).toHaveClass(/is-selected/);
 }
 
-async function selectLongSingleLineAndUnbroken(page: Parameters<typeof test>[0]["page"]) {
+async function selectLongSingleLineAndUnbroken(page: Page) {
   await selectLongSingleLine(page);
   const unbroken = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
   await unbroken.click({ modifiers: ["Control"] });
@@ -871,6 +900,22 @@ test("shell loads without horizontal overflow", async ({ page }) => {
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   expect(hasHorizontalOverflow).toBe(false);
+});
+
+test("picker menu renders compact shortcut keycaps including configured Settings hotkey", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: "Open picker menu" }).click();
+  const menu = page.getByRole("menu", { name: "Picker menu" });
+  const settingsItem = menu.getByRole("menuitem", { name: /Settings/ });
+  await expect(settingsItem).toContainText("Ctrl");
+  await expect(settingsItem).toContainText(",");
+  await expect(settingsItem.locator("kbd")).toHaveCount(2);
+  await expect(menu.getByRole("menuitem", { name: /Quick Actions/ }).locator("kbd")).toHaveCount(3);
+
+  const hasOverflow = await menu.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
+  expect(hasOverflow).toBe(false);
 });
 
 test("new item dialog creates a manual history item", async ({ page }) => {
@@ -2191,8 +2236,8 @@ test("right click on item opens item actions menu", async ({ page }) => {
   expect(menuBox).not.toBeNull();
   const expected = await page.evaluate(
     ({ x, y }) => ({
-      x: Math.min(Math.max(x + 6, 8), Math.max(8, window.innerWidth - 154 - 8)),
-      y: Math.min(Math.max(y + 6, 8), Math.max(8, window.innerHeight - 270 - 8)),
+      x: Math.min(Math.max(x + 6, 8), Math.max(8, window.innerWidth - 260 - 8)),
+      y: Math.min(Math.max(y + 6, 8), Math.max(8, window.innerHeight - 302 - 8)),
     }),
     pointer,
   );
@@ -2238,19 +2283,19 @@ test("item hover actions appear only while hovering row", async ({ page }) => {
 
   const firstRow = page.locator(".history-feed.has-items > li").first();
   const menuButton = firstRow.locator(".item-menu-button");
+  const previewButton = firstRow.locator(".item-preview-button");
+  const editButton = firstRow.locator(".item-edit-button");
   const deleteButton = firstRow.locator(".item-delete-button");
+  const hoverActions = [menuButton, previewButton, editButton, deleteButton];
 
   await page.mouse.move(1, 1);
-  await expect(menuButton).toHaveCSS("opacity", "0");
-  await expect(deleteButton).toHaveCSS("opacity", "0");
+  for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "0");
 
   await firstRow.hover();
-  await expect(menuButton).toHaveCSS("opacity", "1");
-  await expect(deleteButton).toHaveCSS("opacity", "1");
+  for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "1");
 
   await page.mouse.move(1, 1);
-  await expect(menuButton).toHaveCSS("opacity", "0");
-  await expect(deleteButton).toHaveCSS("opacity", "0");
+  for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "0");
 });
 
 test("dots menu uses pointer position too", async ({ page }) => {
@@ -2276,8 +2321,8 @@ test("dots menu uses pointer position too", async ({ page }) => {
   expect(menuBox).not.toBeNull();
   const expected = await page.evaluate(
     ({ x, y }) => ({
-      x: Math.min(Math.max(x + 6, 8), Math.max(8, window.innerWidth - 154 - 8)),
-      y: Math.min(Math.max(y + 6, 8), Math.max(8, window.innerHeight - 270 - 8)),
+      x: Math.min(Math.max(x + 6, 8), Math.max(8, window.innerWidth - 260 - 8)),
+      y: Math.min(Math.max(y + 6, 8), Math.max(8, window.innerHeight - 302 - 8)),
     }),
     pointer,
   );
@@ -2725,6 +2770,17 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByLabel("Search settings")).toBeVisible();
   await page.getByLabel("Search settings").fill("structured");
   await expect(page.getByRole("switch", { name: "Confirm structured filters with Enter" })).toBeVisible();
+  await page.getByLabel("Search settings").fill("item preview");
+  const previewShortcutInput = page.getByLabel("Preview shortcut manual value");
+  await expect(previewShortcutInput).toHaveValue("Alt+Enter");
+  await previewShortcutInput.fill("F3");
+  await previewShortcutInput.press("Enter");
+  await expect(page.getByLabel("Preview shortcut", { exact: true })).toContainText("F3");
+  await page.getByLabel("Search settings").fill("clipboard capture");
+  const captureSwitch = page.getByRole("switch", { name: "Capture clipboard changes" });
+  await expect(captureSwitch).toBeChecked();
+  await captureSwitch.click();
+  await expect(captureSwitch).not.toBeChecked();
   await page.getByLabel("Search settings").fill("automatic updates");
   await expect(page.getByRole("switch", { name: "Automatic updates" })).toBeChecked();
   await page.getByLabel("Search settings").fill("scripts");
@@ -2780,11 +2836,130 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   const savedSettings = await page.evaluate(() => (window as any).__copicuTestSettings);
   expect(savedSettings.appearance.theme).toBe("dark");
   expect(savedSettings.appearance.themeId).toBe("code");
+  expect(savedSettings.general.captureEnabled).toBe(false);
+  expect(savedSettings.picker.previewShortcut).toBe("F3");
 
   await page.getByLabel("Search settings").fill("ai");
   await expect(page.getByLabel("AI endpoint")).toBeVisible();
   await expect(page.getByLabel("AI model")).toBeVisible();
   await expect(page.getByLabel("AI API key")).toBeVisible();
+});
+
+test("hovered item exposes preview and edit actions plus contextual menu", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  const secondItem = page.locator(".feed-item").nth(1);
+  const previewButton = page.getByRole("button", { name: "Preview item" }).nth(1);
+  const editButton = page.getByRole("button", { name: "Edit item" }).nth(1);
+  await expect(previewButton).toHaveCSS("opacity", "0");
+  await expect(editButton).toHaveCSS("opacity", "0");
+  await secondItem.hover();
+  await expect(previewButton).toHaveCSS("opacity", "1");
+  await expect(editButton).toHaveCSS("opacity", "1");
+  await previewButton.click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (entry: any) => entry.cmd === "open_item_preview" && entry.args.request.itemId === 101,
+    ),
+  );
+
+  await editButton.click();
+  await expect(page.getByRole("dialog", { name: "Edit clipboard item" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.locator(".feed-item").first().click({ button: "right" });
+  const itemMenu = page.getByRole("menu", { name: "Item actions" });
+  await expect(itemMenu).toHaveCSS("width", "260px");
+  const menuLayout = await itemMenu.evaluate((menu) => ({
+    fitsViewport: menu.getBoundingClientRect().right <= window.innerWidth - 7,
+    singleLineLabels: Array.from(menu.querySelectorAll<HTMLElement>(".item-menu-action > span:not(.shortcut-badge)"))
+      .every((label) => label.scrollHeight <= Math.ceil(Number.parseFloat(getComputedStyle(label).lineHeight) || label.clientHeight) + 1),
+    shortcutBadgesFit: Array.from(menu.querySelectorAll<HTMLElement>(".shortcut-badge"))
+      .every((badge) => badge.scrollWidth <= badge.clientWidth + 1),
+  }));
+  expect(menuLayout).toEqual({
+    fitsViewport: true,
+    singleLineLabels: true,
+    shortcutBadgesFit: true,
+  });
+  const menuPreview = page.getByRole("menuitem", { name: /Preview/ });
+  await expect(menuPreview).toContainText("Alt");
+  await expect(menuPreview).toContainText("Enter");
+  await menuPreview.click();
+});
+
+test("item preview does not open on hover and configurable hotkey toggles it", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { previewShortcut: "Alt+Enter" });
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  await page.locator(".feed-item").first().hover();
+  await page.waitForTimeout(550);
+  let calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.some((entry: any) => entry.cmd === "open_item_preview" || entry.cmd === "toggle_item_preview")).toBe(false);
+
+  await page.keyboard.press("Alt+Enter");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (entry: any) => entry.cmd === "toggle_item_preview" && entry.args.request.itemId === 100,
+    ),
+  );
+  calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.filter((entry: any) => entry.cmd === "toggle_item_preview")).toHaveLength(1);
+});
+
+test("item preview renders complete Markdown without loading remote media", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=item-preview");
+
+  await expect(page.getByRole("heading", { name: "COPICU_SYNTH_MARKDOWN" })).toBeVisible();
+  await expect(page.getByText("Remote image blocked: large")).toBeVisible();
+  await expect(page.getByText("Preview", { exact: true })).toBeVisible();
+  await expect(page.locator(".item-preview-markdown img")).toHaveCount(0);
+});
+
+test("item preview swaps thumbnail for the full image and exposes zoom reset", async ({ page }) => {
+  const thumbnail = svgDataUrl(120, 80, "#69747a");
+  const fullImage = svgDataUrl(1200, 800, "#245f53");
+  await mockTauriInvoke(page, [{
+    id: 901,
+    content_kind: "image",
+    text: "",
+    mime_primary: "image/png",
+    thumbnail_data_url: thumbnail,
+    full_image_data_url: fullImage,
+    width: 1200,
+    height: 800,
+    title: "Synthetic full image",
+  }]);
+  await gotoShell(page, "/?window=item-preview");
+
+  const image = page.getByRole("img", { name: "Full clipboard item" });
+  await expect(image).toHaveAttribute("data-resolution", "full");
+  await expect(image).toHaveAttribute("src", fullImage);
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(image).toHaveCSS("transform", /matrix\(1\.25/);
+  await page.getByRole("button", { name: "Reset zoom and pan" }).click();
+  await expect(page.getByText("100%", { exact: true })).toBeVisible();
+});
+
+test("item preview shows complete plain text", async ({ page }) => {
+  const fullText = `${"complete line\n".repeat(220)}COPICU_TEXT_END`;
+  await mockTauriInvoke(page, [{
+    id: 902,
+    content_kind: "text",
+    text: fullText,
+    mime_primary: "text/plain",
+    thumbnail_data_url: null,
+    width: null,
+    height: null,
+    title: null,
+  }]);
+  await gotoShell(page, "/?window=item-preview");
+
+  await expect(page.locator(".item-preview-text")).toContainText("COPICU_TEXT_END");
 });
 
 test("settings about section shows version and updater status", async ({ page }) => {

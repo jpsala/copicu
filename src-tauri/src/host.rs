@@ -1,6 +1,6 @@
-use serde::Deserialize;
 #[cfg(not(test))]
 use clipboard_rs::common::{RustImage, RustImageData};
+use serde::Deserialize;
 #[cfg(not(test))]
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
 #[cfg(not(test))]
@@ -118,6 +118,7 @@ pub fn hide_picker<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> 
     {
         session.mark_transient_hidden();
     }
+    crate::hide_item_preview_for_app(window.app_handle());
     Ok(())
 }
 

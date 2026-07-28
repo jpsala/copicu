@@ -172,6 +172,7 @@ Navegacion por teclado:
 - `Delete`: dentro del search input solo edita el texto del filtro; no borra items aunque haya seleccion de historial.
 - `Ctrl+D` o `Shift+Delete`: borra sin confirmacion el item seleccionado o la seleccion multiple visible. `Ctrl+D` queda reservado por el picker; `Delete` solo conserva su semantica nativa dentro del input de busqueda.
 - `Ctrl+Shift+L`: fija/libera el filtro aplicado para que sobreviva hide/show y reinicios; el candado dentro del search refleja el estado. La `X` del input limpia la query y libera ese lock.
+- Los menus WebView muestran shortcuts como keycaps compactas en tipografia mono, no como texto corrido. `Settings` siempre usa el valor configurado de `settingsShortcut`. El tray nativo conserva la convencion visual de Windows mediante accelerators del OS para abrir picker y Settings; ambos se actualizan despues de guardar Settings.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
 - `F2`: edita contenido del item activo.

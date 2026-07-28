@@ -105,6 +105,34 @@ impl HistoryItem {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemPreviewPayload {
+    pub item_id: i64,
+    pub content_kind: String,
+    pub text: String,
+    pub mime_primary: Option<String>,
+    pub thumbnail_data_url: Option<String>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub title: Option<String>,
+}
+
+impl From<HistoryItem> for ItemPreviewPayload {
+    fn from(item: HistoryItem) -> Self {
+        Self {
+            item_id: item.id,
+            content_kind: item.content_kind,
+            text: item.text,
+            mime_primary: item.mime_primary,
+            thumbnail_data_url: item.thumbnail_data_url,
+            width: item.width,
+            height: item.height,
+            title: item.title,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateHistoryItemRequest {
@@ -445,6 +473,8 @@ pub struct GeneralSettings {
     pub global_shortcut: String,
     #[serde(default)]
     pub launch_on_startup: bool,
+    #[serde(default = "default_capture_enabled")]
+    pub capture_enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -480,6 +510,8 @@ pub struct PickerSettings {
     pub pin_toggle_shortcut: String,
     #[serde(default = "default_settings_shortcut")]
     pub settings_shortcut: String,
+    #[serde(default = "default_preview_shortcut")]
+    pub preview_shortcut: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -587,6 +619,7 @@ impl Default for AppSettings {
             general: GeneralSettings {
                 global_shortcut: default_global_shortcut(),
                 launch_on_startup: false,
+                capture_enabled: default_capture_enabled(),
             },
             auto_update: AutoUpdateSettings::default(),
             picker: PickerSettings {
@@ -597,6 +630,7 @@ impl Default for AppSettings {
                 defer_structured_search_until_enter: false,
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
                 settings_shortcut: default_settings_shortcut(),
+                preview_shortcut: default_preview_shortcut(),
             },
             history: HistorySettings {
                 retention_count: UNLIMITED_HISTORY_LIMIT,
@@ -611,6 +645,10 @@ impl Default for AppSettings {
             ai: AiSettings::default(),
         }
     }
+}
+
+fn default_capture_enabled() -> bool {
+    true
 }
 
 fn default_auto_update_enabled() -> bool {
@@ -631,6 +669,10 @@ fn default_pin_toggle_shortcut() -> String {
 
 fn default_settings_shortcut() -> String {
     "Ctrl+,".to_string()
+}
+
+fn default_preview_shortcut() -> String {
+    "Alt+Enter".to_string()
 }
 
 fn default_global_shortcut() -> String {
@@ -1589,6 +1631,22 @@ impl AppStorage {
 
         std::fs::read(&path)
             .map_err(|error| format!("failed to read blob {}: {error}", path.display()))
+    }
+
+    pub fn get_item_preview(&self, id: i64) -> Result<ItemPreviewPayload, String> {
+        self.get_item(id).map(ItemPreviewPayload::from)
+    }
+
+    pub fn read_item_preview_image_data_url(&self, id: i64) -> Result<String, String> {
+        let item = self.get_item(id)?;
+        if item.content_kind != "image" {
+            return Err(format!("clipboard item is not an image: {id}"));
+        }
+        let png = self.read_blob_for_item(&item)?;
+        Ok(format!(
+            "data:image/png;base64,{}",
+            BASE64_STANDARD.encode(png)
+        ))
     }
 
     pub fn get_settings(&self) -> Result<AppSettings, String> {
@@ -3061,6 +3119,12 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     if contains_hotkey_sequence_delimiter(&settings.picker.settings_shortcut) {
         return Err("settings shortcut must be a single shortcut".to_string());
     }
+    if settings.picker.preview_shortcut.trim().is_empty() {
+        return Err("preview shortcut cannot be empty".to_string());
+    }
+    if contains_hotkey_sequence_delimiter(&settings.picker.preview_shortcut) {
+        return Err("preview shortcut must be a single shortcut".to_string());
+    }
     if settings.scripts.folder_path.trim().is_empty() {
         return Err("scripts folder path cannot be empty".to_string());
     }
@@ -3229,6 +3293,7 @@ mod tests {
         assert_eq!(settings.ai, AiSettings::default());
         assert_eq!(settings.ai.api_key, "");
         assert_eq!(settings.appearance.theme_id, ThemeId::Default);
+        assert!(settings.general.capture_enabled);
         assert!(settings.picker.promote_active_on_copy);
         assert_eq!(
             settings.picker.search_trigger_mode,
@@ -3236,6 +3301,7 @@ mod tests {
         );
         assert!(!settings.picker.defer_structured_search_until_enter);
         assert_eq!(settings.picker.settings_shortcut, "Ctrl+,");
+        assert_eq!(settings.picker.preview_shortcut, "Alt+Enter");
         validate_settings(&settings).expect("old settings with script defaults should validate");
     }
 

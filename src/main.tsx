@@ -398,8 +398,8 @@ const PAGE_STEP = 6;
 const HISTORY_PAGE_LIMIT = 60;
 const MARKED_ACTION_PAGE_LIMIT = 100;
 const HISTORY_PREFETCH_THRESHOLD = 24;
-const ITEM_MENU_WIDTH = 154;
-const ITEM_MENU_HEIGHT = 270;
+const ITEM_MENU_WIDTH = 260;
+const ITEM_MENU_HEIGHT = 302;
 const ITEM_MENU_OFFSET = 6;
 const DEFAULT_TOAST_DURATION_MS = 3600;
 const STICKY_TOAST_DURATION_MS = 0;
@@ -409,6 +409,7 @@ const UI_HOST_WINDOW_LABEL = "ui-host";
 const SETTINGS_WINDOW_LABEL = "settings";
 const AI_OUTPUT_WINDOW_LABEL = "ai-output";
 const METADATA_WINDOW_LABEL = "metadata";
+const ITEM_PREVIEW_WINDOW_LABEL = "item-preview";
 const WHICHKEY_WINDOW_LABEL = "whichkey";
 const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
@@ -678,6 +679,14 @@ function openMetadataWindow(itemId: number) {
   return invoke<boolean>("open_metadata_window", { request: { itemId } });
 }
 
+function openItemPreview(itemId: number) {
+  return invoke<boolean>("open_item_preview", { request: { itemId } });
+}
+
+function toggleItemPreview(itemId: number) {
+  return invoke<boolean>("toggle_item_preview", { request: { itemId } });
+}
+
 function showPicker() {
   return invoke("show_picker");
 }
@@ -825,6 +834,7 @@ const IS_UI_HOST_WINDOW = currentWindowLabel() === UI_HOST_WINDOW_LABEL;
 const IS_SETTINGS_WINDOW = currentWindowLabel() === SETTINGS_WINDOW_LABEL;
 const IS_AI_OUTPUT_WINDOW = currentWindowLabel() === AI_OUTPUT_WINDOW_LABEL;
 const IS_METADATA_WINDOW = currentWindowLabel() === METADATA_WINDOW_LABEL;
+const IS_ITEM_PREVIEW_WINDOW = currentWindowLabel() === ITEM_PREVIEW_WINDOW_LABEL;
 const IS_WHICHKEY_WINDOW = currentWindowLabel() === WHICHKEY_WINDOW_LABEL;
 
 const LazyUiHostApp = lazy(() =>
@@ -844,6 +854,9 @@ const LazyAiOutputWindowApp = lazy(() =>
 );
 const LazyMetadataWindowApp = lazy(() =>
   import("./windows/secondaryWindows").then((module) => ({ default: module.MetadataWindowApp })),
+);
+const LazyItemPreviewWindowApp = lazy(() =>
+  import("./windows/ItemPreviewWindowApp").then((module) => ({ default: module.ItemPreviewWindowApp })),
 );
 
 if (isTauriRuntime()) {
@@ -3465,6 +3478,16 @@ function App() {
         void openSettingsWindow();
         return;
       }
+      const previewShortcut = normalizeShortcutString(settings.picker.previewShortcut);
+      if (previewShortcut && shortcut === previewShortcut) {
+        event.preventDefault();
+        if (selectedItem) {
+          void toggleItemPreview(selectedItem.id).catch((previewError) => {
+            setActionError(String(previewError));
+          });
+        }
+        return;
+      }
       if (shortcut === TAG_EDIT_SHORTCUT) {
         event.preventDefault();
         openActiveMetadata();
@@ -3892,7 +3915,7 @@ function App() {
           >
             <span className="status-text">{searchStatus}</span>
           </UiBadge>
-          <Menu withinPortal position="bottom-end" width={188}>
+          <Menu withinPortal position="bottom-end" width={236}>
             <Menu.Target>
               <UiIconButton
                 type="button"
@@ -3907,21 +3930,21 @@ function App() {
             <Menu.Dropdown aria-label="Picker menu">
               <Menu.Item
                 leftSection={<Plus size={14} strokeWidth={2.2} />}
-                rightSection={<UiKbd>Ctrl N</UiKbd>}
+                rightSection={<ShortcutBadge shortcut="Ctrl+N" className="menu-shortcut-badge" />}
                 onClick={beginCreateItem}
               >
                 New item
               </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
-                rightSection={<UiKbd>Ctrl Alt Q</UiKbd>}
+                rightSection={<ShortcutBadge shortcut="Ctrl+Alt+Q" className="menu-shortcut-badge" />}
                 onClick={openActionPicker}
               >
                 Quick Actions
               </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
-                rightSection={<UiKbd>Ctrl K</UiKbd>}
+                rightSection={<ShortcutBadge shortcut="Ctrl+K" className="menu-shortcut-badge" />}
                 onClick={openCommandPalette}
               >
                 Commands
@@ -3934,6 +3957,7 @@ function App() {
               </Menu.Item>
               <Menu.Item
                 leftSection={<Settings2 size={14} strokeWidth={2.2} />}
+                rightSection={<ShortcutBadge shortcut={settings.picker.settingsShortcut} className="menu-shortcut-badge" />}
                 onClick={openSettingsPanel}
               >
                 Settings
@@ -4137,6 +4161,40 @@ function App() {
                   </button>
                   <UiIconButton
                     type="button"
+                    className="item-preview-button"
+                    aria-label="Preview item"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void openItemPreview(item.id).catch((previewError) => {
+                        setActionError(String(previewError));
+                      });
+                    }}
+                  >
+                    <Search size={14} strokeWidth={2.3} aria-hidden="true" />
+                  </UiIconButton>
+                  <UiIconButton
+                    type="button"
+                    className="item-edit-button"
+                    aria-label="Edit item"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void beginEdit(item, "content");
+                    }}
+                  >
+                    <Pencil size={14} strokeWidth={2.3} aria-hidden="true" />
+                  </UiIconButton>
+                  <UiIconButton
+                    type="button"
                     className="item-delete-button"
                     aria-label={itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}
                     onMouseDown={(event) => {
@@ -4153,7 +4211,7 @@ function App() {
                   </UiIconButton>
                   <UiIconButton
                     type="button"
-                    className="item-menu-button has-delete-action"
+                    className="item-menu-button has-delete-action has-preview-action has-edit-action"
                     aria-label="Open item actions"
                     aria-expanded={openItemMenu?.itemId === item.id}
                     onMouseDown={(event) => {
@@ -4253,6 +4311,21 @@ function App() {
                               <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
                             </UiUnstyledButton>
                           ))}
+                          <UiUnstyledButton
+                            type="button"
+                            role="menuitem"
+                            className="item-menu-action"
+                            onClick={() => {
+                              setOpenItemMenu(null);
+                              void openItemPreview(item.id).catch((previewError) => {
+                                setActionError(String(previewError));
+                              });
+                            }}
+                          >
+                            <Search size={14} strokeWidth={2.2} aria-hidden="true" />
+                            <span>Preview</span>
+                            <ShortcutBadge shortcut={settings.picker.previewShortcut} />
+                          </UiUnstyledButton>
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
@@ -5768,7 +5841,7 @@ root.render(
       deduplicateInlineStyles
     >
       <RenderCrashBoundary>
-        {IS_UI_HOST_WINDOW || IS_NOTIFICATIONS_WINDOW || IS_SETTINGS_WINDOW || IS_AI_OUTPUT_WINDOW || IS_METADATA_WINDOW || IS_WHICHKEY_WINDOW ? (
+        {IS_UI_HOST_WINDOW || IS_NOTIFICATIONS_WINDOW || IS_SETTINGS_WINDOW || IS_AI_OUTPUT_WINDOW || IS_METADATA_WINDOW || IS_ITEM_PREVIEW_WINDOW || IS_WHICHKEY_WINDOW ? (
           <Suspense fallback={<LoadingSpinner />}>
             {IS_UI_HOST_WINDOW ? (
               <LazyUiHostApp />
@@ -5780,6 +5853,8 @@ root.render(
               <LazyAiOutputWindowApp />
             ) : IS_METADATA_WINDOW ? (
               <LazyMetadataWindowApp />
+            ) : IS_ITEM_PREVIEW_WINDOW ? (
+              <LazyItemPreviewWindowApp />
             ) : (
               <LazyWhichKeyWindowApp />
             )}

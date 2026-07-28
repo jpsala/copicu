@@ -163,6 +163,38 @@ pub fn show_tauri_window_no_activate<R: tauri::Runtime>(
 
 #[cfg(target_os = "windows")]
 #[cfg(not(test))]
+pub fn hide_tauri_webview_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    let tauri_result = window
+        .hide()
+        .map_err(|error| format!("window hide failed: {error}"));
+    let Some(window_id) = own_window_id(window) else {
+        return tauri_result;
+    };
+    platform::hide_window(window_id)?;
+    tauri_result
+}
+
+#[cfg(target_os = "windows")]
+#[cfg(not(test))]
+pub fn hide_tauri_window<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
+    let tauri_result = window
+        .hide()
+        .map_err(|error| format!("window hide failed: {error}"));
+    let window_id = window
+        .hwnd()
+        .ok()
+        .map(|hwnd| hwnd.0 as NativeWindowId);
+    let Some(window_id) = window_id else {
+        return tauri_result;
+    };
+    platform::hide_window(window_id)?;
+    tauri_result
+}
+
+#[cfg(target_os = "windows")]
+#[cfg(not(test))]
 pub fn is_tauri_window_foreground<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> bool {
     own_window_id(window)
         .map(platform::is_foreground_window)
@@ -191,6 +223,24 @@ pub fn show_tauri_window_no_activate<R: tauri::Runtime>(
     window
         .show()
         .map_err(|error| format!("window show failed: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+#[cfg(not(test))]
+pub fn hide_tauri_webview_window<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    window
+        .hide()
+        .map_err(|error| format!("window hide failed: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+#[cfg(not(test))]
+pub fn hide_tauri_window<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
+    window
+        .hide()
+        .map_err(|error| format!("window hide failed: {error}"))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -230,7 +280,8 @@ mod platform {
                 BringWindowToTop, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
                 GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetForegroundWindow,
                 SetWindowPos, ShowWindow, HWND_NOTOPMOST, HWND_TOPMOST, SHOW_WINDOW_CMD,
-                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE,
+                SW_SHOWNOACTIVATE,
             },
         },
     };
@@ -299,6 +350,17 @@ mod platform {
                 .map_err(|error| format!("SetWindowPos notopmost no-activate failed: {error}"))?;
         }
 
+        Ok(())
+    }
+
+    pub fn hide_window(window_id: NativeWindowId) -> Result<(), String> {
+        let hwnd = hwnd_from_id(window_id);
+        if !live_window(hwnd) {
+            return Err("window is no longer valid".to_string());
+        }
+        unsafe {
+            let _ = ShowWindow(hwnd, SHOW_WINDOW_CMD(SW_HIDE.0));
+        }
         Ok(())
     }
 

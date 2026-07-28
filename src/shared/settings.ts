@@ -8,6 +8,7 @@ export type AppSettings = {
   general: {
     globalShortcut: string;
     launchOnStartup: boolean;
+    captureEnabled: boolean;
   };
   autoUpdate: {
     enabled: boolean;
@@ -21,6 +22,7 @@ export type AppSettings = {
     deferStructuredSearchUntilEnter: boolean;
     pinToggleShortcut: string;
     settingsShortcut: string;
+    previewShortcut: string;
   };
   history: {
     retentionCount: number;
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   general: {
     globalShortcut: "Ctrl+Shift+,",
     launchOnStartup: false,
+    captureEnabled: true,
   },
   autoUpdate: {
     enabled: true,
@@ -60,6 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     deferStructuredSearchUntilEnter: false,
     pinToggleShortcut: "F8",
     settingsShortcut: "Ctrl+,",
+    previewShortcut: "Alt+Enter",
   },
   history: {
     retentionCount: 0,

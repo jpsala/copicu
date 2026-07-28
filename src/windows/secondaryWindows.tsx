@@ -52,7 +52,12 @@ import type {
   UpdateItemMetadataRequest,
   UpdateTagConfigRequest,
 } from "../shared/contracts";
-import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings, type SearchTriggerMode } from "../shared/settings";
+import {
+  DEFAULT_SETTINGS,
+  normalizeSettings,
+  type AppSettings,
+  type SearchTriggerMode,
+} from "../shared/settings";
 import {
   UiAlert,
   UiBadge,
@@ -1575,6 +1580,7 @@ function SettingsPanel({
     )
     .join(" ");
   const generalSearchText = [
+    "clipboard capture pause monitoring new clipboard changes",
     "launch on windows startup",
     "start copicu when windows starts",
     "automatic updates",
@@ -1604,6 +1610,7 @@ function SettingsPanel({
     "search trigger realtime enter",
     "confirm structured filters with enter",
     "in realtime mode tags and conditions wait for enter",
+    `item preview full image markdown text zoom context menu magnifier shortcut ${draft.picker.previewShortcut}`,
   ].join(" ");
   const aboutSearchText = [
     appInfo?.name ?? "Copicu",
@@ -1759,8 +1766,10 @@ function SettingsPanel({
 
         <div className="settings-status-strip" aria-label="Current settings summary">
           <UiBadge className="settings-summary-badge" variant="light">{draft.general.globalShortcut}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">{draft.general.captureEnabled ? "Capture on" : "Capture paused"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.picker.enterAction === "copy" ? "Enter copies" : "Enter pastes"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{searchTriggerModeLabel(draft.picker.searchTriggerMode)}</UiBadge>
+          <UiBadge className="settings-summary-badge" variant="light">Preview {draft.picker.previewShortcut}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">{draft.enrichment.enabled ? "Enrichment on" : "Enrichment off"}</UiBadge>
           <UiBadge className="settings-summary-badge" variant="light">
@@ -1806,6 +1815,26 @@ function SettingsPanel({
           <div className="settings-list">
             {displayedSections.some((section) => section.id === "general") ? (
               <SettingsSection title="General" description="Core app behavior and entry points.">
+                {visible("general", "Clipboard capture", "Pause monitoring new clipboard changes without changing the clipboard") ? (
+                  <SettingRow
+                    label="Clipboard capture"
+                    description="Turn off to pause new history captures. Existing items can still be copied or pasted manually from Copicu."
+                  >
+                    <UiSwitch
+                      label="Capture clipboard changes"
+                      checked={draft.general.captureEnabled}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          general: {
+                            ...draft.general,
+                            captureEnabled: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
                 {visible("general", "Launch on Windows startup", "Start Copicu when Windows starts") ? (
                   <SettingRow
                     label="Launch on Windows startup"
@@ -1858,7 +1887,7 @@ function SettingsPanel({
                 {visible("hotkeys", "Shortcut summary", "Global local script editable inventory") ? (
                   <SettingRow label="Shortcut summary" description="Current hotkey surface across the app and discovered scripts.">
                     <div className="action-summary" aria-label="Hotkey summary">
-                      <UiBadge className="settings-summary-badge" variant="light">3 editable app shortcuts</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">4 editable app shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">6 picker shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">
                         {scriptActions.filter((action) => Boolean(normalizeShortcutString(action.shortcut ?? ""))).length} script shortcuts
@@ -1985,6 +2014,25 @@ function SettingsPanel({
                           picker: {
                             ...draft.picker,
                             deferStructuredSearchUntilEnter: checked,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("picker", "Preview shortcut", "Open or close the full item preview from the picker") ? (
+                  <SettingRow label="Preview shortcut" description="Opens or closes the full preview for the active item. The contextual menu and magnifier use the same surface.">
+                    <HotkeyField
+                      label="Preview shortcut"
+                      value={draft.picker.previewShortcut}
+                      allowSequences={false}
+                      helpText="Local to the picker. Alt+Enter by default."
+                      onChange={(previewShortcut) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            previewShortcut,
                           },
                         })
                       }

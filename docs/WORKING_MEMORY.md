@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-07-25. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-07-28. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -11,8 +11,8 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 ## Foco Único De Ejecución
 
 - **Estado:** `complete`.
-- **Referencia:** `docs/tracks/012-tags-and-hotkeys.md`.
-- **Siguiente acción:** ninguna; metadata validada y preparada para `v0.3.9`.
+- **Referencia:** `docs/tracks/023-item-preview-window.md`.
+- **Siguiente acción:** ninguna; item preview validado y listo para release candidate.
 
 ## Lectura Rapida
 
@@ -23,7 +23,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `specs/005-search-plan-engine/` | Triggers, chips/explain y diagnostico sintactico listos. Autocomplete local esta en worktree y requiere validacion independiente antes de marcarlo aplicado; luego saved searches o highlighting. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.9` estable; `v0.4.0-rc.6` en feature freeze sin reemplazar el canal stable. Proximo: observar regresiones y promover a `v0.4.0`. |
+| Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.3.9` estable; `v0.4.0-rc.6` candidate. Batch local pendiente: pausa de captura + affordances de shortcuts. Proximo: publicar el siguiente RC solo con autorizacion explicita. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/pi-agentic-os.md` | Mantener oracle C0: app externa -> hotkey -> type sin focus manual escribe en search. |
 | OS / sistema agentico | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/pi-agentic-os.md`, `docs/topics/agentic-os-operations.md` | Copicu es downstream AOS; mantener ruta caliente corta. Pendiente: compactar TOPICS/topics grandes cuando molesten. |
 
@@ -33,7 +33,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Decisiones Vigentes
 
-Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release estable `v0.3.9`; candidate `v0.4.0-rc.6`. Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
+Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust + SQLite, UI keyboard-first y rapida. `Clipboard capture` puede pausarse desde Settings o tray sin detener el watcher ni bloquear copy/paste manual de items existentes. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run\dev-isolated`; release estable `v0.3.9`; candidate `v0.4.0-rc.6`. Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu es downstream AOS: no copiar registry/memoria/tracks/decisiones del kit; memoria durable vive en docs versionados. Para UI, abrir `docs/topics/ui-design-and-impeccable.md`.
 
 ## Riesgos / Pendientes Tecnicos
 

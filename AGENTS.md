@@ -40,6 +40,7 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 - `/flow` es la única entrada Pi cotidiana: `Pensar | Planear | Hacer | Cerrar`; Copicu exige `aos.flow-first@1.1.0`, un comando global `user/package` y foco documental válido.
 - Planear declara `execution_route: economical | balanced | strong`; Hacer aplica esa ruta (`balanced` por defecto) y bloquea sin fallback si falta modelo o auth.
 - `/flow → Hacer` abre una única sesión nueva enlazada con handoff revisable y ejecuta allí sin Agent ni auto-send.
+- En `WORKING_MEMORY.md`, cada campo de control de `Foco Único De Ejecución` debe ocupar una sola línea física; no envolver `Plan`, `Próximo batch`, `Referencia`, `Bloqueo`, `Gate` ni `Siguiente acción`, aunque MD013 sugiera hacerlo.
 - `aos-realinear-os` / `realinear os`: abrir `docs/topics/agentic-os-operations.md` y reparar solo la capa agentica salvo pedido explícito.
 - Las capacidades propias permanecen en `docs/skills/`, `.pi/extensions/copicu-computer-use.ts`, prompts de producto y taskflows; no crear aliases locales para pensar, planear, implementar, continuar o cerrar.
 - App instalada: si JP pide promover dev a instalada/crear instalador/instalar current, ejecutar `npm run install:current`; toca procesos Copicu instalados, asi que avisar y verificar evidencia.

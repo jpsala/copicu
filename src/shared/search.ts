@@ -32,7 +32,10 @@ function activeToken(query: string) {
 function matchingTags(prefix: string, tags: string[], replacement: (tag: string) => string) {
   const normalizedPrefix = prefix.toLocaleLowerCase();
   return [...new Set(tags)]
-    .filter((tag) => tag.toLocaleLowerCase().startsWith(normalizedPrefix))
+    .filter((tag) => {
+      const normalizedTag = tag.toLocaleLowerCase();
+      return normalizedTag.startsWith(normalizedPrefix) && normalizedTag !== normalizedPrefix;
+    })
     .slice(0, 8)
     .map((tag) => ({ label: replacement(tag), replacement: replacement(tag) }));
 }
@@ -64,8 +67,9 @@ export function searchSuggestions(query: string, tags: string[]): SearchSuggesti
   }
 
   const canonicalKey = VALUE_KEY_ALIASES[key] ?? key;
+  const normalizedValue = value.toLocaleLowerCase();
   return (CLOSED_VALUES[canonicalKey] ?? [])
-    .filter((item) => item.startsWith(value.toLocaleLowerCase()))
+    .filter((item) => item.startsWith(normalizedValue) && item !== normalizedValue)
     .map((item) => ({ label: `${negated}${key}:${item}`, replacement: `${negated}${key}:${item}` }));
 }
 

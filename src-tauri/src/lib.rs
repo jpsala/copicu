@@ -31,7 +31,7 @@ use std::{
 };
 #[cfg(not(test))]
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindowBuilder,
     WindowEvent,
@@ -56,6 +56,8 @@ const AI_OUTPUT_WINDOW_LABEL: &str = surface_registry::AI_OUTPUT;
 #[cfg(not(test))]
 const METADATA_WINDOW_LABEL: &str = surface_registry::METADATA;
 #[cfg(not(test))]
+const ITEM_PREVIEW_WINDOW_LABEL: &str = surface_registry::ITEM_PREVIEW;
+#[cfg(not(test))]
 const WHICHKEY_WINDOW_LABEL: &str = surface_registry::WHICHKEY;
 const NOTIFICATION_TOAST_EVENT: &str = "copicu://toast";
 #[cfg(not(test))]
@@ -76,6 +78,8 @@ const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
 #[cfg(not(test))]
 const METADATA_OPEN_EVENT: &str = "copicu://metadata/open";
 #[cfg(not(test))]
+const ITEM_PREVIEW_OPEN_EVENT: &str = "copicu://item-preview/open";
+#[cfg(not(test))]
 const NOTIFICATIONS_WINDOW_WIDTH: u32 = 340;
 #[cfg(not(test))]
 const NOTIFICATIONS_WINDOW_HEIGHT: u32 = 430;
@@ -87,6 +91,8 @@ const TRAY_TOGGLE_ID: &str = "toggle";
 const TRAY_SETTINGS_ID: &str = "settings";
 #[cfg(not(test))]
 const TRAY_EDIT_SCRIPTS_ID: &str = "edit-scripts";
+#[cfg(not(test))]
+const TRAY_PAUSE_CAPTURE_ID: &str = "pause-capture";
 #[cfg(not(test))]
 const TRAY_QUIT_ID: &str = "quit";
 #[cfg(not(test))]
@@ -141,6 +147,22 @@ struct PickerSessionSnapshot {
 #[derive(Clone)]
 struct InitialMainWindowHide {
     pending: Arc<AtomicBool>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+struct ItemPreviewState {
+    latest: Arc<Mutex<Option<storage::ItemPreviewPayload>>>,
+    visible: Arc<AtomicBool>,
+}
+
+#[cfg(not(test))]
+struct TrayCapturePauseItem(CheckMenuItem<tauri::Wry>);
+
+#[cfg(not(test))]
+struct TrayShortcutItems {
+    toggle: MenuItem<tauri::Wry>,
+    settings: MenuItem<tauri::Wry>,
 }
 
 #[cfg(not(test))]
@@ -221,8 +243,6 @@ struct AutostartStatus {
     enabled: bool,
     reason: Option<String>,
 }
-
-#[cfg(not(test))]
 
 #[cfg(not(test))]
 #[derive(Clone, serde::Serialize)]
@@ -394,6 +414,7 @@ impl PickerFocusPolicy {
                     if let Some(session) = reset_app.try_state::<PickerSessionController>() {
                         session.mark_transient_hidden();
                     }
+                    hide_item_preview_for_app(&reset_app);
                     diag_log("window.focus.hide", "focus lost");
                 }
             }) {
@@ -416,6 +437,34 @@ impl PickerSessionController {
             generation: self.generation.load(Ordering::SeqCst),
         }
     }
+}
+
+#[cfg(not(test))]
+impl ItemPreviewState {
+    fn set_latest(&self, payload: storage::ItemPreviewPayload) -> Result<(), String> {
+        let mut latest = self
+            .latest
+            .lock()
+            .map_err(|_| "item preview state lock poisoned".to_string())?;
+        *latest = Some(payload);
+        Ok(())
+    }
+
+    fn latest(&self) -> Result<Option<storage::ItemPreviewPayload>, String> {
+        self.latest
+            .lock()
+            .map_err(|_| "item preview state lock poisoned".to_string())
+            .map(|latest| latest.clone())
+    }
+
+    fn set_visible(&self, visible: bool) {
+        self.visible.store(visible, Ordering::SeqCst);
+    }
+
+    fn is_visible(&self) -> bool {
+        self.visible.load(Ordering::SeqCst)
+    }
+
 }
 
 #[cfg(not(test))]
@@ -1147,6 +1196,13 @@ impl AiOutputState {
 #[cfg(not(test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct OpenItemPreviewRequest {
+    item_id: i64,
+}
+
+#[cfg(not(test))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OpenMetadataWindowRequest {
     item_id: i64,
 }
@@ -1290,6 +1346,92 @@ fn close_metadata_window(window: tauri::WebviewWindow) -> Result<(), String> {
         format!("elapsed_ms={}", started_at.elapsed().as_millis()),
     );
     Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn open_item_preview(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    request: OpenItemPreviewRequest,
+) -> Result<bool, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_item_preview")?;
+    dispatch_item_preview_open(app, storage.get_item_preview(request.item_id)?);
+    Ok(true)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn toggle_item_preview(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    state: State<'_, ItemPreviewState>,
+    request: OpenItemPreviewRequest,
+) -> Result<bool, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "toggle_item_preview")?;
+    let same_item = state
+        .latest()?
+        .map(|payload| payload.item_id == request.item_id)
+        .unwrap_or(false);
+    let visible = state.is_visible();
+    diag_log(
+        "item-preview.toggle",
+        format!("item_id={} same_item={same_item} visible={visible}", request.item_id),
+    );
+    if same_item && visible {
+        hide_item_preview_for_app(&app);
+        return Ok(false);
+    }
+    dispatch_item_preview_open(app, storage.get_item_preview(request.item_id)?);
+    Ok(true)
+}
+
+#[cfg(not(test))]
+fn dispatch_item_preview_open(
+    app: tauri::AppHandle,
+    payload: storage::ItemPreviewPayload,
+) {
+    thread::spawn(move || {
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = open_item_preview_window(&app_for_main_thread, payload) {
+                eprintln!("item preview window open failed: {error}");
+            }
+        }) {
+            eprintln!("item preview window dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn pending_item_preview(
+    window: tauri::WebviewWindow,
+    state: State<'_, ItemPreviewState>,
+) -> Result<Option<storage::ItemPreviewPayload>, String> {
+    require_surface_window(
+        &window,
+        &[ITEM_PREVIEW_WINDOW_LABEL],
+        "pending_item_preview",
+    )?;
+    state.latest()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn load_item_preview_image(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    item_id: i64,
+) -> Result<String, String> {
+    require_surface_window(
+        &window,
+        &[ITEM_PREVIEW_WINDOW_LABEL],
+        "load_item_preview_image",
+    )?;
+    storage.read_item_preview_image_data_url(item_id)
 }
 
 #[cfg(not(test))]
@@ -1543,6 +1685,8 @@ fn update_settings(
         normalize_optional_single_shortcut(&settings.picker.pin_toggle_shortcut, "pin toggle")?;
     settings.picker.settings_shortcut =
         normalize_optional_single_shortcut(&settings.picker.settings_shortcut, "settings")?;
+    settings.picker.preview_shortcut =
+        normalize_optional_single_shortcut(&settings.picker.preview_shortcut, "preview")?;
     let current_settings = storage.get_settings()?;
     sync_autostart_setting(
         &app,
@@ -1550,6 +1694,8 @@ fn update_settings(
         settings.general.launch_on_startup,
     )?;
     let next_settings = storage.update_settings(settings)?;
+    apply_capture_enabled_state(&app, next_settings.general.capture_enabled)?;
+    apply_tray_shortcuts(&app, &next_settings)?;
     apply_picker_keep_open_window_policy(&app, &next_settings);
     actions::refresh_script_action_cache(&storage)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
@@ -2131,16 +2277,16 @@ pub fn run() {
                 .build(),
         )
         .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if surface_registry::hides_on_close(window.label()) {
+                    api.prevent_close();
+                    hide_cached_surface_on_close(window);
+                    return;
+                }
+            }
+
             match window.label() {
                 MAIN_WINDOW_LABEL => match event {
-                    WindowEvent::CloseRequested { api, .. } => {
-                        diag_log("window.event", "main close requested");
-                        api.prevent_close();
-                        save_window_bounds_from_event(window);
-                        if let Err(error) = window.hide() {
-                            eprintln!("window hide on close failed: {error}");
-                        }
-                    }
                     WindowEvent::Focused(true)
                     | WindowEvent::Moved(_)
                     | WindowEvent::Resized(_) => {
@@ -2173,14 +2319,6 @@ pub fn run() {
                     _ => {}
                 },
                 SETTINGS_WINDOW_LABEL => match event {
-                    WindowEvent::CloseRequested { api, .. } => {
-                        diag_log("window.event", "settings close requested");
-                        api.prevent_close();
-                        save_window_bounds_from_event(window);
-                        if let Err(error) = window.hide() {
-                            eprintln!("settings window hide on close failed: {error}");
-                        }
-                    }
                     WindowEvent::Moved(_)
                     | WindowEvent::Resized(_)
                     | WindowEvent::Focused(false) => {
@@ -2189,26 +2327,48 @@ pub fn run() {
                     _ => {}
                 },
                 AI_OUTPUT_WINDOW_LABEL => match event {
-                    WindowEvent::CloseRequested { .. }
-                    | WindowEvent::Moved(_)
+                    WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::Focused(false) => {
+                        save_window_bounds_from_event(window);
+                    }
+                    _ => {}
+                },
+                METADATA_WINDOW_LABEL => match event {
+                    WindowEvent::Moved(_)
                     | WindowEvent::Resized(_)
                     | WindowEvent::Focused(false) => {
                         save_window_bounds_from_event(window);
                     }
                     _ => {}
                 },
-                METADATA_WINDOW_LABEL => match event {
-                    WindowEvent::CloseRequested { api, .. } => {
-                        diag_log("window.event", "metadata close requested");
-                        api.prevent_close();
-                        save_window_bounds_from_event(window);
-                        if let Err(error) = window.hide() {
-                            eprintln!("metadata window hide on close failed: {error}");
-                        }
+                ITEM_PREVIEW_WINDOW_LABEL => match event {
+                    WindowEvent::Focused(true) => {
+                        let focus_policy = window.app_handle().state::<PickerFocusPolicy>();
+                        focus_policy.cancel_pending_hide();
                     }
-                    WindowEvent::Moved(_)
-                    | WindowEvent::Resized(_)
-                    | WindowEvent::Focused(false) => {
+                    WindowEvent::Focused(false) => {
+                        save_window_bounds_from_event(window);
+                        let app = window.app_handle().clone();
+                        thread::spawn(move || {
+                            thread::sleep(HIDE_ON_FOCUS_LOST_DELAY);
+                            let app_for_main_thread = app.clone();
+                            if let Err(error) = app.run_on_main_thread(move || {
+                                let main_focused = app_for_main_thread
+                                    .get_webview_window(MAIN_WINDOW_LABEL)
+                                    .map(|main| main.is_focused().unwrap_or(false))
+                                    .unwrap_or(false);
+                                let preview_focused = app_for_main_thread
+                                    .get_webview_window(ITEM_PREVIEW_WINDOW_LABEL)
+                                    .map(|preview| preview.is_focused().unwrap_or(false))
+                                    .unwrap_or(false);
+                                if !main_focused && !preview_focused {
+                                    hide_item_preview_for_app(&app_for_main_thread);
+                                }
+                            }) {
+                                eprintln!("item preview focus hide dispatch failed: {error}");
+                            }
+                        });
+                    }
+                    WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
                         save_window_bounds_from_event(window);
                     }
                     _ => {}
@@ -2254,6 +2414,21 @@ pub fn run() {
                     );
                 }
             }
+            TRAY_PAUSE_CAPTURE_ID => {
+                let result = toggle_capture_enabled_from_tray(app);
+                if let Err(error) = result {
+                    emit_toast_on_main_thread(
+                        app.clone(),
+                        actions::ActionToast {
+                            title: Some("Clipboard capture".to_string()),
+                            message: error,
+                            tone: actions::ToastTone::Warning,
+                            duration_ms: Some(4_500),
+                        },
+                        "tray capture toggle",
+                    );
+                }
+            }
             TRAY_QUIT_ID => app.exit(0),
             _ => {}
         })
@@ -2294,6 +2469,10 @@ pub fn run() {
             open_metadata_window,
             pending_metadata_editor,
             close_metadata_window,
+            open_item_preview,
+            toggle_item_preview,
+            pending_item_preview,
+            load_item_preview_image,
             pending_ai_output,
             copy_markdown_output,
             add_markdown_output_to_history,
@@ -2347,7 +2526,6 @@ pub fn run() {
                 None,
             ))?;
             app.handle().plugin(tauri_plugin_dialog::init())?;
-            setup_tray(app)?;
             log_shortcut_registration(app);
             let app_data_dir = std::env::var_os("COPICU_APP_DATA_DIR")
                 .map(std::path::PathBuf::from)
@@ -2393,8 +2571,13 @@ pub fn run() {
             app.manage(ui_host::UiHostState::default());
             app.manage(AiOutputState::default());
             app.manage(MetadataEditorState::default());
+            app.manage(ItemPreviewState::default());
             app.manage(window_registry.clone());
             app.manage(storage.clone());
+            let initial_settings = storage
+                .get_settings()
+                .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?;
+            setup_tray(app, &initial_settings)?;
             let suppression = clipboard::SelfWriteSuppression::default();
             app.manage(suppression.clone());
             let previous_window = window_focus::PreviousWindow::default();
@@ -2427,6 +2610,7 @@ pub fn run() {
                     storage.clone(),
                     suppression,
                     previous_window,
+                    initial_settings.general.capture_enabled,
                 ) {
                     Ok(capture) => {
                         app.manage(capture);
@@ -2614,6 +2798,60 @@ pub(crate) fn open_ai_output_window<R: tauri::Runtime>(
 }
 
 #[cfg(not(test))]
+fn open_item_preview_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    payload: storage::ItemPreviewPayload,
+) -> Result<(), String> {
+    let window_was_visible = if let Some(state) = app.try_state::<ItemPreviewState>() {
+        state.set_latest(payload.clone())?;
+        state.is_visible()
+    } else {
+        false
+    };
+    let window = match app.get_webview_window(ITEM_PREVIEW_WINDOW_LABEL) {
+        Some(window) => window,
+        None => build_surface_window(app, ITEM_PREVIEW_WINDOW_LABEL)?,
+    };
+
+    if !window_was_visible {
+        if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+            registry
+                .restore(&window, window_state::RestoreTarget::CursorMonitor)
+                .map_err(|error| format!("item preview window state restore failed: {error}"))?;
+        }
+    }
+    window
+        .unminimize()
+        .map_err(|error| format!("item preview window unminimize failed: {error}"))?;
+    if let Err(error) = window_focus::show_tauri_window_no_activate(&window) {
+        window.show().map_err(|show_error| {
+            format!("item preview show failed: {show_error}; no-activate failed: {error}")
+        })?;
+    }
+    window
+        .emit(ITEM_PREVIEW_OPEN_EVENT, payload)
+        .map_err(|error| format!("item preview emit failed: {error}"))?;
+    if let Some(state) = app.try_state::<ItemPreviewState>() {
+        state.set_visible(true);
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+pub(crate) fn hide_item_preview_for_app<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(state) = app.try_state::<ItemPreviewState>() {
+        state.set_visible(false);
+    }
+    if let Some(window) = app.get_webview_window(ITEM_PREVIEW_WINDOW_LABEL) {
+        if let Err(error) = window_focus::hide_tauri_webview_window(&window) {
+            eprintln!("item preview hide failed: {error}");
+        } else {
+            diag_log("item-preview.hide", "hidden");
+        }
+    }
+}
+
+#[cfg(not(test))]
 fn open_metadata_editor_window<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     payload: MetadataEditorPayload,
@@ -2782,7 +3020,85 @@ fn position_whichkey_window_for_monitor<R: tauri::Runtime>(
 }
 
 #[cfg(not(test))]
-fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+fn apply_capture_enabled_state<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    if let Some(capture) = app.try_state::<clipboard::ClipboardCapture>() {
+        capture.set_enabled(enabled);
+    }
+    if let Some(item) = app.try_state::<TrayCapturePauseItem>() {
+        item.0
+            .set_checked(!enabled)
+            .map_err(|error| format!("failed to update tray capture state: {error}"))?;
+    }
+    diag_log("clipboard.capture.setting", format!("enabled={enabled}"));
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn toggle_capture_enabled_from_tray(app: &tauri::AppHandle) -> Result<(), String> {
+    let storage = app
+        .try_state::<storage::AppStorage>()
+        .ok_or_else(|| "app storage not available".to_string())?;
+    let mut settings = storage.get_settings()?;
+    settings.general.capture_enabled = !settings.general.capture_enabled;
+    let next_settings = storage.update_settings(settings)?;
+    apply_capture_enabled_state(app, next_settings.general.capture_enabled)?;
+    app.emit(SETTINGS_UPDATED_EVENT, next_settings.clone())
+        .map_err(|error| format!("failed to sync capture setting: {error}"))?;
+    emit_toast_on_main_thread(
+        app.clone(),
+        actions::ActionToast {
+            title: Some("Clipboard capture".to_string()),
+            message: if next_settings.general.capture_enabled {
+                "Capture resumed".to_string()
+            } else {
+                "Capture paused".to_string()
+            },
+            tone: actions::ToastTone::Info,
+            duration_ms: Some(2_500),
+        },
+        "tray capture toggle",
+    );
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn tray_accelerator_label(shortcut: &str) -> String {
+    shortcut
+        .split('+')
+        .map(|part| match part.trim() {
+            "Meta" | "Win" => "Super",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+#[cfg(not(test))]
+fn apply_tray_shortcuts<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    settings: &storage::AppSettings,
+) -> Result<(), String> {
+    let Some(items) = app.try_state::<TrayShortcutItems>() else {
+        return Ok(());
+    };
+    let picker_shortcut = tray_accelerator_label(&settings.general.global_shortcut);
+    let settings_shortcut = tray_accelerator_label(&settings.picker.settings_shortcut);
+    items
+        .toggle
+        .set_accelerator(Some(picker_shortcut.as_str()))
+        .map_err(|error| format!("failed to update tray picker shortcut: {error}"))?;
+    items
+        .settings
+        .set_accelerator(Some(settings_shortcut.as_str()))
+        .map_err(|error| format!("failed to update tray settings shortcut: {error}"))?;
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> tauri::Result<()> {
     let is_dev_profile = std::env::var_os("COPICU_APP_DATA_DIR").is_some();
     let app_label = if is_dev_profile {
         "Copicu Dev"
@@ -2795,8 +3111,30 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
         "Toggle Copicu"
     };
 
-    let toggle = MenuItem::with_id(app, TRAY_TOGGLE_ID, toggle_label, true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, TRAY_SETTINGS_ID, "Settings", true, None::<&str>)?;
+    let picker_shortcut = tray_accelerator_label(&settings_value.general.global_shortcut);
+    let settings_shortcut = tray_accelerator_label(&settings_value.picker.settings_shortcut);
+    let toggle = MenuItem::with_id(
+        app,
+        TRAY_TOGGLE_ID,
+        toggle_label,
+        true,
+        Some(picker_shortcut.as_str()),
+    )?;
+    let settings = MenuItem::with_id(
+        app,
+        TRAY_SETTINGS_ID,
+        "Settings",
+        true,
+        Some(settings_shortcut.as_str()),
+    )?;
+    let pause_capture = CheckMenuItem::with_id(
+        app,
+        TRAY_PAUSE_CAPTURE_ID,
+        "Pause clipboard capture",
+        true,
+        !settings_value.general.capture_enabled,
+        None::<&str>,
+    )?;
     let edit_scripts = MenuItem::with_id(
         app,
         TRAY_EDIT_SCRIPTS_ID,
@@ -2808,8 +3146,17 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     let primary_separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
-        &[&toggle, &settings, &edit_scripts, &primary_separator, &quit],
+        &[
+            &toggle,
+            &settings,
+            &pause_capture,
+            &edit_scripts,
+            &primary_separator,
+            &quit,
+        ],
     )?;
+    app.manage(TrayCapturePauseItem(pause_capture));
+    app.manage(TrayShortcutItems { toggle, settings });
 
     let mut tray_builder = TrayIconBuilder::with_id("main")
         .tooltip(app_label)
@@ -2993,6 +3340,27 @@ fn save_window_bounds_from_event<R: tauri::Runtime>(window: &tauri::Window<R>) {
 }
 
 #[cfg(not(test))]
+fn hide_cached_surface_on_close<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    save_window_bounds_from_event(window);
+    diag_log(
+        "window.close.cached-hide",
+        format!("label={}", window.label()),
+    );
+
+    if window.label() == ITEM_PREVIEW_WINDOW_LABEL {
+        hide_item_preview_for_app(window.app_handle());
+        return;
+    }
+
+    if let Err(error) = window_focus::hide_tauri_window(window) {
+        eprintln!("{} window hide on close failed: {error}", window.label());
+    }
+    if window.label() == MAIN_WINDOW_LABEL {
+        hide_item_preview_for_app(window.app_handle());
+    }
+}
+
+#[cfg(not(test))]
 fn log_main_window_startup_state<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
     let visible = window.is_visible().unwrap_or(false);
     let focused = window.is_focused().unwrap_or(false);
@@ -3017,6 +3385,14 @@ fn schedule_dev_empty_root_recovery<R: tauri::Runtime + 'static>(_window: tauri:
 #[cfg(not(test))]
 fn should_hide_on_focus_lost<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
     if window.is_always_on_top().unwrap_or(false) {
+        return false;
+    }
+    if window
+        .app_handle()
+        .get_webview_window(ITEM_PREVIEW_WINDOW_LABEL)
+        .map(|preview| preview.is_focused().unwrap_or(false))
+        .unwrap_or(false)
+    {
         return false;
     }
 

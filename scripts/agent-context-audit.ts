@@ -144,6 +144,16 @@ function sectionContent(content: string, heading: string) {
   return lines.slice(start, end).join("\n");
 }
 
+function wrappedFlowControlField(content: string) {
+  const lines = sectionContent(content, "Foco Único De Ejecución").split(/\r?\n/);
+  const controlLine = /^- \*\*(Plan|Próximo batch|Referencia|Bloqueo|Gate|Siguiente acción):\*\*/;
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const match = lines[index].match(controlLine);
+    if (match && /^\s+\S/.test(lines[index + 1])) return match[1];
+  }
+  return undefined;
+}
+
 function listDirs(path: string) {
   const fullPath = join(root, path);
   if (!existsSync(fullPath)) return [];
@@ -154,7 +164,7 @@ function listDirs(path: string) {
 }
 
 function backtickedSkillRefs(content: string) {
-  return [...content.matchAll(/`([^`*\/]+)\/`/g)].map((match) => match[1]).sort();
+  return [...content.matchAll(/`([^`*/]+)\/`/g)].map((match) => match[1]).sort();
 }
 
 function walkMarkdownFiles(dir: string): string[] {
@@ -177,6 +187,16 @@ function listFileNames(path: string, extension?: string) {
 
 for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md", "docs/TOPICS.md"]) {
   if (!exists(path)) add("error", `Missing ${path}`);
+}
+
+if (exists("docs/WORKING_MEMORY.md")) {
+  const wrappedField = wrappedFlowControlField(read("docs/WORKING_MEMORY.md"));
+  if (wrappedField) {
+    add(
+      "error",
+      `Foco Único De Ejecución: ${wrappedField} debe ocupar una sola línea física para compatibilidad con /flow`,
+    );
+  }
 }
 
 if (!exists("docs/GLOSSARY.md")) {

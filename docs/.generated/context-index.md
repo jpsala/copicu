@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-27T20:12:00.777Z
+Generated: 2026-07-28T13:38:08.746Z
 
 ## Topics
 
@@ -68,6 +68,7 @@ Generated: 2026-07-27T20:12:00.777Z
 - parked: [Secure Clips / Password Metadata](../tracks/020-secure-clips-password.md)
 - active-next: [Distribution Trust And Code Signing](../tracks/021-distribution-trust-code-signing.md)
 - proposed: [022 Reusable Quick Pick](../tracks/022-reusable-quick-pick.md)
+- implementation-validated: [023 Item Preview Window](../tracks/023-item-preview-window.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)

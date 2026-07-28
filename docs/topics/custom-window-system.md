@@ -32,6 +32,8 @@ Router compacto para ventanas custom Tauri/WebView2. La version larga previa que
 - El frontend renderiza por `window.label` y rutas internas; no debe inventar superficies sin registry.
 - Labels/capabilities deben ser explicitos por superficie.
 - Window state se guarda/restaura via politica compartida; no duplicar heuristicas por ventana.
+- La `X` emite una intención de cierre común; Rust aplica `SurfaceLifecycle`: `CachedHidden` guarda bounds y oculta, mientras `DestroyOnClose` destruye.
+- En Windows, una superficie mostrada con `SW_SHOWNOACTIVATE` debe ocultarse también por la ruta nativa robusta; `Window::hide()` solo puede quedar desincronizado del HWND.
 - WebView2 extra cuesta memoria; cachear solo si mejora UX/foco de forma clara.
 
 ## Superficies Relevantes
@@ -41,7 +43,8 @@ Router compacto para ventanas custom Tauri/WebView2. La version larga previa que
 | `main` / picker | picker principal caliente | persistente/oculto |
 | `settings` | configuracion | cache/hide para reapertura rapida |
 | `metadata` | editor metadata standalone | prewarm + hide salvo coste extremo |
-| `ai-output` | salida markdown/reportes | bajo demanda; revisar reopen/lifecycle si falla |
+| `item-preview` | preview explícito del item activo | cache/hide, apertura sin activar |
+| `ai-output` | salida markdown/reportes | cache/hide; revisar coste si crece |
 | `ui-host` | prompts/inputs de scripts | bajo demanda |
 | `notifications` | toasts custom | posicionada por backend |
 | `whichkey` | menu de hotkeys | temporal |

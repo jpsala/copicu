@@ -139,6 +139,7 @@ Esta decision debe validarse temprano en scaffold antes de invertir en picker UI
 
 - Captura persistente: texto plano e imagen-only como PNG normalizado.
 - Watcher: `clipboard-rs` en thread separado.
+- Pausa de captura: `Settings > General > Clipboard capture` persiste `general.captureEnabled`; el tray expone `Pause clipboard capture` como check item. Al pausar, el watcher permanece vivo pero retorna antes de probe/read/hash/storage/actions, por lo que no lee ni modifica el clipboard. Items existentes siguen disponibles para copy/paste manual. Settings y tray sincronizan el mismo estado runtime mediante un `AtomicBool`; estados legacy migran a captura activa. Dogfood sintetico 2026-07-27: toggle desde tray persistio `captureEnabled=false`, una copia externa no creo item; al reanudar desde tray, la siguiente copia creo exactamente un item.
 - Probe Win32: detecta metadata de formatos, incluyendo `CF_BITMAP`, `CF_DIB`, `CF_DIBV5`, HTML, RTF y file-list sin leer payload ni rutas.
 - UI diagnostics: muestra si el clipboard actual tiene imagen (`has_image`) y cantidad/tipos de formatos.
 - Persistencia: SQLite guarda `content_kind='text'` o `content_kind='image'`, texto/label seguro, hash, timestamps y metadata opcional de imagen. Imagenes usan blob store bajo app data para PNG principal y thumbnail.
