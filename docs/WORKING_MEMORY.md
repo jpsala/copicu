@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-07-28. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-07-29. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -11,8 +11,8 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 ## Foco Único De Ejecución
 
 - **Estado:** `complete`.
-- **Referencia:** `docs/tracks/023-item-preview-window.md`.
-- **Siguiente acción:** ninguna; selección de capturas ocultas corregida y publicada en `v0.4.1-rc.2`.
+- **Referencia:** `docs/tracks/030-picker-selection-and-marks-ux.md`.
+- **Siguiente acción:** dogfood de selección transitoria y marks durables; corregir sólo defectos concretos.
 
 ## Lectura Rapida
 

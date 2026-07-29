@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-28T15:20:58.061Z
+Generated: 2026-07-29T23:04:07.238Z
 
 ## Topics
 
@@ -69,6 +69,13 @@ Generated: 2026-07-28T15:20:58.061Z
 - active-next: [Distribution Trust And Code Signing](../tracks/021-distribution-trust-code-signing.md)
 - proposed: [022 Reusable Quick Pick](../tracks/022-reusable-quick-pick.md)
 - implementation-validated: [023 Item Preview Window](../tracks/023-item-preview-window.md)
+- implementation-validated: [024 Contextual Tag Capture](../tracks/024-contextual-tag-capture.md)
+- active-roadmap: [025 Clipboard Power Architecture Options](../tracks/025-clipboard-power-architecture-options.md)
+- parked: [026 Capture/Paste Pipeline](../tracks/026-capture-paste-pipeline.md)
+- parked: [027 Destination Paste Profiles](../tracks/027-destination-paste-profiles.md)
+- implementation-validated: [028 Active Scenarios And Metadata](../tracks/028-active-scenarios-metadata.md)
+- implementation-validated: [029 Picker Scenario Switcher](../tracks/029-picker-scenario-switcher.md)
+- implementation-validated: [030 Picker Selection And Marks UX](../tracks/030-picker-selection-and-marks-ux.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)
