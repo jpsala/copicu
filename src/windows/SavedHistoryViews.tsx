@@ -1,18 +1,27 @@
 import { useState } from "react";
-import type { SavedHistoryView } from "../shared/contracts";
+import type { SavedHistoryView, TagSummary } from "../shared/contracts";
+import { TagInput } from "../ui/TagEditor";
 
 type ViewDraft = {
   title: string;
   query: string;
   hotkey: string;
   pinned: boolean;
+  captureTags: string[];
 };
 
-const emptyDraft = (): ViewDraft => ({ title: "", query: "", hotkey: "", pinned: false });
+const emptyDraft = (): ViewDraft => ({
+  title: "",
+  query: "",
+  hotkey: "",
+  pinned: false,
+  captureTags: [],
+});
 
 export function SavedHistoryViews({
   views,
   loading,
+  availableTags,
   onCreate,
   onUpdate,
   onDelete,
@@ -20,6 +29,7 @@ export function SavedHistoryViews({
 }: {
   views: SavedHistoryView[] | null;
   loading: boolean;
+  availableTags: TagSummary[];
   onCreate: (draft: ViewDraft) => Promise<void>;
   onUpdate: (id: number, draft: ViewDraft) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -50,12 +60,21 @@ export function SavedHistoryViews({
           <div className="settings-tag-row-main">
             <strong>{view.title}</strong>
             <small>{view.query || "All history (unfiltered)"}</small>
+            {view.captureTags.length > 0 ? (
+              <small>Capture: {view.captureTags.map((tag) => `#${tag}`).join(" ")}</small>
+            ) : null}
             {view.hotkey ? <small>Hotkey: {view.hotkey}</small> : null}
           </div>
           <div className="settings-tag-row-actions">
             <button type="button" onClick={() => void onOpen(view.id)}>Open</button>
             <button type="button" onClick={() => {
-              setDraft({ title: view.title, query: view.query, hotkey: view.hotkey ?? "", pinned: view.pinned });
+              setDraft({
+                title: view.title,
+                query: view.query,
+                hotkey: view.hotkey ?? "",
+                pinned: view.pinned,
+                captureTags: view.captureTags,
+              });
               setEditingId(view.id);
               setCreating(true);
             }}>Edit</button>
@@ -69,6 +88,16 @@ export function SavedHistoryViews({
         <div className="saved-history-view-form">
           <label>Title<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Query<textarea value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} /></label>
+          <label>
+            Capture tags
+            <TagInput
+              tags={draft.captureTags}
+              availableTags={availableTags}
+              ariaLabel="Capture tags"
+              onChange={(captureTags) => setDraft({ ...draft, captureTags })}
+            />
+            <small>Applied only after you choose Capture here in the open view.</small>
+          </label>
           <label>Optional global hotkey<input value={draft.hotkey} placeholder="Ctrl+Shift+W" onChange={(event) => setDraft({ ...draft, hotkey: event.target.value })} /></label>
           <label><input type="checkbox" checked={draft.pinned} onChange={(event) => setDraft({ ...draft, pinned: event.target.checked })} /> Pin view</label>
           <div>

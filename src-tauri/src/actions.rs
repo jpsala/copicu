@@ -645,6 +645,7 @@ fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
     app: &AppHandle<R>,
     item: crate::storage::HistoryItem,
     item_tags: Vec<String>,
+    item_properties: crate::storage::ScenarioProperties,
 ) -> Result<(), String> {
     let app = app.clone();
     app.clone()
@@ -654,6 +655,7 @@ fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
                 crate::MetadataEditorPayload {
                     item,
                     item_tags,
+                    item_properties,
                     capture_context_events: Vec::new(),
                 },
             ) {
@@ -1323,7 +1325,8 @@ fn script_metadata_edit_active<R: Runtime + 'static>(
     let item_id = parse_script_item_id(&payload.id)?;
     let item = storage.get_item(item_id)?;
     let item_tags = storage.get_item_tags(item_id)?;
-    open_metadata_editor_window_on_main_thread(app, item, item_tags)?;
+    let item_properties = storage.list_item_properties(item_id)?;
+    open_metadata_editor_window_on_main_thread(app, item, item_tags, item_properties)?;
     Ok(json!(null))
 }
 

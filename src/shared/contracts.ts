@@ -17,6 +17,7 @@ export type SavedHistoryView = {
   hotkey: string | null;
   pinned: boolean;
   sortOrder: number | null;
+  captureTags: string[];
   createdAtUnixMs: number;
   updatedAtUnixMs: number;
 };
@@ -25,6 +26,7 @@ export type CreateSavedHistoryViewRequest = {
   title: string;
   query: string;
   hotkey?: string | null;
+  captureTags: string[];
 };
 
 export type UpdateSavedHistoryViewRequest = {
@@ -34,6 +36,53 @@ export type UpdateSavedHistoryViewRequest = {
   hotkey?: string | null;
   pinned: boolean;
   sortOrder?: number | null;
+  captureTags: string[];
+};
+
+export type ScenarioProperties = {
+  client: string[];
+  project: string[];
+  activity: string[];
+};
+
+export type Scenario = {
+  id: number;
+  name: string;
+  savedViewId: number;
+  savedViewTitle: string;
+  query: string;
+  revision: number;
+  properties: ScenarioProperties;
+  tags: string[];
+  createdAtUnixMs: number;
+  updatedAtUnixMs: number;
+};
+
+export type ScenarioDraftRequest = {
+  name: string;
+  savedViewId: number;
+  properties: ScenarioProperties;
+  tags: string[];
+};
+
+export type CreateScenarioRequest = ScenarioDraftRequest;
+export type CreateScenarioFromQueryRequest = Omit<ScenarioDraftRequest, "savedViewId"> & {
+  query: string;
+};
+export type UpdateScenarioFromQueryRequest = CreateScenarioFromQueryRequest & { id: number };
+export type UpdateScenarioRequest = ScenarioDraftRequest & { id: number };
+
+export type ActiveScenarioSession = {
+  sessionId: string;
+  scenarioId: number;
+  scenarioName: string;
+  scenarioRevision: number;
+  savedViewId: number;
+  savedViewTitle: string;
+  query: string;
+  properties: ScenarioProperties;
+  tags: string[];
+  startedAtUnixMs: number;
 };
 
 export type CreateTagRequest = {
@@ -61,12 +110,14 @@ export type UpdateItemMetadataRequest = {
   title: string | null;
   notes: string | null;
   tags: string[];
+  properties: ScenarioProperties;
 };
 
 export type ApplyItemTagsRequest = {
   itemIds: number[];
   tags: string[];
-  mode: "replace" | "add";
+  removeTags: string[];
+  mode: "replace" | "patch";
 };
 
 export type ActivateItemRequest = {

@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, types::{Type, Value}, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -152,6 +152,8 @@ pub struct UpdateItemMetadataRequest {
     pub title: Option<String>,
     pub notes: Option<String>,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub properties: ScenarioProperties,
 }
 
 #[derive(Deserialize)]
@@ -208,6 +210,9 @@ pub struct CaptureContextEvent {
     pub text_char_count: Option<i64>,
     pub line_count: Option<i64>,
     pub domain: Option<String>,
+    pub scenario_id: Option<i64>,
+    pub scenario_session_id: Option<String>,
+    pub scenario_revision: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -389,7 +394,7 @@ pub struct SetItemTagsRequest {
 #[serde(rename_all = "lowercase")]
 pub enum ApplyItemTagsMode {
     Replace,
-    Add,
+    Patch,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -397,6 +402,8 @@ pub enum ApplyItemTagsMode {
 pub struct ApplyItemTagsRequest {
     pub item_ids: Vec<i64>,
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub remove_tags: Vec<String>,
     pub mode: ApplyItemTagsMode,
 }
 
@@ -410,6 +417,7 @@ pub struct SavedHistoryView {
     pub hotkey: Option<String>,
     pub pinned: bool,
     pub sort_order: Option<i64>,
+    pub capture_tags: Vec<String>,
     pub created_at_unix_ms: i64,
     pub updated_at_unix_ms: i64,
 }
@@ -421,6 +429,8 @@ pub struct CreateSavedHistoryViewRequest {
     pub query: String,
     #[serde(default)]
     pub hotkey: Option<String>,
+    #[serde(default)]
+    pub capture_tags: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -434,6 +444,95 @@ pub struct UpdateSavedHistoryViewRequest {
     pub pinned: bool,
     #[serde(default)]
     pub sort_order: Option<i64>,
+    #[serde(default)]
+    pub capture_tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScenarioProperties {
+    #[serde(default)]
+    pub client: Vec<String>,
+    #[serde(default)]
+    pub project: Vec<String>,
+    #[serde(default)]
+    pub activity: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Scenario {
+    pub id: i64,
+    pub name: String,
+    pub saved_view_id: i64,
+    pub saved_view_title: String,
+    pub query: String,
+    pub revision: i64,
+    pub properties: ScenarioProperties,
+    pub tags: Vec<String>,
+    pub created_at_unix_ms: i64,
+    pub updated_at_unix_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateScenarioRequest {
+    pub name: String,
+    pub saved_view_id: i64,
+    #[serde(default)]
+    pub properties: ScenarioProperties,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateScenarioFromQueryRequest {
+    pub name: String,
+    pub query: String,
+    #[serde(default)]
+    pub properties: ScenarioProperties,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateScenarioFromQueryRequest {
+    pub id: i64,
+    pub name: String,
+    pub query: String,
+    #[serde(default)]
+    pub properties: ScenarioProperties,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateScenarioRequest {
+    pub id: i64,
+    pub name: String,
+    pub saved_view_id: i64,
+    #[serde(default)]
+    pub properties: ScenarioProperties,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveScenarioSession {
+    pub session_id: String,
+    pub scenario_id: i64,
+    pub scenario_name: String,
+    pub scenario_revision: i64,
+    pub saved_view_id: i64,
+    pub saved_view_title: String,
+    pub query: String,
+    pub properties: ScenarioProperties,
+    pub tags: Vec<String>,
+    pub started_at_unix_ms: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -714,7 +813,7 @@ impl AppStorage {
     }
 
     pub fn insert_text(&self, text: &str, normalized_hash: &str) -> Result<i64, String> {
-        self.insert_text_with_context(text, normalized_hash, None)
+        self.insert_text_with_context(text, normalized_hash, None, &[])
     }
 
     pub fn insert_text_with_context(
@@ -722,22 +821,44 @@ impl AppStorage {
         text: &str,
         normalized_hash: &str,
         capture_context: Option<CaptureContext>,
+        capture_tags: &[String],
     ) -> Result<i64, String> {
+        self.insert_text_with_scenario(
+            text,
+            normalized_hash,
+            capture_context,
+            capture_tags,
+            None,
+        )
+    }
+
+    pub fn insert_text_with_scenario(
+        &self,
+        text: &str,
+        normalized_hash: &str,
+        capture_context: Option<CaptureContext>,
+        capture_tags: &[String],
+        active_scenario: Option<ActiveScenarioSession>,
+    ) -> Result<i64, String> {
+        let normalized_capture_tags = normalize_tag_values(capture_tags)?;
         let now = now_unix_ms();
         let text_char_count = text.chars().count() as i64;
         let line_count = text.lines().count().max(1) as i64;
         let domain = first_url_domain(text);
         let (item_id, pruned_blobs) = {
-            let conn = self
+            let mut conn = self
                 .conn
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+            let tx = conn
+                .transaction()
+                .map_err(|error| format!("failed to start clipboard text capture: {error}"))?;
 
             let item_id =
-                if let Some(existing_id) = bump_existing_capture(&conn, normalized_hash, now)? {
+                if let Some(existing_id) = bump_existing_capture(&tx, normalized_hash, now)? {
                     existing_id
                 } else {
-                    conn.execute(
+                    tx.execute(
                         "INSERT INTO clipboard_items (
                         content_kind,
                         text,
@@ -751,11 +872,20 @@ impl AppStorage {
                     )
                     .map_err(|error| format!("failed to insert clipboard text item: {error}"))?;
 
-                    conn.last_insert_rowid()
+                    tx.last_insert_rowid()
                 };
 
+            for (slug, label) in &normalized_capture_tags {
+                add_item_tag_relation(&tx, item_id, slug, label, "context", None)?;
+            }
+            if !normalized_capture_tags.is_empty() {
+                sync_legacy_tags_for_item(&tx, item_id)?;
+            }
+            if let Some(scenario) = active_scenario.as_ref() {
+                apply_scenario_patch(&tx, item_id, scenario)?;
+            }
             record_capture_event(
-                &conn,
+                &tx,
                 item_id,
                 now,
                 "text",
@@ -765,8 +895,11 @@ impl AppStorage {
                 Some(line_count),
                 domain.as_deref(),
                 capture_context.as_ref(),
+                active_scenario.as_ref(),
             )?;
-            let pruned_blobs = prune_history_from_conn(&conn)?;
+            let pruned_blobs = prune_history_from_conn(&tx)?;
+            tx.commit()
+                .map_err(|error| format!("failed to commit clipboard text capture: {error}"))?;
             (item_id, pruned_blobs)
         };
 
@@ -804,7 +937,10 @@ impl AppStorage {
                     byte_size,
                     text_char_count,
                     line_count,
-                    domain
+                    domain,
+                    scenario_id,
+                    scenario_session_id,
+                    scenario_revision
                  FROM clipboard_item_capture_events
                  WHERE item_id = ?1
                  ORDER BY captured_at_unix_ms DESC, id DESC
@@ -832,6 +968,9 @@ impl AppStorage {
                     text_char_count: row.get(15)?,
                     line_count: row.get(16)?,
                     domain: row.get(17)?,
+                    scenario_id: row.get(18)?,
+                    scenario_session_id: row.get(19)?,
+                    scenario_revision: row.get(20)?,
                 })
             })
             .map_err(|error| format!("failed to query capture context: {error}"))?;
@@ -932,6 +1071,7 @@ impl AppStorage {
                     Some(line_count),
                     domain.as_deref(),
                     Some(&manual_context),
+                    None,
                 )?;
                 let pruned_blobs = prune_history_from_conn(&conn)?;
                 (
@@ -972,6 +1112,7 @@ impl AppStorage {
                     Some(line_count),
                     domain.as_deref(),
                     Some(&manual_context),
+                    None,
                 )?;
                 let pruned_blobs = prune_history_from_conn(&conn)?;
                 (
@@ -989,14 +1130,26 @@ impl AppStorage {
     }
 
     pub fn insert_image(&self, image: &crate::image_capture::CapturedImage) -> Result<i64, String> {
-        self.insert_image_with_context(image, None)
+        self.insert_image_with_context(image, None, &[])
     }
 
     pub fn insert_image_with_context(
         &self,
         image: &crate::image_capture::CapturedImage,
         capture_context: Option<CaptureContext>,
+        capture_tags: &[String],
     ) -> Result<i64, String> {
+        self.insert_image_with_scenario(image, capture_context, capture_tags, None)
+    }
+
+    pub fn insert_image_with_scenario(
+        &self,
+        image: &crate::image_capture::CapturedImage,
+        capture_context: Option<CaptureContext>,
+        capture_tags: &[String],
+        active_scenario: Option<ActiveScenarioSession>,
+    ) -> Result<i64, String> {
+        let normalized_capture_tags = normalize_tag_values(capture_tags)?;
         let image_relative_path = relative_blob_path(IMAGE_BLOB_DIR, &image.normalized_hash);
         let thumbnail_relative_path =
             relative_blob_path(THUMBNAIL_BLOB_DIR, &image.normalized_hash);
@@ -1010,19 +1163,22 @@ impl AppStorage {
         let image_path = self.app_data_dir.join(&image_relative_path);
         let thumbnail_path = self.app_data_dir.join(&thumbnail_relative_path);
         let (item_id, pruned_blobs) = {
-            let conn = self
+            let mut conn = self
                 .conn
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+            let tx = conn
+                .transaction()
+                .map_err(|error| format!("failed to start clipboard image capture: {error}"))?;
 
             let item_id = if let Some(existing_id) =
-                bump_existing_capture(&conn, &image.normalized_hash, now)?
+                bump_existing_capture(&tx, &image.normalized_hash, now)?
             {
                 existing_id
             } else {
                 write_blob(&image_path, &image.png_bytes)?;
                 write_blob(&thumbnail_path, &image.thumbnail_png_bytes)?;
-                conn.execute(
+                tx.execute(
                     "INSERT INTO clipboard_items (
                         content_kind,
                         text,
@@ -1051,11 +1207,20 @@ impl AppStorage {
                 )
                 .map_err(|error| format!("failed to insert clipboard image item: {error}"))?;
 
-                conn.last_insert_rowid()
+                tx.last_insert_rowid()
             };
 
+            for (slug, label) in &normalized_capture_tags {
+                add_item_tag_relation(&tx, item_id, slug, label, "context", None)?;
+            }
+            if !normalized_capture_tags.is_empty() {
+                sync_legacy_tags_for_item(&tx, item_id)?;
+            }
+            if let Some(scenario) = active_scenario.as_ref() {
+                apply_scenario_patch(&tx, item_id, scenario)?;
+            }
             record_capture_event(
-                &conn,
+                &tx,
                 item_id,
                 now,
                 "image",
@@ -1065,8 +1230,11 @@ impl AppStorage {
                 None,
                 None,
                 capture_context.as_ref(),
+                active_scenario.as_ref(),
             )?;
-            let pruned_blobs = prune_history_from_conn(&conn)?;
+            let pruned_blobs = prune_history_from_conn(&tx)?;
+            tx.commit()
+                .map_err(|error| format!("failed to commit clipboard image capture: {error}"))?;
             (item_id, pruned_blobs)
         };
 
@@ -1572,9 +1740,36 @@ impl AppStorage {
             )
             .map_err(|error| format!("failed to update clipboard item metadata: {error}"))?;
         set_item_tags_from_values(&transaction, request.id, &request.tags)?;
+        replace_item_properties_manual(
+            &transaction,
+            request.id,
+            "client",
+            &request.properties.client,
+        )?;
+        replace_item_properties_manual(
+            &transaction,
+            request.id,
+            "project",
+            &request.properties.project,
+        )?;
+        replace_item_properties_manual(
+            &transaction,
+            request.id,
+            "activity",
+            &request.properties.activity,
+        )?;
         transaction
             .commit()
             .map_err(|error| format!("failed to commit metadata update: {error}"))
+    }
+
+    pub fn list_item_properties(&self, item_id: i64) -> Result<ScenarioProperties, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_item_exists(&conn, item_id)?;
+        scenario_properties_for_item(&conn, item_id)
     }
 
     pub fn delete_item(&self, id: i64) -> Result<(), String> {
@@ -1589,6 +1784,16 @@ impl AppStorage {
             params![id],
         )
         .map_err(|error| format!("failed to delete clipboard item tags: {error}"))?;
+        conn.execute(
+            "DELETE FROM clipboard_item_properties WHERE item_id = ?1",
+            params![id],
+        )
+        .map_err(|error| format!("failed to delete clipboard item properties: {error}"))?;
+        conn.execute(
+            "DELETE FROM clipboard_item_metadata_suppressions WHERE item_id = ?1",
+            params![id],
+        )
+        .map_err(|error| format!("failed to delete clipboard item suppressions: {error}"))?;
 
         let deleted = conn
             .execute("DELETE FROM clipboard_items WHERE id = ?1", params![id])
@@ -1706,25 +1911,13 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         let mut statement = conn
             .prepare(
-                "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+                "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, capture_tags, created_at_unix_ms, updated_at_unix_ms
                  FROM saved_history_views
                  ORDER BY pinned DESC, sort_order ASC, title COLLATE NOCASE ASC, id ASC",
             )
             .map_err(|error| format!("failed to prepare saved history views query: {error}"))?;
         let rows = statement
-            .query_map([], |row| {
-                Ok(SavedHistoryView {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    query: row.get(2)?,
-                    open_mode: row.get(3)?,
-                    hotkey: row.get(4)?,
-                    pinned: row.get::<_, i64>(5)? != 0,
-                    sort_order: row.get(6)?,
-                    created_at_unix_ms: row.get(7)?,
-                    updated_at_unix_ms: row.get(8)?,
-                })
-            })
+            .query_map([], saved_history_view_from_row)
             .map_err(|error| format!("failed to query saved history views: {error}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|error| format!("failed to read saved history view row: {error}"))
@@ -1735,6 +1928,7 @@ impl AppStorage {
         request: CreateSavedHistoryViewRequest,
     ) -> Result<SavedHistoryView, String> {
         validate_saved_history_view(&request.title, &request.query)?;
+        let capture_tags = normalized_tag_labels_json(&request.capture_tags)?;
         let title = request.title.trim();
         let query = request.query.trim();
         let now = now_unix_ms();
@@ -1744,14 +1938,20 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         conn.execute(
             "INSERT INTO saved_history_views (
-                title, query, hotkey, created_at_unix_ms, updated_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?4)",
-            params![title, query, normalize_optional_text(request.hotkey), now],
+                title, query, hotkey, capture_tags, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            params![
+                title,
+                query,
+                normalize_optional_text(request.hotkey),
+                capture_tags,
+                now
+            ],
         )
         .map_err(|error| format!("failed to create saved history view: {error}"))?;
         let id = conn.last_insert_rowid();
         conn.query_row(
-            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, capture_tags, created_at_unix_ms, updated_at_unix_ms
              FROM saved_history_views WHERE id = ?1",
             params![id],
             saved_history_view_from_row,
@@ -1764,24 +1964,31 @@ impl AppStorage {
         request: UpdateSavedHistoryViewRequest,
     ) -> Result<SavedHistoryView, String> {
         validate_saved_history_view(&request.title, &request.query)?;
+        let capture_tags = normalized_tag_labels_json(&request.capture_tags)?;
         let conn = self
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         let changed = conn.execute(
             "UPDATE saved_history_views
-             SET title = ?1, query = ?2, hotkey = ?3, pinned = ?4, sort_order = ?5, updated_at_unix_ms = ?6
-             WHERE id = ?7",
+             SET title = ?1, query = ?2, hotkey = ?3, pinned = ?4, sort_order = ?5, capture_tags = ?6, updated_at_unix_ms = ?7
+             WHERE id = ?8",
             params![
-                request.title.trim(), request.query.trim(), normalize_optional_text(request.hotkey),
-                i64::from(request.pinned), request.sort_order, now_unix_ms(), request.id,
+                request.title.trim(),
+                request.query.trim(),
+                normalize_optional_text(request.hotkey),
+                i64::from(request.pinned),
+                request.sort_order,
+                capture_tags,
+                now_unix_ms(),
+                request.id,
             ],
         ).map_err(|error| format!("failed to update saved history view: {error}"))?;
         if changed == 0 {
             return Err("saved history view not found".to_string());
         }
         conn.query_row(
-            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, capture_tags, created_at_unix_ms, updated_at_unix_ms
              FROM saved_history_views WHERE id = ?1",
             params![request.id],
             saved_history_view_from_row,
@@ -1793,6 +2000,16 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let scenario_count = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scenarios WHERE saved_view_id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| format!("failed to inspect saved view scenarios: {error}"))?;
+        if scenario_count > 0 {
+            return Err("saved history view is used by a scenario".to_string());
+        }
         if conn
             .execute("DELETE FROM saved_history_views WHERE id = ?1", params![id])
             .map_err(|error| format!("failed to delete saved history view: {error}"))?
@@ -1809,11 +2026,273 @@ impl AppStorage {
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         conn.query_row(
-            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, created_at_unix_ms, updated_at_unix_ms
+            "SELECT id, title, query, open_mode, hotkey, pinned, sort_order, capture_tags, created_at_unix_ms, updated_at_unix_ms
              FROM saved_history_views WHERE id = ?1",
             params![id],
             saved_history_view_from_row,
         ).map_err(|error| format!("saved history view not found: {error}"))
+    }
+
+    pub fn list_scenarios(&self) -> Result<Vec<Scenario>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let mut statement = conn
+            .prepare(
+                "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
+                        s.client_values_json, s.project_values_json, s.activity_values_json,
+                        s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
+                 FROM scenarios s
+                 JOIN saved_history_views v ON v.id = s.saved_view_id
+                 ORDER BY s.name COLLATE NOCASE ASC, s.id ASC",
+            )
+            .map_err(|error| format!("failed to prepare scenarios query: {error}"))?;
+        let rows = statement
+            .query_map([], scenario_from_row)
+            .map_err(|error| format!("failed to query scenarios: {error}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to read scenario row: {error}"))
+    }
+
+    pub fn get_scenario(&self, id: i64) -> Result<Scenario, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        conn.query_row(
+            "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
+                    s.client_values_json, s.project_values_json, s.activity_values_json,
+                    s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
+             FROM scenarios s
+             JOIN saved_history_views v ON v.id = s.saved_view_id
+             WHERE s.id = ?1",
+            params![id],
+            scenario_from_row,
+        )
+        .map_err(|error| format!("scenario not found: {error}"))
+    }
+
+    pub fn create_scenario(&self, request: CreateScenarioRequest) -> Result<Scenario, String> {
+        let name = validate_scenario_name(&request.name)?;
+        let properties = normalize_scenario_properties(&request.properties)?;
+        let tags = normalize_tag_values(&request.tags)?
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect::<Vec<_>>();
+        let now = now_unix_ms();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_saved_view_exists(&conn, request.saved_view_id)?;
+        conn.execute(
+            "INSERT INTO scenarios (
+                name, saved_view_id, revision, client_values_json, project_values_json,
+                activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?7)",
+            params![
+                name,
+                request.saved_view_id,
+                encode_values(&properties.client)?,
+                encode_values(&properties.project)?,
+                encode_values(&properties.activity)?,
+                encode_values(&tags)?,
+                now,
+            ],
+        )
+        .map_err(|error| format!("failed to create scenario: {error}"))?;
+        let id = conn.last_insert_rowid();
+        drop(conn);
+        self.get_scenario(id)
+    }
+
+    pub fn create_scenario_from_query(
+        &self,
+        request: CreateScenarioFromQueryRequest,
+    ) -> Result<Scenario, String> {
+        let name = validate_scenario_name(&request.name)?;
+        validate_saved_history_view(&name, &request.query)?;
+        let properties = normalize_scenario_properties(&request.properties)?;
+        let tags = normalize_tag_values(&request.tags)?
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect::<Vec<_>>();
+        let query = request.query.trim();
+        let now = now_unix_ms();
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("failed to start scenario creation: {error}"))?;
+        tx.execute(
+            "INSERT INTO saved_history_views (
+                title, query, hotkey, capture_tags, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, NULL, '[]', ?3, ?3)",
+            params![name, query, now],
+        )
+        .map_err(|error| format!("failed to create scenario view: {error}"))?;
+        let saved_view_id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO scenarios (
+                name, saved_view_id, revision, client_values_json, project_values_json,
+                activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?7)",
+            params![
+                name,
+                saved_view_id,
+                encode_values(&properties.client)?,
+                encode_values(&properties.project)?,
+                encode_values(&properties.activity)?,
+                encode_values(&tags)?,
+                now,
+            ],
+        )
+        .map_err(|error| format!("failed to create scenario: {error}"))?;
+        let scenario_id = tx.last_insert_rowid();
+        let scenario = tx
+            .query_row(
+                "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
+                        s.client_values_json, s.project_values_json, s.activity_values_json,
+                        s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
+                 FROM scenarios s
+                 JOIN saved_history_views v ON v.id = s.saved_view_id
+                 WHERE s.id = ?1",
+                params![scenario_id],
+                scenario_from_row,
+            )
+            .map_err(|error| format!("failed to read scenario after create: {error}"))?;
+        tx.commit()
+            .map_err(|error| format!("failed to commit scenario creation: {error}"))?;
+        Ok(scenario)
+    }
+
+    pub fn update_scenario_from_query(
+        &self,
+        request: UpdateScenarioFromQueryRequest,
+    ) -> Result<Scenario, String> {
+        let name = validate_scenario_name(&request.name)?;
+        validate_saved_history_view(&name, &request.query)?;
+        let properties = normalize_scenario_properties(&request.properties)?;
+        let tags = normalize_tag_values(&request.tags)?
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect::<Vec<_>>();
+        let query = request.query.trim();
+        let now = now_unix_ms();
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("failed to start scenario update: {error}"))?;
+        let saved_view_id = tx
+            .query_row(
+                "SELECT saved_view_id FROM scenarios WHERE id = ?1",
+                params![request.id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| format!("scenario not found: {error}"))?;
+        tx.execute(
+            "UPDATE saved_history_views
+             SET title = ?1, query = ?2, updated_at_unix_ms = ?3
+             WHERE id = ?4",
+            params![name, query, now, saved_view_id],
+        )
+        .map_err(|error| format!("failed to update scenario view: {error}"))?;
+        tx.execute(
+            "UPDATE scenarios
+             SET name = ?1, revision = revision + 1, client_values_json = ?2,
+                 project_values_json = ?3, activity_values_json = ?4, tags_json = ?5,
+                 updated_at_unix_ms = ?6
+             WHERE id = ?7",
+            params![
+                name,
+                encode_values(&properties.client)?,
+                encode_values(&properties.project)?,
+                encode_values(&properties.activity)?,
+                encode_values(&tags)?,
+                now,
+                request.id,
+            ],
+        )
+        .map_err(|error| format!("failed to update scenario: {error}"))?;
+        let scenario = tx
+            .query_row(
+                "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
+                        s.client_values_json, s.project_values_json, s.activity_values_json,
+                        s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
+                 FROM scenarios s
+                 JOIN saved_history_views v ON v.id = s.saved_view_id
+                 WHERE s.id = ?1",
+                params![request.id],
+                scenario_from_row,
+            )
+            .map_err(|error| format!("failed to read scenario after update: {error}"))?;
+        tx.commit()
+            .map_err(|error| format!("failed to commit scenario update: {error}"))?;
+        Ok(scenario)
+    }
+
+    pub fn update_scenario(&self, request: UpdateScenarioRequest) -> Result<Scenario, String> {
+        let name = validate_scenario_name(&request.name)?;
+        let properties = normalize_scenario_properties(&request.properties)?;
+        let tags = normalize_tag_values(&request.tags)?
+            .into_iter()
+            .map(|(_, label)| label)
+            .collect::<Vec<_>>();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_saved_view_exists(&conn, request.saved_view_id)?;
+        let changed = conn
+            .execute(
+                "UPDATE scenarios
+                 SET name = ?1,
+                     saved_view_id = ?2,
+                     revision = revision + 1,
+                     client_values_json = ?3,
+                     project_values_json = ?4,
+                     activity_values_json = ?5,
+                     tags_json = ?6,
+                     updated_at_unix_ms = ?7
+                 WHERE id = ?8",
+                params![
+                    name,
+                    request.saved_view_id,
+                    encode_values(&properties.client)?,
+                    encode_values(&properties.project)?,
+                    encode_values(&properties.activity)?,
+                    encode_values(&tags)?,
+                    now_unix_ms(),
+                    request.id,
+                ],
+            )
+            .map_err(|error| format!("failed to update scenario: {error}"))?;
+        if changed == 0 {
+            return Err("scenario not found".to_string());
+        }
+        drop(conn);
+        self.get_scenario(request.id)
+    }
+
+    pub fn delete_scenario(&self, id: i64) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        if conn
+            .execute("DELETE FROM scenarios WHERE id = ?1", params![id])
+            .map_err(|error| format!("failed to delete scenario: {error}"))?
+            == 0
+        {
+            return Err("scenario not found".to_string());
+        }
+        Ok(())
     }
 
     pub fn create_tag(&self, request: CreateTagRequest) -> Result<TagSummary, String> {
@@ -1932,6 +2411,97 @@ impl AppStorage {
             .ok_or_else(|| format!("tag not found after update: {}", request.tag_id))
     }
 
+    pub fn delete_tag(&self, tag_id: i64) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("failed to start tag deletion: {error}"))?;
+        let tag = query_tag_summaries(&tx, Some(tag_id))?
+            .pop()
+            .ok_or_else(|| format!("tag not found: {tag_id}"))?;
+        let item_ids = {
+            let mut statement = tx
+                .prepare("SELECT item_id FROM clipboard_item_tags WHERE tag_id = ?1")
+                .map_err(|error| format!("failed to prepare tag item deletion: {error}"))?;
+            let rows = statement
+                .query_map(params![tag_id], |row| row.get::<_, i64>(0))
+                .map_err(|error| format!("failed to read tag items: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("failed to collect tag items: {error}"))?;
+            rows
+        };
+
+        let remove_from_json = |json: &str| -> Result<String, String> {
+            let filtered = serde_json::from_str::<Vec<String>>(json)
+                .map_err(|error| format!("failed to decode tag values: {error}"))?
+                .into_iter()
+                .filter(|value| {
+                    normalize_tag_label(value)
+                        .map(|(slug, _)| slug != tag.slug)
+                        .unwrap_or(true)
+                })
+                .collect::<Vec<_>>();
+            encode_values(&filtered)
+        };
+
+        let scenarios = {
+            let mut statement = tx
+                .prepare("SELECT id, tags_json FROM scenarios")
+                .map_err(|error| format!("failed to prepare scenario tag cleanup: {error}"))?;
+            let rows = statement
+                .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+                .map_err(|error| format!("failed to read scenario tags: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("failed to collect scenario tags: {error}"))?;
+            rows
+        };
+        for (scenario_id, tags_json) in scenarios {
+            let next_tags = remove_from_json(&tags_json)?;
+            if next_tags != tags_json {
+                tx.execute(
+                    "UPDATE scenarios SET tags_json = ?1, revision = revision + 1,
+                            updated_at_unix_ms = ?2 WHERE id = ?3",
+                    params![next_tags, now_unix_ms(), scenario_id],
+                )
+                .map_err(|error| format!("failed to remove tag from scenario: {error}"))?;
+            }
+        }
+
+        let views = {
+            let mut statement = tx
+                .prepare("SELECT id, capture_tags FROM saved_history_views")
+                .map_err(|error| format!("failed to prepare capture tag cleanup: {error}"))?;
+            let rows = statement
+                .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+                .map_err(|error| format!("failed to read capture tags: {error}"))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| format!("failed to collect capture tags: {error}"))?;
+            rows
+        };
+        for (view_id, capture_tags) in views {
+            let next_tags = remove_from_json(&capture_tags)?;
+            if next_tags != capture_tags {
+                tx.execute(
+                    "UPDATE saved_history_views SET capture_tags = ?1, updated_at_unix_ms = ?2
+                     WHERE id = ?3",
+                    params![next_tags, now_unix_ms(), view_id],
+                )
+                .map_err(|error| format!("failed to remove tag from saved view: {error}"))?;
+            }
+        }
+
+        tx.execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
+            .map_err(|error| format!("failed to delete tag: {error}"))?;
+        for item_id in item_ids {
+            sync_legacy_tags_for_item(&tx, item_id)?;
+        }
+        tx.commit()
+            .map_err(|error| format!("failed to commit tag deletion: {error}"))
+    }
+
     pub fn get_item_tags(&self, item_id: i64) -> Result<Vec<String>, String> {
         let conn = self
             .conn
@@ -1953,10 +2523,21 @@ impl AppStorage {
 
     pub fn apply_item_tags(&self, request: ApplyItemTagsRequest) -> Result<(), String> {
         let normalized_tags = normalize_tag_values(&request.tags)?;
+        let normalized_remove_tags = normalize_tag_values(&request.remove_tags)?;
         let normalized_values = normalized_tags
             .iter()
             .map(|(_, label)| label.clone())
             .collect::<Vec<_>>();
+        let added_slugs = normalized_tags
+            .iter()
+            .map(|(slug, _)| slug)
+            .collect::<BTreeSet<_>>();
+        if normalized_remove_tags
+            .iter()
+            .any(|(slug, _)| added_slugs.contains(slug))
+        {
+            return Err("the same tag cannot be added and removed in one update".to_string());
+        }
         let item_ids = request.item_ids.into_iter().collect::<BTreeSet<_>>();
         if item_ids.is_empty() {
             return Err("item tag update requires at least one item".to_string());
@@ -1975,9 +2556,21 @@ impl AppStorage {
         for item_id in item_ids {
             match request.mode {
                 ApplyItemTagsMode::Replace => {
+                    if !normalized_remove_tags.is_empty() {
+                        return Err("replace tag updates cannot include removed tags".to_string());
+                    }
                     set_item_tags_from_values(&tx, item_id, &normalized_values)?;
                 }
-                ApplyItemTagsMode::Add => {
+                ApplyItemTagsMode::Patch => {
+                    for (slug, label) in &normalized_remove_tags {
+                        suppress_metadata_value(&tx, item_id, "tag", "", label, slug)?;
+                        tx.execute(
+                            "DELETE FROM clipboard_item_tags
+                             WHERE item_id = ?1 AND tag_id = (SELECT id FROM tags WHERE slug = ?2)",
+                            params![item_id, slug],
+                        )
+                        .map_err(|error| format!("failed to remove item tag: {error}"))?;
+                    }
                     for (slug, label) in &normalized_tags {
                         add_item_tag_relation(&tx, item_id, slug, label, "manual", None)?;
                     }
@@ -2442,6 +3035,15 @@ fn normalize_tag_values(values: &[String]) -> Result<Vec<(String, String)>, Stri
     Ok(normalized)
 }
 
+fn normalized_tag_labels_json(values: &[String]) -> Result<String, String> {
+    let labels = normalize_tag_values(values)?
+        .into_iter()
+        .map(|(_, label)| label)
+        .collect::<Vec<_>>();
+    serde_json::to_string(&labels)
+        .map_err(|error| format!("failed to encode capture tags: {error}"))
+}
+
 fn legacy_tags_to_values(value: Option<&str>) -> Vec<String> {
     value
         .unwrap_or_default()
@@ -2497,27 +3099,53 @@ fn add_item_tag_relation(
     source: &str,
     confidence: Option<f64>,
 ) -> Result<bool, String> {
+    if source != "manual" && metadata_value_is_suppressed(conn, item_id, "tag", "", slug)? {
+        return Ok(false);
+    }
+    if source == "manual" {
+        clear_metadata_suppression(conn, item_id, "tag", "", slug)?;
+    }
+
     let now = now_unix_ms();
     conn.execute(
-        "INSERT OR IGNORE INTO tags (slug, label, created_at_unix_ms, updated_at_unix_ms)
-         VALUES (?1, ?2, ?3, ?3)",
+        "INSERT INTO tags (slug, label, created_at_unix_ms, updated_at_unix_ms)
+         VALUES (?1, ?2, ?3, ?3)
+         ON CONFLICT(slug) DO UPDATE SET
+            label = CASE WHEN excluded.label != '' THEN excluded.label ELSE tags.label END,
+            updated_at_unix_ms = excluded.updated_at_unix_ms",
         params![slug, label, now],
     )
     .map_err(|error| format!("failed to upsert tag: {error}"))?;
     let tag_id = tag_id_by_slug(conn, slug)?;
-    let inserted = conn
-        .execute(
-            "INSERT OR IGNORE INTO clipboard_item_tags (
-                item_id,
-                tag_id,
-                created_at_unix_ms,
-                source,
-                confidence
-             ) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![item_id, tag_id, now, source, confidence],
+    let existing_source = conn
+        .query_row(
+            "SELECT source FROM clipboard_item_tags WHERE item_id = ?1 AND tag_id = ?2",
+            params![item_id, tag_id],
+            |row| row.get::<_, String>(0),
         )
-        .map_err(|error| format!("failed to link item tag: {error}"))?;
-    Ok(inserted > 0)
+        .optional()
+        .map_err(|error| format!("failed to inspect item tag source: {error}"))?;
+    if let Some(existing_source) = existing_source {
+        if metadata_source_rank(source) > metadata_source_rank(&existing_source) {
+            conn.execute(
+                "UPDATE clipboard_item_tags
+                 SET source = ?1, confidence = ?2, created_at_unix_ms = ?3
+                 WHERE item_id = ?4 AND tag_id = ?5",
+                params![source, confidence, now, item_id, tag_id],
+            )
+            .map_err(|error| format!("failed to promote item tag source: {error}"))?;
+        }
+        return Ok(false);
+    }
+
+    conn.execute(
+        "INSERT INTO clipboard_item_tags (
+            item_id, tag_id, created_at_unix_ms, source, confidence
+         ) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![item_id, tag_id, now, source, confidence],
+    )
+    .map_err(|error| format!("failed to link item tag: {error}"))?;
+    Ok(true)
 }
 
 fn set_item_tags_from_values(
@@ -2526,43 +3154,41 @@ fn set_item_tags_from_values(
     values: &[String],
 ) -> Result<(), String> {
     let normalized = normalize_tag_values(values)?;
-    let now = now_unix_ms();
+    let desired_slugs = normalized
+        .iter()
+        .map(|(slug, _)| slug.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut existing_statement = conn
+        .prepare(
+            "SELECT tags.slug, tags.label
+             FROM clipboard_item_tags
+             JOIN tags ON tags.id = clipboard_item_tags.tag_id
+             WHERE clipboard_item_tags.item_id = ?1",
+        )
+        .map_err(|error| format!("failed to prepare existing item tags: {error}"))?;
+    let existing = existing_statement
+        .query_map(params![item_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("failed to query existing item tags: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read existing item tag: {error}"))?;
+    drop(existing_statement);
+    for (slug, label) in existing {
+        if !desired_slugs.contains(slug.as_str()) {
+            suppress_metadata_value(conn, item_id, "tag", "", &label, &slug)?;
+        }
+    }
+
     conn.execute(
         "DELETE FROM clipboard_item_tags WHERE item_id = ?1",
         params![item_id],
     )
     .map_err(|error| format!("failed to clear item tags: {error}"))?;
-    let mut labels = Vec::new();
-    for (slug, label) in normalized {
-        conn.execute(
-            "INSERT INTO tags (slug, label, created_at_unix_ms, updated_at_unix_ms)
-             VALUES (?1, ?2, ?3, ?3)
-             ON CONFLICT(slug) DO UPDATE SET
-                label = excluded.label,
-                updated_at_unix_ms = excluded.updated_at_unix_ms",
-            params![slug, label, now],
-        )
-        .map_err(|error| format!("failed to upsert tag: {error}"))?;
-        let tag_id = tag_id_by_slug(conn, &slug)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO clipboard_item_tags (
-                item_id,
-                tag_id,
-                created_at_unix_ms,
-                source,
-                confidence
-             ) VALUES (?1, ?2, ?3, 'manual', NULL)",
-            params![item_id, tag_id, now],
-        )
-        .map_err(|error| format!("failed to link item tag: {error}"))?;
-        labels.push(label);
+    for (slug, label) in &normalized {
+        add_item_tag_relation(conn, item_id, slug, label, "manual", None)?;
     }
-    conn.execute(
-        "UPDATE clipboard_items SET tags = ?1 WHERE id = ?2",
-        params![legacy_tag_string_from_labels(&labels), item_id],
-    )
-    .map_err(|error| format!("failed to sync legacy item tags: {error}"))?;
-    Ok(())
+    sync_legacy_tags_for_item(conn, item_id)
 }
 
 fn item_tag_labels(conn: &Connection, item_id: i64) -> Result<Vec<String>, String> {
@@ -2615,6 +3241,273 @@ fn sync_legacy_tags_for_tag(conn: &Connection, tag_id: i64) -> Result<(), String
     Ok(())
 }
 
+fn metadata_source_rank(source: &str) -> u8 {
+    match source {
+        "manual" => 3,
+        "scenario" | "context" => 2,
+        _ => 1,
+    }
+}
+
+fn normalized_metadata_value(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn normalize_metadata_values(values: &[String]) -> Result<Vec<String>, String> {
+    let mut normalized = Vec::new();
+    let mut seen = BTreeSet::new();
+    for value in values {
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        if value.chars().count() > 160 {
+            return Err("metadata values cannot exceed 160 characters".to_string());
+        }
+        let key = normalized_metadata_value(value);
+        if seen.insert(key) {
+            normalized.push(value.to_string());
+        }
+    }
+    Ok(normalized)
+}
+
+fn normalize_scenario_properties(
+    properties: &ScenarioProperties,
+) -> Result<ScenarioProperties, String> {
+    Ok(ScenarioProperties {
+        client: normalize_metadata_values(&properties.client)?,
+        project: normalize_metadata_values(&properties.project)?,
+        activity: normalize_metadata_values(&properties.activity)?,
+    })
+}
+
+fn metadata_value_is_suppressed(
+    conn: &Connection,
+    item_id: i64,
+    metadata_kind: &str,
+    metadata_key: &str,
+    normalized_value: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM clipboard_item_metadata_suppressions
+            WHERE item_id = ?1 AND metadata_kind = ?2 AND metadata_key = ?3
+              AND normalized_value = ?4
+        )",
+        params![item_id, metadata_kind, metadata_key, normalized_value],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|error| format!("failed to inspect metadata suppression: {error}"))
+}
+
+fn suppress_metadata_value(
+    conn: &Connection,
+    item_id: i64,
+    metadata_kind: &str,
+    metadata_key: &str,
+    value: &str,
+    normalized_value: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO clipboard_item_metadata_suppressions (
+            item_id, metadata_kind, metadata_key, value, normalized_value, created_at_unix_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(item_id, metadata_kind, metadata_key, normalized_value) DO UPDATE SET
+            value = excluded.value,
+            created_at_unix_ms = excluded.created_at_unix_ms",
+        params![
+            item_id,
+            metadata_kind,
+            metadata_key,
+            value,
+            normalized_value,
+            now_unix_ms()
+        ],
+    )
+    .map_err(|error| format!("failed to suppress metadata value: {error}"))?;
+    Ok(())
+}
+
+fn clear_metadata_suppression(
+    conn: &Connection,
+    item_id: i64,
+    metadata_kind: &str,
+    metadata_key: &str,
+    normalized_value: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM clipboard_item_metadata_suppressions
+         WHERE item_id = ?1 AND metadata_kind = ?2 AND metadata_key = ?3
+           AND normalized_value = ?4",
+        params![item_id, metadata_kind, metadata_key, normalized_value],
+    )
+    .map_err(|error| format!("failed to restore metadata value: {error}"))?;
+    Ok(())
+}
+
+fn add_item_property(
+    conn: &Connection,
+    item_id: i64,
+    property_key: &str,
+    value: &str,
+    source: &str,
+) -> Result<bool, String> {
+    let normalized_value = normalized_metadata_value(value);
+    if source != "manual"
+        && metadata_value_is_suppressed(
+            conn,
+            item_id,
+            "property",
+            property_key,
+            &normalized_value,
+        )?
+    {
+        return Ok(false);
+    }
+    if source == "manual" {
+        clear_metadata_suppression(
+            conn,
+            item_id,
+            "property",
+            property_key,
+            &normalized_value,
+        )?;
+    }
+    let existing_source = conn
+        .query_row(
+            "SELECT source FROM clipboard_item_properties
+             WHERE item_id = ?1 AND property_key = ?2 AND normalized_value = ?3",
+            params![item_id, property_key, normalized_value],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to inspect item property source: {error}"))?;
+    let now = now_unix_ms();
+    if let Some(existing_source) = existing_source {
+        if metadata_source_rank(source) > metadata_source_rank(&existing_source) {
+            conn.execute(
+                "UPDATE clipboard_item_properties
+                 SET value = ?1, source = ?2, updated_at_unix_ms = ?3
+                 WHERE item_id = ?4 AND property_key = ?5 AND normalized_value = ?6",
+                params![value, source, now, item_id, property_key, normalized_value],
+            )
+            .map_err(|error| format!("failed to promote item property source: {error}"))?;
+        }
+        return Ok(false);
+    }
+    conn.execute(
+        "INSERT INTO clipboard_item_properties (
+            item_id, property_key, value, normalized_value, source,
+            created_at_unix_ms, updated_at_unix_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![item_id, property_key, value, normalized_value, source, now],
+    )
+    .map_err(|error| format!("failed to add item property: {error}"))?;
+    Ok(true)
+}
+
+fn replace_item_properties_manual(
+    conn: &Connection,
+    item_id: i64,
+    property_key: &str,
+    values: &[String],
+) -> Result<(), String> {
+    let normalized = normalize_metadata_values(values)?;
+    let desired = normalized
+        .iter()
+        .map(|value| normalized_metadata_value(value))
+        .collect::<BTreeSet<_>>();
+    let mut statement = conn
+        .prepare(
+            "SELECT value, normalized_value FROM clipboard_item_properties
+             WHERE item_id = ?1 AND property_key = ?2",
+        )
+        .map_err(|error| format!("failed to prepare existing item properties: {error}"))?;
+    let existing = statement
+        .query_map(params![item_id, property_key], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("failed to query existing item properties: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read existing item property: {error}"))?;
+    drop(statement);
+    for (value, normalized_value) in existing {
+        if !desired.contains(&normalized_value) {
+            suppress_metadata_value(
+                conn,
+                item_id,
+                "property",
+                property_key,
+                &value,
+                &normalized_value,
+            )?;
+        }
+    }
+    conn.execute(
+        "DELETE FROM clipboard_item_properties WHERE item_id = ?1 AND property_key = ?2",
+        params![item_id, property_key],
+    )
+    .map_err(|error| format!("failed to clear item properties: {error}"))?;
+    for value in normalized {
+        add_item_property(conn, item_id, property_key, &value, "manual")?;
+    }
+    Ok(())
+}
+
+fn scenario_properties_for_item(
+    conn: &Connection,
+    item_id: i64,
+) -> Result<ScenarioProperties, String> {
+    let mut properties = ScenarioProperties::default();
+    let mut statement = conn
+        .prepare(
+            "SELECT property_key, value FROM clipboard_item_properties
+             WHERE item_id = ?1
+             ORDER BY property_key ASC, value COLLATE NOCASE ASC",
+        )
+        .map_err(|error| format!("failed to prepare item properties query: {error}"))?;
+    let rows = statement
+        .query_map(params![item_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("failed to query item properties: {error}"))?;
+    for row in rows {
+        let (key, value) = row.map_err(|error| format!("failed to read item property: {error}"))?;
+        match key.as_str() {
+            "client" => properties.client.push(value),
+            "project" => properties.project.push(value),
+            "activity" => properties.activity.push(value),
+            _ => {}
+        }
+    }
+    Ok(properties)
+}
+
+fn apply_scenario_patch(
+    conn: &Connection,
+    item_id: i64,
+    scenario: &ActiveScenarioSession,
+) -> Result<(), String> {
+    for value in &scenario.properties.client {
+        add_item_property(conn, item_id, "client", value, "scenario")?;
+    }
+    for value in &scenario.properties.project {
+        add_item_property(conn, item_id, "project", value, "scenario")?;
+    }
+    for value in &scenario.properties.activity {
+        add_item_property(conn, item_id, "activity", value, "scenario")?;
+    }
+    let tags = normalize_tag_values(&scenario.tags)?;
+    for (slug, label) in tags {
+        add_item_tag_relation(conn, item_id, &slug, &label, "scenario", None)?;
+    }
+    if !scenario.tags.is_empty() {
+        sync_legacy_tags_for_item(conn, item_id)?;
+    }
+    Ok(())
+}
+
 fn record_capture_event(
     conn: &Connection,
     item_id: i64,
@@ -2626,6 +3519,7 @@ fn record_capture_event(
     line_count: Option<i64>,
     domain: Option<&str>,
     capture_context: Option<&CaptureContext>,
+    active_scenario: Option<&ActiveScenarioSession>,
 ) -> Result<(), String> {
     let fallback_context;
     let context = if let Some(context) = capture_context {
@@ -2643,6 +3537,10 @@ fn record_capture_event(
         serde_json::to_string(&context.clipboard_formats).unwrap_or_else(|_| "[]".to_string());
     let event_json = serde_json::to_string(context)
         .map_err(|error| format!("failed to serialize capture context: {error}"))?;
+    let scenario_snapshot_json = active_scenario
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| format!("failed to serialize scenario snapshot: {error}"))?;
 
     conn.execute(
         "INSERT INTO clipboard_item_capture_events (
@@ -2665,8 +3563,12 @@ fn record_capture_event(
             text_char_count,
             line_count,
             domain,
-            event_json
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+            event_json,
+            scenario_id,
+            scenario_session_id,
+            scenario_revision,
+            scenario_snapshot_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
         params![
             item_id,
             captured_at_unix_ms,
@@ -2687,7 +3589,11 @@ fn record_capture_event(
             text_char_count,
             line_count,
             domain,
-            event_json.as_str()
+            event_json.as_str(),
+            active_scenario.map(|scenario| scenario.scenario_id),
+            active_scenario.map(|scenario| scenario.session_id.as_str()),
+            active_scenario.map(|scenario| scenario.scenario_revision),
+            scenario_snapshot_json.as_deref()
         ],
     )
     .map_err(|error| format!("failed to insert capture context: {error}"))?;
@@ -2929,6 +3835,10 @@ fn default_scripts_folder_path_from_env(
 }
 
 fn saved_history_view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedHistoryView> {
+    let capture_tags_json = row.get::<_, String>(7)?;
+    let capture_tags = serde_json::from_str(&capture_tags_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(7, Type::Text, Box::new(error))
+    })?;
     Ok(SavedHistoryView {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -2937,9 +3847,65 @@ fn saved_history_view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Save
         hotkey: row.get(4)?,
         pinned: row.get::<_, i64>(5)? != 0,
         sort_order: row.get(6)?,
-        created_at_unix_ms: row.get(7)?,
-        updated_at_unix_ms: row.get(8)?,
+        capture_tags,
+        created_at_unix_ms: row.get(8)?,
+        updated_at_unix_ms: row.get(9)?,
     })
+}
+
+fn scenario_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Scenario> {
+    let decode = |index: usize| -> rusqlite::Result<Vec<String>> {
+        let json = row.get::<_, String>(index)?;
+        serde_json::from_str(&json).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(index, Type::Text, Box::new(error))
+        })
+    };
+    Ok(Scenario {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        saved_view_id: row.get(2)?,
+        saved_view_title: row.get(3)?,
+        query: row.get(4)?,
+        revision: row.get(5)?,
+        properties: ScenarioProperties {
+            client: decode(6)?,
+            project: decode(7)?,
+            activity: decode(8)?,
+        },
+        tags: decode(9)?,
+        created_at_unix_ms: row.get(10)?,
+        updated_at_unix_ms: row.get(11)?,
+    })
+}
+
+fn encode_values(values: &[String]) -> Result<String, String> {
+    serde_json::to_string(values).map_err(|error| format!("failed to encode metadata values: {error}"))
+}
+
+fn validate_scenario_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("scenario name is required".to_string());
+    }
+    if name.chars().count() > 120 {
+        return Err("scenario name cannot exceed 120 characters".to_string());
+    }
+    Ok(name.to_string())
+}
+
+fn ensure_saved_view_exists(conn: &Connection, saved_view_id: i64) -> Result<(), String> {
+    let exists = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM saved_history_views WHERE id = ?1)",
+            params![saved_view_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| format!("failed to validate scenario saved view: {error}"))?;
+    if exists {
+        Ok(())
+    } else {
+        Err("scenario saved view not found".to_string())
+    }
 }
 
 fn validate_saved_history_view(title: &str, query: &str) -> Result<(), String> {
@@ -3647,7 +4613,7 @@ mod tests {
         };
 
         let item_id = storage
-            .insert_text_with_context(text, &hash_text(text), Some(context))
+            .insert_text_with_context(text, &hash_text(text), Some(context), &[])
             .expect("text with context should insert");
 
         for query in [
@@ -3712,6 +4678,7 @@ mod tests {
                     source_app_name: Some("first.exe".to_string()),
                     ..CaptureContext::default()
                 }),
+                &["Work".to_string()],
             )
             .expect("first capture should insert");
         let second_id = storage
@@ -3723,10 +4690,15 @@ mod tests {
                     source_app_name: Some("second.exe".to_string()),
                     ..CaptureContext::default()
                 }),
+                &["Review".to_string()],
             )
             .expect("recapture should bump existing item");
 
         assert_eq!(first_id, second_id);
+        assert_eq!(
+            storage.get_item_tags(first_id).expect("context tags should load"),
+            vec!["Review".to_string(), "Work".to_string()]
+        );
         let conn = storage.conn.lock().expect("sqlite lock should work");
         let event_count: i64 = conn
             .query_row(
@@ -4187,6 +5159,7 @@ mod tests {
                 title: Some("Reference".to_string()),
                 notes: Some("Markdown note with #not-a-tag".to_string()),
                 tags: vec!["Work".to_string(), "Very Important".to_string()],
+                properties: ScenarioProperties::default(),
             })
             .expect("metadata should update");
 
@@ -4266,6 +5239,7 @@ mod tests {
                     "Backend".to_string(),
                     "work".to_string(),
                 ],
+                remove_tags: Vec::new(),
                 mode: ApplyItemTagsMode::Replace,
             })
             .expect("replacement tags should save");
@@ -4278,6 +5252,7 @@ mod tests {
             .apply_item_tags(ApplyItemTagsRequest {
                 item_ids: vec![1],
                 tags: Vec::new(),
+                remove_tags: Vec::new(),
                 mode: ApplyItemTagsMode::Replace,
             })
             .expect("empty replacement should clear tags");
@@ -4293,7 +5268,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_item_tags_add_preserves_multiple_items_and_is_idempotent() {
+    fn apply_item_tags_patch_adds_and_removes_without_replacing_other_tags() {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 40_001, "first tagged item");
         insert_test_text_item(&storage, 2, 40_002, "second tagged item");
@@ -4315,14 +5290,15 @@ mod tests {
                 .apply_item_tags(ApplyItemTagsRequest {
                     item_ids: vec![2, 1, 2],
                     tags: vec!["Shared".to_string(), "#shared".to_string()],
-                    mode: ApplyItemTagsMode::Add,
+                    remove_tags: vec!["First".to_string()],
+                    mode: ApplyItemTagsMode::Patch,
                 })
-                .expect("additive tags should save idempotently");
+                .expect("tag patch should save idempotently");
         }
 
         assert_eq!(
             storage.get_item_tags(1).expect("first tags should load"),
-            vec!["First".to_string(), "Shared".to_string()]
+            vec!["Shared".to_string()]
         );
         assert_eq!(
             storage.get_item_tags(2).expect("second tags should load"),
@@ -4335,6 +5311,63 @@ mod tests {
             .find(|tag| tag.slug == "shared")
             .expect("shared tag should exist");
         assert_eq!(shared.item_count, 2);
+    }
+
+    #[test]
+    fn delete_tag_removes_it_globally_without_deleting_items() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "tagged item");
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: 1,
+                tags: vec!["Shared".to_string(), "Keep".to_string()],
+            })
+            .expect("item tags should save");
+        let shared = storage
+            .list_tags()
+            .expect("tags should list")
+            .into_iter()
+            .find(|tag| tag.slug == "shared")
+            .expect("shared tag should exist");
+        storage
+            .create_scenario_from_query(CreateScenarioFromQueryRequest {
+                name: "Shared workspace".to_string(),
+                query: "tag:shared".to_string(),
+                properties: ScenarioProperties::default(),
+                tags: vec!["Shared".to_string()],
+            })
+            .expect("scenario should persist");
+        storage
+            .create_saved_history_view(CreateSavedHistoryViewRequest {
+                title: "Shared capture".to_string(),
+                query: "tag:shared".to_string(),
+                hotkey: None,
+                capture_tags: vec!["Shared".to_string()],
+            })
+            .expect("saved view should persist");
+
+        storage.delete_tag(shared.id).expect("tag should delete globally");
+
+        assert_eq!(
+            storage.get_item_tags(1).expect("remaining tags should load"),
+            vec!["Keep".to_string()]
+        );
+        assert!(storage.get_item(1).is_ok(), "tag deletion must preserve the item");
+        assert!(storage
+            .list_tags()
+            .expect("tags should list")
+            .iter()
+            .all(|tag| tag.slug != "shared"));
+        assert!(storage
+            .list_scenarios()
+            .expect("scenarios should list")[0]
+            .tags
+            .is_empty());
+        assert!(storage
+            .list_saved_history_views()
+            .expect("views should list")
+            .iter()
+            .all(|view| view.capture_tags.iter().all(|tag| tag != "Shared")));
     }
 
     #[test]
@@ -4593,6 +5626,7 @@ mod tests {
                 None,
                 None,
                 Some(&capture_context),
+                None,
             )
             .expect("test context should update");
             conn.execute(
@@ -5163,6 +6197,7 @@ mod tests {
                 title: "Work clips".to_string(),
                 query: "tag:work kind:".to_string(),
                 hotkey: Some("Ctrl+Alt+W".to_string()),
+                capture_tags: vec!["Work".to_string()],
             })
             .expect_err("malformed saved-view query must fail");
         assert!(error.contains("invalid saved history view query"));
@@ -5176,12 +6211,14 @@ mod tests {
                 title: "Work clips".to_string(),
                 query: "tag:work kind:text".to_string(),
                 hotkey: Some("Ctrl+Alt+W".to_string()),
+                capture_tags: vec!["Work".to_string(), "#work".to_string()],
             })
             .expect("valid saved view should persist");
         assert_eq!(saved.title, "Work clips");
         assert_eq!(saved.query, "tag:work kind:text");
         assert_eq!(saved.open_mode, "browse");
         assert_eq!(saved.hotkey.as_deref(), Some("Ctrl+Alt+W"));
+        assert_eq!(saved.capture_tags, vec!["Work".to_string()]);
 
         let updated = storage
             .update_saved_history_view(UpdateSavedHistoryViewRequest {
@@ -5191,11 +6228,16 @@ mod tests {
                 hotkey: None,
                 pinned: true,
                 sort_order: Some(1),
+                capture_tags: vec!["Work".to_string(), "Review".to_string()],
             })
             .expect("valid saved view should update");
         assert!(updated.pinned);
         assert!(updated.hotkey.is_none());
         assert_eq!(updated.title, "Pinned work clips");
+        assert_eq!(
+            updated.capture_tags,
+            vec!["Work".to_string(), "Review".to_string()]
+        );
 
         let saved_views = storage
             .list_saved_history_views()
@@ -5209,6 +6251,276 @@ mod tests {
             .list_saved_history_views()
             .expect("saved views should list")
             .is_empty());
+    }
+
+    #[test]
+    fn scenarios_persist_separately_from_views_and_revision_increments() {
+        let storage = test_storage_with_migrations();
+        let view = storage
+            .create_saved_history_view(CreateSavedHistoryViewRequest {
+                title: "ACME clips".to_string(),
+                query: "tag:acme".to_string(),
+                hotkey: None,
+                capture_tags: Vec::new(),
+            })
+            .expect("saved view should persist");
+        let scenario = storage
+            .create_scenario(CreateScenarioRequest {
+                name: "Cliente ACME / Proyecto Web".to_string(),
+                saved_view_id: view.id,
+                properties: ScenarioProperties {
+                    client: vec!["ACME".to_string(), " acme ".to_string()],
+                    project: vec!["Web".to_string()],
+                    activity: vec!["Development".to_string()],
+                },
+                tags: vec!["Client work".to_string()],
+            })
+            .expect("scenario should persist");
+
+        assert_eq!(scenario.saved_view_id, view.id);
+        assert_eq!(scenario.saved_view_title, "ACME clips");
+        assert_eq!(scenario.properties.client, vec!["ACME"]);
+        assert_eq!(scenario.revision, 1);
+        assert_eq!(storage.list_scenarios().expect("list scenarios"), vec![scenario.clone()]);
+
+        let updated = storage
+            .update_scenario(UpdateScenarioRequest {
+                id: scenario.id,
+                name: scenario.name.clone(),
+                saved_view_id: view.id,
+                properties: ScenarioProperties {
+                    client: vec!["ACME".to_string()],
+                    project: vec!["Web".to_string(), "Portal".to_string()],
+                    activity: vec!["Review".to_string()],
+                },
+                tags: vec!["Client work".to_string(), "Review".to_string()],
+            })
+            .expect("scenario should update");
+        assert_eq!(updated.revision, 2);
+        assert_eq!(updated.properties.project, vec!["Web", "Portal"]);
+    }
+
+    #[test]
+    fn scenario_from_query_creates_linked_view_atomically_and_rejects_invalid_input() {
+        let storage = test_storage_with_migrations();
+        let created = storage
+            .create_scenario_from_query(CreateScenarioFromQueryRequest {
+                name: "ACME review".to_string(),
+                query: "tag:acme kind:text".to_string(),
+                properties: ScenarioProperties {
+                    client: vec!["ACME".to_string()],
+                    project: vec!["Portal".to_string()],
+                    activity: vec!["Review".to_string()],
+                },
+                tags: vec!["Work".to_string()],
+            })
+            .expect("scenario and linked view should persist");
+        assert_eq!(created.saved_view_title, "ACME review");
+        assert_eq!(created.query, "tag:acme kind:text");
+        assert_eq!(storage.list_saved_history_views().expect("list views").len(), 1);
+        assert_eq!(storage.list_scenarios().expect("list scenarios").len(), 1);
+
+        let updated = storage
+            .update_scenario_from_query(UpdateScenarioFromQueryRequest {
+                id: created.id,
+                name: "ACME QA".to_string(),
+                query: "tag:qa kind:text".to_string(),
+                properties: ScenarioProperties::default(),
+                tags: vec!["QA".to_string()],
+            })
+            .expect("scenario workspace should update atomically");
+        assert_eq!(updated.saved_view_id, created.saved_view_id);
+        assert_eq!(updated.saved_view_title, "ACME QA");
+        assert_eq!(updated.query, "tag:qa kind:text");
+        assert_eq!(updated.revision, 2);
+
+        storage
+            .create_scenario_from_query(CreateScenarioFromQueryRequest {
+                name: "Broken".to_string(),
+                query: "kind:".to_string(),
+                properties: ScenarioProperties::default(),
+                tags: Vec::new(),
+            })
+            .expect_err("invalid linked query must reject the full operation");
+        storage
+            .update_scenario_from_query(UpdateScenarioFromQueryRequest {
+                id: created.id,
+                name: "Broken update".to_string(),
+                query: "kind:".to_string(),
+                properties: ScenarioProperties::default(),
+                tags: Vec::new(),
+            })
+            .expect_err("invalid update must not change the scenario or linked view");
+        let unchanged = storage.get_scenario(created.id).expect("scenario remains readable");
+        assert_eq!(unchanged.name, "ACME QA");
+        assert_eq!(unchanged.query, "tag:qa kind:text");
+        assert_eq!(storage.list_saved_history_views().expect("list views").len(), 1);
+        assert_eq!(storage.list_scenarios().expect("list scenarios").len(), 1);
+    }
+
+    #[test]
+    fn scenario_capture_dedupes_merges_and_records_provenance() {
+        let storage = test_storage_with_migrations();
+        let session = ActiveScenarioSession {
+            session_id: "session-acme-1".to_string(),
+            scenario_id: 7,
+            scenario_name: "Cliente ACME / Proyecto Web".to_string(),
+            scenario_revision: 3,
+            saved_view_id: 2,
+            saved_view_title: "ACME clips".to_string(),
+            query: "tag:acme".to_string(),
+            properties: ScenarioProperties {
+                client: vec!["ACME".to_string()],
+                project: vec!["Web".to_string(), "Portal".to_string()],
+                activity: vec!["Development".to_string()],
+            },
+            tags: vec!["ACME".to_string(), "Client work".to_string()],
+            started_at_unix_ms: 10,
+        };
+        let context = CaptureContext {
+            source_kind: "clipboard".to_string(),
+            ..CaptureContext::default()
+        };
+        let hash = hash_text("scenario dedupe");
+        let first_id = storage
+            .insert_text_with_scenario(
+                "scenario dedupe",
+                &hash,
+                Some(context.clone()),
+                &[],
+                Some(session.clone()),
+            )
+            .expect("first scenario capture");
+        let second_id = storage
+            .insert_text_with_scenario(
+                "scenario dedupe",
+                &hash,
+                Some(context),
+                &[],
+                Some(session.clone()),
+            )
+            .expect("scenario recapture");
+
+        assert_eq!(first_id, second_id);
+        assert_eq!(storage.list_recent().expect("history").len(), 1);
+        assert_eq!(
+            storage.list_item_properties(first_id).expect("properties"),
+            ScenarioProperties {
+                client: vec!["ACME".to_string()],
+                project: vec!["Portal".to_string(), "Web".to_string()],
+                activity: vec!["Development".to_string()],
+            }
+        );
+        assert_eq!(
+            storage.get_item_tags(first_id).expect("tags"),
+            vec!["ACME".to_string(), "Client work".to_string()]
+        );
+        let events = storage
+            .list_capture_context_events(first_id, 10)
+            .expect("capture events");
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|event| {
+            event.scenario_id == Some(7)
+                && event.scenario_session_id.as_deref() == Some("session-acme-1")
+                && event.scenario_revision == Some(3)
+        }));
+    }
+
+    #[test]
+    fn manual_metadata_removal_suppresses_scenario_until_manual_restore() {
+        let storage = test_storage_with_migrations();
+        let session = ActiveScenarioSession {
+            session_id: "session-acme-2".to_string(),
+            scenario_id: 8,
+            scenario_name: "ACME".to_string(),
+            scenario_revision: 1,
+            saved_view_id: 1,
+            saved_view_title: "ACME".to_string(),
+            query: "tag:acme".to_string(),
+            properties: ScenarioProperties {
+                client: vec!["ACME".to_string()],
+                project: vec!["Web".to_string()],
+                activity: Vec::new(),
+            },
+            tags: vec!["ACME".to_string()],
+            started_at_unix_ms: 10,
+        };
+        let hash = hash_text("suppression item");
+        let item_id = storage
+            .insert_text_with_scenario(
+                "suppression item",
+                &hash,
+                None,
+                &[],
+                Some(session.clone()),
+            )
+            .expect("scenario capture");
+
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: item_id,
+                title: None,
+                notes: None,
+                tags: Vec::new(),
+                properties: ScenarioProperties {
+                    client: Vec::new(),
+                    project: vec!["Web".to_string()],
+                    activity: Vec::new(),
+                },
+            })
+            .expect("manual removal");
+        storage
+            .insert_text_with_scenario(
+                "suppression item",
+                &hash,
+                None,
+                &[],
+                Some(session.clone()),
+            )
+            .expect("recapture after suppression");
+        assert!(storage.get_item_tags(item_id).expect("tags").is_empty());
+        assert!(storage
+            .list_item_properties(item_id)
+            .expect("properties")
+            .client
+            .is_empty());
+
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: item_id,
+                title: None,
+                notes: None,
+                tags: vec!["ACME".to_string()],
+                properties: ScenarioProperties {
+                    client: vec!["ACME".to_string()],
+                    project: vec!["Web".to_string()],
+                    activity: Vec::new(),
+                },
+            })
+            .expect("manual restore");
+        storage
+            .insert_text_with_scenario("suppression item", &hash, None, &[], Some(session))
+            .expect("recapture after restore");
+
+        let conn = storage.conn.lock().expect("sqlite lock");
+        let property_source: String = conn
+            .query_row(
+                "SELECT source FROM clipboard_item_properties
+                 WHERE item_id = ?1 AND property_key = 'client' AND normalized_value = 'acme'",
+                params![item_id],
+                |row| row.get(0),
+            )
+            .expect("client source");
+        let tag_source: String = conn
+            .query_row(
+                "SELECT source FROM clipboard_item_tags
+                 WHERE item_id = ?1",
+                params![item_id],
+                |row| row.get(0),
+            )
+            .expect("tag source");
+        assert_eq!(property_source, "manual");
+        assert_eq!(tag_source, "manual");
     }
 
     fn test_storage() -> AppStorage {

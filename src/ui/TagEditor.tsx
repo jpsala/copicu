@@ -17,7 +17,7 @@ import {
   UiTextarea,
 } from "./controls";
 
-export type TagEditorMode = "replace" | "add";
+export type TagEditorMode = "replace" | "patch";
 
 type TagEditorProps = {
   itemCount: number;
@@ -26,7 +26,7 @@ type TagEditorProps = {
   availableTags: TagSummary[];
   saving: boolean;
   error: string | null;
-  onApply: (tags: string[]) => void;
+  onApply: (tags: string[], removeTags: string[]) => void;
   onCancel: () => void;
 };
 
@@ -34,6 +34,8 @@ type TagInputProps = {
   tags: string[];
   availableTags: TagSummary[];
   ariaLabel?: string;
+  inputAriaLabel?: string;
+  idPrefix?: string;
   autoFocus?: boolean;
   onChange: (tags: string[]) => void;
   onApply?: (tags: string[]) => void;
@@ -314,6 +316,8 @@ export function TagInput({
   tags,
   availableTags,
   ariaLabel = "Selected tags",
+  inputAriaLabel = "Tag",
+  idPrefix = "tag-editor",
   autoFocus = false,
   onChange,
   onApply,
@@ -327,6 +331,8 @@ export function TagInput({
     [availableTags, input, tags],
   );
   const activeSuggestion = suggestions[Math.min(activeIndex, Math.max(suggestions.length - 1, 0))];
+  const suggestionListId = `${idPrefix}-suggestions`;
+  const suggestionId = (key: string) => `${idPrefix}-suggestion-${key}`;
 
   const canonicalTag = (value: string) => {
     const cleaned = cleanTagInput(value);
@@ -419,11 +425,11 @@ export function TagInput({
           ref={inputRef}
           autoFocus={autoFocus}
           className="tag-editor-input"
-          aria-label="Tag"
+          aria-label={inputAriaLabel}
           aria-autocomplete="list"
-          aria-controls="tag-editor-suggestions"
+          aria-controls={suggestionListId}
           aria-expanded={suggestions.length > 0}
-          aria-activedescendant={activeSuggestion ? `tag-editor-suggestion-${activeSuggestion.key}` : undefined}
+          aria-activedescendant={activeSuggestion ? suggestionId(activeSuggestion.key) : undefined}
           value={input}
           placeholder={tags.length > 0 ? "Add another…" : "Type a tag…"}
           onChange={(event) => {
@@ -435,11 +441,11 @@ export function TagInput({
       </div>
 
       {suggestions.length > 0 ? (
-        <div id="tag-editor-suggestions" className="tag-editor-suggestions" role="listbox" aria-label="Tag suggestions">
+        <div id={suggestionListId} className="tag-editor-suggestions" role="listbox" aria-label="Tag suggestions">
           {suggestions.map((suggestion, index) => (
             <button
               key={suggestion.key}
-              id={`tag-editor-suggestion-${suggestion.key}`}
+              id={suggestionId(suggestion.key)}
               type="button"
               className={`tag-editor-suggestion${suggestion.create ? " is-create" : ""}`}
               role="option"
@@ -469,37 +475,80 @@ export function TagEditor({
   onCancel,
 }: TagEditorProps) {
   const [tags, setTags] = useState(() => uniqueTags(initialTags));
-  const isBatch = mode === "add";
+  const [removeTags, setRemoveTags] = useState<string[]>([]);
+  const isBatch = mode === "patch";
+  const updateTags = (nextTags: string[]) => {
+    const nextKeys = new Set(nextTags.map(tagKey));
+    setTags(nextTags);
+    setRemoveTags((current) => current.filter((tag) => !nextKeys.has(tagKey(tag))));
+  };
+  const updateRemoveTags = (nextTags: string[]) => {
+    const nextKeys = new Set(nextTags.map(tagKey));
+    setRemoveTags(nextTags);
+    setTags((current) => current.filter((tag) => !nextKeys.has(tagKey(tag))));
+  };
 
   return (
-    <div className="tag-editor-backdrop" role="dialog" aria-modal="true" aria-label={isBatch ? "Add tags" : "Edit tags"}>
+    <div className="tag-editor-backdrop" role="dialog" aria-modal="true" aria-label={isBatch ? "Edit tags for selection" : "Edit tags"}>
       <UiPaper
         component="form"
         className="tag-editor-panel"
         onSubmit={(event) => {
           event.preventDefault();
-          onApply(tags);
+          onApply(tags, removeTags);
         }}
       >
         <header className="tag-editor-header">
           <div>
-            <strong>{isBatch ? `Add tags to ${itemCount} clips` : "Edit tags"}</strong>
-            <span>{isBatch ? "Existing tags will be kept." : "Add, create, or remove tags."}</span>
+            <strong>{isBatch ? `Edit tags for ${itemCount} clips` : "Edit tags"}</strong>
+            <span>{isBatch ? "Add and remove only the tags you choose." : "Add, create, or remove tags."}</span>
           </div>
           <UiIconButton type="button" variant="subtle" aria-label="Cancel tag editing" onClick={onCancel}>
             <X size={16} strokeWidth={2.3} aria-hidden="true" />
           </UiIconButton>
         </header>
 
-        <TagInput
-          tags={tags}
-          availableTags={availableTags}
-          ariaLabel={isBatch ? "Tags to add" : "Selected tags"}
-          autoFocus
-          onChange={setTags}
-          onApply={onApply}
-          onCancel={onCancel}
-        />
+        {isBatch ? (
+          <div className="tag-editor-patch-fields">
+            <label className="tag-editor-section">
+              <strong>Add tags</strong>
+              <TagInput
+                tags={tags}
+                availableTags={availableTags}
+                ariaLabel="Tags to add"
+                inputAriaLabel="Tag to add"
+                idPrefix="tag-add"
+                autoFocus
+                onChange={updateTags}
+                onApply={(nextTags) => onApply(nextTags, removeTags)}
+                onCancel={onCancel}
+              />
+            </label>
+            <label className="tag-editor-section">
+              <strong>Remove tags</strong>
+              <TagInput
+                tags={removeTags}
+                availableTags={availableTags}
+                ariaLabel="Tags to remove"
+                inputAriaLabel="Tag to remove"
+                idPrefix="tag-remove"
+                onChange={updateRemoveTags}
+                onApply={(nextRemoveTags) => onApply(tags, nextRemoveTags)}
+                onCancel={onCancel}
+              />
+            </label>
+          </div>
+        ) : (
+          <TagInput
+            tags={tags}
+            availableTags={availableTags}
+            ariaLabel="Selected tags"
+            autoFocus
+            onChange={setTags}
+            onApply={(nextTags) => onApply(nextTags, [])}
+            onCancel={onCancel}
+          />
+        )}
 
         {error ? <p className="tag-editor-error" role="alert">{error}</p> : null}
 
@@ -507,8 +556,13 @@ export function TagEditor({
           <span><UiKbd>Enter</UiKbd> add · <UiKbd>Ctrl+Enter</UiKbd> apply</span>
           <div>
             <UiButton type="button" variant="default" onClick={onCancel}>Cancel</UiButton>
-            <UiButton type="submit" variant="filled" loading={saving} disabled={isBatch && tags.length === 0}>
-              {isBatch ? "Add tags" : "Apply tags"}
+            <UiButton
+              type="submit"
+              variant="filled"
+              loading={saving}
+              disabled={isBatch && tags.length === 0 && removeTags.length === 0}
+            >
+              Apply tag changes
             </UiButton>
           </div>
         </footer>

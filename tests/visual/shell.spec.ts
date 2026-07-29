@@ -171,6 +171,8 @@ async function mockTauriInvoke(
     (window as any).__copicuTestCompoundPending = pending;
     (window as any).__copicuTestMockOptions = mockOptions;
     (window as any).__copicuTestWindowVisible = true;
+    (window as any).__copicuTestCaptureTagContext = null;
+    (window as any).__copicuTestActiveScenarioSession = null;
     (window as any).__copicuTestPickerSessionSnapshots = (mockOptions.pickerSessionSnapshots ?? []).map(
       (snapshot) => ({
         ...snapshot,
@@ -223,8 +225,47 @@ async function mockTauriInvoke(
         openMode: "browse",
         pinned: true,
         sortOrder: null,
+        captureTags: ["Work"],
         createdAtUnixMs: 1,
         updatedAtUnixMs: 1,
+      },
+      {
+        id: 2,
+        title: "Context clips",
+        query: "tag:context-smoke",
+        hotkey: null,
+        openMode: "browse",
+        pinned: false,
+        sortOrder: null,
+        captureTags: [],
+        createdAtUnixMs: 2,
+        updatedAtUnixMs: 2,
+      },
+    ];
+    (window as any).__copicuTestScenarios = [
+      {
+        id: 1,
+        name: "Cliente ACME / Proyecto Web",
+        savedViewId: 1,
+        savedViewTitle: "Work clips",
+        query: "tag:work kind:text",
+        revision: 1,
+        properties: { client: ["ACME"], project: ["Web"], activity: ["Development"] },
+        tags: ["Work"],
+        createdAtUnixMs: 1,
+        updatedAtUnixMs: 1,
+      },
+      {
+        id: 2,
+        name: "Internal review",
+        savedViewId: 1,
+        savedViewTitle: "Work clips",
+        query: "tag:work kind:text",
+        revision: 1,
+        properties: { client: ["Internal"], project: [], activity: ["Review"] },
+        tags: [],
+        createdAtUnixMs: 2,
+        updatedAtUnixMs: 2,
       },
     ];
     (window as any).__copicuTestSettings = {
@@ -472,6 +513,27 @@ async function mockTauriInvoke(
                   ? [{ type: "picker.filter", query: "unbroken" }]
                   : [],
             };
+          case "get_capture_tag_context":
+            return (window as any).__copicuTestCaptureTagContext;
+          case "arm_capture_tag_context": {
+            const view = (window as any).__copicuTestSavedHistoryViews.find(
+              (candidate: any) => candidate.id === args.viewId,
+            );
+            if (!view || view.captureTags.length === 0) {
+              throw new Error("saved view has no capture tags");
+            }
+            const context = {
+              viewId: view.id,
+              viewTitle: view.title,
+              query: view.query,
+              tags: view.captureTags,
+            };
+            (window as any).__copicuTestCaptureTagContext = context;
+            return context;
+          }
+          case "stop_capture_tag_context":
+            (window as any).__copicuTestCaptureTagContext = null;
+            return null;
           case "get_capture_snapshot":
             return {
               stats: {
@@ -624,8 +686,11 @@ async function mockTauriInvoke(
                 .split(/\s+/)
                 .map((tag: string) => tag.replace(/^#/, "").trim())
                 .filter(Boolean);
-              const nextTags = request.mode === "add"
-                ? [...new Set([...existing, ...request.tags])]
+              const nextTags = request.mode === "patch"
+                ? [...new Set([
+                    ...existing.filter((tag: string) => !request.removeTags.includes(tag)),
+                    ...request.tags,
+                  ])]
                 : request.tags;
               return { ...item, tags: nextTags.map((tag: string) => `#${tag}`).join(" ") || null };
             });
@@ -633,6 +698,148 @@ async function mockTauriInvoke(
           }
           case "list_saved_history_views":
             return (window as any).__copicuTestSavedHistoryViews;
+          case "list_scenarios":
+            return (window as any).__copicuTestScenarios;
+          case "create_scenario_from_query": {
+            const request = args.request;
+            const nextViewId = Math.max(0, ...(window as any).__copicuTestSavedHistoryViews.map((view: any) => view.id)) + 1;
+            const now = Date.now();
+            const view = {
+              id: nextViewId,
+              title: request.name,
+              query: request.query,
+              hotkey: null,
+              openMode: "browse",
+              pinned: false,
+              sortOrder: null,
+              captureTags: [],
+              createdAtUnixMs: now,
+              updatedAtUnixMs: now,
+            };
+            (window as any).__copicuTestSavedHistoryViews = [...(window as any).__copicuTestSavedHistoryViews, view];
+            const next = {
+              id: Math.max(0, ...(window as any).__copicuTestScenarios.map((scenario: any) => scenario.id)) + 1,
+              name: request.name,
+              savedViewId: view.id,
+              savedViewTitle: view.title,
+              query: view.query,
+              revision: 1,
+              properties: request.properties,
+              tags: request.tags,
+              createdAtUnixMs: now,
+              updatedAtUnixMs: now,
+            };
+            (window as any).__copicuTestScenarios = [...(window as any).__copicuTestScenarios, next];
+            return next;
+          }
+          case "create_scenario": {
+            const request = args.request;
+            const view = (window as any).__copicuTestSavedHistoryViews.find(
+              (candidate: any) => candidate.id === request.savedViewId,
+            );
+            const next = {
+              id: Math.max(0, ...(window as any).__copicuTestScenarios.map((scenario: any) => scenario.id)) + 1,
+              ...request,
+              savedViewTitle: view.title,
+              query: view.query,
+              revision: 1,
+              createdAtUnixMs: Date.now(),
+              updatedAtUnixMs: Date.now(),
+            };
+            (window as any).__copicuTestScenarios = [
+              ...(window as any).__copicuTestScenarios,
+              next,
+            ];
+            return next;
+          }
+          case "update_scenario_from_query": {
+            const request = args.request;
+            const current = (window as any).__copicuTestScenarios.find(
+              (scenario: any) => scenario.id === request.id,
+            );
+            (window as any).__copicuTestSavedHistoryViews = (window as any).__copicuTestSavedHistoryViews.map(
+              (view: any) => view.id === current.savedViewId
+                ? { ...view, title: request.name, query: request.query, updatedAtUnixMs: Date.now() }
+                : view,
+            );
+            (window as any).__copicuTestScenarios = (window as any).__copicuTestScenarios.map(
+              (scenario: any) => scenario.id === request.id
+                ? {
+                    ...scenario,
+                    name: request.name,
+                    savedViewTitle: request.name,
+                    query: request.query,
+                    properties: request.properties,
+                    tags: request.tags,
+                    revision: scenario.revision + 1,
+                    updatedAtUnixMs: Date.now(),
+                  }
+                : scenario,
+            );
+            return (window as any).__copicuTestScenarios.find((scenario: any) => scenario.id === request.id);
+          }
+          case "update_scenario": {
+            const request = args.request;
+            const view = (window as any).__copicuTestSavedHistoryViews.find(
+              (candidate: any) => candidate.id === request.savedViewId,
+            );
+            (window as any).__copicuTestScenarios = (window as any).__copicuTestScenarios.map(
+              (scenario: any) => scenario.id === request.id
+                ? {
+                    ...scenario,
+                    ...request,
+                    savedViewTitle: view.title,
+                    query: view.query,
+                    revision: scenario.revision + 1,
+                    updatedAtUnixMs: Date.now(),
+                  }
+                : scenario,
+            );
+            return (window as any).__copicuTestScenarios.find((scenario: any) => scenario.id === request.id);
+          }
+          case "delete_scenario":
+            (window as any).__copicuTestScenarios = (window as any).__copicuTestScenarios.filter(
+              (scenario: any) => scenario.id !== args.id,
+            );
+            if ((window as any).__copicuTestActiveScenarioSession?.scenarioId === args.id) {
+              (window as any).__copicuTestActiveScenarioSession = null;
+              await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", null);
+            }
+            return null;
+          case "get_active_scenario_session":
+            return (window as any).__copicuTestActiveScenarioSession;
+          case "activate_scenario": {
+            const scenario = (window as any).__copicuTestScenarios.find(
+              (candidate: any) => candidate.id === args.id,
+            );
+            const session = {
+              sessionId: `scenario-${scenario.id}-${Date.now()}`,
+              scenarioId: scenario.id,
+              scenarioName: scenario.name,
+              scenarioRevision: scenario.revision,
+              savedViewId: scenario.savedViewId,
+              savedViewTitle: scenario.savedViewTitle,
+              query: scenario.query,
+              properties: scenario.properties,
+              tags: scenario.tags,
+              startedAtUnixMs: Date.now(),
+            };
+            (window as any).__copicuTestActiveScenarioSession = session;
+            await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
+            await (window as any).__copicuTestEmitEvent("copicu://picker/filter", {
+              query: scenario.query,
+              view: {
+                id: scenario.savedViewId,
+                title: scenario.savedViewTitle,
+                captureTags: [],
+              },
+            });
+            return session;
+          }
+          case "stop_active_scenario":
+            (window as any).__copicuTestActiveScenarioSession = null;
+            await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", null);
+            return null;
           case "pending_metadata_editor": {
             const item = ((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0];
             return {
@@ -641,6 +848,11 @@ async function mockTauriInvoke(
                 .split(/\s+/)
                 .map((tag: string) => tag.replace(/^#/, "").trim())
                 .filter(Boolean),
+              itemProperties: {
+                client: ["ACME"],
+                project: ["Web"],
+                activity: ["Development"],
+              },
               captureContextEvents: [
                 {
                   id: 1,
@@ -661,6 +873,9 @@ async function mockTauriInvoke(
                   textCharCount: 64,
                   lineCount: 1,
                   domain: "example.com",
+                  scenarioId: 1,
+                  scenarioSessionId: "scenario-1-test",
+                  scenarioRevision: 1,
                 },
               ],
             };
@@ -698,6 +913,12 @@ async function mockTauriInvoke(
               nextTag,
             ];
             return nextTag;
+          }
+          case "delete_tag": {
+            (window as any).__copicuTestTags = (window as any).__copicuTestTags.filter(
+              (tag: any) => tag.id !== args.id,
+            );
+            return null;
           }
           case "update_tag_config": {
             const request = args.request;
@@ -764,6 +985,7 @@ async function mockTauriInvoke(
           case "hide_picker":
           case "hide_whichkey_window":
           case "open_settings_window":
+          case "open_scenario_settings":
           case "close_settings_window":
           case "close_metadata_window":
           case "activate_item":
@@ -1055,6 +1277,241 @@ test("command palette navigates history, saved views, and pinned tags", async ({
   );
 });
 
+test("saved view capture context arms, stays distinct from filter lock, and stops without clearing the view", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").press("Control+K");
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByRole("option", { name: /Work clips/ }).click();
+
+  const contextBar = page.getByTestId("capture-context-bar");
+  await expect(contextBar).toContainText("Capture tags ready");
+  await expect(contextBar).toContainText("#Work");
+  await expect(page.getByLabel("Lock filter across picker closes")).toHaveAttribute("aria-pressed", "false");
+
+  await contextBar.getByRole("button", { name: "Capture here" }).click();
+  await expect(contextBar).toContainText("Capturing here");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "arm_capture_tag_context" && call.args.viewId === 1,
+    ),
+  );
+
+  await contextBar.getByRole("button", { name: "Stop capture" }).click();
+  await expect(contextBar).toContainText("Capture tags ready");
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "stop_capture_tag_context",
+    ),
+  );
+});
+
+test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=settings");
+
+  await expect(page.locator(".settings-status-strip")).toHaveCount(0);
+  await page.getByRole("tab", { name: /Tags/ }).click();
+  await expect(page.locator(".tag-settings-count")).toHaveText("2 tags");
+  await expect(page.locator(".tag-settings-list")).toHaveCSS("overflow-y", "visible");
+  const workRow = page.locator(".tag-settings-item").filter({ hasText: "Work" });
+  await workRow.getByRole("button", { name: "Remove Work" }).click();
+  await expect(workRow).toContainText("Remove from 4 items?");
+  await workRow.getByRole("button", { name: "Remove tag" }).click();
+  await expect(workRow).toHaveCount(0);
+  await expect(page.locator(".tag-settings-count")).toHaveText("1 tag");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "delete_tag" && call.args.id === 1,
+    ),
+  );
+});
+
+test("settings creates, activates, switches, and stops scenarios", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=settings");
+
+  await page.getByRole("tab", { name: /Scenarios/ }).click();
+  const scenarios = page.getByTestId("scenario-settings");
+  await expect(scenarios).toContainText("Scenarios are workspaces for the picker");
+  await expect(scenarios).toContainText("Cliente ACME / Proyecto Web");
+
+  await scenarios.getByRole("button", { name: "New scenario" }).click();
+  await expect(scenarios.getByText("All scenarios")).toBeVisible();
+  await page.getByLabel("Scenario name").fill("Cliente ACME / QA");
+  await page.getByLabel("Scenario query").fill("tag:qa");
+  await scenarios.getByText("Advanced metadata").click();
+  await page.getByLabel("Scenario client values").fill("ACME");
+  await page.getByLabel("Scenario project values").fill("Web");
+  await page.getByLabel("Scenario activity values").fill("QA, Review");
+  await scenarios.getByRole("button", { name: "Create scenario" }).click();
+  await expect(scenarios).toContainText("Cliente ACME / QA");
+
+  const qaRow = scenarios.locator(".scenario-row").filter({ hasText: "Cliente ACME / QA" });
+  await qaRow.getByRole("button", { name: "Edit" }).click();
+  await expect(scenarios.locator(".scenario-list")).toHaveCount(0);
+  await page.getByLabel("Scenario query").fill("tag:qa kind:text");
+  await scenarios.getByRole("button", { name: "Save changes" }).click();
+  await expect(qaRow).toContainText("tag:qa kind:text");
+
+  const acmeRow = scenarios.locator(".scenario-row").filter({ hasText: "Cliente ACME / Proyecto Web" });
+  await acmeRow.getByRole("button", { name: "Activate" }).click();
+  await expect(scenarios.locator(".scenario-session-summary")).toContainText("Cliente ACME / Proyecto Web");
+
+  const internalRow = scenarios.locator(".scenario-row").filter({ hasText: "Internal review" });
+  await internalRow.getByRole("button", { name: "Activate" }).click();
+  await expect(scenarios.locator(".scenario-session-summary")).toContainText("Internal review");
+
+  await scenarios.getByRole("button", { name: "Stop scenario" }).click();
+  await expect(scenarios.locator(".scenario-session-summary")).toContainText("None");
+});
+
+test("picker scenario switcher supports Alt+S, keyboard switching, and Stop at narrow width", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 640 });
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByLabel("Search clipboard history").press("Alt+s");
+  const switcher = page.getByRole("dialog", { name: "Scenarios" });
+  await expect(switcher).toBeVisible();
+  await switcher.getByLabel("Search scenarios").fill("Internal");
+  await switcher.getByLabel("Search scenarios").press("Enter");
+  await expect(switcher).toBeHidden();
+  await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  const layout = await page.evaluate(() => {
+    const interpretation = document.querySelector(".search-interpretation")?.getBoundingClientRect();
+    const feed = document.querySelector(".feed-panel")?.getBoundingClientRect();
+    const firstItem = document.querySelector(".history-feed > li")?.getBoundingClientRect();
+    return {
+      interpretationHeight: interpretation?.height ?? 0,
+      feedGap: interpretation && feed ? feed.top - interpretation.bottom : Number.POSITIVE_INFINITY,
+      firstItemOffset: feed && firstItem ? firstItem.top - feed.top : Number.POSITIVE_INFINITY,
+    };
+  });
+  expect(layout.interpretationHeight).toBeLessThan(140);
+  expect(layout.feedGap).toBeLessThanOrEqual(2);
+  expect(layout.firstItemOffset).toBeLessThan(16);
+
+  await page.getByLabel(/Active scenario: Internal review/).click();
+  let reopened = page.getByRole("dialog", { name: "Scenarios" });
+  await expect(reopened.getByRole("button", { name: "Close scenarios" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(reopened).toBeHidden();
+
+  await page.getByLabel(/Active scenario: Internal review/).click();
+  reopened = page.getByRole("dialog", { name: "Scenarios" });
+  await reopened.getByRole("button", { name: "Stop" }).click();
+  await reopened.getByRole("button", { name: "Close scenarios" }).click();
+  await expect(reopened).toBeHidden();
+
+  await page.getByLabel("Open scenarios").click();
+  reopened = page.getByRole("dialog", { name: "Scenarios" });
+  await reopened.getByRole("button", { name: "Manage" }).click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "open_scenario_settings"),
+  );
+});
+
+test("switching to an edited scenario applies its updated picker view", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.evaluate(async () => {
+    await (window as any).__TAURI_INTERNALS__.invoke("update_scenario", {
+      request: {
+        id: 2,
+        name: "Internal review",
+        savedViewId: 2,
+        properties: { client: ["Internal"], project: [], activity: ["Review"] },
+        tags: [],
+      },
+    });
+  });
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.press("Alt+s");
+  let switcher = page.getByRole("dialog", { name: "Scenarios" });
+  await switcher.getByRole("option", { name: /Cliente ACME/ }).click();
+  await expect(search).toHaveValue("tag:work kind:text");
+
+  await search.press("Alt+s");
+  switcher = page.getByRole("dialog", { name: "Scenarios" });
+  await switcher.getByRole("option", { name: /Internal review/ }).click();
+  await expect(search).toHaveValue("tag:context-smoke");
+  await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+});
+
+test("picker creates and activates a scenario from the current query", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("#111");
+  await expect(search).toHaveValue("#111");
+  await search.press("Alt+s");
+  const switcher = page.getByRole("dialog", { name: "Scenarios" });
+  await switcher.getByRole("button", { name: "Create from search" }).click();
+  await expect(switcher.getByRole("code")).toHaveText("#111");
+  await expect(switcher.getByRole("button", { name: "Remove tag 111" })).toBeVisible();
+  await expect(switcher.getByText("Advanced metadata")).toBeVisible();
+  await switcher.getByLabel("New scenario name").fill("Writing session");
+  await switcher.getByRole("button", { name: "Save and activate" }).click();
+
+  await expect(switcher).toBeHidden();
+  await expect(page.getByLabel(/Active scenario: Writing session/)).toBeVisible();
+  await expect(search).toHaveValue("#111");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "create_scenario_from_query"
+        && call.args.request.query === "#111"
+        && call.args.request.tags.length === 1
+        && call.args.request.tags[0] === "111",
+    ),
+  );
+});
+
+test("> escenario activates as an action and restores the scenario view query", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("> escenario Internal");
+  const actions = page.getByRole("listbox", { name: "Scenario actions" });
+  await expect(actions.getByRole("option", { name: "Activate scenario: Internal review" })).toBeVisible();
+  await search.press("Enter");
+  await expect(search).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+  await expect(actions).toHaveCount(0);
+});
+
+test("active scenario remains visible through picker hide and reopen until Stop", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.evaluate(async () => {
+    await (window as any).__TAURI_INTERNALS__.invoke("activate_scenario", { id: 1 });
+  });
+  const sessionBar = page.getByTestId("scenario-session-bar");
+  await expect(sessionBar).toContainText("Cliente ACME / Proyecto Web");
+  await expect(sessionBar).toContainText("client:ACME");
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+
+  await page.getByRole("button", { name: "Hide" }).click();
+  await page.evaluate(async () => {
+    const session = await (window as any).__TAURI_INTERNALS__.invoke("get_active_scenario_session");
+    await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
+  });
+  await expect(sessionBar).toContainText("Scenario active");
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+
+  await sessionBar.getByRole("button", { name: "Stop" }).click();
+  await expect(sessionBar).toHaveCount(0);
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+});
+
 test("WhichKey overlay reveals pending compound shortcuts", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=whichkey");
@@ -1192,12 +1649,47 @@ test("custom picker hide button hides instead of closing", async ({ page }) => {
   expect(hideCalls).toBe(1);
 });
 
+test("selection controls stay transient and independent from persistent marks", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const master = page.getByLabel("Select all visible");
+  await expect(master).toBeVisible();
+  await master.click();
+  const batchBar = page.getByLabel("4 selected", { exact: true });
+  await expect(batchBar).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Tags", exact: true })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Metadata", exact: true })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Actions", exact: true })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+  await expect(batchBar.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Deselect item")).toHaveCount(4);
+
+  await page.getByLabel("Mark item").first().click();
+  await expect(page.getByLabel("4 selected", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Unmark item")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Mark options, 1 marked" })).toBeVisible();
+
+  await page.locator(".selection-action-bar").getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(page.locator(".selection-action-bar")).toHaveCount(0);
+  await expect(page.getByLabel("Select item")).toHaveCount(4);
+  await expect(page.getByLabel("Unmark item")).toHaveCount(1);
+
+  const rows = page.locator(".feed-item");
+  await rows.nth(0).click();
+  await rows.nth(2).click({ modifiers: ["Shift"] });
+  await expect(page.getByLabel("3 selected", { exact: true })).toBeVisible();
+  await rows.nth(1).click({ modifiers: ["Control"] });
+  await expect(page.getByLabel("2 selected", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Deselect item")).toHaveCount(2);
+});
+
 test("mark menu marks visible and individual items", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   await page.getByLabel("Mark options").click();
-  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "All visible" }).click();
+  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "Mark visible", exact: true }).click();
   await page.waitForFunction(() => {
     const calls = (window as any).__copicuTestInvocations;
     return calls.some((call: any) => call.cmd === "set_history_items_marked");
@@ -1234,10 +1726,10 @@ test("mark menu uses Mantine menu actions", async ({ page }) => {
   await page.getByLabel("Mark options").click();
   const menu = page.getByRole("menu", { name: "Mark options" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "All visible" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "None visible" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "All results" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "None results" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Mark visible", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Unmark visible", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Mark all results", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Unmark all results", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Marked", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Unmarked", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "All history" })).toBeVisible();
@@ -1252,42 +1744,36 @@ test("mark menu uses Mantine menu actions", async ({ page }) => {
   await expect(page.locator("[title='Result count']")).not.toHaveText("Filtering");
 });
 
-test("mark menu shows global marked count and checkbox states", async ({ page }) => {
+test("mark menu shows a durable flag count independent from the current filter", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const markButton = page.getByRole("button", { name: "Mark options" });
-  await expect(markButton.locator(".mark-state-icon")).toHaveAttribute("data-state", "unchecked");
-  await expect(markButton.locator(".mark-menu-count")).toHaveCount(0);
-
+  await expect(page.getByRole("button", { name: "Mark options" }).locator(".mark-menu-count")).toHaveCount(0);
   await page.getByLabel("Mark item").first().click();
-  await expect(page.locator(".mark-menu-button")).toBeVisible();
-  await expect(page.locator(".mark-menu-button .mark-state-icon")).toHaveAttribute("data-state", "mixed");
+  await expect(page.getByRole("button", { name: "Mark options, 1 marked" })).toBeVisible();
   await expect(page.locator(".mark-menu-count")).toHaveText("1");
 
   await page.getByLabel("Search clipboard history").fill("markdown");
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
-  await expect(page.getByRole("button", { name: "Mark options, 1 filtered" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark options, 1 marked" })).toBeVisible();
 
   await page.locator(".mark-menu-button").click();
-  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "All visible" }).click();
-  await expect(page.getByRole("button", { name: "Mark options, 1 filtered" })).toBeVisible();
-  await expect(page.locator(".mark-menu-button .mark-state-icon")).toHaveAttribute("data-state", "checked");
+  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "Mark visible", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Mark options, 1 marked" })).toBeVisible();
 
   await page.getByLabel("Search clipboard history").fill("");
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
   await page.locator(".mark-menu-button").click();
-  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "All visible" }).click();
+  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "Mark visible", exact: true }).click();
   await expect(page.locator(".mark-menu-count")).toHaveText("4");
-  await expect(page.locator(".mark-menu-button .mark-state-icon")).toHaveAttribute("data-state", "checked");
 
   await page.locator(".mark-menu-button").click();
   const menu = page.getByRole("menu", { name: "Mark options" });
-  await expect(menu.getByText("Checked items")).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Join checked" })).toBeVisible();
+  await expect(menu.getByText("Marked items")).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Join marked" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Add tags to checked" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Delete 4 checked" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Edit tags for marked" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Delete 4 marked" })).toHaveCount(0);
 });
 
 test("long synthetic history stays contained", async ({ page }) => {
@@ -1913,7 +2399,7 @@ test("bulk mark refuses an unapplied Enter draft", async ({ page }) => {
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
   await page.getByLabel("Search clipboard history").fill("unbroken");
   await page.getByLabel("Mark options").click();
-  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "All results" }).click();
+  await page.getByRole("menu", { name: "Mark options" }).getByRole("menuitem", { name: "Mark all results", exact: true }).click();
 
   await expect(page.getByText("Apply the current search before changing all results.")).toBeVisible();
   expect(await page.evaluate(() =>
@@ -2260,7 +2746,7 @@ test("right click on item opens item actions menu", async ({ page }) => {
     y: Math.round(box!.y + 18),
   };
 
-  await item.click({ button: "right", position: { x: 40, y: 18 } });
+  await item.click({ button: "right", position: { x: 76, y: 18 } });
 
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu).toBeVisible();
@@ -2374,7 +2860,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu.getByRole("menuitem", { name: "Join selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Add tags to selected" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Edit tags for selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete 2 selected" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Clear selection" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Activate" })).toHaveCount(0);
@@ -2531,10 +3017,11 @@ test("local shortcut runs matching ready script with shortcut context", async ({
   expect(JSON.stringify(request)).not.toContain("COPICU_SYNTH");
 });
 
-test("hiding picker resets transient selection to first item on next focus", async ({ page }) => {
+test("hiding picker resets transient selection but preserves durable marks", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
+  await page.getByLabel("Mark item").first().click();
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
   await expect(page.getByLabel("Search clipboard history")).toBeFocused();
   await page.keyboard.press("Escape");
@@ -2544,6 +3031,9 @@ test("hiding picker resets transient selection to first item on next focus", asy
     const calls = (window as any).__copicuTestInvocations;
     return calls.filter((call: any) => call.cmd === "history_search").length >= 2;
   });
+  await expect(page.locator(".selection-action-bar")).toHaveCount(0);
+  await expect(page.getByLabel("Select item")).toHaveCount(4);
+  await expect(page.getByLabel("Unmark item")).toHaveCount(1);
 
   await page.keyboard.press("Control+Alt+J");
   await page.waitForFunction(() => {
@@ -2710,17 +3200,12 @@ test("ctrl+a in search input replaces query text", async ({ page }) => {
   await expect(page.locator(".feed-item.is-multi-selected")).toHaveCount(0);
 });
 
-test("multi selection trash button deletes selected items", async ({ page }) => {
+test("selection action bar deletes selected items", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
-
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).hover();
-  const deleteButtons = page.getByRole("button", { name: "Delete 2 selected items" });
-  await expect(deleteButtons).toHaveCount(2);
-  await expect(deleteButtons.first()).toHaveCSS("opacity", "1");
-  await deleteButtons.first().click();
+  await page.locator(".selection-action-bar").getByRole("button", { name: "Delete", exact: true }).click();
 
   await page.waitForFunction(() => {
     const calls = (window as any).__copicuTestInvocations;
@@ -2772,31 +3257,32 @@ test("ctrl+d deletes selected items", async ({ page }) => {
   expect(deletedIds).toEqual([101, 102]);
 });
 
-test("multi selection tag editor adds tags without replace modes", async ({ page }) => {
+test("multi selection tag editor patches added and removed tags without replacement", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
-    button: "right",
-  });
-  await page.getByRole("menuitem", { name: "Add tags to selected" }).click();
+  await page.locator(".selection-action-bar").getByRole("button", { name: "Tags", exact: true }).click();
 
-  const dialog = page.getByRole("dialog", { name: "Add tags" });
-  await expect(dialog.getByText("Add tags to 2 clips")).toBeVisible();
-  await expect(dialog.getByText("Existing tags will be kept.")).toBeVisible();
-  const input = dialog.getByRole("textbox", { name: "Tag" });
-  await input.fill("batch-tag");
-  await input.press("Enter");
-  await dialog.getByRole("button", { name: "Add tags", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit tags for selection" });
+  await expect(dialog.getByText("Edit tags for 2 clips")).toBeVisible();
+  await expect(dialog.getByText("Add and remove only the tags you choose.")).toBeVisible();
+  const addInput = dialog.getByRole("textbox", { name: "Tag to add" });
+  await addInput.fill("batch-tag");
+  await addInput.press("Enter");
+  const removeInput = dialog.getByRole("textbox", { name: "Tag to remove" });
+  await removeInput.fill("work");
+  await removeInput.press("Enter");
+  await dialog.getByRole("button", { name: "Apply tag changes" }).click();
 
   const call = await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "apply_item_tags"),
   );
   const request = (await call.jsonValue() as any).args.request;
   expect(request.itemIds).toEqual([101, 102]);
-  expect(request.mode).toBe("add");
+  expect(request.mode).toBe("patch");
   expect(request.tags).toEqual(["batch-tag"]);
+  expect(request.removeTags).toEqual(["Work"]);
 });
 
 test("dark color scheme uses dark surfaces", async ({ page }) => {
@@ -3132,6 +3618,9 @@ test("metadata window shows item content and focuses inline metadata", async ({ 
   await expect(itemContent).toContainText(syntheticLongHistory[3].text);
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Notes" })).toHaveCount(0);
+  await expect(page.getByLabel("Client properties")).toHaveValue("ACME");
+  await expect(page.getByLabel("Project properties")).toHaveValue("Web");
+  await page.getByLabel("Client properties").fill("ACME, Globex");
   await expect(page.getByLabel("Capture context")).toHaveCount(0);
   await expect(page.locator(".metadata-text-suggestions")).toHaveCount(0);
 
@@ -3167,6 +3656,8 @@ test("metadata window shows item content and focuses inline metadata", async ({ 
   expect(request.tags).toContain("Work");
   expect(request.tags).toContain("Backend");
   expect(request.tags).toContain("fresh");
+  expect(request.properties.client).toEqual(["ACME", "Globex"]);
+  expect(request.properties.project).toEqual(["Web"]);
   await expect(page.locator(".metadata-window-buttons .mantine-Loader-root")).toHaveCount(0);
 
   const overflowing = await page.locator(".metadata-window-app").evaluate((element) =>

@@ -12,6 +12,7 @@ mod image_capture;
 mod markdown_output;
 mod picker_session;
 mod script_editor;
+mod scenario;
 pub mod storage;
 mod surface_registry;
 mod ui_host;
@@ -76,6 +77,8 @@ const SETTINGS_UPDATED_EVENT: &str = "copicu://settings/updated";
 const PICKER_PIN_STATE_EVENT: &str = "copicu://picker/pin-state";
 #[cfg(not(test))]
 const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
+#[cfg(not(test))]
+const SCENARIO_SESSION_CHANGED_EVENT: &str = "copicu://scenario/session-changed";
 #[cfg(not(test))]
 const METADATA_OPEN_EVENT: &str = "copicu://metadata/open";
 #[cfg(not(test))]
@@ -272,8 +275,7 @@ struct GlobalScriptShortcutAction {
 #[cfg(not(test))]
 #[derive(Clone)]
 struct GlobalSavedViewShortcut {
-    view_id: i64,
-    query: String,
+    view: storage::SavedHistoryView,
     shortcut_label: String,
 }
 
@@ -1113,6 +1115,14 @@ fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
+fn open_scenario_settings(app: tauri::AppHandle) -> Result<(), String> {
+    open_settings_window(app.clone())?;
+    focus_settings_section(app, "scenarios");
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn close_settings_window(window: tauri::WebviewWindow) -> Result<(), String> {
     if window.label() != SETTINGS_WINDOW_LABEL {
         return Err("close_settings_window can only be called from settings".to_string());
@@ -1189,6 +1199,7 @@ struct OpenMetadataWindowRequest {
 struct MetadataEditorPayload {
     item: storage::HistoryItem,
     item_tags: Vec<String>,
+    item_properties: storage::ScenarioProperties,
     capture_context_events: Vec<storage::CaptureContextEvent>,
 }
 
@@ -1247,6 +1258,7 @@ fn open_metadata_window(
     let fetch_started_at = Instant::now();
     let item = storage.get_item(request.item_id)?;
     let item_tags = storage.get_item_tags(request.item_id)?;
+    let item_properties = storage.list_item_properties(request.item_id)?;
     let capture_context_events = storage.list_capture_context_events(request.item_id, 12)?;
     diag_log(
         "metadata.open.item-fetch.done",
@@ -1266,6 +1278,7 @@ fn open_metadata_window(
                 MetadataEditorPayload {
                     item,
                     item_tags,
+                    item_properties,
                     capture_context_events,
                 },
             ) {
@@ -1912,7 +1925,188 @@ fn open_saved_history_view(
 ) -> Result<(), String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "open_saved_history_view")?;
     let view = storage.get_saved_history_view(id)?;
-    open_picker_for_saved_history_view(app, view.query)
+    open_picker_for_saved_history_view(app, view)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn list_scenarios(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+) -> Result<Vec<storage::Scenario>, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "list_scenarios",
+    )?;
+    storage.list_scenarios()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn create_scenario(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::CreateScenarioRequest,
+) -> Result<storage::Scenario, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "create_scenario")?;
+    storage.create_scenario(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn create_scenario_from_query(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::CreateScenarioFromQueryRequest,
+) -> Result<storage::Scenario, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "create_scenario_from_query",
+    )?;
+    storage.create_scenario_from_query(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn update_scenario_from_query(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::UpdateScenarioFromQueryRequest,
+) -> Result<storage::Scenario, String> {
+    require_surface_window(
+        &window,
+        &[SETTINGS_WINDOW_LABEL],
+        "update_scenario_from_query",
+    )?;
+    storage.update_scenario_from_query(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn update_scenario(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    request: storage::UpdateScenarioRequest,
+) -> Result<storage::Scenario, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_scenario")?;
+    storage.update_scenario(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn delete_scenario(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    state: State<'_, scenario::ActiveScenarioState>,
+    id: i64,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "delete_scenario")?;
+    storage.delete_scenario(id)?;
+    if state
+        .snapshot()?
+        .is_some_and(|session| session.scenario_id == id)
+    {
+        state.clear()?;
+        app.emit(
+            SCENARIO_SESSION_CHANGED_EVENT,
+            Option::<storage::ActiveScenarioSession>::None,
+        )
+        .map_err(|error| format!("failed to emit scenario stop: {error}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_active_scenario_session(
+    window: tauri::WebviewWindow,
+    state: State<'_, scenario::ActiveScenarioState>,
+) -> Result<Option<storage::ActiveScenarioSession>, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "get_active_scenario_session",
+    )?;
+    state.snapshot()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn activate_scenario(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    state: State<'_, scenario::ActiveScenarioState>,
+    id: i64,
+) -> Result<storage::ActiveScenarioSession, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "activate_scenario",
+    )?;
+    let scenario = storage.get_scenario(id)?;
+    let view = storage.get_saved_history_view(scenario.saved_view_id)?;
+    open_picker_for_saved_history_view(app.clone(), view)?;
+    let session = state.activate(scenario)?;
+    app.emit(SCENARIO_SESSION_CHANGED_EVENT, Some(session.clone()))
+        .map_err(|error| format!("failed to emit scenario activation: {error}"))?;
+    Ok(session)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn stop_active_scenario(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: State<'_, scenario::ActiveScenarioState>,
+) -> Result<(), String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "stop_active_scenario",
+    )?;
+    state.clear()?;
+    app.emit(
+        SCENARIO_SESSION_CHANGED_EVENT,
+        Option::<storage::ActiveScenarioSession>::None,
+    )
+    .map_err(|error| format!("failed to emit scenario stop: {error}"))
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_capture_tag_context(
+    window: tauri::WebviewWindow,
+    context: State<'_, clipboard::CaptureTagContextState>,
+) -> Result<Option<clipboard::CaptureTagContextSnapshot>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_capture_tag_context")?;
+    context.snapshot()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn arm_capture_tag_context(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    context: State<'_, clipboard::CaptureTagContextState>,
+    view_id: i64,
+) -> Result<clipboard::CaptureTagContextSnapshot, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "arm_capture_tag_context")?;
+    let view = storage.get_saved_history_view(view_id)?;
+    context.arm(view.id, view.title, view.query, view.capture_tags)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn stop_capture_tag_context(
+    window: tauri::WebviewWindow,
+    context: State<'_, clipboard::CaptureTagContextState>,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "stop_capture_tag_context")?;
+    context.clear()
 }
 
 #[cfg(not(test))]
@@ -1935,6 +2129,38 @@ fn update_tag_config(
 ) -> Result<storage::TagSummary, String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_tag_config")?;
     storage.update_tag_config(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn delete_tag(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    state: State<'_, scenario::ActiveScenarioState>,
+    id: i64,
+) -> Result<(), String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "delete_tag")?;
+    let deleted = storage
+        .list_tags()?
+        .into_iter()
+        .find(|tag| tag.id == id)
+        .ok_or_else(|| format!("tag not found: {id}"))?;
+    let active_before = state.snapshot()?;
+    storage.delete_tag(id)?;
+    if let Some(active) = active_before {
+        let removed_from_active = active
+            .tags
+            .iter()
+            .any(|tag| tag.eq_ignore_ascii_case(&deleted.label));
+        if removed_from_active {
+            let refreshed = state.activate(storage.get_scenario(active.scenario_id)?)?;
+            app.emit(SCENARIO_SESSION_CHANGED_EVENT, refreshed)
+                .map_err(|error| format!("failed to refresh active scenario: {error}"))?;
+        }
+    }
+    app.emit(HISTORY_CHANGED_EVENT, ())
+        .map_err(|error| format!("failed to emit history change after tag deletion: {error}"))
 }
 
 #[cfg(not(test))]
@@ -2437,6 +2663,7 @@ pub fn run() {
             quit_app,
             consume_picker_session_snapshot,
             open_settings_window,
+            open_scenario_settings,
             hide_whichkey_window,
             close_settings_window,
             position_notifications_window,
@@ -2478,8 +2705,21 @@ pub fn run() {
             update_saved_history_view,
             delete_saved_history_view,
             open_saved_history_view,
+            list_scenarios,
+            create_scenario,
+            create_scenario_from_query,
+            update_scenario_from_query,
+            update_scenario,
+            delete_scenario,
+            get_active_scenario_session,
+            activate_scenario,
+            stop_active_scenario,
+            get_capture_tag_context,
+            arm_capture_tag_context,
+            stop_capture_tag_context,
             create_tag,
             update_tag_config,
+            delete_tag,
             open_picker_for_tag,
             normalize_hotkey_sequence,
             get_item_tags,
@@ -2556,6 +2796,10 @@ pub fn run() {
             setup_tray(app, &initial_settings)?;
             let suppression = clipboard::SelfWriteSuppression::default();
             app.manage(suppression.clone());
+            let capture_tag_context = clipboard::CaptureTagContextState::default();
+            app.manage(capture_tag_context.clone());
+            let active_scenario = scenario::ActiveScenarioState::default();
+            app.manage(active_scenario.clone());
             let previous_window = window_focus::PreviousWindow::default();
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 if let Err(error) = initialize_picker_window(&window) {
@@ -2586,6 +2830,8 @@ pub fn run() {
                     storage.clone(),
                     suppression,
                     previous_window,
+                    capture_tag_context,
+                    active_scenario,
                     initial_settings.general.capture_enabled,
                 ) {
                     Ok(capture) => {
@@ -4308,8 +4554,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
         match app.global_shortcut().register(shortcut) {
             Ok(()) => {
                 registered_saved_views.insert(shortcut, GlobalSavedViewShortcut {
-                    view_id: view.id,
-                    query: view.query.clone(),
+                    view: view.clone(),
                     shortcut_label: shortcut_label.to_string(),
                 });
             }
@@ -4743,8 +4988,11 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
 #[cfg(not(test))]
 fn open_picker_for_saved_history_view<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
-    query: String,
+    view: storage::SavedHistoryView,
 ) -> Result<(), String> {
+    if let Some(context) = app.try_state::<clipboard::CaptureTagContextState>() {
+        context.clear()?;
+    }
     let app_for_main_thread = app.clone();
     app.run_on_main_thread(move || {
         if let Err(error) = show_main_window(&app_for_main_thread, true) {
@@ -4754,7 +5002,14 @@ fn open_picker_for_saved_history_view<R: tauri::Runtime + 'static>(
         if let Err(error) = app_for_main_thread.emit_to(
             MAIN_WINDOW_LABEL,
             PICKER_FILTER_EVENT,
-            serde_json::json!({ "query": query }),
+            serde_json::json!({
+                "query": view.query,
+                "view": {
+                    "id": view.id,
+                    "title": view.title,
+                    "captureTags": view.capture_tags,
+                }
+            }),
         ) {
             eprintln!("saved history view picker emit failed: {error}");
         }
@@ -4767,8 +5022,8 @@ fn spawn_open_saved_history_view<R: tauri::Runtime + 'static>(
     saved_view: GlobalSavedViewShortcut,
 ) {
     thread::spawn(move || {
-        eprintln!("saved history view shortcut pressed: {} -> {}", saved_view.shortcut_label, saved_view.view_id);
-        if let Err(error) = open_picker_for_saved_history_view(app, saved_view.query) {
+        eprintln!("saved history view shortcut pressed: {} -> {}", saved_view.shortcut_label, saved_view.view.id);
+        if let Err(error) = open_picker_for_saved_history_view(app, saved_view.view) {
             eprintln!("saved history view shortcut open failed: {error}");
         }
     });
@@ -4779,6 +5034,9 @@ fn open_picker_for_tag_slug<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     slug: String,
 ) -> Result<(), String> {
+    if let Some(context) = app.try_state::<clipboard::CaptureTagContextState>() {
+        context.clear()?;
+    }
     let query = format!("tag:{}", slug.trim().trim_start_matches('#'));
     let app_for_main_thread = app.clone();
     app.run_on_main_thread(move || {
@@ -4987,7 +5245,7 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
             };
             thread::spawn(move || match storage.get_saved_history_view(view_id) {
                 Ok(view) => {
-                    if let Err(error) = open_picker_for_saved_history_view(app, view.query) {
+                    if let Err(error) = open_picker_for_saved_history_view(app, view) {
                         eprintln!("saved view shortcut route open failed: {error}");
                     }
                 }

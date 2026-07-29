@@ -19,6 +19,7 @@ import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import Search from "lucide-react/dist/esm/icons/search.mjs";
 import Terminal from "lucide-react/dist/esm/icons/terminal.mjs";
+import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import {
   applyCopicuAppearance,
@@ -33,7 +34,9 @@ import type {
   ActionRunResult,
   ActionTrigger,
   ActivateItemRequest,
+  ActiveScenarioSession,
   ClipKind,
+  CreateScenarioFromQueryRequest,
   CreateTagRequest,
   EnrichmentApplyMode,
   EnterAction,
@@ -44,7 +47,9 @@ import type {
   SetItemTagsRequest,
   SavedHistoryView,
   CreateSavedHistoryViewRequest,
+  Scenario,
   UpdateSavedHistoryViewRequest,
+  UpdateScenarioFromQueryRequest,
   TagSummary,
   ToastItem,
   ToastOptions,
@@ -82,6 +87,7 @@ import {
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
 import { SavedHistoryViews } from "./SavedHistoryViews";
+import { Scenarios } from "./Scenarios";
 import { checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
 
 
@@ -122,6 +128,9 @@ type CaptureContextEvent = {
   textCharCount: number | null;
   lineCount: number | null;
   domain: string | null;
+  scenarioId: number | null;
+  scenarioSessionId: string | null;
+  scenarioRevision: number | null;
 };
 
 type HotkeyNormalizationResult = {
@@ -151,6 +160,11 @@ type AutostartStatus = {
 type MetadataEditorPayload = {
   item: HistoryItem;
   itemTags: string[];
+  itemProperties: {
+    client: string[];
+    project: string[];
+    activity: string[];
+  };
   captureContextEvents: CaptureContextEvent[];
 };
 
@@ -173,6 +187,7 @@ const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const SETTINGS_FOCUS_SECTION_EVENT = "copicu://settings/focus-section";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
+const SCENARIO_SESSION_CHANGED_EVENT = "copicu://scenario/session-changed";
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
@@ -206,10 +221,6 @@ const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
 
 function isSubmitShortcut(event: ReactKeyboardEvent<HTMLElement> | globalThis.KeyboardEvent) {
   return (event.ctrlKey || event.metaKey) && event.key === "Enter";
-}
-
-function searchTriggerModeLabel(mode: SearchTriggerMode) {
-  return mode === "enter" ? "Search on Enter" : "Realtime search";
 }
 
 function normalizeRetentionCount(value: number | string): number {
@@ -254,6 +265,12 @@ function captureContextRows(event: CaptureContextEvent) {
   return [
     ["Captured", formatCaptureTimestamp(event.capturedAtUnixMs)],
     ["Source", event.sourceKind],
+    [
+      "Scenario",
+      event.scenarioId === null
+        ? "—"
+        : `#${event.scenarioId} · revision ${event.scenarioRevision ?? "—"} · ${event.scenarioSessionId ?? "session unavailable"}`,
+    ],
     ["App", event.sourceAppName ?? "—"],
     ["Window", event.sourceWindowTitle ?? "—"],
     ["Domain", event.domain ?? "—"],
@@ -371,12 +388,44 @@ function openSavedHistoryView(id: number) {
   return invoke<void>("open_saved_history_view", { id });
 }
 
+function listScenarios() {
+  return invoke<Scenario[]>("list_scenarios");
+}
+
+function createScenarioFromQuery(request: CreateScenarioFromQueryRequest) {
+  return invoke<Scenario>("create_scenario_from_query", { request });
+}
+
+function updateScenarioFromQuery(request: UpdateScenarioFromQueryRequest) {
+  return invoke<Scenario>("update_scenario_from_query", { request });
+}
+
+function deleteScenario(id: number) {
+  return invoke<void>("delete_scenario", { id });
+}
+
+function getActiveScenarioSession() {
+  return invoke<ActiveScenarioSession | null>("get_active_scenario_session");
+}
+
+function activateScenario(id: number) {
+  return invoke<ActiveScenarioSession>("activate_scenario", { id });
+}
+
+function stopActiveScenario() {
+  return invoke<void>("stop_active_scenario");
+}
+
 function createTag(request: CreateTagRequest) {
   return invoke<TagSummary>("create_tag", { request });
 }
 
 function updateTagConfig(request: UpdateTagConfigRequest) {
   return invoke<TagSummary>("update_tag_config", { request });
+}
+
+function deleteTag(id: number) {
+  return invoke<void>("delete_tag", { id });
 }
 
 function setItemTags(request: SetItemTagsRequest) {
@@ -563,6 +612,7 @@ if (isTauriRuntime()) {
 export function MetadataWindowApp() {
   const [payload, setPayload] = useState<MetadataEditorPayload | null>(null);
   const [metadataText, setMetadataText] = useState("");
+  const [propertyText, setPropertyText] = useState({ client: "", project: "", activity: "" });
   const [editorSession, setEditorSession] = useState(0);
   const [availableTags, setAvailableTags] = useState<TagSummary[]>([]);
   const [saving, setSaving] = useState(false);
@@ -592,6 +642,11 @@ export function MetadataWindowApp() {
     recordRendererDiagnostic("metadata.loadPayload", `item_id=${itemId ?? "none"}`);
     setPayload(nextPayload);
     setMetadataText(formatMetadataText(nextPayload?.item.notes, nextPayload?.itemTags ?? []));
+    setPropertyText({
+      client: nextPayload?.itemProperties.client.join(", ") ?? "",
+      project: nextPayload?.itemProperties.project.join(", ") ?? "",
+      activity: nextPayload?.itemProperties.activity.join(", ") ?? "",
+    });
     setEditorSession((current) => current + 1);
     setError(null);
     void listTags()
@@ -647,6 +702,11 @@ export function MetadataWindowApp() {
       title: payload.item.title,
       notes: nullableTrim(parsed.notes),
       tags: parsed.tags,
+      properties: {
+        client: propertyText.client.split(",").map((value) => value.trim()).filter(Boolean),
+        project: propertyText.project.split(",").map((value) => value.trim()).filter(Boolean),
+        activity: propertyText.activity.split(",").map((value) => value.trim()).filter(Boolean),
+      },
     };
     try {
       await updateItemMetadata(request);
@@ -660,7 +720,7 @@ export function MetadataWindowApp() {
     } finally {
       setSaving(false);
     }
-  }, [availableTags, metadataText, payload, saving]);
+  }, [availableTags, metadataText, payload, propertyText, saving]);
 
   const handleEditorKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLFormElement>) => {
@@ -713,6 +773,29 @@ export function MetadataWindowApp() {
               availableTags={availableTags}
               onChange={setMetadataText}
             />
+            <section className="metadata-properties" aria-label="Structured properties">
+              <UiTextInput
+                label="Client"
+                aria-label="Client properties"
+                value={propertyText.client}
+                placeholder="ACME"
+                onChange={(event) => setPropertyText((current) => ({ ...current, client: event.currentTarget.value }))}
+              />
+              <UiTextInput
+                label="Project"
+                aria-label="Project properties"
+                value={propertyText.project}
+                placeholder="Web"
+                onChange={(event) => setPropertyText((current) => ({ ...current, project: event.currentTarget.value }))}
+              />
+              <UiTextInput
+                label="Activity"
+                aria-label="Activity properties"
+                value={propertyText.activity}
+                placeholder="Development, Review"
+                onChange={(event) => setPropertyText((current) => ({ ...current, activity: event.currentTarget.value }))}
+              />
+            </section>
             {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
             <div className="metadata-window-footer">
               <span><code>#tag</code> anywhere · <code>Ctrl+Enter</code> save</span>
@@ -752,6 +835,9 @@ export function SettingsWindowApp() {
   const [tagsLoading, setTagsLoading] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedHistoryView[]>([]);
   const [savedViewsLoading, setSavedViewsLoading] = useState(false);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [scenariosLoading, setScenariosLoading] = useState(false);
+  const [activeScenarioSession, setActiveScenarioSession] = useState<ActiveScenarioSession | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextToastIdRef = useRef(1);
 
@@ -934,16 +1020,29 @@ export function SettingsWindowApp() {
     }
   }, []);
 
-  const createSettingsSavedView = useCallback(async (draft: { title: string; query: string; hotkey: string; pinned: boolean }) => {
+  const createSettingsSavedView = useCallback(async (draft: { title: string; query: string; hotkey: string; pinned: boolean; captureTags: string[] }) => {
     try {
-      await createSavedHistoryView({ title: draft.title, query: draft.query, hotkey: nullableTrim(draft.hotkey) });
+      await createSavedHistoryView({
+        title: draft.title,
+        query: draft.query,
+        hotkey: nullableTrim(draft.hotkey),
+        captureTags: draft.captureTags,
+      });
       await refreshSavedViews();
     } catch (saveError) { setError(String(saveError)); throw saveError; }
   }, [refreshSavedViews]);
 
-  const updateSettingsSavedView = useCallback(async (id: number, draft: { title: string; query: string; hotkey: string; pinned: boolean }) => {
+  const updateSettingsSavedView = useCallback(async (id: number, draft: { title: string; query: string; hotkey: string; pinned: boolean; captureTags: string[] }) => {
     try {
-      await updateSavedHistoryView({ id, title: draft.title, query: draft.query, hotkey: nullableTrim(draft.hotkey), pinned: draft.pinned, sortOrder: null });
+      await updateSavedHistoryView({
+        id,
+        title: draft.title,
+        query: draft.query,
+        hotkey: nullableTrim(draft.hotkey),
+        pinned: draft.pinned,
+        sortOrder: null,
+        captureTags: draft.captureTags,
+      });
       await refreshSavedViews();
     } catch (saveError) { setError(String(saveError)); throw saveError; }
   }, [refreshSavedViews]);
@@ -956,6 +1055,69 @@ export function SettingsWindowApp() {
   const openSettingsSavedView = useCallback(async (id: number) => {
     try { await openSavedHistoryView(id); }
     catch (openError) { setError(String(openError)); throw openError; }
+  }, []);
+
+  const refreshScenarios = useCallback(async () => {
+    setScenariosLoading(true);
+    try {
+      setScenarios((await listScenarios()) ?? []);
+      setError(null);
+    } catch (loadError) {
+      setError(String(loadError));
+      throw loadError;
+    } finally {
+      setScenariosLoading(false);
+    }
+  }, []);
+
+  const createSettingsScenario = useCallback(async (request: CreateScenarioFromQueryRequest) => {
+    try {
+      await createScenarioFromQuery(request);
+      await refreshScenarios();
+    } catch (saveError) {
+      setError(String(saveError));
+      throw saveError;
+    }
+  }, [refreshScenarios]);
+
+  const updateSettingsScenario = useCallback(async (request: UpdateScenarioFromQueryRequest) => {
+    try {
+      await updateScenarioFromQuery(request);
+      await refreshScenarios();
+    } catch (saveError) {
+      setError(String(saveError));
+      throw saveError;
+    }
+  }, [refreshScenarios]);
+
+  const deleteSettingsScenario = useCallback(async (id: number) => {
+    try {
+      await deleteScenario(id);
+      await refreshScenarios();
+      setActiveScenarioSession(await getActiveScenarioSession());
+    } catch (deleteError) {
+      setError(String(deleteError));
+      throw deleteError;
+    }
+  }, [refreshScenarios]);
+
+  const activateSettingsScenario = useCallback(async (id: number) => {
+    try {
+      setActiveScenarioSession(await activateScenario(id));
+    } catch (activateError) {
+      setError(String(activateError));
+      throw activateError;
+    }
+  }, []);
+
+  const stopSettingsScenario = useCallback(async () => {
+    try {
+      await stopActiveScenario();
+      setActiveScenarioSession(null);
+    } catch (stopError) {
+      setError(String(stopError));
+      throw stopError;
+    }
   }, []);
 
   const refreshTags = useCallback(async () => {
@@ -1023,6 +1185,26 @@ export function SettingsWindowApp() {
     },
     [pushToast, refreshTags],
   );
+
+  const deleteSettingsTag = useCallback(async (id: number) => {
+    try {
+      setError(null);
+      await deleteTag(id);
+      await Promise.all([refreshTags(), refreshScenarios(), refreshSavedViews()]);
+      setActiveScenarioSession(await getActiveScenarioSession());
+      pushToast({ title: "Tag removed", message: "The tag was removed everywhere.", tone: "success" });
+    } catch (deleteError) {
+      const message = String(deleteError);
+      setError(message);
+      pushToast({
+        title: "Remove tag failed",
+        message,
+        tone: "danger",
+        durationMs: STICKY_TOAST_DURATION_MS,
+      });
+      throw deleteError;
+    }
+  }, [pushToast, refreshSavedViews, refreshScenarios, refreshTags]);
 
   const openTagFiltered = useCallback(
     async (tag: TagSummary) => {
@@ -1194,6 +1376,15 @@ export function SettingsWindowApp() {
       if (active) setSavedViews(nextViews ?? []);
     }).catch((loadError) => { if (active) setError(String(loadError)); });
 
+    Promise.all([listScenarios(), getActiveScenarioSession()])
+      .then(([nextScenarios, nextSession]) => {
+        if (active) {
+          setScenarios(nextScenarios ?? []);
+          setActiveScenarioSession(nextSession);
+        }
+      })
+      .catch((loadError) => { if (active) setError(String(loadError)); });
+
     listTags()
       .then((nextTags) => {
         if (active) {
@@ -1217,6 +1408,7 @@ export function SettingsWindowApp() {
     }
     let active = true;
     let unlisten: (() => void) | null = null;
+    let unlistenScenario: (() => void) | null = null;
     void listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event: Event<AppSettings>) => {
       if (!active) {
         return;
@@ -1233,9 +1425,15 @@ export function SettingsWindowApp() {
     }).then((nextUnlisten) => {
       unlisten = nextUnlisten;
     });
+    void listen<ActiveScenarioSession | null>(SCENARIO_SESSION_CHANGED_EVENT, (event) => {
+      if (active) setActiveScenarioSession(event.payload);
+    }).then((nextUnlisten) => {
+      unlistenScenario = nextUnlisten;
+    });
     return () => {
       active = false;
       unlisten?.();
+      unlistenScenario?.();
     };
   }, []);
 
@@ -1268,6 +1466,9 @@ export function SettingsWindowApp() {
           tagsLoading={tagsLoading}
           savedViews={savedViews}
           savedViewsLoading={savedViewsLoading}
+          scenarios={scenarios}
+          scenariosLoading={scenariosLoading}
+          activeScenarioSession={activeScenarioSession}
           tagSummary={tagSummary}
           shortcutStatus={shortcutStatus}
           autostartStatus={autostartStatus}
@@ -1279,11 +1480,17 @@ export function SettingsWindowApp() {
           onRunScript={runStandaloneScriptAction}
           onCreateTag={createSettingsTag}
           onUpdateTag={updateSettingsTag}
+          onDeleteTag={deleteSettingsTag}
           onOpenTagFiltered={openTagFiltered}
           onCreateSavedView={createSettingsSavedView}
           onUpdateSavedView={updateSettingsSavedView}
           onDeleteSavedView={deleteSettingsSavedView}
           onOpenSavedView={openSettingsSavedView}
+          onCreateScenario={createSettingsScenario}
+          onUpdateScenario={updateSettingsScenario}
+          onDeleteScenario={deleteSettingsScenario}
+          onActivateScenario={activateSettingsScenario}
+          onStopScenario={stopSettingsScenario}
           onEditScripts={() => void openScriptsInEditor()}
           onEditScript={(action) => void openScriptInEditor(action)}
           onRefreshScripts={() => void refreshScriptActions()}
@@ -1468,6 +1675,9 @@ type SettingsPanelProps = {
   tagsLoading: boolean;
   savedViews: SavedHistoryView[];
   savedViewsLoading: boolean;
+  scenarios: Scenario[];
+  scenariosLoading: boolean;
+  activeScenarioSession: ActiveScenarioSession | null;
   tagSummary: {
     pinnedCount: number;
     itemCount: number;
@@ -1485,11 +1695,17 @@ type SettingsPanelProps = {
     tagId: number,
     request: Omit<UpdateTagConfigRequest, "tagId">,
   ) => Promise<TagSummary>;
+  onDeleteTag: (id: number) => Promise<void>;
   onOpenTagFiltered: (tag: TagSummary) => void;
-  onCreateSavedView: (draft: { title: string; query: string; hotkey: string; pinned: boolean }) => Promise<void>;
-  onUpdateSavedView: (id: number, draft: { title: string; query: string; hotkey: string; pinned: boolean }) => Promise<void>;
+  onCreateSavedView: (draft: { title: string; query: string; hotkey: string; pinned: boolean; captureTags: string[] }) => Promise<void>;
+  onUpdateSavedView: (id: number, draft: { title: string; query: string; hotkey: string; pinned: boolean; captureTags: string[] }) => Promise<void>;
   onDeleteSavedView: (id: number) => Promise<void>;
   onOpenSavedView: (id: number) => Promise<void>;
+  onCreateScenario: (request: CreateScenarioFromQueryRequest) => Promise<void>;
+  onUpdateScenario: (request: UpdateScenarioFromQueryRequest) => Promise<void>;
+  onDeleteScenario: (id: number) => Promise<void>;
+  onActivateScenario: (id: number) => Promise<void>;
+  onStopScenario: () => Promise<void>;
   onEditScripts: () => void;
   onEditScript: (action: ActionDefinition) => void;
   onRefreshScripts: () => void;
@@ -1504,6 +1720,7 @@ type SettingSection =
   | "hotkeys"
   | "picker"
   | "history"
+  | "scenarios"
   | "appearance"
   | "enrichment"
   | "tags"
@@ -1517,6 +1734,14 @@ type SettingSectionDefinition = {
   description: string;
 };
 
+const SETTINGS_FOCUS_SECTION_STORAGE_KEY = "copicu:settings-focus-section";
+
+function initialSettingsSection(): SettingSection {
+  const pending = window.localStorage.getItem(SETTINGS_FOCUS_SECTION_STORAGE_KEY);
+  window.localStorage.removeItem(SETTINGS_FOCUS_SECTION_STORAGE_KEY);
+  return pending === "scenarios" ? "scenarios" : "general";
+}
+
 function SettingsPanel({
   draft,
   query,
@@ -1527,6 +1752,9 @@ function SettingsPanel({
   tagsLoading,
   savedViews,
   savedViewsLoading,
+  scenarios,
+  scenariosLoading,
+  activeScenarioSession,
   tagSummary,
   shortcutStatus,
   autostartStatus,
@@ -1538,11 +1766,17 @@ function SettingsPanel({
   onRunScript,
   onCreateTag,
   onUpdateTag,
+  onDeleteTag,
   onOpenTagFiltered,
   onCreateSavedView,
   onUpdateSavedView,
   onDeleteSavedView,
   onOpenSavedView,
+  onCreateScenario,
+  onUpdateScenario,
+  onDeleteScenario,
+  onActivateScenario,
+  onStopScenario,
   onEditScripts,
   onEditScript,
   onRefreshScripts,
@@ -1551,7 +1785,7 @@ function SettingsPanel({
   onCancel,
   onSave,
 }: SettingsPanelProps) {
-  const [activeSection, setActiveSection] = useState<SettingSection>("general");
+  const [activeSection, setActiveSection] = useState<SettingSection>(initialSettingsSection);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visible = (section: SettingSection, label: string, description: string) =>
     normalizedQuery.length === 0 ||
@@ -1620,6 +1854,18 @@ function SettingsPanel({
     "about version update release github latest check signed installer",
     updateStatusMessage(updateStatus),
   ].join(" ");
+  const scenarioSearchText = [
+    "scenarios scenario client project activity context picker view saved view",
+    ...scenarios.map((scenario) => [
+      scenario.name,
+      scenario.savedViewTitle,
+      scenario.query,
+      ...scenario.properties.client,
+      ...scenario.properties.project,
+      ...scenario.properties.activity,
+      ...scenario.tags,
+    ].join(" ")),
+  ].join(" ");
   const tagSearchText = tags
     .map((tag) =>
       [
@@ -1649,7 +1895,12 @@ function SettingsPanel({
     {
       id: "history",
       label: "History",
-      description: "Storage and retention",
+      description: "Storage, retention and saved views",
+    },
+    {
+      id: "scenarios",
+      label: "Scenarios",
+      description: "Project context and picker views",
     },
     {
       id: "appearance",
@@ -1688,6 +1939,7 @@ function SettingsPanel({
     (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "picker" && pickerSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "scenarios" && scenarioSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "scripts" && scriptSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "about" && aboutSearchText.toLocaleLowerCase().includes(normalizedQuery));
@@ -1762,26 +2014,6 @@ function SettingsPanel({
             onChange={(event) => onQueryChange(event.currentTarget.value)}
             autoFocus
           />
-        </div>
-
-        <div className="settings-status-strip" aria-label="Current settings summary">
-          <UiBadge className="settings-summary-badge" variant="light">{draft.general.globalShortcut}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{draft.general.captureEnabled ? "Capture on" : "Capture paused"}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{draft.picker.enterAction === "copy" ? "Enter copies" : "Enter pastes"}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{searchTriggerModeLabel(draft.picker.searchTriggerMode)}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">Preview {draft.picker.previewShortcut}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{draft.history.retentionCount === 0 ? "Unlimited history" : `${draft.history.retentionCount} items`}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{draft.enrichment.enabled ? "Enrichment on" : "Enrichment off"}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">
-            {autostartStatus?.supported === false
-              ? "Startup unavailable"
-              : draft.general.launchOnStartup
-                ? "Startup on"
-                : "Startup off"}
-          </UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{draft.autoUpdate.enabled ? "Auto-update on" : "Auto-update off"}</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{tags.length} tags</UiBadge>
-          <UiBadge className="settings-summary-badge" variant="light">{actionSummary.scriptCount} scripts</UiBadge>
         </div>
 
         <Tabs
@@ -2289,13 +2521,14 @@ function SettingsPanel({
                     </div>
                   </SettingRow>
                 ) : null}
-                {visible("tags", "Tag list", `Search create pin open filtered actions scripts ${tagSearchText}`) ? (
-                  <SettingRow label="Tag list" description="Create tags, pin frequent tags and open the picker with a tag filter." wide>
+                {visible("tags", "Tag list", `Search create pin remove open filtered actions scripts ${tagSearchText}`) ? (
+                  <SettingRow label="Tag list" description="Create, pin, remove and open tags as picker filters." wide>
                     <TagSettingsList
                       tags={tags}
                       loading={tagsLoading}
                       onCreateTag={onCreateTag}
                       onUpdateTag={onUpdateTag}
+                      onDeleteTag={onDeleteTag}
                       onOpenFiltered={onOpenTagFiltered}
                     />
                   </SettingRow>
@@ -2309,12 +2542,29 @@ function SettingsPanel({
                   <SavedHistoryViews
                     views={savedViews}
                     loading={savedViewsLoading}
+                    availableTags={tags}
                     onCreate={onCreateSavedView}
                     onUpdate={onUpdateSavedView}
                     onDelete={onDeleteSavedView}
                     onOpen={onOpenSavedView}
                   />
                 </SettingRow>
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "scenarios") ? (
+              <SettingsSection title="Scenarios" description="Switch projects without losing the filter or context that belongs to each one.">
+                <Scenarios
+                  scenarios={scenarios}
+                  availableTags={tags}
+                  activeSession={activeScenarioSession}
+                  loading={scenariosLoading || savedViewsLoading}
+                  onCreate={onCreateScenario}
+                  onUpdate={onUpdateScenario}
+                  onDelete={onDeleteScenario}
+                  onActivate={onActivateScenario}
+                  onStop={onStopScenario}
+                />
               </SettingsSection>
             ) : null}
 
@@ -3135,6 +3385,7 @@ function TagSettingsList({
   loading,
   onCreateTag,
   onUpdateTag,
+  onDeleteTag,
   onOpenFiltered,
 }: {
   tags: TagSummary[];
@@ -3144,10 +3395,13 @@ function TagSettingsList({
     tagId: number,
     request: Omit<UpdateTagConfigRequest, "tagId">,
   ) => Promise<TagSummary>;
+  onDeleteTag: (id: number) => Promise<void>;
   onOpenFiltered: (tag: TagSummary) => void;
 }) {
   const [tagQuery, setTagQuery] = useState("");
   const [newTagLabel, setNewTagLabel] = useState("");
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const normalizedQuery = tagQuery.trim().toLocaleLowerCase();
 
   const filteredTags = tags.filter((tag) =>
@@ -3208,6 +3462,14 @@ function TagSettingsList({
         </div>
       </div>
 
+      {!loading && tags.length > 0 ? (
+        <span className="tag-settings-count">
+          {normalizedQuery
+            ? `Showing ${sortedTags.length} of ${tags.length} ${tags.length === 1 ? "tag" : "tags"}`
+            : `${tags.length} ${tags.length === 1 ? "tag" : "tags"}`}
+        </span>
+      ) : null}
+
       {loading ? (
         <div className="tag-settings-loading">
           <UiLoader size="xs" />
@@ -3227,30 +3489,60 @@ function TagSettingsList({
               <UiBadge className="tag-chip" variant="light">
                 {tag.itemCount} items
               </UiBadge>
-              <div className="tag-actions">
-                <UiTooltip label={tag.pinned ? "Unpin tag" : "Pin tag"}>
-                  <UiIconButton
-                    aria-label={tag.pinned ? `Unpin ${tag.label}` : `Pin ${tag.label}`}
+              {confirmingDeleteId === tag.id ? (
+                <div className="tag-delete-confirm" role="group" aria-label={`Confirm removal of ${tag.label}`}>
+                  <span>Remove from {tag.itemCount} {tag.itemCount === 1 ? "item" : "items"}?</span>
+                  <UiButton type="button" size="xs" variant="default" disabled={deleteBusy} onClick={() => setConfirmingDeleteId(null)}>
+                    Cancel
+                  </UiButton>
+                  <UiButton
                     type="button"
-                    variant={tag.pinned ? "light" : "subtle"}
-                    onClick={() => void onUpdateTag(tag.id, { pinned: !tag.pinned })}
+                    size="xs"
+                    color="red"
+                    variant="filled"
+                    loading={deleteBusy}
+                    onClick={() => {
+                      setDeleteBusy(true);
+                      void onDeleteTag(tag.id)
+                        .then(() => setConfirmingDeleteId(null))
+                        .finally(() => setDeleteBusy(false));
+                    }}
                   >
-                    {tag.pinned ? (
-                      <PinOff size={14} strokeWidth={2.2} aria-hidden="true" />
-                    ) : (
-                      <Pin size={14} strokeWidth={2.2} aria-hidden="true" />
-                    )}
-                  </UiIconButton>
-                </UiTooltip>
-                <UiButton
-                  type="button"
-                  size="xs"
-                  variant="default"
-                  onClick={() => onOpenFiltered(tag)}
-                >
-                  Open filtered
-                </UiButton>
-              </div>
+                    Remove tag
+                  </UiButton>
+                </div>
+              ) : (
+                <div className="tag-actions">
+                  <UiTooltip label={tag.pinned ? "Unpin tag" : "Pin tag"}>
+                    <UiIconButton
+                      aria-label={tag.pinned ? `Unpin ${tag.label}` : `Pin ${tag.label}`}
+                      type="button"
+                      variant={tag.pinned ? "light" : "subtle"}
+                      onClick={() => void onUpdateTag(tag.id, { pinned: !tag.pinned })}
+                    >
+                      {tag.pinned ? (
+                        <PinOff size={14} strokeWidth={2.2} aria-hidden="true" />
+                      ) : (
+                        <Pin size={14} strokeWidth={2.2} aria-hidden="true" />
+                      )}
+                    </UiIconButton>
+                  </UiTooltip>
+                  <UiButton type="button" size="xs" variant="default" onClick={() => onOpenFiltered(tag)}>
+                    Open filtered
+                  </UiButton>
+                  <UiTooltip label="Remove tag everywhere">
+                    <UiIconButton
+                      aria-label={`Remove ${tag.label}`}
+                      type="button"
+                      color="red"
+                      variant="subtle"
+                      onClick={() => setConfirmingDeleteId(tag.id)}
+                    >
+                      <Trash2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                    </UiIconButton>
+                  </UiTooltip>
+                </div>
+              )}
             </section>
           ))}
         </div>

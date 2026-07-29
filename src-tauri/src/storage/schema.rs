@@ -367,5 +367,65 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
         WHERE hotkey IS NOT NULL AND TRIM(hotkey) != '';
     "#,
     ),
+    M::up(
+        r#"
+    ALTER TABLE saved_history_views
+        ADD COLUMN capture_tags TEXT NOT NULL DEFAULT '[]';
+    "#,
+    ),
+    M::up(
+        r#"
+    CREATE TABLE scenarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        saved_view_id INTEGER NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        client_values_json TEXT NOT NULL DEFAULT '[]',
+        project_values_json TEXT NOT NULL DEFAULT '[]',
+        activity_values_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        created_at_unix_ms INTEGER NOT NULL,
+        updated_at_unix_ms INTEGER NOT NULL,
+        FOREIGN KEY (saved_view_id) REFERENCES saved_history_views(id) ON DELETE RESTRICT
+    );
+
+    CREATE INDEX idx_scenarios_saved_view
+        ON scenarios(saved_view_id, name COLLATE NOCASE);
+
+    CREATE TABLE clipboard_item_properties (
+        item_id INTEGER NOT NULL,
+        property_key TEXT NOT NULL CHECK(property_key IN ('client', 'project', 'activity')),
+        value TEXT NOT NULL,
+        normalized_value TEXT NOT NULL,
+        source TEXT NOT NULL CHECK(source IN ('manual', 'scenario', 'enrichment')),
+        created_at_unix_ms INTEGER NOT NULL,
+        updated_at_unix_ms INTEGER NOT NULL,
+        PRIMARY KEY (item_id, property_key, normalized_value),
+        FOREIGN KEY (item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX idx_clipboard_item_properties_lookup
+        ON clipboard_item_properties(property_key, normalized_value, item_id);
+
+    CREATE TABLE clipboard_item_metadata_suppressions (
+        item_id INTEGER NOT NULL,
+        metadata_kind TEXT NOT NULL CHECK(metadata_kind IN ('tag', 'property')),
+        metadata_key TEXT NOT NULL DEFAULT '',
+        value TEXT NOT NULL,
+        normalized_value TEXT NOT NULL,
+        created_at_unix_ms INTEGER NOT NULL,
+        PRIMARY KEY (item_id, metadata_kind, metadata_key, normalized_value),
+        FOREIGN KEY (item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE
+    );
+
+    ALTER TABLE clipboard_item_capture_events ADD COLUMN scenario_id INTEGER;
+    ALTER TABLE clipboard_item_capture_events ADD COLUMN scenario_session_id TEXT;
+    ALTER TABLE clipboard_item_capture_events ADD COLUMN scenario_revision INTEGER;
+    ALTER TABLE clipboard_item_capture_events ADD COLUMN scenario_snapshot_json TEXT;
+
+    CREATE INDEX idx_clipboard_capture_events_scenario
+        ON clipboard_item_capture_events(scenario_id, captured_at_unix_ms DESC);
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

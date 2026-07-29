@@ -109,6 +109,61 @@ pub struct ClipboardCapture {
     enabled: Arc<AtomicBool>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureTagContextSnapshot {
+    pub view_id: i64,
+    pub view_title: String,
+    pub query: String,
+    pub tags: Vec<String>,
+}
+
+#[derive(Clone, Default)]
+pub struct CaptureTagContextState {
+    active: Arc<Mutex<Option<CaptureTagContextSnapshot>>>,
+}
+
+impl CaptureTagContextState {
+    pub fn snapshot(&self) -> Result<Option<CaptureTagContextSnapshot>, String> {
+        self.active
+            .lock()
+            .map(|active| active.clone())
+            .map_err(|_| "capture tag context mutex poisoned".to_string())
+    }
+
+    pub fn arm(
+        &self,
+        view_id: i64,
+        view_title: String,
+        query: String,
+        tags: Vec<String>,
+    ) -> Result<CaptureTagContextSnapshot, String> {
+        if tags.is_empty() {
+            return Err("saved view has no capture tags".to_string());
+        }
+        let snapshot = CaptureTagContextSnapshot {
+            view_id,
+            view_title,
+            query,
+            tags,
+        };
+        *self
+            .active
+            .lock()
+            .map_err(|_| "capture tag context mutex poisoned".to_string())? =
+            Some(snapshot.clone());
+        Ok(snapshot)
+    }
+
+    pub fn clear(&self) -> Result<(), String> {
+        *self
+            .active
+            .lock()
+            .map_err(|_| "capture tag context mutex poisoned".to_string())? = None;
+        Ok(())
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct SelfWriteSuppression {
     pending: Arc<Mutex<Option<PendingSelfWrite>>>,
@@ -127,6 +182,8 @@ struct TextClipboardHandler<R: Runtime> {
     suppression: SelfWriteSuppression,
     storage: crate::storage::AppStorage,
     previous_window: crate::window_focus::PreviousWindow,
+    capture_tag_context: CaptureTagContextState,
+    active_scenario: crate::scenario::ActiveScenarioState,
 }
 
 #[derive(Clone, Serialize)]
@@ -145,6 +202,8 @@ impl<R: Runtime> TextClipboardHandler<R> {
         suppression: SelfWriteSuppression,
         storage: crate::storage::AppStorage,
         previous_window: crate::window_focus::PreviousWindow,
+        capture_tag_context: CaptureTagContextState,
+        active_scenario: crate::scenario::ActiveScenarioState,
     ) -> clipboard_rs::Result<Self> {
         Ok(Self {
             app,
@@ -154,6 +213,8 @@ impl<R: Runtime> TextClipboardHandler<R> {
             suppression,
             storage,
             previous_window,
+            capture_tag_context,
+            active_scenario,
         })
     }
 }
@@ -260,10 +321,19 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
         match outcome {
             CaptureOutcome::CapturedText => {
                 let capture_context = capture_context_from_probe("clipboard", &probe_result);
-                match self.storage.insert_text_with_context(
+                let capture_tags = self.capture_tag_context
+                    .snapshot()
+                    .ok()
+                    .flatten()
+                    .map(|context| context.tags)
+                    .unwrap_or_default();
+                let active_scenario = self.active_scenario.snapshot().ok().flatten();
+                match self.storage.insert_text_with_scenario(
                     &normalized,
                     &hash,
                     Some(capture_context),
+                    &capture_tags,
+                    active_scenario,
                 ) {
                     Ok(item_id) => {
                         self.apply_builtin_enrichment(item_id, &normalized);
@@ -361,10 +431,19 @@ impl<R: Runtime> TextClipboardHandler<R> {
         match outcome {
             CaptureOutcome::CapturedImage => {
                 let capture_context = capture_context_from_probe("clipboard", &probe_result);
-                match self
-                    .storage
-                    .insert_image_with_context(&image, Some(capture_context))
-                {
+                let capture_tags = self.capture_tag_context
+                    .snapshot()
+                    .ok()
+                    .flatten()
+                    .map(|context| context.tags)
+                    .unwrap_or_default();
+                let active_scenario = self.active_scenario.snapshot().ok().flatten();
+                match self.storage.insert_image_with_scenario(
+                    &image,
+                    Some(capture_context),
+                    &capture_tags,
+                    active_scenario,
+                ) {
                     Ok(item_id) => {
                         self.emit_history_changed(item_id, "image");
                         self.run_clipboard_change_actions(item_id);
@@ -566,6 +645,8 @@ pub fn spawn_text_watcher<R: Runtime>(
     storage: crate::storage::AppStorage,
     suppression: SelfWriteSuppression,
     previous_window: crate::window_focus::PreviousWindow,
+    capture_tag_context: CaptureTagContextState,
+    active_scenario: crate::scenario::ActiveScenarioState,
     enabled: bool,
 ) -> clipboard_rs::Result<ClipboardCapture> {
     let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
@@ -577,6 +658,8 @@ pub fn spawn_text_watcher<R: Runtime>(
         suppression,
         storage,
         previous_window,
+        capture_tag_context,
+        active_scenario,
     )?;
     let mut watcher = ClipboardWatcherContext::<TextClipboardHandler<R>>::new()?;
     watcher.add_handler(handler);

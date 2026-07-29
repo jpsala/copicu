@@ -82,4 +82,27 @@ function tokenizeSearchQuery(query: string) {
   for (const char of query) { if (escaped) { current += char; escaped = false; } else if (char === "\\" && inQuote) escaped = true; else if (char === '"') inQuote = !inQuote; else if (/\s/.test(char) && !inQuote) { if (current) { tokens.push(current); current = ""; } } else current += char; }
   if (current) tokens.push(current); return tokens;
 }
+
+export function positiveTagFilters(query: string) {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const token of tokenizeSearchQuery(query)) {
+    if (token.startsWith("-")) continue;
+    const separator = token.indexOf(":");
+    const key = separator > 0 ? token.slice(0, separator).toLocaleLowerCase() : "";
+    const value = token.startsWith("#")
+      ? token.slice(1)
+      : key === "tag" || key === "tags"
+        ? token.slice(separator + 1)
+        : "";
+    const normalized = value.trim().replace(/^#/, "");
+    const identity = normalized.toLocaleLowerCase();
+    if (normalized && !seen.has(identity)) {
+      seen.add(identity);
+      tags.push(normalized);
+    }
+  }
+  return tags;
+}
+
 export function usesStructuredSearchSyntax(query: string) { return tokenizeSearchQuery(query).some((token) => { const negated = token.startsWith("-") && token.length > 1; const rawToken = negated ? token.slice(1) : token; if (negated || rawToken.startsWith("#")) return true; const separator = rawToken.indexOf(":"); return separator > 0 && separator < rawToken.length - 1 && STRUCTURED_FILTER_KEYS.has(rawToken.slice(0, separator).toLocaleLowerCase()); }); }

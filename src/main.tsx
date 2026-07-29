@@ -34,6 +34,7 @@ import Command from "lucide-react/dist/esm/icons/command.mjs";
 import Copy from "lucide-react/dist/esm/icons/copy.mjs";
 import CornerDownLeft from "lucide-react/dist/esm/icons/corner-down-left.mjs";
 import FileCode2 from "lucide-react/dist/esm/icons/file-code-2.mjs";
+import Flag from "lucide-react/dist/esm/icons/flag.mjs";
 import ListChecks from "lucide-react/dist/esm/icons/list-checks.mjs";
 import ListRestart from "lucide-react/dist/esm/icons/list-restart.mjs";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.mjs";
@@ -59,16 +60,19 @@ import type {
   ActionTrigger,
   ActivateItemRequest,
   ActivationOptions,
+  ActiveScenarioSession,
   ApplyItemTagsRequest,
   ClipKind,
   CompoundHotkeyPendingEvent,
   CreateHistoryItemRequest,
   CreateHistoryItemResult,
+  CreateScenarioFromQueryRequest,
   CreateTagRequest,
   EnterAction,
   MarkdownOutputPayload,
   RunActionRequest,
   SavedHistoryView,
+  Scenario,
   SetHistoryItemsMarkedRequest,
   SetHistoryQueryMarkedRequest,
   TagSummary,
@@ -109,6 +113,7 @@ import {
 } from "./ui/controls";
 import { ShortcutBadge } from "./ui/ShortcutBadge";
 import { ToastStack } from "./ui/ToastStack";
+import { ScenarioSwitcher } from "./ui/ScenarioSwitcher";
 import { TagEditor, type TagEditorMode } from "./ui/TagEditor";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
@@ -333,6 +338,25 @@ type TagEditorDraft = {
   initialTags: string[];
 };
 
+type OpenedSavedView = {
+  id: number;
+  title: string;
+  query: string;
+  captureTags: string[];
+};
+
+type CaptureTagContext = {
+  viewId: number;
+  viewTitle: string;
+  query: string;
+  tags: string[];
+};
+
+type PickerFilterEvent = {
+  query: string;
+  view?: Omit<OpenedSavedView, "query">;
+};
+
 type MarkdownImage = {
   alt: string;
   src: string;
@@ -378,6 +402,7 @@ type CommandPaletteEntry =
       title: string;
       description: string;
       query: string;
+      savedView: SavedHistoryView | null;
     }
   | {
       id: string;
@@ -422,6 +447,7 @@ const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
 const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
+const SCENARIO_SESSION_CHANGED_EVENT = "copicu://scenario/session-changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
 const NOTIFICATION_ROW_HEIGHT = 78;
 const NOTIFICATIONS_WINDOW_CHROME = 10;
@@ -639,6 +665,38 @@ function applyItemTags(request: ApplyItemTagsRequest) {
   return invoke<void>("apply_item_tags", { request });
 }
 
+function getCaptureTagContext() {
+  return invoke<CaptureTagContext | null>("get_capture_tag_context");
+}
+
+function armCaptureTagContext(viewId: number) {
+  return invoke<CaptureTagContext>("arm_capture_tag_context", { viewId });
+}
+
+function stopCaptureTagContext() {
+  return invoke<void>("stop_capture_tag_context");
+}
+
+function listScenarios() {
+  return invoke<Scenario[]>("list_scenarios");
+}
+
+function createScenarioFromQuery(request: CreateScenarioFromQueryRequest) {
+  return invoke<Scenario>("create_scenario_from_query", { request });
+}
+
+function getActiveScenarioSession() {
+  return invoke<ActiveScenarioSession | null>("get_active_scenario_session");
+}
+
+function activateScenario(id: number) {
+  return invoke<ActiveScenarioSession>("activate_scenario", { id });
+}
+
+function stopActiveScenario() {
+  return invoke<void>("stop_active_scenario");
+}
+
 function countMarkedHistoryItems() {
   return invoke<number>("count_marked_history_items");
 }
@@ -674,6 +732,11 @@ function getCompoundHotkeyPending() {
 
 function openSettingsWindow() {
   return invoke("open_settings_window");
+}
+
+function openScenarioSettings() {
+  window.localStorage.setItem("copicu:settings-focus-section", "scenarios");
+  return invoke<void>("open_scenario_settings");
 }
 
 function openMetadataWindow(itemId: number) {
@@ -926,6 +989,15 @@ function readLockedFilterQuery(): string | null {
   }
 }
 
+function isScenarioCommand(query: string) {
+  return /^>\s*(?:escenario|scenario)(?:\s+.*)?$/i.test(query.trim());
+}
+
+function scenarioCommandSearch(query: string) {
+  const match = query.trim().match(/^>\s*(?:escenario|scenario)(?:\s+(.*))?$/i);
+  return match ? (match[1] ?? "").trim() : null;
+}
+
 function writeLockedFilterQuery(query: string | null) {
   try {
     if (query) {
@@ -963,6 +1035,15 @@ function App() {
   const [knownTagSlugs, setKnownTagSlugs] = useState<string[]>([]);
   const [paletteTags, setPaletteTags] = useState<TagSummary[]>([]);
   const [savedHistoryViews, setSavedHistoryViews] = useState<SavedHistoryView[]>([]);
+  const [openedSavedView, setOpenedSavedView] = useState<OpenedSavedView | null>(null);
+  const [captureTagContext, setCaptureTagContext] = useState<CaptureTagContext | null>(null);
+  const [captureTagContextBusy, setCaptureTagContextBusy] = useState(false);
+  const [activeScenarioSession, setActiveScenarioSession] = useState<ActiveScenarioSession | null>(null);
+  const [activeScenarioBusy, setActiveScenarioBusy] = useState(false);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [scenarioSwitcherOpen, setScenarioSwitcherOpen] = useState(false);
+  const [scenarioSwitcherLoading, setScenarioSwitcherLoading] = useState(false);
+  const [scenariosLoaded, setScenariosLoaded] = useState(false);
   const [activeSearchSuggestion, setActiveSearchSuggestion] = useState(0);
   const [dismissedAutocompleteQuery, setDismissedAutocompleteQuery] = useState<string | null>(null);
   const [pickerPinned, setPickerPinned] = useState(false);
@@ -1017,6 +1098,8 @@ function App() {
   const whichKeyRevealTimerRef = useRef<number | null>(null);
   const pickerWasHiddenRef = useRef(false);
   const filterLockedRef = useRef(filterLocked);
+  const captureTagContextRef = useRef<CaptureTagContext | null>(captureTagContext);
+  const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
 
   const selectedIndex = useMemo(
     () => history.findIndex((item) => item.id === selectedItemId),
@@ -1029,21 +1112,16 @@ function App() {
   );
   const effectiveSelection = selectedItems.length > 0 ? selectedItems : selectedItem ? [selectedItem] : [];
   const hasMultiSelection = effectiveSelection.length > 1;
-  const markedVisibleCount = useMemo(
-    () => history.reduce((count, item) => count + (item.is_marked ? 1 : 0), 0),
-    [history],
-  );
   const visibleMarkedItems = useMemo(
     () => history.filter((item) => item.is_marked),
     [history],
   );
-  const markControlState = history.length === 0
-    ? "empty"
-    : markedVisibleCount === history.length
-      ? "checked"
-      : markedVisibleCount > 0
-        ? "mixed"
-        : "unchecked";
+  const selectedVisibleCount = useMemo(
+    () => history.reduce((count, item) => count + (selectedIds.has(item.id) ? 1 : 0), 0),
+    [history, selectedIds],
+  );
+  const allVisibleSelected = history.length > 0 && selectedVisibleCount === history.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const hasNextHistoryPage = historyNextCursor !== null;
   const searchTriggerMode = settings.picker.searchTriggerMode;
   const structuredSearchHold =
@@ -1054,12 +1132,23 @@ function App() {
   const effectiveSearchTriggerMode: SearchTriggerMode = structuredSearchHold ? "enter" : searchTriggerMode;
   const nextTriggerMode = nextSearchTriggerMode(searchTriggerMode);
   const searchTriggerAriaLabel = `Search trigger: ${searchTriggerModeName(searchTriggerMode)}, switch to ${searchTriggerModeName(nextTriggerMode)}`;
+  const scenarioCommandQuery = aiComposerMode ? null : scenarioCommandSearch(query);
+  const scenarioCommandOptions = useMemo(() => {
+    if (scenarioCommandQuery === null) {
+      return [];
+    }
+    const normalized = scenarioCommandQuery.toLocaleLowerCase();
+    return [...scenarios]
+      .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs)
+      .filter((scenario) => !normalized || scenario.name.toLocaleLowerCase().includes(normalized));
+  }, [scenarioCommandQuery, scenarios]);
   const autocompleteSuggestions = useMemo(
-    () => (aiComposerMode ? [] : searchSuggestions(query, knownTagSlugs)),
-    [aiComposerMode, knownTagSlugs, query],
+    () => (aiComposerMode || scenarioCommandQuery !== null ? [] : searchSuggestions(query, knownTagSlugs)),
+    [aiComposerMode, knownTagSlugs, query, scenarioCommandQuery],
   );
-  const autocompleteOpen =
-    autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
+  const autocompleteOpen = autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
+  const scenarioCommandOpen = scenarioCommandOptions.length > 0 && dismissedAutocompleteQuery !== query;
+  const searchSuggestionsOpen = autocompleteOpen || scenarioCommandOpen;
   const virtualRowCount = hasNextHistoryPage ? history.length + 1 : history.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
@@ -1106,12 +1195,21 @@ function App() {
   }, [query]);
 
   useEffect(() => {
-    setActiveSearchSuggestion((current) => Math.min(current, Math.max(autocompleteSuggestions.length - 1, 0)));
-  }, [autocompleteSuggestions.length]);
+    const suggestionCount = scenarioCommandOpen ? scenarioCommandOptions.length : autocompleteSuggestions.length;
+    setActiveSearchSuggestion((current) => Math.min(current, Math.max(suggestionCount - 1, 0)));
+  }, [autocompleteSuggestions.length, scenarioCommandOpen, scenarioCommandOptions.length]);
 
   useEffect(() => {
     historyInputQueryRef.current = historyInputQuery;
   }, [historyInputQuery]);
+
+  useEffect(() => {
+    captureTagContextRef.current = captureTagContext;
+  }, [captureTagContext]);
+
+  useEffect(() => {
+    activeScenarioSessionRef.current = activeScenarioSession;
+  }, [activeScenarioSession]);
 
   useEffect(() => {
     filterLockedRef.current = filterLocked;
@@ -1182,6 +1280,77 @@ function App() {
     [pushLocalToast],
   );
 
+  const stopCurrentCaptureContext = useCallback(async () => {
+    const previous = captureTagContextRef.current;
+    if (!previous || captureTagContextBusy) {
+      return;
+    }
+    captureTagContextRef.current = null;
+    setCaptureTagContext(null);
+    setCaptureTagContextBusy(true);
+    try {
+      await stopCaptureTagContext();
+    } catch (error) {
+      captureTagContextRef.current = previous;
+      setCaptureTagContext(previous);
+      pushToast({
+        title: "Capture context still active",
+        message: String(error),
+        tone: "danger",
+      });
+    } finally {
+      setCaptureTagContextBusy(false);
+    }
+  }, [captureTagContextBusy, pushToast]);
+
+  const stopCurrentScenario = useCallback(async () => {
+    const previous = activeScenarioSessionRef.current;
+    if (!previous || activeScenarioBusy) {
+      return;
+    }
+    activeScenarioSessionRef.current = null;
+    setActiveScenarioSession(null);
+    setActiveScenarioBusy(true);
+    try {
+      await stopActiveScenario();
+    } catch (error) {
+      activeScenarioSessionRef.current = previous;
+      setActiveScenarioSession(previous);
+      pushToast({
+        title: "Scenario still active",
+        message: String(error),
+        tone: "danger",
+      });
+    } finally {
+      setActiveScenarioBusy(false);
+    }
+  }, [activeScenarioBusy, pushToast]);
+
+  const leaveOpenedSavedView = useCallback(() => {
+    setOpenedSavedView(null);
+    void stopCurrentCaptureContext();
+  }, [stopCurrentCaptureContext]);
+
+  const armOpenedSavedView = useCallback(async () => {
+    if (!openedSavedView || openedSavedView.captureTags.length === 0 || captureTagContextBusy) {
+      return;
+    }
+    setCaptureTagContextBusy(true);
+    try {
+      const nextContext = await armCaptureTagContext(openedSavedView.id);
+      captureTagContextRef.current = nextContext;
+      setCaptureTagContext(nextContext);
+    } catch (error) {
+      pushToast({
+        title: "Could not start capture here",
+        message: String(error),
+        tone: "danger",
+      });
+    } finally {
+      setCaptureTagContextBusy(false);
+    }
+  }, [captureTagContextBusy, openedSavedView, pushToast]);
+
   const closeTransientEditors = useCallback(() => {
     setEditDraft(null);
     setCreateItemDraft(null);
@@ -1197,18 +1366,26 @@ function App() {
     closeTransientEditors();
     setCommandPalette(null);
     setActionPicker(null);
+    setScenarioSwitcherOpen(false);
     setSearchHelpOpen(false);
     setOpenMarkMenu(null);
     setActionError(null);
     setAiComposerMode(false);
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
-    if (!filterLockedRef.current) {
+    if (
+      !filterLockedRef.current &&
+      !captureTagContextRef.current &&
+      !activeScenarioSessionRef.current
+    ) {
       queryRef.current = "";
       historyInputQueryRef.current = "";
       setQuery("");
       setHistoryInputQuery("");
       setHistoryQuery("");
+      if (searchRef.current) {
+        searchRef.current.value = "";
+      }
     }
     selectionInteractionSeqRef.current += 1;
     const emptySelection = new Set<number>();
@@ -1217,9 +1394,6 @@ function App() {
     setSelectedItemId(null);
     setSelectedIds(emptySelection);
     selectionAnchorItemIdRef.current = null;
-    if (searchRef.current) {
-      searchRef.current.value = "";
-    }
     historyScrollRef.current?.scrollTo({ top: 0 });
   }, [closeTransientEditors]);
 
@@ -1229,6 +1403,76 @@ function App() {
     setActionPicker(null);
     void openSettingsWindow().catch((error) => setSettingsError(String(error)));
   }, []);
+
+  const reloadScenarios = useCallback(async () => {
+    setScenarioSwitcherLoading(true);
+    try {
+      const [nextScenarios, tags] = await Promise.all([listScenarios(), listTags()]);
+      setScenarios(nextScenarios);
+      setPaletteTags(tags);
+      setKnownTagSlugs(tags.map((tag) => tag.slug));
+      setScenariosLoaded(true);
+    } catch (error) {
+      pushToast({ title: "Could not load scenarios", message: String(error), tone: "danger" });
+    } finally {
+      setScenarioSwitcherLoading(false);
+    }
+  }, [pushToast]);
+
+  const openScenarioSwitcher = useCallback(() => {
+    closeTransientEditors();
+    setCommandPalette(null);
+    setActionPicker(null);
+    setScenarioSwitcherOpen(true);
+    void reloadScenarios();
+  }, [closeTransientEditors, reloadScenarios]);
+
+  const activateScenarioFromPicker = useCallback(async (id: number) => {
+    if (activeScenarioBusy) return;
+    setActiveScenarioBusy(true);
+    try {
+      const session = await activateScenario(id);
+      activeScenarioSessionRef.current = session;
+      setActiveScenarioSession(session);
+      setScenarioSwitcherOpen(false);
+      setDismissedAutocompleteQuery(session.query);
+    } catch (error) {
+      pushToast({ title: "Could not activate scenario", message: String(error), tone: "danger" });
+    } finally {
+      setActiveScenarioBusy(false);
+    }
+  }, [activeScenarioBusy, pushToast]);
+
+  const createScenarioFromPicker = useCallback(async (
+    request: CreateScenarioFromQueryRequest,
+    activate: boolean,
+  ) => {
+    if (activeScenarioBusy) return;
+    setActiveScenarioBusy(true);
+    try {
+      const created = await createScenarioFromQuery(request);
+      setScenarios((current) => [created, ...current.filter((scenario) => scenario.id !== created.id)]);
+      if (activate) {
+        const session = await activateScenario(created.id);
+        activeScenarioSessionRef.current = session;
+        setActiveScenarioSession(session);
+        setScenarioSwitcherOpen(false);
+      } else {
+        pushToast({ title: "Scenario saved", message: created.name, tone: "success" });
+      }
+    } catch (error) {
+      pushToast({ title: "Could not create scenario", message: String(error), tone: "danger" });
+      throw error;
+    } finally {
+      setActiveScenarioBusy(false);
+    }
+  }, [activeScenarioBusy, pushToast]);
+
+  useEffect(() => {
+    if (scenarioCommandQuery !== null && !scenariosLoaded && !scenarioSwitcherLoading) {
+      void reloadScenarios();
+    }
+  }, [reloadScenarios, scenarioCommandQuery, scenarioSwitcherLoading, scenariosLoaded]);
 
   const openCommandPalette = useCallback(() => {
     closeTransientEditors();
@@ -1468,6 +1712,26 @@ function App() {
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        event.key.toLocaleLowerCase() === "s" &&
+        !scenarioSwitcherOpen &&
+        !commandPalette &&
+        !actionPicker &&
+        !editDraft &&
+        !createItemDraft &&
+        !batchMetadataDraft &&
+        !tagEditorDraft &&
+        !searchHelpOpen
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openScenarioSwitcher();
+        return;
+      }
+      if (
         event.ctrlKey &&
         event.altKey &&
         !event.metaKey &&
@@ -1499,6 +1763,8 @@ function App() {
     editDraft,
     tagEditorDraft,
     openActionPicker,
+    openScenarioSwitcher,
+    scenarioSwitcherOpen,
     searchHelpOpen,
   ]);
 
@@ -1576,10 +1842,10 @@ function App() {
   );
   const commandPaletteEntries = useMemo((): CommandPaletteEntry[] => {
     const navigation: CommandPaletteEntry[] = [
-      { id: "history.all", kind: "navigation", group: "History", title: "All history", description: "Browse every clipboard item.", query: "" },
-      { id: "history.text", kind: "navigation", group: "History", title: "Text", description: "Browse text clips.", query: "kind:text" },
-      { id: "history.images", kind: "navigation", group: "History", title: "Images", description: "Browse image clips.", query: "kind:image" },
-      { id: "history.marked", kind: "navigation", group: "History", title: "Marked", description: "Browse marked clips.", query: "is:marked" },
+      { id: "history.all", kind: "navigation", group: "History", title: "All history", description: "Browse every clipboard item.", query: "", savedView: null },
+      { id: "history.text", kind: "navigation", group: "History", title: "Text", description: "Browse text clips.", query: "kind:text", savedView: null },
+      { id: "history.images", kind: "navigation", group: "History", title: "Images", description: "Browse image clips.", query: "kind:image", savedView: null },
+      { id: "history.marked", kind: "navigation", group: "History", title: "Marked", description: "Browse marked clips.", query: "is:marked", savedView: null },
       ...savedHistoryViews.map((view): CommandPaletteEntry => ({
         id: `saved-view.${view.id}`,
         kind: "navigation",
@@ -1587,6 +1853,7 @@ function App() {
         title: view.title,
         description: view.query || "All history",
         query: view.query,
+        savedView: view,
       })),
       ...paletteTags
         .filter((tag) => tag.pinned)
@@ -1597,6 +1864,7 @@ function App() {
           title: tag.label,
           description: `Filter history by #${tag.slug}.`,
           query: `tag:${tag.slug}`,
+          savedView: null,
         })),
     ];
     const actions = [
@@ -1650,6 +1918,7 @@ function App() {
 
       for (const effect of effects ?? []) {
         if (effect.type === "picker.filter") {
+          leaveOpenedSavedView();
           queryRef.current = effect.query;
           setQuery(effect.query);
           setSelectedIds(new Set());
@@ -1662,7 +1931,7 @@ function App() {
 
       return nextFilterQuery;
     },
-    [],
+    [leaveOpenedSavedView],
   );
 
   const refreshMarkedCount = useCallback(async () => {
@@ -1912,9 +2181,17 @@ function App() {
     [aiComposerMode, historyInputQuery, historyQuery, query, refreshMarkedCount],
   );
 
-  const openPaletteNavigation = useCallback((nextQuery: string) => {
+  const openPaletteNavigation = useCallback((entry: Extract<CommandPaletteEntry, { kind: "navigation" }>) => {
+    const nextQuery = entry.query;
     setCommandPalette(null);
     setAiComposerMode(false);
+    void stopCurrentCaptureContext();
+    setOpenedSavedView(entry.savedView ? {
+      id: entry.savedView.id,
+      title: entry.savedView.title,
+      query: entry.savedView.query,
+      captureTags: entry.savedView.captureTags,
+    } : null);
     queryRef.current = nextQuery;
     setQuery(nextQuery);
     setSearchInterpretation(null);
@@ -1926,7 +2203,7 @@ function App() {
       queryOverride: nextQuery,
       allowAi: false,
     }).then(focusSearch);
-  }, [focusSearch, refreshHistory]);
+  }, [focusSearch, refreshHistory, stopCurrentCaptureContext]);
 
   const refreshAppliedHistory = useCallback(
     async (options: {
@@ -1973,12 +2250,55 @@ function App() {
 
     let active = true;
     let unlisten: (() => void) | null = null;
+    let unlistenScenario: (() => void) | null = null;
 
-    void listen<{ query: string }>(PICKER_FILTER_EVENT, (event) => {
+    void Promise.all([getActiveScenarioSession(), getCaptureTagContext()])
+      .then(([scenarioSession, context]) => {
+        if (!active) {
+          return;
+        }
+        if (!scenarioSession && !context) {
+          return;
+        }
+        const nextQuery = scenarioSession?.query ?? context?.query ?? "";
+        if (scenarioSession) {
+          activeScenarioSessionRef.current = scenarioSession;
+          setActiveScenarioSession(scenarioSession);
+          setOpenedSavedView({
+            id: scenarioSession.savedViewId,
+            title: scenarioSession.savedViewTitle,
+            query: scenarioSession.query,
+            captureTags: [],
+          });
+        } else if (context) {
+          captureTagContextRef.current = context;
+          setCaptureTagContext(context);
+          setOpenedSavedView({
+            id: context.viewId,
+            title: context.viewTitle,
+            query: context.query,
+            captureTags: context.tags,
+          });
+        }
+        queryRef.current = nextQuery;
+        setQuery(nextQuery);
+        void refreshHistory({
+          resetScroll: true,
+          queryOverride: nextQuery,
+          allowAi: false,
+        });
+      })
+      .catch(() => undefined);
+
+    void listen<PickerFilterEvent>(PICKER_FILTER_EVENT, (event) => {
       if (!active) {
         return;
       }
       const nextQuery = event.payload.query.trim();
+      const nextView = event.payload.view;
+      captureTagContextRef.current = null;
+      setCaptureTagContext(null);
+      setOpenedSavedView(nextView ? { ...nextView, query: nextQuery } : null);
       setAiComposerMode(false);
       queryRef.current = nextQuery;
       setQuery(nextQuery);
@@ -1995,10 +2315,20 @@ function App() {
       unlisten = nextUnlisten;
     });
 
+    void listen<ActiveScenarioSession | null>(SCENARIO_SESSION_CHANGED_EVENT, (event) => {
+      if (!active) {
+        return;
+      }
+      activeScenarioSessionRef.current = event.payload;
+      setActiveScenarioSession(event.payload);
+    }).then((nextUnlisten) => {
+      unlistenScenario = nextUnlisten;
+    });
 
     return () => {
       active = false;
       unlisten?.();
+      unlistenScenario?.();
     };
   }, [focusSearch, refreshHistory]);
 
@@ -2087,7 +2417,10 @@ function App() {
   const setRangeSelection = useCallback((toIndex: number) => {
     selectionInteractionSeqRef.current += 1;
     if (history.length === 0) {
-      setSelectedIds(new Set());
+      const emptySelection = new Set<number>();
+      selectedIdsRef.current = emptySelection;
+      selectedItemIdRef.current = null;
+      setSelectedIds(emptySelection);
       setSelectedItemId(null);
       selectionAnchorItemIdRef.current = null;
       return;
@@ -2100,9 +2433,25 @@ function App() {
     const fromIndex = anchorIndex >= 0 ? anchorIndex : nextIndex;
     const start = Math.min(fromIndex, nextIndex);
     const end = Math.max(fromIndex, nextIndex);
+    const nextSelection = new Set(history.slice(start, end + 1).map((item) => item.id));
+    selectedItemIdRef.current = history[nextIndex].id;
+    selectedIdsRef.current = nextSelection;
     setSelectedItemId(history[nextIndex].id);
-    setSelectedIds(new Set(history.slice(start, end + 1).map((item) => item.id)));
+    setSelectedIds(nextSelection);
   }, [history, selectedIndex]);
+
+  const setVisibleSelection = useCallback((selected: boolean) => {
+    selectionInteractionSeqRef.current += 1;
+    const nextSelection = selected ? new Set(history.map((item) => item.id)) : new Set<number>();
+    selectedIdsRef.current = nextSelection;
+    setSelectedIds(nextSelection);
+    if (selected && selectedItemIdRef.current === null && history[0]) {
+      selectedItemIdRef.current = history[0].id;
+      setSelectedItemId(history[0].id);
+      selectionAnchorItemIdRef.current = history[0].id;
+    }
+    focusSearch();
+  }, [focusSearch, history]);
 
   const moveSelection = useCallback(
     (delta: number, extend: boolean) => {
@@ -2468,6 +2817,7 @@ function App() {
   }, []);
 
   const showMarkedFilter = useCallback((mode: "all" | "marked" | "unmarked") => {
+    leaveOpenedSavedView();
     setOpenMarkMenu(null);
     setSelectedItemId(null);
     setSelectedIds(new Set());
@@ -2484,7 +2834,7 @@ function App() {
       setHistoryError(String(error));
     });
     focusSearch();
-  }, [aiComposerMode, focusSearch, query, refreshHistory]);
+  }, [aiComposerMode, focusSearch, leaveOpenedSavedView, query, refreshHistory]);
 
   const selectForContextMenu = useCallback((item: HistoryItem, index: number) => {
     if (selectedIdsRef.current.has(item.id)) {
@@ -2533,7 +2883,7 @@ function App() {
       setKnownTagSlugs(availableTags.map((tag) => tag.slug));
       setTagEditorDraft({
         itemIds: items.map((item) => item.id),
-        mode: items.length === 1 ? "replace" : "add",
+        mode: items.length === 1 ? "replace" : "patch",
         initialTags,
       });
     } catch (error) {
@@ -2586,7 +2936,7 @@ function App() {
       onClear,
     }: {
       items: HistoryItem[];
-      noun: "selected" | "checked";
+      noun: "selected" | "marked";
       onClear?: () => void;
     }) => {
       const hasItems = items.length > 0;
@@ -2623,8 +2973,8 @@ function App() {
               }
             }}
           >
-            <Plus size={14} strokeWidth={2.2} aria-hidden="true" />
-            <span>Add tags to {noun}</span>
+            <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
+            <span>Edit tags for {noun}</span>
             <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
           </UiUnstyledButton>
           {scriptActions.map((action) => (
@@ -2723,6 +3073,7 @@ function App() {
       setCreateItemDraft(null);
       setAiComposerMode(false);
       setSearchInterpretation(null);
+      leaveOpenedSavedView();
       queryRef.current = "";
       setQuery("");
       setSelectedIds(new Set());
@@ -2739,7 +3090,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [createItemDraft, focusSearch, pushToast, refreshHistory]);
+  }, [createItemDraft, focusSearch, leaveOpenedSavedView, pushToast, refreshHistory]);
 
   const saveBatchMetadata = useCallback(async () => {
     if (!batchMetadataDraft) {
@@ -2782,7 +3133,7 @@ function App() {
     }
   }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, refreshAppliedHistory]);
 
-  const saveTagEditor = useCallback(async (tags: string[]) => {
+  const saveTagEditor = useCallback(async (tags: string[], removeTags: string[]) => {
     if (!tagEditorDraft || tagEditorSaving) {
       return;
     }
@@ -2793,6 +3144,7 @@ function App() {
       await applyItemTags({
         itemIds: tagEditorDraft.itemIds,
         tags,
+        removeTags,
         mode: tagEditorDraft.mode,
       });
       const itemCount = tagEditorDraft.itemIds.length;
@@ -2805,8 +3157,8 @@ function App() {
       setKnownTagSlugs(availableTags.map((tag) => tag.slug));
       if (itemCount > 1) {
         pushToast({
-          title: "Tags added",
-          message: `Updated ${itemCount} clips.`,
+          title: "Tags updated",
+          message: `Applied tag changes to ${itemCount} clips.`,
           tone: "success",
         });
       }
@@ -3024,7 +3376,7 @@ function App() {
     const trimmedQuery = query.trim();
     const queryChanged = trimmedQuery !== historyInputQuery;
     const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
-    if (searchInput.mode === "ai" || effectiveSearchTriggerMode !== "realtime") {
+    if (isScenarioCommand(trimmedQuery) || searchInput.mode === "ai" || effectiveSearchTriggerMode !== "realtime") {
       if (searchDebounceTimerRef.current !== null) {
         window.clearTimeout(searchDebounceTimerRef.current);
         searchDebounceTimerRef.current = null;
@@ -3287,6 +3639,9 @@ function App() {
     if (aiPlanning) {
       return "AI planning";
     }
+    if (scenarioCommandQuery !== null) {
+      return scenarioCommandOptions.length > 0 ? "Choose scenario" : "No matching scenario";
+    }
     if (aiDraftActive) {
       return "AI draft";
     }
@@ -3318,15 +3673,15 @@ function App() {
     historyTotalCount,
     newClipsAvailable,
     query,
+    scenarioCommandOptions.length,
+    scenarioCommandQuery,
     effectiveSearchTriggerMode,
     structuredSearchHold,
   ]);
-  const markMenuCountLabel = query.trim()
-    ? formatCount(historyFilteredCount ?? history.length)
-    : markedTotalCount !== null && markedTotalCount > 0
-      ? formatCount(markedTotalCount)
-      : null;
-  const markMenuCountAria = query.trim() ? "filtered" : "checked";
+  const markMenuCountLabel = markedTotalCount !== null && markedTotalCount > 0
+    ? formatCount(markedTotalCount)
+    : null;
+  const markMenuCountAria = "marked";
   const checkedActionItems = markedActionItems ?? visibleMarkedItems;
   const checkedActionCount = markedTotalCount ?? checkedActionItems.length;
   const runSearchNow = useCallback(() => {
@@ -3357,6 +3712,7 @@ function App() {
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [aiComposerMode, historyInputQuery, query, runSearchNow]);
   const clearSearchFilter = useCallback(() => {
+    leaveOpenedSavedView();
     if (searchDebounceTimerRef.current !== null) {
       window.clearTimeout(searchDebounceTimerRef.current);
       searchDebounceTimerRef.current = null;
@@ -3375,8 +3731,9 @@ function App() {
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
     window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [refreshHistory]);
+  }, [leaveOpenedSavedView, refreshHistory]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
+    leaveOpenedSavedView();
     skipNextRealtimeSearchRef.current = true;
     queryRef.current = chip.queryWithoutClause;
     setQuery(chip.queryWithoutClause);
@@ -3389,13 +3746,21 @@ function App() {
       queryOverride: chip.queryWithoutClause,
       allowAi: false,
     });
-  }, [refreshHistory]);
+  }, [leaveOpenedSavedView, refreshHistory]);
   const acceptSearchSuggestion = useCallback((index = activeSearchSuggestion) => {
+    if (scenarioCommandOpen) {
+      const scenario = scenarioCommandOptions[index];
+      if (scenario) void activateScenarioFromPicker(scenario.id);
+      return;
+    }
     const suggestion = autocompleteSuggestions[index];
     if (!suggestion) {
       return;
     }
     const nextQuery = replaceActiveSearchToken(query, suggestion.replacement);
+    if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
+      leaveOpenedSavedView();
+    }
     const nextStructuredHold =
       searchTriggerMode === "realtime" &&
       settings.picker.deferStructuredSearchUntilEnter &&
@@ -3415,18 +3780,23 @@ function App() {
     activeSearchSuggestion,
     autocompleteSuggestions,
     historyInputQuery,
+    leaveOpenedSavedView,
+    openedSavedView,
     query,
+    scenarioCommandOpen,
+    scenarioCommandOptions,
     searchTriggerMode,
     settings.picker.deferStructuredSearchUntilEnter,
+    activateScenarioFromPicker,
   ]);
   const searchControlBaseProps = {
     className: "search-input",
     variant: "unstyled" as const,
     "aria-label": "Search clipboard history",
     "aria-autocomplete": aiComposerMode ? "none" as const : "list" as const,
-    "aria-controls": autocompleteOpen ? "search-autocomplete" : "clipboard-feed",
-    "aria-expanded": autocompleteOpen,
-    "aria-activedescendant": autocompleteOpen
+    "aria-controls": searchSuggestionsOpen ? "search-autocomplete" : "clipboard-feed",
+    "aria-expanded": searchSuggestionsOpen,
+    "aria-activedescendant": searchSuggestionsOpen
       ? `search-suggestion-${activeSearchSuggestion}`
       : selectedItem ? `history-item-${selectedItem.id}` : undefined,
     value: query,
@@ -3435,6 +3805,9 @@ function App() {
       'Search help: use plain text, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const nextQuery = event.currentTarget.value;
+      if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
+        leaveOpenedSavedView();
+      }
       const nextStructuredHold =
         searchTriggerMode === "realtime" &&
         settings.picker.deferStructuredSearchUntilEnter &&
@@ -3442,7 +3815,7 @@ function App() {
         usesStructuredSearchSyntax(nextQuery);
       queryRef.current = nextQuery;
       setQuery(nextQuery);
-      setHistoryPending(searchTriggerMode === "realtime" && !nextStructuredHold);
+      setHistoryPending(!isScenarioCommand(nextQuery) && searchTriggerMode === "realtime" && !nextStructuredHold);
       setAiPlanning(false);
       setActionError(null);
       setSearchInterpretation(null);
@@ -3454,6 +3827,11 @@ function App() {
       if (event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "q") {
         event.preventDefault();
         openActionPicker();
+        return;
+      }
+      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "s") {
+        event.preventDefault();
+        openScenarioSwitcher();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
@@ -3528,25 +3906,25 @@ function App() {
 
       switch (event.key) {
         case "Tab":
-          if (autocompleteOpen) {
+          if (searchSuggestionsOpen) {
             event.preventDefault();
             acceptSearchSuggestion();
           }
           break;
         case "ArrowDown":
           event.preventDefault();
-          if (autocompleteOpen) {
-            setActiveSearchSuggestion((current) => (current + 1) % autocompleteSuggestions.length);
+          if (searchSuggestionsOpen) {
+            const count = scenarioCommandOpen ? scenarioCommandOptions.length : autocompleteSuggestions.length;
+            setActiveSearchSuggestion((current) => (current + 1) % count);
           } else {
             moveSelection(1, event.shiftKey);
           }
           break;
         case "ArrowUp":
           event.preventDefault();
-          if (autocompleteOpen) {
-            setActiveSearchSuggestion((current) =>
-              (current - 1 + autocompleteSuggestions.length) % autocompleteSuggestions.length,
-            );
+          if (searchSuggestionsOpen) {
+            const count = scenarioCommandOpen ? scenarioCommandOptions.length : autocompleteSuggestions.length;
+            setActiveSearchSuggestion((current) => (current - 1 + count) % count);
           } else {
             moveSelection(-1, event.shiftKey);
           }
@@ -3582,7 +3960,7 @@ function App() {
           break;
         case "Escape":
           event.preventDefault();
-          if (autocompleteOpen) {
+          if (searchSuggestionsOpen) {
             setDismissedAutocompleteQuery(query);
             break;
           }
@@ -3602,7 +3980,9 @@ function App() {
         case "Enter":
           event.preventDefault();
           setDismissedAutocompleteQuery(query);
-          if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
+          if (scenarioCommandQuery !== null) {
+            if (scenarioCommandOpen) acceptSearchSuggestion();
+          } else if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
             runSearchNow();
           } else if (!historyMatchesQuery) {
             if (effectiveSearchTriggerMode === "enter" || effectiveSearchTriggerMode === "realtime") {
@@ -3644,104 +4024,123 @@ function App() {
       >
       <section className="picker-panel" aria-label="Copicu">
         <div className={`search-row${aiComposerMode ? " is-ai-mode" : ""}`}>
-          <div className="mark-control">
-            <Menu
-              withinPortal
-              position="bottom-start"
-              opened={openMarkMenu !== null}
-              onChange={(opened) => setOpenMarkMenu(opened ? { x: 0, y: 0 } : null)}
-            >
-              <Menu.Target>
-                <UiIconButton
-                  type="button"
-                  className={`mark-menu-button${markMenuCountLabel ? " has-count" : ""}`}
-                  aria-label={
-                    markMenuCountLabel
-                      ? `Mark options, ${markMenuCountLabel} ${markMenuCountAria}`
-                      : "Mark options"
-                  }
-                  aria-expanded={openMarkMenu !== null}
-                  data-mark-state={markControlState}
-                  disabled={history.length === 0 && !query.trim()}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={showMarkMenu}
-                >
-                  <span
-                    className="mark-state-icon"
-                    data-state={markControlState}
-                    aria-hidden="true"
-                  />
-                  {markMenuCountLabel ? (
-                    <span className="mark-menu-count" aria-hidden="true">
-                      {markMenuCountLabel}
-                    </span>
+          <div className="selection-controls">
+            <UiTooltip label={allVisibleSelected ? "Clear visible selection" : "Select all visible"}>
+              <UiCheckbox
+                className="selection-master-checkbox"
+                checked={allVisibleSelected}
+                indeterminate={someVisibleSelected}
+                disabled={history.length === 0}
+                aria-label={allVisibleSelected ? "Clear visible selection" : "Select all visible"}
+                onMouseDown={(event) => event.stopPropagation()}
+                onChange={(event) => setVisibleSelection(event.currentTarget.checked)}
+              />
+            </UiTooltip>
+            <div className="mark-control">
+              <Menu
+                withinPortal
+                position="bottom-start"
+                opened={openMarkMenu !== null}
+                onChange={(opened) => setOpenMarkMenu(opened ? { x: 0, y: 0 } : null)}
+              >
+                <Menu.Target>
+                  <UiIconButton
+                    type="button"
+                    className={`mark-menu-button${markMenuCountLabel ? " has-count" : ""}`}
+                    aria-label={
+                      markMenuCountLabel
+                        ? `Mark options, ${markMenuCountLabel} ${markMenuCountAria}`
+                        : "Mark options"
+                    }
+                    aria-expanded={openMarkMenu !== null}
+                    disabled={history.length === 0 && !query.trim()}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={showMarkMenu}
+                  >
+                    <Flag size={14} strokeWidth={2.1} aria-hidden="true" />
+                    {markMenuCountLabel ? (
+                      <span className="mark-menu-count" aria-hidden="true">
+                        {markMenuCountLabel}
+                      </span>
+                    ) : null}
+                  </UiIconButton>
+                </Menu.Target>
+                <Menu.Dropdown aria-label="Mark options">
+                  <Menu.Item
+                    leftSection={<CheckCheck size={14} strokeWidth={2.2} />}
+                    onClick={() => void setItemsMarked(history, true)}
+                  >
+                    Mark visible
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<Square size={14} strokeWidth={2.2} />}
+                    onClick={() => void setItemsMarked(history, false)}
+                  >
+                    Unmark visible
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<ListChecks size={14} strokeWidth={2.2} />}
+                    onClick={() => void setCurrentQueryMarked(true)}
+                  >
+                    Mark all results
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<CircleSlash size={14} strokeWidth={2.2} />}
+                    onClick={() => void setCurrentQueryMarked(false)}
+                  >
+                    Unmark all results
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item
+                    leftSection={<Flag size={14} strokeWidth={2.2} />}
+                    onClick={() => showMarkedFilter("marked")}
+                  >
+                    Marked
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<Square size={14} strokeWidth={2.2} />}
+                    onClick={() => showMarkedFilter("unmarked")}
+                  >
+                    Unmarked
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<ListRestart size={14} strokeWidth={2.2} />}
+                    onClick={() => showMarkedFilter("all")}
+                  >
+                    All history
+                  </Menu.Item>
+                  {checkedActionCount > 0 ? (
+                    <>
+                      <Menu.Divider />
+                      <div className="mark-menu-section-label">
+                        Marked items
+                        {markedActionItemsLoading ? (
+                          <span>Loading</span>
+                        ) : (
+                          <span>{formatCount(checkedActionCount)}</span>
+                        )}
+                      </div>
+                      {renderBatchItemActions({
+                        items: checkedActionItems,
+                        noun: "marked",
+                      })}
+                    </>
                   ) : null}
-                </UiIconButton>
-              </Menu.Target>
-              <Menu.Dropdown aria-label="Mark options">
-                <Menu.Item
-                  leftSection={<CheckCheck size={14} strokeWidth={2.2} />}
-                  onClick={() => void setItemsMarked(history, true)}
-                >
-                  All visible
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<Square size={14} strokeWidth={2.2} />}
-                  onClick={() => void setItemsMarked(history, false)}
-                >
-                  None visible
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<ListChecks size={14} strokeWidth={2.2} />}
-                  onClick={() => void setCurrentQueryMarked(true)}
-                >
-                  All results
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<CircleSlash size={14} strokeWidth={2.2} />}
-                  onClick={() => void setCurrentQueryMarked(false)}
-                >
-                  None results
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Item
-                  leftSection={<CheckCheck size={14} strokeWidth={2.2} />}
-                  onClick={() => showMarkedFilter("marked")}
-                >
-                  Marked
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<Square size={14} strokeWidth={2.2} />}
-                  onClick={() => showMarkedFilter("unmarked")}
-                >
-                  Unmarked
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<ListRestart size={14} strokeWidth={2.2} />}
-                  onClick={() => showMarkedFilter("all")}
-                >
-                  All history
-                </Menu.Item>
-                {checkedActionCount > 0 ? (
-                  <>
-                    <Menu.Divider />
-                    <div className="mark-menu-section-label">
-                      Checked items
-                      {markedActionItemsLoading ? (
-                        <span>Loading</span>
-                      ) : (
-                        <span>{formatCount(checkedActionCount)}</span>
-                      )}
-                    </div>
-                    {renderBatchItemActions({
-                      items: checkedActionItems,
-                      noun: "checked",
-                    })}
-                  </>
-                ) : null}
-              </Menu.Dropdown>
-            </Menu>
+                </Menu.Dropdown>
+              </Menu>
+            </div>
           </div>
+          <UiButton
+            type="button"
+            className={`scenario-trigger${activeScenarioSession ? " is-active" : ""}`}
+            variant="default"
+            aria-label={activeScenarioSession ? `Active scenario: ${activeScenarioSession.scenarioName}. Open scenarios` : "Open scenarios"}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={openScenarioSwitcher}
+          >
+            <Radio size={14} strokeWidth={2.3} aria-hidden="true" />
+            <span>{activeScenarioSession?.scenarioName ?? "Scenario"}</span>
+          </UiButton>
           <div className={`search-field${!aiComposerMode && query ? " has-clear-button" : ""}`}>
             {aiComposerMode ? (
               <UiTextarea
@@ -3802,23 +4201,39 @@ function App() {
                 </UiIconButton>
               </UiTooltip>
             ) : null}
-            {autocompleteOpen ? (
-              <div id="search-autocomplete" className="search-autocomplete" role="listbox" aria-label="Search suggestions">
-                {autocompleteSuggestions.map((suggestion, index) => (
-                  <button
-                    key={`${suggestion.label}:${index}`}
-                    id={`search-suggestion-${index}`}
-                    type="button"
-                    className="search-autocomplete-option"
-                    role="option"
-                    aria-selected={index === activeSearchSuggestion}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setActiveSearchSuggestion(index)}
-                    onClick={() => acceptSearchSuggestion(index)}
-                  >
-                    {suggestion.label}
-                  </button>
-                ))}
+            {searchSuggestionsOpen ? (
+              <div id="search-autocomplete" className="search-autocomplete" role="listbox" aria-label={scenarioCommandOpen ? "Scenario actions" : "Search suggestions"}>
+                {scenarioCommandOpen
+                  ? scenarioCommandOptions.map((scenario, index) => (
+                    <button
+                      key={scenario.id}
+                      id={`search-suggestion-${index}`}
+                      type="button"
+                      className="search-autocomplete-option"
+                      role="option"
+                      aria-selected={index === activeSearchSuggestion}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveSearchSuggestion(index)}
+                      onClick={() => void activateScenarioFromPicker(scenario.id)}
+                    >
+                      Activate scenario: {scenario.name}
+                    </button>
+                  ))
+                  : autocompleteSuggestions.map((suggestion, index) => (
+                    <button
+                      key={`${suggestion.label}:${index}`}
+                      id={`search-suggestion-${index}`}
+                      type="button"
+                      className="search-autocomplete-option"
+                      role="option"
+                      aria-selected={index === activeSearchSuggestion}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setActiveSearchSuggestion(index)}
+                      onClick={() => acceptSearchSuggestion(index)}
+                    >
+                      {suggestion.label}
+                    </button>
+                  ))}
               </div>
             ) : null}
           </div>
@@ -3858,6 +4273,9 @@ function App() {
               data-mode={aiComposerMode ? "ai" : "search"}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
+                if (!aiComposerMode) {
+                  leaveOpenedSavedView();
+                }
                 setAiComposerMode((current) => !current);
                 setSearchInterpretation(null);
                 window.setTimeout(() => searchRef.current?.focus(), 0);
@@ -3913,7 +4331,7 @@ function App() {
             type="button"
             className="composer-run-button"
             variant="filled"
-            disabled={historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
+            disabled={scenarioCommandQuery !== null || historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
             onMouseDown={(event) => event.preventDefault()}
             onClick={runSearchNow}
           >
@@ -3979,6 +4397,98 @@ function App() {
           </Menu>
         </div>
 
+        {activeScenarioSession ? (
+          <div
+            className="scenario-session-bar"
+            aria-live="polite"
+            data-testid="scenario-session-bar"
+          >
+            <Radio size={14} strokeWidth={2.3} aria-hidden="true" />
+            <div className="scenario-session-copy">
+              <strong>Scenario active</strong>
+              <span>{activeScenarioSession.scenarioName}</span>
+              <span className="scenario-session-metadata">
+                {[
+                  ...activeScenarioSession.properties.client.map((value) => `client:${value}`),
+                  ...activeScenarioSession.properties.project.map((value) => `project:${value}`),
+                  ...activeScenarioSession.properties.activity.map((value) => `activity:${value}`),
+                  ...activeScenarioSession.tags.map((tag) => `#${tag}`),
+                ].join(" · ")}
+              </span>
+            </div>
+            <UiButton
+              type="button"
+              variant="default"
+              loading={activeScenarioBusy}
+              onClick={() => void stopCurrentScenario()}
+            >
+              Stop
+            </UiButton>
+          </div>
+        ) : null}
+
+        {openedSavedView && openedSavedView.captureTags.length > 0 ? (
+          <div
+            className={`capture-context-bar${captureTagContext?.viewId === openedSavedView.id ? " is-active" : ""}`}
+            aria-live="polite"
+            data-testid="capture-context-bar"
+          >
+            <Tags size={14} strokeWidth={2.3} aria-hidden="true" />
+            <div className="capture-context-copy">
+              <strong>
+                {captureTagContext?.viewId === openedSavedView.id ? "Capturing here" : "Capture tags ready"}
+              </strong>
+              <span>{openedSavedView.title}</span>
+              <span className="capture-context-tags">
+                {openedSavedView.captureTags.map((tag) => `#${tag}`).join(" ")}
+              </span>
+            </div>
+            {captureTagContext?.viewId === openedSavedView.id ? (
+              <UiButton
+                type="button"
+                variant="default"
+                loading={captureTagContextBusy}
+                onClick={() => void stopCurrentCaptureContext()}
+              >
+                Stop capture
+              </UiButton>
+            ) : (
+              <UiButton
+                type="button"
+                variant="filled"
+                loading={captureTagContextBusy}
+                onClick={() => void armOpenedSavedView()}
+              >
+                Capture here
+              </UiButton>
+            )}
+          </div>
+        ) : null}
+
+        {scenarioSwitcherOpen ? (
+          <ScenarioSwitcher
+            scenarios={scenarios}
+            availableTags={paletteTags}
+            activeSession={activeScenarioSession}
+            currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
+            loading={scenarioSwitcherLoading}
+            busy={activeScenarioBusy}
+            onClose={() => {
+              setScenarioSwitcherOpen(false);
+              focusSearch();
+            }}
+            onActivate={activateScenarioFromPicker}
+            onStop={stopCurrentScenario}
+            onCreate={createScenarioFromPicker}
+            onManage={() => {
+              setScenarioSwitcherOpen(false);
+              void openScenarioSettings().catch((error) => {
+                pushToast({ title: "Could not open scenario settings", message: String(error), tone: "danger" });
+              });
+            }}
+          />
+        ) : null}
+
         {searchHelpOpen ? (
           <SearchHelpDialog onClose={() => {
             setSearchHelpOpen(false);
@@ -4021,6 +4531,45 @@ function App() {
                 {warning}
               </span>
             ))}
+          </div>
+        ) : null}
+
+        {selectedItems.length > 0 ? (
+          <div className="selection-action-bar" aria-label={`${selectedItems.length} selected`} aria-live="polite">
+            <strong>{selectedItems.length} selected</strong>
+            <div className="selection-action-buttons">
+              <UiButton type="button" size="xs" variant="subtle" onClick={() => void beginTagEdit(selectedItems)}>
+                <Tags size={13} strokeWidth={2.2} aria-hidden="true" />
+                <span>Tags</span>
+              </UiButton>
+              <UiButton type="button" size="xs" variant="subtle" onClick={() => beginBatchMetadataEdit(selectedItems)}>
+                <Pencil size={13} strokeWidth={2.2} aria-hidden="true" />
+                <span>Metadata</span>
+              </UiButton>
+              <UiButton type="button" size="xs" variant="subtle" onClick={openActionPicker}>
+                <Command size={13} strokeWidth={2.2} aria-hidden="true" />
+                <span>Actions</span>
+              </UiButton>
+              <UiButton type="button" size="xs" color="red" variant="subtle" onClick={() => void deleteItems(selectedItems)}>
+                <Trash2 size={13} strokeWidth={2.2} aria-hidden="true" />
+                <span>Delete</span>
+              </UiButton>
+              <UiButton
+                type="button"
+                size="xs"
+                variant="subtle"
+                onClick={() => {
+                  const emptySelection = new Set<number>();
+                  selectedIdsRef.current = emptySelection;
+                  setSelectedIds(emptySelection);
+                  selectionAnchorItemIdRef.current = selectedItemIdRef.current;
+                  focusSearch();
+                }}
+              >
+                <X size={13} strokeWidth={2.2} aria-hidden="true" />
+                <span>Clear</span>
+              </UiButton>
+            </div>
           </div>
         ) : null}
 
@@ -4085,28 +4634,55 @@ function App() {
                   }}
                 >
                   <UiCheckbox
+                    className="item-selection-button"
+                    checked={itemIsMultiSelected}
+                    aria-label={itemIsMultiSelected ? "Deselect item" : "Select item"}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      event.stopPropagation();
+                      selectionInteractionSeqRef.current += 1;
+                      const nextSelection = new Set(selectedIdsRef.current);
+                      if (event.currentTarget.checked) {
+                        nextSelection.add(item.id);
+                      } else {
+                        nextSelection.delete(item.id);
+                      }
+                      selectedIdsRef.current = nextSelection;
+                      setSelectedIds(nextSelection);
+                      selectedItemIdRef.current = item.id;
+                      setSelectedItemId(item.id);
+                      selectionAnchorItemIdRef.current = item.id;
+                      focusSearch();
+                    }}
+                  />
+                  <UiIconButton
+                    type="button"
                     className={`item-mark-button${item.is_marked ? " is-marked" : ""}`}
-                    checked={item.is_marked}
                     aria-label={item.is_marked ? "Unmark item" : "Mark item"}
+                    variant="subtle"
                     onMouseDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
                     }}
                     onClick={(event) => {
-                      event.stopPropagation();
-                    }}
-                    onChange={(event) => {
+                      event.preventDefault();
                       event.stopPropagation();
                       void toggleItemMarked(item).then(focusSearch);
                     }}
-                  />
+                  >
+                    <Flag
+                      size={14}
+                      strokeWidth={2.1}
+                      fill={item.is_marked ? "currentColor" : "none"}
+                      aria-hidden="true"
+                    />
+                  </UiIconButton>
                   <button
                     className={`feed-item${itemIsSelected ? " is-selected" : ""}${
                       itemIsMultiSelected ? " is-multi-selected" : ""
                     }${
                       item.content_kind === "image" ? " is-image" : ""
-                    }${
-                      item.is_marked ? " is-marked" : ""
                     }`}
                     type="button"
                     aria-current={itemIsSelected ? "true" : undefined}
@@ -4401,7 +4977,7 @@ function App() {
             }}
             onRun={(entry) => {
               if (entry.kind === "navigation") {
-                openPaletteNavigation(entry.query);
+                openPaletteNavigation(entry);
                 return;
               }
               if (entry.action.id === BUILTIN_ACTIONS.newItem) {
@@ -4447,7 +5023,7 @@ function App() {
             availableTags={paletteTags}
             saving={tagEditorSaving}
             error={editError}
-            onApply={(tags) => void saveTagEditor(tags)}
+            onApply={(tags, removeTags) => void saveTagEditor(tags, removeTags)}
             onCancel={() => {
               setTagEditorDraft(null);
               setEditError(null);
