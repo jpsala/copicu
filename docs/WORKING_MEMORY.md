@@ -10,9 +10,10 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete`.
-- **Referencia:** `docs/tracks/030-picker-selection-and-marks-ux.md`.
-- **Siguiente acción:** dogfood de selección transitoria y marks durables; corregir sólo defectos concretos.
+- **Estado:** `waiting_gate`.
+- **Referencia:** `docs/tracks/031-saved-history-views-ux-followup.md`.
+- **Gate:** JP debe definir el modelo y la UX esperados para Saved History Views, captura contextual y su relación con Scenarios.
+- **Siguiente acción:** recoger los requerimientos de JP sobre Saved History Views y captura contextual antes de preparar un brief o tocar código.
 
 ## Lectura Rapida
 
