@@ -139,7 +139,9 @@ El helper `npm run release:windows` ahora usa ese config, exige `TAURI_SIGNING_P
 
 Las claves privadas deben venir por variables de entorno o rutas locales secretas, nunca por `.env` commiteado ni por archivos versionados. El pubkey en config es publico; perder la private key impide publicar updates para instalaciones ya distribuidas.
 
-Estado 2026-07-09: release actual `v0.3.7` con assets `Copicu_0.3.7_x64-setup.exe` y `latest.json`; SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`. Mejora estabilidad de search/paginacion/seleccion y mantiene el instalador NSIS unsigned con updater Tauri firmado.
+Estado historico 2026-07-09: `v0.3.7` publico con assets `Copicu_0.3.7_x64-setup.exe` y `latest.json`; SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`. Mejoro estabilidad de search/paginacion/seleccion y mantuvo el instalador NSIS unsigned con updater Tauri firmado.
+
+Estado 2026-07-29: release estable `v0.4.1`, asset `Copicu_0.4.1_x64-setup.exe`, firma y `latest.json`; SHA256 publico `9FB4B4BC41AD4CA45637B6593628E4CB63E845ABEDEE452D659278A6D4AADC18`. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.1>.
 
 La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 
@@ -170,7 +172,7 @@ Hardening vigente desde `v0.3.2` (`ce27b55`):
 
 Estado validado local: `HKCU Run\Copicu = C:\Users\jpsal\AppData\Local\Copicu\copicu.exe` y `StartupApproved\Run\Copicu = 020000000000000000000000`.
 
-Gotcha 2026-07-09: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH`, pero el password sigue siendo necesario. La clave nueva de `v0.3.7` vive localmente en `.codex-run/secrets/copicu-updater.key` con password en `.codex-run/secrets/copicu-updater.password`; ambos estan ignorados y deben respaldarse juntos fuera del repo.
+Gotcha 2026-07-09: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH`, pero el password sigue siendo necesario. La clave nueva de `v0.3.7` vive localmente en `.codex-run/secrets/copicu-updater.key` con password en `.codex-run/secrets/copicu-updater.password`; ambos estan ignorados y deben respaldarse juntos fuera del repo. Si el archivo de password tiene BOM UTF-8, decodificarlo como `utf-8-sig` antes de exportarlo: Tauri interpreta el BOM como parte del password y rechaza la clave.
 
 Gotcha 2026-06-23: en PowerShell, `@($json | ConvertFrom-Json | ForEach-Object { $_.tagName })` puede envolver el array de releases como un solo item y hacer que el auto-tag ignore GitHub releases recientes. El helper `scripts/dev/release-windows.ps1` debe primero asignar `$items = $json | ConvertFrom-Json` y luego enumerar `$items | ForEach-Object`; esto evita repetir un tag ya publicado cuando el clon local no tiene tags frescos.
 
