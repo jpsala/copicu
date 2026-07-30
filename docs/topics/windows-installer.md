@@ -141,7 +141,7 @@ Las claves privadas deben venir por variables de entorno o rutas locales secreta
 
 Estado historico 2026-07-09: `v0.3.7` publico con assets `Copicu_0.3.7_x64-setup.exe` y `latest.json`; SHA256 `C3629D6229A04BCFCDA41BDA7F5D969CC8F1E6FF8417A5490906223B447BBAAC`. Mejoro estabilidad de search/paginacion/seleccion y mantuvo el instalador NSIS unsigned con updater Tauri firmado.
 
-Estado 2026-07-29: release estable `v0.4.1`, asset `Copicu_0.4.1_x64-setup.exe`, firma y `latest.json`; SHA256 publico `9FB4B4BC41AD4CA45637B6593628E4CB63E845ABEDEE452D659278A6D4AADC18`. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.1>.
+Estado 2026-07-30: release estable `v0.4.2`, asset `Copicu_0.4.2_x64-setup.exe`, firma y `latest.json`; SHA256 público `82B7CEAB63F414999150ADDF8F8D72148A6D123A024C21E6B3B0F7B4EC64486A`. Incluye Saved Views y Scenarios independientes, migración preservando datos y menús compactos con creación desde la búsqueda actual. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.2>.
 
 La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 

@@ -1,6 +1,6 @@
 ---
 id: saved-views-scenarios-independent-model
-status: implementation-validated
+status: released
 updated: 2026-07-30
 execution_route: strong
 related:
@@ -47,3 +47,10 @@ Conservar Saved Views y Scenarios como conceptos públicos distintos, haciendo q
 - CRUD, contratos y activación usan la query propia del Scenario sin leer ni escribir Saved Views.
 - El picker abre Views y Scenarios con el mismo patrón de menú compacto; ambos guardan la búsqueda actual desde allí y conservan diálogos de creación dedicados.
 - Validado con tests Rust focales, Playwright desktop/narrow, build frontend y `cargo check` aislado.
+
+## Release
+
+- Publicado como [`v0.4.2`](https://github.com/jpsala/copicu/releases/tag/v0.4.2) desde `258283dce2b7c5b21c86abeeee0ea599172940df`.
+- Instalador: `Copicu_0.4.2_x64-setup.exe`.
+- SHA256: `82B7CEAB63F414999150ADDF8F8D72148A6D123A024C21E6B3B0F7B4EC64486A`.
+- Updater `.sig` y `latest.json` publicados; instalación local `0.4.2` verificada y respondiendo.

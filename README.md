@@ -34,7 +34,7 @@ Current release:
 - Windows x64 NSIS installer
 - SHA256: `82B7CEAB63F414999150ADDF8F8D72148A6D123A024C21E6B3B0F7B4EC64486A`
 
-`v0.4.2` updates the Windows installer and current release notes for this cut.
+`v0.4.2` makes Saved Views and Scenarios independent, preserves existing data through a local SQLite migration, and gives both matching picker menus with create-from-current-search flows.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
