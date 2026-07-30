@@ -246,8 +246,6 @@ async function mockTauriInvoke(
       {
         id: 1,
         name: "Cliente ACME / Proyecto Web",
-        savedViewId: 1,
-        savedViewTitle: "Work clips",
         query: "tag:work kind:text",
         revision: 1,
         properties: { client: ["ACME"], project: ["Web"], activity: ["Development"] },
@@ -258,8 +256,6 @@ async function mockTauriInvoke(
       {
         id: 2,
         name: "Internal review",
-        savedViewId: 1,
-        savedViewTitle: "Work clips",
         query: "tag:work kind:text",
         revision: 1,
         properties: { client: ["Internal"], project: [], activity: ["Review"] },
@@ -698,98 +694,63 @@ async function mockTauriInvoke(
           }
           case "list_saved_history_views":
             return (window as any).__copicuTestSavedHistoryViews;
-          case "list_scenarios":
-            return (window as any).__copicuTestScenarios;
-          case "create_scenario_from_query": {
+          case "create_saved_history_view": {
             const request = args.request;
-            const nextViewId = Math.max(0, ...(window as any).__copicuTestSavedHistoryViews.map((view: any) => view.id)) + 1;
             const now = Date.now();
-            const view = {
-              id: nextViewId,
-              title: request.name,
-              query: request.query,
-              hotkey: null,
+            const next = {
+              id: Math.max(0, ...(window as any).__copicuTestSavedHistoryViews.map((view: any) => view.id)) + 1,
+              ...request,
+              hotkey: request.hotkey || null,
               openMode: "browse",
               pinned: false,
               sortOrder: null,
-              captureTags: [],
               createdAtUnixMs: now,
               updatedAtUnixMs: now,
             };
-            (window as any).__copicuTestSavedHistoryViews = [...(window as any).__copicuTestSavedHistoryViews, view];
+            (window as any).__copicuTestSavedHistoryViews = [
+              ...(window as any).__copicuTestSavedHistoryViews,
+              next,
+            ];
+            return next;
+          }
+          case "update_saved_history_view": {
+            const request = args.request;
+            (window as any).__copicuTestSavedHistoryViews = (window as any).__copicuTestSavedHistoryViews.map(
+              (view: any) => view.id === request.id
+                ? { ...view, ...request, hotkey: request.hotkey || null, updatedAtUnixMs: Date.now() }
+                : view,
+            );
+            return (window as any).__copicuTestSavedHistoryViews.find((view: any) => view.id === request.id);
+          }
+          case "delete_saved_history_view":
+            (window as any).__copicuTestSavedHistoryViews = (window as any).__copicuTestSavedHistoryViews.filter(
+              (view: any) => view.id !== args.id,
+            );
+            return null;
+          case "list_scenarios":
+            return (window as any).__copicuTestScenarios;
+          case "create_scenario_from_query":
+          case "create_scenario": {
+            const request = args.request;
+            const now = Date.now();
             const next = {
               id: Math.max(0, ...(window as any).__copicuTestScenarios.map((scenario: any) => scenario.id)) + 1,
-              name: request.name,
-              savedViewId: view.id,
-              savedViewTitle: view.title,
-              query: view.query,
+              ...request,
               revision: 1,
-              properties: request.properties,
-              tags: request.tags,
               createdAtUnixMs: now,
               updatedAtUnixMs: now,
             };
             (window as any).__copicuTestScenarios = [...(window as any).__copicuTestScenarios, next];
             return next;
           }
-          case "create_scenario": {
-            const request = args.request;
-            const view = (window as any).__copicuTestSavedHistoryViews.find(
-              (candidate: any) => candidate.id === request.savedViewId,
-            );
-            const next = {
-              id: Math.max(0, ...(window as any).__copicuTestScenarios.map((scenario: any) => scenario.id)) + 1,
-              ...request,
-              savedViewTitle: view.title,
-              query: view.query,
-              revision: 1,
-              createdAtUnixMs: Date.now(),
-              updatedAtUnixMs: Date.now(),
-            };
-            (window as any).__copicuTestScenarios = [
-              ...(window as any).__copicuTestScenarios,
-              next,
-            ];
-            return next;
-          }
-          case "update_scenario_from_query": {
-            const request = args.request;
-            const current = (window as any).__copicuTestScenarios.find(
-              (scenario: any) => scenario.id === request.id,
-            );
-            (window as any).__copicuTestSavedHistoryViews = (window as any).__copicuTestSavedHistoryViews.map(
-              (view: any) => view.id === current.savedViewId
-                ? { ...view, title: request.name, query: request.query, updatedAtUnixMs: Date.now() }
-                : view,
-            );
-            (window as any).__copicuTestScenarios = (window as any).__copicuTestScenarios.map(
-              (scenario: any) => scenario.id === request.id
-                ? {
-                    ...scenario,
-                    name: request.name,
-                    savedViewTitle: request.name,
-                    query: request.query,
-                    properties: request.properties,
-                    tags: request.tags,
-                    revision: scenario.revision + 1,
-                    updatedAtUnixMs: Date.now(),
-                  }
-                : scenario,
-            );
-            return (window as any).__copicuTestScenarios.find((scenario: any) => scenario.id === request.id);
-          }
+          case "update_scenario_from_query":
           case "update_scenario": {
             const request = args.request;
-            const view = (window as any).__copicuTestSavedHistoryViews.find(
-              (candidate: any) => candidate.id === request.savedViewId,
-            );
             (window as any).__copicuTestScenarios = (window as any).__copicuTestScenarios.map(
               (scenario: any) => scenario.id === request.id
                 ? {
                     ...scenario,
                     ...request,
-                    savedViewTitle: view.title,
-                    query: view.query,
                     revision: scenario.revision + 1,
                     updatedAtUnixMs: Date.now(),
                   }
@@ -817,8 +778,6 @@ async function mockTauriInvoke(
               scenarioId: scenario.id,
               scenarioName: scenario.name,
               scenarioRevision: scenario.revision,
-              savedViewId: scenario.savedViewId,
-              savedViewTitle: scenario.savedViewTitle,
               query: scenario.query,
               properties: scenario.properties,
               tags: scenario.tags,
@@ -828,11 +787,6 @@ async function mockTauriInvoke(
             await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
             await (window as any).__copicuTestEmitEvent("copicu://picker/filter", {
               query: scenario.query,
-              view: {
-                id: scenario.savedViewId,
-                title: scenario.savedViewTitle,
-                captureTags: [],
-              },
             });
             return session;
           }
@@ -1277,35 +1231,92 @@ test("command palette navigates history, saved views, and pinned tags", async ({
   );
 });
 
-test("saved view capture context arms, stays distinct from filter lock, and stops without clearing the view", async ({ page }) => {
+test("picker discovers, opens, exits, and manages saved views without capture context", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByLabel("Search clipboard history").press("Control+K");
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByRole("option", { name: /Work clips/ }).click();
+  const viewsButton = page.getByRole("button", { name: "Open saved views" });
+  await expect(viewsButton).toBeVisible();
+  await viewsButton.click();
+  let viewsMenu = page.getByRole("menu", { name: "Saved views" });
+  await expect(viewsMenu.getByRole("menuitem", { name: /Work clips/ })).toBeVisible();
+  await expect(viewsMenu.getByRole("menuitem", { name: "Manage saved views" })).toBeVisible();
+  await viewsMenu.getByRole("menuitem", { name: /Work clips/ }).click();
 
-  const contextBar = page.getByTestId("capture-context-bar");
-  await expect(contextBar).toContainText("Capture tags ready");
-  await expect(contextBar).toContainText("#Work");
-  await expect(page.getByLabel("Lock filter across picker closes")).toHaveAttribute("aria-pressed", "false");
-
-  await contextBar.getByRole("button", { name: "Capture here" }).click();
-  await expect(contextBar).toContainText("Capturing here");
-  await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.some(
-      (call: any) => call.cmd === "arm_capture_tag_context" && call.args.viewId === 1,
-    ),
-  );
-
-  await contextBar.getByRole("button", { name: "Stop capture" }).click();
-  await expect(contextBar).toContainText("Capture tags ready");
+  const viewBar = page.getByTestId("saved-view-bar");
+  await expect(viewBar).toContainText("Saved view");
+  await expect(viewBar).toContainText("Work clips");
+  await expect(viewBar).toContainText("tag:work kind:text");
+  await expect(viewBar).not.toContainText("#Work");
+  await expect(page.getByRole("button", { name: "Capture here" })).toHaveCount(0);
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+
+  await page.getByLabel("Search clipboard history").fill("tag:context-smoke");
+  await expect(viewBar).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open saved views" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open saved views" }).click();
+  viewsMenu = page.getByRole("menu", { name: "Saved views" });
+  await viewsMenu.getByRole("menuitem", { name: /Work clips/ }).click();
+  await page.getByRole("button", { name: "Exit saved view Work clips" }).click();
+  await expect(page.getByTestId("saved-view-bar")).toHaveCount(0);
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+
+  await page.getByRole("button", { name: "Open saved views" }).click();
+  await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: "Manage saved views" }).click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "open_saved_views_settings"),
+  );
+  const captureArms = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "arm_capture_tag_context").length,
+  );
+  expect(captureArms).toBe(0);
+});
+
+test("picker saves the current search as a view from the Views menu", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("kind:image after:7d");
+  await page.getByRole("button", { name: "Open saved views" }).click();
+  const menu = page.getByRole("menu", { name: "Saved views" });
+  await menu.getByRole("menuitem", { name: "Save current search as view" }).click();
+
+  const creator = page.getByRole("dialog", { name: "Save current search as view" });
+  await expect(creator.getByRole("code")).toHaveText("kind:image after:7d");
+  await creator.getByLabel("Saved view name").fill("Recent images");
+  await creator.getByRole("button", { name: "Save view" }).click();
+  await expect(creator).toBeHidden();
+
+  await page.getByRole("button", { name: "Open saved views" }).click();
+  await expect(menu.getByRole("menuitem", { name: /Recent images/ })).toBeVisible();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
-      (call: any) => call.cmd === "stop_capture_tag_context",
+      (call: any) => call.cmd === "create_saved_history_view"
+        && call.args.request.title === "Recent images"
+        && call.args.request.query === "kind:image after:7d"
+        && call.args.request.hotkey === null
+        && call.args.request.captureTags.length === 0,
     ),
   );
+});
+
+test("saved view access and identity fit the narrow picker", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 640 });
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: "Open saved views" }).click();
+  await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: /Context clips/ }).click();
+  const viewBar = page.getByTestId("saved-view-bar");
+  await expect(viewBar).toContainText("Context clips");
+  await expect(viewBar.getByRole("button", { name: "Exit saved view Context clips" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Capture here" })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(420);
+
+  await viewBar.getByRole("button", { name: "Exit saved view Context clips" }).click();
+  await expect(viewBar).toHaveCount(0);
 });
 
 test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {
@@ -1329,7 +1340,51 @@ test("settings removes the summary chip strip and confirms global tag deletion",
   );
 });
 
-test("settings creates, activates, switches, and stops scenarios", async ({ page }) => {
+test("saved view management stays independent from scenarios", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=settings");
+
+  await page.getByRole("tab", { name: /History/ }).click();
+  const savedViews = page.locator(".saved-history-views");
+  await expect(savedViews).toContainText("Work clips");
+  await expect(savedViews).not.toContainText("Capture:");
+  await expect(savedViews.getByLabel("Capture tags")).toHaveCount(0);
+
+  const workRow = savedViews.locator(".settings-tag-row").filter({ hasText: "Work clips" });
+  await workRow.getByRole("button", { name: "Edit" }).click();
+  await expect(savedViews.getByLabel("Title")).toHaveValue("Work clips");
+  await expect(savedViews.getByLabel("Query")).toHaveValue("tag:work kind:text");
+  await expect(savedViews.getByLabel("Optional global hotkey")).toHaveValue("");
+  await expect(savedViews.getByLabel("Pin view")).toBeChecked();
+  await savedViews.getByLabel("Query").fill("tag:work");
+  await savedViews.getByRole("button", { name: "Save view" }).click();
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "update_saved_history_view"
+        && call.args.request.query === "tag:work"
+        && call.args.request.captureTags.length === 1
+        && call.args.request.captureTags[0] === "Work",
+    ),
+  );
+
+  const contextRow = savedViews.locator(".settings-tag-row").filter({ hasText: "Context clips" });
+  await contextRow.getByRole("button", { name: "Delete" }).click();
+  await expect(contextRow).toHaveCount(0);
+  const scenarioSnapshot = await page.evaluate(() =>
+    (window as any).__copicuTestScenarios.map((scenario: any) => ({
+      id: scenario.id,
+      name: scenario.name,
+      query: scenario.query,
+    })),
+  );
+  expect(scenarioSnapshot).toEqual([
+    { id: 1, name: "Cliente ACME / Proyecto Web", query: "tag:work kind:text" },
+    { id: 2, name: "Internal review", query: "tag:work kind:text" },
+  ]);
+});
+
+test("settings manages scenarios independently, then activates, switches, and stops", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=settings");
 
@@ -1337,6 +1392,9 @@ test("settings creates, activates, switches, and stops scenarios", async ({ page
   const scenarios = page.getByTestId("scenario-settings");
   await expect(scenarios).toContainText("Scenarios are workspaces for the picker");
   await expect(scenarios).toContainText("Cliente ACME / Proyecto Web");
+  const savedViewsBefore = await page.evaluate(() =>
+    JSON.stringify((window as any).__copicuTestSavedHistoryViews),
+  );
 
   await scenarios.getByRole("button", { name: "New scenario" }).click();
   await expect(scenarios.getByText("All scenarios")).toBeVisible();
@@ -1355,6 +1413,12 @@ test("settings creates, activates, switches, and stops scenarios", async ({ page
   await page.getByLabel("Scenario query").fill("tag:qa kind:text");
   await scenarios.getByRole("button", { name: "Save changes" }).click();
   await expect(qaRow).toContainText("tag:qa kind:text");
+  expect(await page.evaluate(() => JSON.stringify((window as any).__copicuTestSavedHistoryViews)))
+    .toBe(savedViewsBefore);
+  await qaRow.getByRole("button", { name: "Delete" }).click();
+  await expect(qaRow).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.stringify((window as any).__copicuTestSavedHistoryViews)))
+    .toBe(savedViewsBefore);
 
   const acmeRow = scenarios.locator(".scenario-row").filter({ hasText: "Cliente ACME / Proyecto Web" });
   await acmeRow.getByRole("button", { name: "Activate" }).click();
@@ -1368,18 +1432,23 @@ test("settings creates, activates, switches, and stops scenarios", async ({ page
   await expect(scenarios.locator(".scenario-session-summary")).toContainText("None");
 });
 
-test("picker scenario switcher supports Alt+S, keyboard switching, and Stop at narrow width", async ({ page }) => {
+test("picker scenario menu mirrors Views and supports Alt+S, switching, and Stop at narrow width", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 640 });
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   await page.getByLabel("Search clipboard history").press("Alt+s");
-  const switcher = page.getByRole("dialog", { name: "Scenarios" });
-  await expect(switcher).toBeVisible();
-  await switcher.getByLabel("Search scenarios").fill("Internal");
-  await switcher.getByLabel("Search scenarios").press("Enter");
-  await expect(switcher).toBeHidden();
+  const menu = page.getByRole("menu", { name: "Scenarios" });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Alt+s");
+  await expect(menu).toBeHidden();
+  await page.keyboard.press("Alt+s");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /Internal review/ })).toBeVisible();
+  await menu.getByRole("menuitem", { name: /Internal review/ }).click();
+  await expect(menu).toBeHidden();
   await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+  await expect(page.getByTestId("saved-view-bar")).toHaveCount(0);
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
   const layout = await page.evaluate(() => {
     const interpretation = document.querySelector(".search-interpretation")?.getBoundingClientRect();
@@ -1396,20 +1465,21 @@ test("picker scenario switcher supports Alt+S, keyboard switching, and Stop at n
   expect(layout.firstItemOffset).toBeLessThan(16);
 
   await page.getByLabel(/Active scenario: Internal review/).click();
-  let reopened = page.getByRole("dialog", { name: "Scenarios" });
-  await expect(reopened.getByRole("button", { name: "Close scenarios" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(reopened).toBeHidden();
+  await menu.getByRole("menuitem", { name: /Cliente ACME/ }).click();
+  await expect(page.getByLabel(/Active scenario: Cliente ACME/)).toBeVisible();
 
-  await page.getByLabel(/Active scenario: Internal review/).click();
-  reopened = page.getByRole("dialog", { name: "Scenarios" });
-  await reopened.getByRole("button", { name: "Stop" }).click();
-  await reopened.getByRole("button", { name: "Close scenarios" }).click();
-  await expect(reopened).toBeHidden();
+  await page.getByLabel(/Active scenario: Cliente ACME/).click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+
+  await page.getByLabel(/Active scenario: Cliente ACME/).click();
+  await menu.getByRole("menuitem", { name: "Stop scenario" }).click();
+  await expect(menu).toBeHidden();
+  await expect(page.getByLabel("Open scenarios")).toBeVisible();
 
   await page.getByLabel("Open scenarios").click();
-  reopened = page.getByRole("dialog", { name: "Scenarios" });
-  await reopened.getByRole("button", { name: "Manage" }).click();
+  await menu.getByRole("menuitem", { name: "Manage scenarios" }).click();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "open_scenario_settings"),
   );
@@ -1424,7 +1494,7 @@ test("switching to an edited scenario applies its updated picker view", async ({
       request: {
         id: 2,
         name: "Internal review",
-        savedViewId: 2,
+        query: "tag:context-smoke",
         properties: { client: ["Internal"], project: [], activity: ["Review"] },
         tags: [],
       },
@@ -1433,13 +1503,12 @@ test("switching to an edited scenario applies its updated picker view", async ({
 
   const search = page.getByLabel("Search clipboard history");
   await search.press("Alt+s");
-  let switcher = page.getByRole("dialog", { name: "Scenarios" });
-  await switcher.getByRole("option", { name: /Cliente ACME/ }).click();
+  const menu = page.getByRole("menu", { name: "Scenarios" });
+  await menu.getByRole("menuitem", { name: /Cliente ACME/ }).click();
   await expect(search).toHaveValue("tag:work kind:text");
 
   await search.press("Alt+s");
-  switcher = page.getByRole("dialog", { name: "Scenarios" });
-  await switcher.getByRole("option", { name: /Internal review/ }).click();
+  await menu.getByRole("menuitem", { name: /Internal review/ }).click();
   await expect(search).toHaveValue("tag:context-smoke");
   await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
 });
@@ -1452,15 +1521,16 @@ test("picker creates and activates a scenario from the current query", async ({ 
   await search.fill("#111");
   await expect(search).toHaveValue("#111");
   await search.press("Alt+s");
-  const switcher = page.getByRole("dialog", { name: "Scenarios" });
-  await switcher.getByRole("button", { name: "Create from search" }).click();
-  await expect(switcher.getByRole("code")).toHaveText("#111");
-  await expect(switcher.getByRole("button", { name: "Remove tag 111" })).toBeVisible();
-  await expect(switcher.getByText("Advanced metadata")).toBeVisible();
-  await switcher.getByLabel("New scenario name").fill("Writing session");
-  await switcher.getByRole("button", { name: "Save and activate" }).click();
+  const menu = page.getByRole("menu", { name: "Scenarios" });
+  await menu.getByRole("menuitem", { name: "Create from current search" }).click();
+  const creator = page.getByRole("dialog", { name: "Create scenario" });
+  await expect(creator.getByRole("code")).toHaveText("#111");
+  await expect(creator.getByRole("button", { name: "Remove tag 111" })).toBeVisible();
+  await expect(creator.getByText("Advanced metadata")).toBeVisible();
+  await creator.getByLabel("New scenario name").fill("Writing session");
+  await creator.getByRole("button", { name: "Save and activate" }).click();
 
-  await expect(switcher).toBeHidden();
+  await expect(creator).toBeHidden();
   await expect(page.getByLabel(/Active scenario: Writing session/)).toBeVisible();
   await expect(search).toHaveValue("#111");
   await page.waitForFunction(() =>

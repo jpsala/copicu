@@ -1739,7 +1739,20 @@ const SETTINGS_FOCUS_SECTION_STORAGE_KEY = "copicu:settings-focus-section";
 function initialSettingsSection(): SettingSection {
   const pending = window.localStorage.getItem(SETTINGS_FOCUS_SECTION_STORAGE_KEY);
   window.localStorage.removeItem(SETTINGS_FOCUS_SECTION_STORAGE_KEY);
-  return pending === "scenarios" ? "scenarios" : "general";
+  const sections: SettingSection[] = [
+    "general",
+    "hotkeys",
+    "picker",
+    "history",
+    "scenarios",
+    "appearance",
+    "enrichment",
+    "tags",
+    "scripts",
+    "ai",
+    "about",
+  ];
+  return sections.includes(pending as SettingSection) ? pending as SettingSection : "general";
 }
 
 function SettingsPanel({
@@ -1858,7 +1871,6 @@ function SettingsPanel({
     "scenarios scenario client project activity context picker view saved view",
     ...scenarios.map((scenario) => [
       scenario.name,
-      scenario.savedViewTitle,
       scenario.query,
       ...scenario.properties.client,
       ...scenario.properties.project,
@@ -2538,11 +2550,10 @@ function SettingsPanel({
 
             {displayedSections.some((section) => section.id === "history") ? (
               <SettingsSection title="Saved history views" description="Reusable browse scopes with optional native global hotkeys.">
-                <SettingRow label="Saved views" description="Queries are validated before saving. A blank query explicitly means all history; opening keeps the saved scope while you refine.">
+                <SettingRow label="Saved views" description="Queries are validated before saving. A blank query explicitly means all history; editing the picker query returns to a manual search.">
                   <SavedHistoryViews
                     views={savedViews}
                     loading={savedViewsLoading}
-                    availableTags={tags}
                     onCreate={onCreateSavedView}
                     onUpdate={onUpdateSavedView}
                     onDelete={onDeleteSavedView}

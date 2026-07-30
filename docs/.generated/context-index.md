@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-29T23:49:49.868Z
+Generated: 2026-07-30T01:58:17.663Z
 
 ## Topics
 
@@ -76,7 +76,8 @@ Generated: 2026-07-29T23:49:49.868Z
 - implementation-validated: [028 Active Scenarios And Metadata](../tracks/028-active-scenarios-metadata.md)
 - implementation-validated: [029 Picker Scenario Switcher](../tracks/029-picker-scenario-switcher.md)
 - implementation-validated: [030 Picker Selection And Marks UX](../tracks/030-picker-selection-and-marks-ux.md)
-- waiting_gate: [031 Saved History Views UX Follow-up](../tracks/031-saved-history-views-ux-followup.md)
+- implementation-validated: [031 Saved History Views UX Follow-up](../tracks/031-saved-history-views-ux-followup.md)
+- implementation-validated: [032 Saved Views And Scenarios Independent Model](../tracks/032-saved-views-scenarios-independent-model.md)
 - active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
 - paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
 - validated: [Image Capture Spike](../tracks/image-capture-spike.md)

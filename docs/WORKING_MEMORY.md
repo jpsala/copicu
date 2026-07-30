@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-07-29. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-07-30. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -10,10 +10,9 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `waiting_gate`.
-- **Referencia:** `docs/tracks/031-saved-history-views-ux-followup.md`.
-- **Gate:** JP debe definir el modelo y la UX esperados para Saved History Views, captura contextual y su relación con Scenarios.
-- **Siguiente acción:** recoger los requerimientos de JP sobre Saved History Views y captura contextual antes de preparar un brief o tocar código.
+- **Estado:** `ready`.
+- **Plan:** `docs/tracks/032-saved-views-scenarios-independent-model.md`.
+- **Próximo batch:** publicar e instalar `v0.4.2` con Saved Views y Scenarios independientes y menús compactos validados.
 
 ## Lectura Rapida
 

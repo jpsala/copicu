@@ -48,8 +48,6 @@ export type ScenarioProperties = {
 export type Scenario = {
   id: number;
   name: string;
-  savedViewId: number;
-  savedViewTitle: string;
   query: string;
   revision: number;
   properties: ScenarioProperties;
@@ -60,25 +58,21 @@ export type Scenario = {
 
 export type ScenarioDraftRequest = {
   name: string;
-  savedViewId: number;
+  query: string;
   properties: ScenarioProperties;
   tags: string[];
 };
 
 export type CreateScenarioRequest = ScenarioDraftRequest;
-export type CreateScenarioFromQueryRequest = Omit<ScenarioDraftRequest, "savedViewId"> & {
-  query: string;
-};
-export type UpdateScenarioFromQueryRequest = CreateScenarioFromQueryRequest & { id: number };
-export type UpdateScenarioRequest = ScenarioDraftRequest & { id: number };
+export type CreateScenarioFromQueryRequest = ScenarioDraftRequest;
+export type UpdateScenarioFromQueryRequest = ScenarioDraftRequest & { id: number };
+export type UpdateScenarioRequest = UpdateScenarioFromQueryRequest;
 
 export type ActiveScenarioSession = {
   sessionId: string;
   scenarioId: number;
   scenarioName: string;
   scenarioRevision: number;
-  savedViewId: number;
-  savedViewTitle: string;
   query: string;
   properties: ScenarioProperties;
   tags: string[];

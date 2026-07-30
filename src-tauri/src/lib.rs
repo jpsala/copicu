@@ -1123,6 +1123,14 @@ fn open_scenario_settings(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
+fn open_saved_views_settings(app: tauri::AppHandle) -> Result<(), String> {
+    open_settings_window(app.clone())?;
+    focus_settings_section(app, "history");
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn close_settings_window(window: tauri::WebviewWindow) -> Result<(), String> {
     if window.label() != SETTINGS_WINDOW_LABEL {
         return Err("close_settings_window can only be called from settings".to_string());
@@ -1880,7 +1888,11 @@ fn create_saved_history_view(
     storage: State<'_, storage::AppStorage>,
     mut request: storage::CreateSavedHistoryViewRequest,
 ) -> Result<storage::SavedHistoryView, String> {
-    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "create_saved_history_view")?;
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "create_saved_history_view",
+    )?;
     request.hotkey = normalize_saved_view_hotkey(&app, &storage, request.hotkey, None)?;
     let view = storage.create_saved_history_view(request)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
@@ -1925,7 +1937,7 @@ fn open_saved_history_view(
 ) -> Result<(), String> {
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "open_saved_history_view")?;
     let view = storage.get_saved_history_view(id)?;
-    open_picker_for_saved_history_view(app, view)
+    open_picker_for_saved_history_view(app, view, true)
 }
 
 #[cfg(not(test))]
@@ -2048,8 +2060,7 @@ fn activate_scenario(
         "activate_scenario",
     )?;
     let scenario = storage.get_scenario(id)?;
-    let view = storage.get_saved_history_view(scenario.saved_view_id)?;
-    open_picker_for_saved_history_view(app.clone(), view)?;
+    open_picker_for_history_query(app.clone(), scenario.query.clone(), None)?;
     let session = state.activate(scenario)?;
     app.emit(SCENARIO_SESSION_CHANGED_EVENT, Some(session.clone()))
         .map_err(|error| format!("failed to emit scenario activation: {error}"))?;
@@ -2664,6 +2675,7 @@ pub fn run() {
             consume_picker_session_snapshot,
             open_settings_window,
             open_scenario_settings,
+            open_saved_views_settings,
             hide_whichkey_window,
             close_settings_window,
             position_notifications_window,
@@ -4989,31 +5001,45 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
 fn open_picker_for_saved_history_view<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     view: storage::SavedHistoryView,
+    identify_view: bool,
+) -> Result<(), String> {
+    let identity = identify_view.then(|| {
+        serde_json::json!({
+            "id": view.id,
+            "title": view.title,
+        })
+    });
+    open_picker_for_history_query(app, view.query, identity)
+}
+
+#[cfg(not(test))]
+fn open_picker_for_history_query<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    query: String,
+    view_identity: Option<serde_json::Value>,
 ) -> Result<(), String> {
     if let Some(context) = app.try_state::<clipboard::CaptureTagContextState>() {
         context.clear()?;
     }
+    let payload = match view_identity {
+        Some(view) => serde_json::json!({ "query": query, "view": view }),
+        None => serde_json::json!({ "query": query }),
+    };
     let app_for_main_thread = app.clone();
     app.run_on_main_thread(move || {
         if let Err(error) = show_main_window(&app_for_main_thread, true) {
-            eprintln!("saved history view picker show failed: {error}");
+            eprintln!("history filter picker show failed: {error}");
             return;
         }
         if let Err(error) = app_for_main_thread.emit_to(
             MAIN_WINDOW_LABEL,
             PICKER_FILTER_EVENT,
-            serde_json::json!({
-                "query": view.query,
-                "view": {
-                    "id": view.id,
-                    "title": view.title,
-                    "captureTags": view.capture_tags,
-                }
-            }),
+            payload,
         ) {
-            eprintln!("saved history view picker emit failed: {error}");
+            eprintln!("history filter picker emit failed: {error}");
         }
-    }).map_err(|error| format!("saved history view picker dispatch failed: {error}"))
+    })
+    .map_err(|error| format!("history filter picker dispatch failed: {error}"))
 }
 
 #[cfg(not(test))]
@@ -5023,7 +5049,7 @@ fn spawn_open_saved_history_view<R: tauri::Runtime + 'static>(
 ) {
     thread::spawn(move || {
         eprintln!("saved history view shortcut pressed: {} -> {}", saved_view.shortcut_label, saved_view.view.id);
-        if let Err(error) = open_picker_for_saved_history_view(app, saved_view.view) {
+        if let Err(error) = open_picker_for_saved_history_view(app, saved_view.view, true) {
             eprintln!("saved history view shortcut open failed: {error}");
         }
     });
@@ -5245,7 +5271,7 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
             };
             thread::spawn(move || match storage.get_saved_history_view(view_id) {
                 Ok(view) => {
-                    if let Err(error) = open_picker_for_saved_history_view(app, view) {
+                    if let Err(error) = open_picker_for_saved_history_view(app, view, true) {
                         eprintln!("saved view shortcut route open failed: {error}");
                     }
                 }

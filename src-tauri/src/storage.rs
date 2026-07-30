@@ -464,8 +464,6 @@ pub struct ScenarioProperties {
 pub struct Scenario {
     pub id: i64,
     pub name: String,
-    pub saved_view_id: i64,
-    pub saved_view_title: String,
     pub query: String,
     pub revision: i64,
     pub properties: ScenarioProperties,
@@ -478,17 +476,6 @@ pub struct Scenario {
 #[serde(rename_all = "camelCase")]
 pub struct CreateScenarioRequest {
     pub name: String,
-    pub saved_view_id: i64,
-    #[serde(default)]
-    pub properties: ScenarioProperties,
-    #[serde(default)]
-    pub tags: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateScenarioFromQueryRequest {
-    pub name: String,
     pub query: String,
     #[serde(default)]
     pub properties: ScenarioProperties,
@@ -496,29 +483,21 @@ pub struct CreateScenarioFromQueryRequest {
     pub tags: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateScenarioFromQueryRequest {
-    pub id: i64,
-    pub name: String,
-    pub query: String,
-    #[serde(default)]
-    pub properties: ScenarioProperties,
-    #[serde(default)]
-    pub tags: Vec<String>,
-}
+pub type CreateScenarioFromQueryRequest = CreateScenarioRequest;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateScenarioRequest {
     pub id: i64,
     pub name: String,
-    pub saved_view_id: i64,
+    pub query: String,
     #[serde(default)]
     pub properties: ScenarioProperties,
     #[serde(default)]
     pub tags: Vec<String>,
 }
+
+pub type UpdateScenarioFromQueryRequest = UpdateScenarioRequest;
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -527,8 +506,6 @@ pub struct ActiveScenarioSession {
     pub scenario_id: i64,
     pub scenario_name: String,
     pub scenario_revision: i64,
-    pub saved_view_id: i64,
-    pub saved_view_title: String,
     pub query: String,
     pub properties: ScenarioProperties,
     pub tags: Vec<String>,
@@ -2000,16 +1977,6 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        let scenario_count = conn
-            .query_row(
-                "SELECT COUNT(*) FROM scenarios WHERE saved_view_id = ?1",
-                params![id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| format!("failed to inspect saved view scenarios: {error}"))?;
-        if scenario_count > 0 {
-            return Err("saved history view is used by a scenario".to_string());
-        }
         if conn
             .execute("DELETE FROM saved_history_views WHERE id = ?1", params![id])
             .map_err(|error| format!("failed to delete saved history view: {error}"))?
@@ -2040,12 +2007,10 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         let mut statement = conn
             .prepare(
-                "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
-                        s.client_values_json, s.project_values_json, s.activity_values_json,
-                        s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
-                 FROM scenarios s
-                 JOIN saved_history_views v ON v.id = s.saved_view_id
-                 ORDER BY s.name COLLATE NOCASE ASC, s.id ASC",
+                "SELECT id, name, query, revision, client_values_json, project_values_json,
+                        activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+                 FROM scenarios
+                 ORDER BY name COLLATE NOCASE ASC, id ASC",
             )
             .map_err(|error| format!("failed to prepare scenarios query: {error}"))?;
         let rows = statement
@@ -2061,12 +2026,10 @@ impl AppStorage {
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         conn.query_row(
-            "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
-                    s.client_values_json, s.project_values_json, s.activity_values_json,
-                    s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
-             FROM scenarios s
-             JOIN saved_history_views v ON v.id = s.saved_view_id
-             WHERE s.id = ?1",
+            "SELECT id, name, query, revision, client_values_json, project_values_json,
+                    activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+             FROM scenarios
+             WHERE id = ?1",
             params![id],
             scenario_from_row,
         )
@@ -2075,6 +2038,7 @@ impl AppStorage {
 
     pub fn create_scenario(&self, request: CreateScenarioRequest) -> Result<Scenario, String> {
         let name = validate_scenario_name(&request.name)?;
+        validate_scenario_query(&request.query)?;
         let properties = normalize_scenario_properties(&request.properties)?;
         let tags = normalize_tag_values(&request.tags)?
             .into_iter()
@@ -2085,15 +2049,14 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        ensure_saved_view_exists(&conn, request.saved_view_id)?;
         conn.execute(
             "INSERT INTO scenarios (
-                name, saved_view_id, revision, client_values_json, project_values_json,
+                name, query, revision, client_values_json, project_values_json,
                 activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
              ) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?7)",
             params![
                 name,
-                request.saved_view_id,
+                request.query.trim(),
                 encode_values(&properties.client)?,
                 encode_values(&properties.project)?,
                 encode_values(&properties.activity)?,
@@ -2111,134 +2074,19 @@ impl AppStorage {
         &self,
         request: CreateScenarioFromQueryRequest,
     ) -> Result<Scenario, String> {
-        let name = validate_scenario_name(&request.name)?;
-        validate_saved_history_view(&name, &request.query)?;
-        let properties = normalize_scenario_properties(&request.properties)?;
-        let tags = normalize_tag_values(&request.tags)?
-            .into_iter()
-            .map(|(_, label)| label)
-            .collect::<Vec<_>>();
-        let query = request.query.trim();
-        let now = now_unix_ms();
-        let mut conn = self
-            .conn
-            .lock()
-            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        let tx = conn
-            .transaction()
-            .map_err(|error| format!("failed to start scenario creation: {error}"))?;
-        tx.execute(
-            "INSERT INTO saved_history_views (
-                title, query, hotkey, capture_tags, created_at_unix_ms, updated_at_unix_ms
-             ) VALUES (?1, ?2, NULL, '[]', ?3, ?3)",
-            params![name, query, now],
-        )
-        .map_err(|error| format!("failed to create scenario view: {error}"))?;
-        let saved_view_id = tx.last_insert_rowid();
-        tx.execute(
-            "INSERT INTO scenarios (
-                name, saved_view_id, revision, client_values_json, project_values_json,
-                activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
-             ) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?7)",
-            params![
-                name,
-                saved_view_id,
-                encode_values(&properties.client)?,
-                encode_values(&properties.project)?,
-                encode_values(&properties.activity)?,
-                encode_values(&tags)?,
-                now,
-            ],
-        )
-        .map_err(|error| format!("failed to create scenario: {error}"))?;
-        let scenario_id = tx.last_insert_rowid();
-        let scenario = tx
-            .query_row(
-                "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
-                        s.client_values_json, s.project_values_json, s.activity_values_json,
-                        s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
-                 FROM scenarios s
-                 JOIN saved_history_views v ON v.id = s.saved_view_id
-                 WHERE s.id = ?1",
-                params![scenario_id],
-                scenario_from_row,
-            )
-            .map_err(|error| format!("failed to read scenario after create: {error}"))?;
-        tx.commit()
-            .map_err(|error| format!("failed to commit scenario creation: {error}"))?;
-        Ok(scenario)
+        self.create_scenario(request)
     }
 
     pub fn update_scenario_from_query(
         &self,
         request: UpdateScenarioFromQueryRequest,
     ) -> Result<Scenario, String> {
-        let name = validate_scenario_name(&request.name)?;
-        validate_saved_history_view(&name, &request.query)?;
-        let properties = normalize_scenario_properties(&request.properties)?;
-        let tags = normalize_tag_values(&request.tags)?
-            .into_iter()
-            .map(|(_, label)| label)
-            .collect::<Vec<_>>();
-        let query = request.query.trim();
-        let now = now_unix_ms();
-        let mut conn = self
-            .conn
-            .lock()
-            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        let tx = conn
-            .transaction()
-            .map_err(|error| format!("failed to start scenario update: {error}"))?;
-        let saved_view_id = tx
-            .query_row(
-                "SELECT saved_view_id FROM scenarios WHERE id = ?1",
-                params![request.id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map_err(|error| format!("scenario not found: {error}"))?;
-        tx.execute(
-            "UPDATE saved_history_views
-             SET title = ?1, query = ?2, updated_at_unix_ms = ?3
-             WHERE id = ?4",
-            params![name, query, now, saved_view_id],
-        )
-        .map_err(|error| format!("failed to update scenario view: {error}"))?;
-        tx.execute(
-            "UPDATE scenarios
-             SET name = ?1, revision = revision + 1, client_values_json = ?2,
-                 project_values_json = ?3, activity_values_json = ?4, tags_json = ?5,
-                 updated_at_unix_ms = ?6
-             WHERE id = ?7",
-            params![
-                name,
-                encode_values(&properties.client)?,
-                encode_values(&properties.project)?,
-                encode_values(&properties.activity)?,
-                encode_values(&tags)?,
-                now,
-                request.id,
-            ],
-        )
-        .map_err(|error| format!("failed to update scenario: {error}"))?;
-        let scenario = tx
-            .query_row(
-                "SELECT s.id, s.name, s.saved_view_id, v.title, v.query, s.revision,
-                        s.client_values_json, s.project_values_json, s.activity_values_json,
-                        s.tags_json, s.created_at_unix_ms, s.updated_at_unix_ms
-                 FROM scenarios s
-                 JOIN saved_history_views v ON v.id = s.saved_view_id
-                 WHERE s.id = ?1",
-                params![request.id],
-                scenario_from_row,
-            )
-            .map_err(|error| format!("failed to read scenario after update: {error}"))?;
-        tx.commit()
-            .map_err(|error| format!("failed to commit scenario update: {error}"))?;
-        Ok(scenario)
+        self.update_scenario(request)
     }
 
     pub fn update_scenario(&self, request: UpdateScenarioRequest) -> Result<Scenario, String> {
         let name = validate_scenario_name(&request.name)?;
+        validate_scenario_query(&request.query)?;
         let properties = normalize_scenario_properties(&request.properties)?;
         let tags = normalize_tag_values(&request.tags)?
             .into_iter()
@@ -2248,12 +2096,11 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        ensure_saved_view_exists(&conn, request.saved_view_id)?;
         let changed = conn
             .execute(
                 "UPDATE scenarios
                  SET name = ?1,
-                     saved_view_id = ?2,
+                     query = ?2,
                      revision = revision + 1,
                      client_values_json = ?3,
                      project_values_json = ?4,
@@ -2263,7 +2110,7 @@ impl AppStorage {
                  WHERE id = ?8",
                 params![
                     name,
-                    request.saved_view_id,
+                    request.query.trim(),
                     encode_values(&properties.client)?,
                     encode_values(&properties.project)?,
                     encode_values(&properties.activity)?,
@@ -3863,18 +3710,16 @@ fn scenario_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Scenario> {
     Ok(Scenario {
         id: row.get(0)?,
         name: row.get(1)?,
-        saved_view_id: row.get(2)?,
-        saved_view_title: row.get(3)?,
-        query: row.get(4)?,
-        revision: row.get(5)?,
+        query: row.get(2)?,
+        revision: row.get(3)?,
         properties: ScenarioProperties {
-            client: decode(6)?,
-            project: decode(7)?,
-            activity: decode(8)?,
+            client: decode(4)?,
+            project: decode(5)?,
+            activity: decode(6)?,
         },
-        tags: decode(9)?,
-        created_at_unix_ms: row.get(10)?,
-        updated_at_unix_ms: row.get(11)?,
+        tags: decode(7)?,
+        created_at_unix_ms: row.get(8)?,
+        updated_at_unix_ms: row.get(9)?,
     })
 }
 
@@ -3893,19 +3738,15 @@ fn validate_scenario_name(name: &str) -> Result<String, String> {
     Ok(name.to_string())
 }
 
-fn ensure_saved_view_exists(conn: &Connection, saved_view_id: i64) -> Result<(), String> {
-    let exists = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM saved_history_views WHERE id = ?1)",
-            params![saved_view_id],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(|error| format!("failed to validate scenario saved view: {error}"))?;
-    if exists {
-        Ok(())
-    } else {
-        Err("scenario saved view not found".to_string())
+fn validate_scenario_query(query: &str) -> Result<(), String> {
+    if search_query_explanation(query.trim())
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == "error")
+    {
+        return Err("invalid scenario query".to_string());
     }
+    Ok(())
 }
 
 fn validate_saved_history_view(title: &str, query: &str) -> Result<(), String> {
@@ -6254,7 +6095,56 @@ mod tests {
     }
 
     #[test]
-    fn scenarios_persist_separately_from_views_and_revision_increments() {
+    fn scenario_query_migration_preserves_existing_scenarios_and_saved_views() {
+        let mut conn = Connection::open_in_memory().expect("in-memory sqlite should open");
+        let migrations_before_independent_scenarios =
+            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 1]);
+        migrations_before_independent_scenarios
+            .to_latest(&mut conn)
+            .expect("legacy scenario migrations should run");
+        conn.execute(
+            "INSERT INTO saved_history_views (
+                id, title, query, capture_tags, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (41, 'Legacy view', 'tag:legacy kind:text', '[]', 10, 11)",
+            [],
+        )
+        .expect("legacy saved view should insert");
+        conn.execute(
+            "INSERT INTO scenarios (
+                id, name, saved_view_id, revision, client_values_json, project_values_json,
+                activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (7, 'Legacy scenario', 41, 3, '[\"ACME\"]', '[]', '[]', '[\"Work\"]', 12, 13)",
+            [],
+        )
+        .expect("legacy scenario should insert");
+
+        MIGRATIONS
+            .to_latest(&mut conn)
+            .expect("independent scenario migration should run");
+        let storage = AppStorage {
+            conn: Arc::new(Mutex::new(conn)),
+            db_path: PathBuf::from("test.sqlite3"),
+            app_data_dir: std::env::temp_dir(),
+        };
+
+        let scenario = storage
+            .get_scenario(7)
+            .expect("migrated scenario should load");
+        assert_eq!(scenario.name, "Legacy scenario");
+        assert_eq!(scenario.query, "tag:legacy kind:text");
+        assert_eq!(scenario.revision, 3);
+        assert_eq!(scenario.properties.client, vec!["ACME"]);
+        assert_eq!(scenario.tags, vec!["Work"]);
+        let views = storage
+            .list_saved_history_views()
+            .expect("historical saved view should remain");
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].id, 41);
+        assert_eq!(views[0].query, "tag:legacy kind:text");
+    }
+
+    #[test]
+    fn scenarios_and_saved_views_create_update_and_delete_independently() {
         let storage = test_storage_with_migrations();
         let view = storage
             .create_saved_history_view(CreateSavedHistoryViewRequest {
@@ -6264,75 +6154,76 @@ mod tests {
                 capture_tags: Vec::new(),
             })
             .expect("saved view should persist");
+        let original_views = storage
+            .list_saved_history_views()
+            .expect("saved views should list");
         let scenario = storage
-            .create_scenario(CreateScenarioRequest {
-                name: "Cliente ACME / Proyecto Web".to_string(),
-                saved_view_id: view.id,
-                properties: ScenarioProperties {
-                    client: vec!["ACME".to_string(), " acme ".to_string()],
-                    project: vec!["Web".to_string()],
-                    activity: vec!["Development".to_string()],
-                },
-                tags: vec!["Client work".to_string()],
-            })
-            .expect("scenario should persist");
-
-        assert_eq!(scenario.saved_view_id, view.id);
-        assert_eq!(scenario.saved_view_title, "ACME clips");
-        assert_eq!(scenario.properties.client, vec!["ACME"]);
-        assert_eq!(scenario.revision, 1);
-        assert_eq!(storage.list_scenarios().expect("list scenarios"), vec![scenario.clone()]);
-
-        let updated = storage
-            .update_scenario(UpdateScenarioRequest {
-                id: scenario.id,
-                name: scenario.name.clone(),
-                saved_view_id: view.id,
-                properties: ScenarioProperties {
-                    client: vec!["ACME".to_string()],
-                    project: vec!["Web".to_string(), "Portal".to_string()],
-                    activity: vec!["Review".to_string()],
-                },
-                tags: vec!["Client work".to_string(), "Review".to_string()],
-            })
-            .expect("scenario should update");
-        assert_eq!(updated.revision, 2);
-        assert_eq!(updated.properties.project, vec!["Web", "Portal"]);
-    }
-
-    #[test]
-    fn scenario_from_query_creates_linked_view_atomically_and_rejects_invalid_input() {
-        let storage = test_storage_with_migrations();
-        let created = storage
             .create_scenario_from_query(CreateScenarioFromQueryRequest {
                 name: "ACME review".to_string(),
                 query: "tag:acme kind:text".to_string(),
                 properties: ScenarioProperties {
-                    client: vec!["ACME".to_string()],
+                    client: vec!["ACME".to_string(), " acme ".to_string()],
                     project: vec!["Portal".to_string()],
                     activity: vec!["Review".to_string()],
                 },
                 tags: vec!["Work".to_string()],
             })
-            .expect("scenario and linked view should persist");
-        assert_eq!(created.saved_view_title, "ACME review");
-        assert_eq!(created.query, "tag:acme kind:text");
-        assert_eq!(storage.list_saved_history_views().expect("list views").len(), 1);
-        assert_eq!(storage.list_scenarios().expect("list scenarios").len(), 1);
+            .expect("scenario should persist without creating a saved view");
+        assert_eq!(scenario.query, "tag:acme kind:text");
+        assert_eq!(scenario.properties.client, vec!["ACME"]);
+        assert_eq!(
+            storage
+                .list_saved_history_views()
+                .expect("saved views should stay unchanged"),
+            original_views
+        );
 
-        let updated = storage
+        let updated_scenario = storage
             .update_scenario_from_query(UpdateScenarioFromQueryRequest {
-                id: created.id,
+                id: scenario.id,
                 name: "ACME QA".to_string(),
                 query: "tag:qa kind:text".to_string(),
                 properties: ScenarioProperties::default(),
                 tags: vec!["QA".to_string()],
             })
-            .expect("scenario workspace should update atomically");
-        assert_eq!(updated.saved_view_id, created.saved_view_id);
-        assert_eq!(updated.saved_view_title, "ACME QA");
-        assert_eq!(updated.query, "tag:qa kind:text");
-        assert_eq!(updated.revision, 2);
+            .expect("scenario should update independently");
+        assert_eq!(updated_scenario.revision, 2);
+        assert_eq!(updated_scenario.query, "tag:qa kind:text");
+        assert_eq!(
+            storage
+                .list_saved_history_views()
+                .expect("scenario edit must not change views"),
+            original_views
+        );
+
+        storage
+            .update_saved_history_view(UpdateSavedHistoryViewRequest {
+                id: view.id,
+                title: "Renamed clips".to_string(),
+                query: "tag:renamed".to_string(),
+                hotkey: None,
+                pinned: false,
+                sort_order: None,
+                capture_tags: Vec::new(),
+            })
+            .expect("saved view should update independently");
+        assert_eq!(
+            storage
+                .get_scenario(scenario.id)
+                .expect("scenario should remain")
+                .query,
+            "tag:qa kind:text"
+        );
+        storage
+            .delete_saved_history_view(view.id)
+            .expect("saved view should delete independently");
+        assert_eq!(
+            storage
+                .get_scenario(scenario.id)
+                .expect("scenario should outlive view")
+                .query,
+            "tag:qa kind:text"
+        );
 
         storage
             .create_scenario_from_query(CreateScenarioFromQueryRequest {
@@ -6341,21 +6232,28 @@ mod tests {
                 properties: ScenarioProperties::default(),
                 tags: Vec::new(),
             })
-            .expect_err("invalid linked query must reject the full operation");
-        storage
-            .update_scenario_from_query(UpdateScenarioFromQueryRequest {
-                id: created.id,
-                name: "Broken update".to_string(),
-                query: "kind:".to_string(),
-                properties: ScenarioProperties::default(),
-                tags: Vec::new(),
+            .expect_err("invalid scenario query must not persist");
+        let unrelated_view = storage
+            .create_saved_history_view(CreateSavedHistoryViewRequest {
+                title: "Unrelated".to_string(),
+                query: "kind:image".to_string(),
+                hotkey: None,
+                capture_tags: Vec::new(),
             })
-            .expect_err("invalid update must not change the scenario or linked view");
-        let unchanged = storage.get_scenario(created.id).expect("scenario remains readable");
-        assert_eq!(unchanged.name, "ACME QA");
-        assert_eq!(unchanged.query, "tag:qa kind:text");
-        assert_eq!(storage.list_saved_history_views().expect("list views").len(), 1);
-        assert_eq!(storage.list_scenarios().expect("list scenarios").len(), 1);
+            .expect("unrelated saved view should persist");
+        storage
+            .delete_scenario(scenario.id)
+            .expect("scenario should delete independently");
+        assert!(storage
+            .list_scenarios()
+            .expect("scenarios should list")
+            .is_empty());
+        assert_eq!(
+            storage
+                .list_saved_history_views()
+                .expect("scenario deletion must not change saved views"),
+            vec![unrelated_view]
+        );
     }
 
     #[test]
@@ -6366,8 +6264,6 @@ mod tests {
             scenario_id: 7,
             scenario_name: "Cliente ACME / Proyecto Web".to_string(),
             scenario_revision: 3,
-            saved_view_id: 2,
-            saved_view_title: "ACME clips".to_string(),
             query: "tag:acme".to_string(),
             properties: ScenarioProperties {
                 client: vec!["ACME".to_string()],
@@ -6434,8 +6330,6 @@ mod tests {
             scenario_id: 8,
             scenario_name: "ACME".to_string(),
             scenario_revision: 1,
-            saved_view_id: 1,
-            saved_view_title: "ACME".to_string(),
             query: "tag:acme".to_string(),
             properties: ScenarioProperties {
                 client: vec!["ACME".to_string()],

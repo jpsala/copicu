@@ -29,12 +29,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.1](https://github.com/jpsala/copicu/releases/tag/v0.4.1)
-- Asset: `Copicu_0.4.1_x64-setup.exe`
+- [v0.4.2](https://github.com/jpsala/copicu/releases/tag/v0.4.2)
+- Asset: `Copicu_0.4.2_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `9FB4B4BC41AD4CA45637B6593628E4CB63E845ABEDEE452D659278A6D4AADC18`
+- SHA256: `82B7CEAB63F414999150ADDF8F8D72148A6D123A024C21E6B3B0F7B4EC64486A`
 
-`v0.4.1` updates the Windows installer and current release notes for this cut.
+`v0.4.2` updates the Windows installer and current release notes for this cut.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -76,6 +76,9 @@ Copicu is early-stage, but the core is functional:
 - open a compact searchable picker;
 - navigate primarily with the keyboard;
 - search plain text or scoped fields like `meta:`, `title:`, `notes:`, `ctx:`, `tag:`, `kind:`, and `is:marked`;
+- save the current search as a named **Saved View**, then reopen it from the compact Views menu;
+- create independent **Scenarios** that remember their own query and apply optional tags or structured metadata to new captures while active;
+- switch or stop Scenarios from the picker without opening Settings;
 - choose whether search runs in realtime, on Enter, or only from the Search button;
 - copy the selected item;
 - paste the selected item into the previous Windows app;
@@ -119,6 +122,13 @@ Copicu clips can carry structured metadata:
 Visible metadata is user-editable and searchable with `meta:`, `title:`, and `notes:`. Capture context is separate: Copicu may store hidden source information such as app, window, URL/domain, and clipboard format hints so `ctx:`/`window:` searches can find where a clip came from without mixing that provenance into your editable title or notes.
 
 This makes the clipboard useful for recurring snippets, links, prompts, code, screenshots, and temporary project notes instead of being just a flat list.
+
+**Saved Views** and **Scenarios** serve different workflows:
+
+- A Saved View is a passive named filter. Use **Views → Save current search as view** to preserve the current picker query without changing future captures.
+- A Scenario is an active work session. Use **Scenario → Create from current search** to preserve the query and optionally apply tags, client, project, or activity metadata to every new capture until you switch or stop it.
+- Both open from matching compact menus in the picker. Creating or editing one never creates, renames, or deletes the other.
+- Existing Scenarios are migrated locally to own their query, while historical Saved Views remain available and unchanged.
 
 ### 3. Run Local Actions And Scripts
 
@@ -233,7 +243,7 @@ Near-term priorities:
 - more built-in actions and sample scripts;
 - a stable script/action API;
 - richer previews for text, code, URLs, HTML, Markdown, and images;
-- better tags, saved filters, and smart collections;
+- continued refinement of tags, Saved Views, Scenarios, and smart collections;
 - public benchmark plan for large histories;
 - clearer Windows packaging and distribution;
 - cross-platform support only where native behavior can be made reliable.

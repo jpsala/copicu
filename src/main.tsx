@@ -25,6 +25,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import Bookmark from "lucide-react/dist/esm/icons/bookmark.mjs";
+import Check from "lucide-react/dist/esm/icons/check.mjs";
 import CheckCheck from "lucide-react/dist/esm/icons/check-check.mjs";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.mjs";
 import CircleSlash from "lucide-react/dist/esm/icons/circle-slash.mjs";
@@ -66,6 +68,7 @@ import type {
   CompoundHotkeyPendingEvent,
   CreateHistoryItemRequest,
   CreateHistoryItemResult,
+  CreateSavedHistoryViewRequest,
   CreateScenarioFromQueryRequest,
   CreateTagRequest,
   EnterAction,
@@ -113,7 +116,8 @@ import {
 } from "./ui/controls";
 import { ShortcutBadge } from "./ui/ShortcutBadge";
 import { ToastStack } from "./ui/ToastStack";
-import { ScenarioSwitcher } from "./ui/ScenarioSwitcher";
+import { ScenarioCreator } from "./ui/ScenarioSwitcher";
+import { SavedViewCreator } from "./ui/SavedViewCreator";
 import { TagEditor, type TagEditorMode } from "./ui/TagEditor";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
@@ -342,14 +346,6 @@ type OpenedSavedView = {
   id: number;
   title: string;
   query: string;
-  captureTags: string[];
-};
-
-type CaptureTagContext = {
-  viewId: number;
-  viewTitle: string;
-  query: string;
-  tags: string[];
 };
 
 type PickerFilterEvent = {
@@ -649,6 +645,10 @@ function listSavedHistoryViews() {
   return invoke<SavedHistoryView[]>("list_saved_history_views");
 }
 
+function createSavedHistoryView(request: CreateSavedHistoryViewRequest) {
+  return invoke<SavedHistoryView>("create_saved_history_view", { request });
+}
+
 function createTag(request: CreateTagRequest) {
   return invoke<TagSummary>("create_tag", { request });
 }
@@ -663,14 +663,6 @@ function getItemTags(id: number) {
 
 function applyItemTags(request: ApplyItemTagsRequest) {
   return invoke<void>("apply_item_tags", { request });
-}
-
-function getCaptureTagContext() {
-  return invoke<CaptureTagContext | null>("get_capture_tag_context");
-}
-
-function armCaptureTagContext(viewId: number) {
-  return invoke<CaptureTagContext>("arm_capture_tag_context", { viewId });
 }
 
 function stopCaptureTagContext() {
@@ -737,6 +729,11 @@ function openSettingsWindow() {
 function openScenarioSettings() {
   window.localStorage.setItem("copicu:settings-focus-section", "scenarios");
   return invoke<void>("open_scenario_settings");
+}
+
+function openSavedViewsSettings() {
+  window.localStorage.setItem("copicu:settings-focus-section", "history");
+  return invoke<void>("open_saved_views_settings");
 }
 
 function openMetadataWindow(itemId: number) {
@@ -1036,11 +1033,12 @@ function App() {
   const [paletteTags, setPaletteTags] = useState<TagSummary[]>([]);
   const [savedHistoryViews, setSavedHistoryViews] = useState<SavedHistoryView[]>([]);
   const [openedSavedView, setOpenedSavedView] = useState<OpenedSavedView | null>(null);
-  const [captureTagContext, setCaptureTagContext] = useState<CaptureTagContext | null>(null);
-  const [captureTagContextBusy, setCaptureTagContextBusy] = useState(false);
+  const [savedViewCreatorOpen, setSavedViewCreatorOpen] = useState(false);
+  const [savedViewCreatorBusy, setSavedViewCreatorBusy] = useState(false);
   const [activeScenarioSession, setActiveScenarioSession] = useState<ActiveScenarioSession | null>(null);
   const [activeScenarioBusy, setActiveScenarioBusy] = useState(false);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [scenarioMenuOpen, setScenarioMenuOpen] = useState(false);
   const [scenarioSwitcherOpen, setScenarioSwitcherOpen] = useState(false);
   const [scenarioSwitcherLoading, setScenarioSwitcherLoading] = useState(false);
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
@@ -1098,7 +1096,6 @@ function App() {
   const whichKeyRevealTimerRef = useRef<number | null>(null);
   const pickerWasHiddenRef = useRef(false);
   const filterLockedRef = useRef(filterLocked);
-  const captureTagContextRef = useRef<CaptureTagContext | null>(captureTagContext);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
 
   const selectedIndex = useMemo(
@@ -1204,10 +1201,6 @@ function App() {
   }, [historyInputQuery]);
 
   useEffect(() => {
-    captureTagContextRef.current = captureTagContext;
-  }, [captureTagContext]);
-
-  useEffect(() => {
     activeScenarioSessionRef.current = activeScenarioSession;
   }, [activeScenarioSession]);
 
@@ -1280,29 +1273,6 @@ function App() {
     [pushLocalToast],
   );
 
-  const stopCurrentCaptureContext = useCallback(async () => {
-    const previous = captureTagContextRef.current;
-    if (!previous || captureTagContextBusy) {
-      return;
-    }
-    captureTagContextRef.current = null;
-    setCaptureTagContext(null);
-    setCaptureTagContextBusy(true);
-    try {
-      await stopCaptureTagContext();
-    } catch (error) {
-      captureTagContextRef.current = previous;
-      setCaptureTagContext(previous);
-      pushToast({
-        title: "Capture context still active",
-        message: String(error),
-        tone: "danger",
-      });
-    } finally {
-      setCaptureTagContextBusy(false);
-    }
-  }, [captureTagContextBusy, pushToast]);
-
   const stopCurrentScenario = useCallback(async () => {
     const previous = activeScenarioSessionRef.current;
     if (!previous || activeScenarioBusy) {
@@ -1328,28 +1298,7 @@ function App() {
 
   const leaveOpenedSavedView = useCallback(() => {
     setOpenedSavedView(null);
-    void stopCurrentCaptureContext();
-  }, [stopCurrentCaptureContext]);
-
-  const armOpenedSavedView = useCallback(async () => {
-    if (!openedSavedView || openedSavedView.captureTags.length === 0 || captureTagContextBusy) {
-      return;
-    }
-    setCaptureTagContextBusy(true);
-    try {
-      const nextContext = await armCaptureTagContext(openedSavedView.id);
-      captureTagContextRef.current = nextContext;
-      setCaptureTagContext(nextContext);
-    } catch (error) {
-      pushToast({
-        title: "Could not start capture here",
-        message: String(error),
-        tone: "danger",
-      });
-    } finally {
-      setCaptureTagContextBusy(false);
-    }
-  }, [captureTagContextBusy, openedSavedView, pushToast]);
+  }, []);
 
   const closeTransientEditors = useCallback(() => {
     setEditDraft(null);
@@ -1359,6 +1308,8 @@ function App() {
     setTagEditorSaving(false);
     setOpenItemMenu(null);
     setActionPicker(null);
+    setScenarioMenuOpen(false);
+    setSavedViewCreatorOpen(false);
     setEditError(null);
   }, []);
 
@@ -1373,11 +1324,7 @@ function App() {
     setAiComposerMode(false);
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
-    if (
-      !filterLockedRef.current &&
-      !captureTagContextRef.current &&
-      !activeScenarioSessionRef.current
-    ) {
+    if (!filterLockedRef.current && !activeScenarioSessionRef.current) {
       queryRef.current = "";
       historyInputQueryRef.current = "";
       setQuery("");
@@ -1404,6 +1351,30 @@ function App() {
     void openSettingsWindow().catch((error) => setSettingsError(String(error)));
   }, []);
 
+  const createSavedViewFromPicker = useCallback(async (title: string) => {
+    if (savedViewCreatorBusy) return;
+    setSavedViewCreatorBusy(true);
+    try {
+      const created = await createSavedHistoryView({
+        title,
+        query: scenarioCommandQuery !== null ? historyInputQuery : query.trim(),
+        hotkey: null,
+        captureTags: [],
+      });
+      setSavedHistoryViews((current) => [
+        created,
+        ...current.filter((view) => view.id !== created.id),
+      ]);
+      setSavedViewCreatorOpen(false);
+      pushToast({ title: "Saved view created", message: created.title, tone: "success" });
+    } catch (error) {
+      pushToast({ title: "Could not save current search", message: String(error), tone: "danger" });
+      throw error;
+    } finally {
+      setSavedViewCreatorBusy(false);
+    }
+  }, [historyInputQuery, pushToast, query, savedViewCreatorBusy, scenarioCommandQuery]);
+
   const reloadScenarios = useCallback(async () => {
     setScenarioSwitcherLoading(true);
     try {
@@ -1419,11 +1390,11 @@ function App() {
     }
   }, [pushToast]);
 
-  const openScenarioSwitcher = useCallback(() => {
+  const openScenarioMenu = useCallback(() => {
     closeTransientEditors();
     setCommandPalette(null);
     setActionPicker(null);
-    setScenarioSwitcherOpen(true);
+    setScenarioMenuOpen(true);
     void reloadScenarios();
   }, [closeTransientEditors, reloadScenarios]);
 
@@ -1434,6 +1405,7 @@ function App() {
       const session = await activateScenario(id);
       activeScenarioSessionRef.current = session;
       setActiveScenarioSession(session);
+      setScenarioMenuOpen(false);
       setScenarioSwitcherOpen(false);
       setDismissedAutocompleteQuery(session.query);
     } catch (error) {
@@ -1456,6 +1428,7 @@ function App() {
         const session = await activateScenario(created.id);
         activeScenarioSessionRef.current = session;
         setActiveScenarioSession(session);
+        setScenarioMenuOpen(false);
         setScenarioSwitcherOpen(false);
       } else {
         pushToast({ title: "Scenario saved", message: created.name, tone: "success" });
@@ -1728,7 +1701,8 @@ function App() {
       ) {
         event.preventDefault();
         event.stopPropagation();
-        openScenarioSwitcher();
+        if (scenarioMenuOpen) setScenarioMenuOpen(false);
+        else openScenarioMenu();
         return;
       }
       if (
@@ -1763,7 +1737,8 @@ function App() {
     editDraft,
     tagEditorDraft,
     openActionPicker,
-    openScenarioSwitcher,
+    openScenarioMenu,
+    scenarioMenuOpen,
     scenarioSwitcherOpen,
     searchHelpOpen,
   ]);
@@ -2185,12 +2160,10 @@ function App() {
     const nextQuery = entry.query;
     setCommandPalette(null);
     setAiComposerMode(false);
-    void stopCurrentCaptureContext();
     setOpenedSavedView(entry.savedView ? {
       id: entry.savedView.id,
       title: entry.savedView.title,
       query: entry.savedView.query,
-      captureTags: entry.savedView.captureTags,
     } : null);
     queryRef.current = nextQuery;
     setQuery(nextQuery);
@@ -2203,7 +2176,7 @@ function App() {
       queryOverride: nextQuery,
       allowAi: false,
     }).then(focusSearch);
-  }, [focusSearch, refreshHistory, stopCurrentCaptureContext]);
+  }, [focusSearch, refreshHistory]);
 
   const refreshAppliedHistory = useCallback(
     async (options: {
@@ -2252,34 +2225,15 @@ function App() {
     let unlisten: (() => void) | null = null;
     let unlistenScenario: (() => void) | null = null;
 
-    void Promise.all([getActiveScenarioSession(), getCaptureTagContext()])
-      .then(([scenarioSession, context]) => {
-        if (!active) {
+    void stopCaptureTagContext().catch(() => undefined);
+    void getActiveScenarioSession()
+      .then((scenarioSession) => {
+        if (!active || !scenarioSession) {
           return;
         }
-        if (!scenarioSession && !context) {
-          return;
-        }
-        const nextQuery = scenarioSession?.query ?? context?.query ?? "";
-        if (scenarioSession) {
-          activeScenarioSessionRef.current = scenarioSession;
-          setActiveScenarioSession(scenarioSession);
-          setOpenedSavedView({
-            id: scenarioSession.savedViewId,
-            title: scenarioSession.savedViewTitle,
-            query: scenarioSession.query,
-            captureTags: [],
-          });
-        } else if (context) {
-          captureTagContextRef.current = context;
-          setCaptureTagContext(context);
-          setOpenedSavedView({
-            id: context.viewId,
-            title: context.viewTitle,
-            query: context.query,
-            captureTags: context.tags,
-          });
-        }
+        activeScenarioSessionRef.current = scenarioSession;
+        setActiveScenarioSession(scenarioSession);
+        const nextQuery = scenarioSession.query;
         queryRef.current = nextQuery;
         setQuery(nextQuery);
         void refreshHistory({
@@ -2296,9 +2250,11 @@ function App() {
       }
       const nextQuery = event.payload.query.trim();
       const nextView = event.payload.view;
-      captureTagContextRef.current = null;
-      setCaptureTagContext(null);
-      setOpenedSavedView(nextView ? { ...nextView, query: nextQuery } : null);
+      setOpenedSavedView(nextView ? {
+        id: nextView.id,
+        title: nextView.title,
+        query: nextQuery,
+      } : null);
       setAiComposerMode(false);
       queryRef.current = nextQuery;
       setQuery(nextQuery);
@@ -3831,7 +3787,7 @@ function App() {
       }
       if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "s") {
         event.preventDefault();
-        openScenarioSwitcher();
+        openScenarioMenu();
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
@@ -4130,17 +4086,140 @@ function App() {
               </Menu>
             </div>
           </div>
-          <UiButton
-            type="button"
-            className={`scenario-trigger${activeScenarioSession ? " is-active" : ""}`}
-            variant="default"
-            aria-label={activeScenarioSession ? `Active scenario: ${activeScenarioSession.scenarioName}. Open scenarios` : "Open scenarios"}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={openScenarioSwitcher}
-          >
-            <Radio size={14} strokeWidth={2.3} aria-hidden="true" />
-            <span>{activeScenarioSession?.scenarioName ?? "Scenario"}</span>
-          </UiButton>
+          <div className="picker-context-controls">
+            <Menu withinPortal position="bottom-start" width={260}>
+              <Menu.Target>
+                <UiButton
+                  type="button"
+                  className={`saved-view-trigger${openedSavedView ? " is-active" : ""}`}
+                  variant="default"
+                  aria-label={openedSavedView ? `Saved view: ${openedSavedView.title}. Open saved views` : "Open saved views"}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  <Bookmark size={14} strokeWidth={2.3} aria-hidden="true" />
+                  <span>{openedSavedView?.title ?? "Views"}</span>
+                </UiButton>
+              </Menu.Target>
+              <Menu.Dropdown aria-label="Saved views">
+                <Menu.Label>Saved views</Menu.Label>
+                {savedHistoryViews.length > 0 ? savedHistoryViews.map((view) => (
+                  <Menu.Item
+                    key={view.id}
+                    leftSection={<Bookmark size={14} strokeWidth={2.2} />}
+                    className={openedSavedView?.id === view.id ? "is-active" : undefined}
+                    onClick={() => openPaletteNavigation({
+                      id: `saved-view.${view.id}`,
+                      kind: "navigation",
+                      group: "Saved views",
+                      title: view.title,
+                      description: view.query || "All history",
+                      query: view.query,
+                      savedView: view,
+                    })}
+                  >
+                    <span className="saved-view-menu-item">
+                      <strong>{view.title}</strong>
+                      <small>{view.query || "All history"}</small>
+                    </span>
+                  </Menu.Item>
+                )) : (
+                  <Menu.Item disabled>No saved views yet</Menu.Item>
+                )}
+                <Menu.Divider />
+                <Menu.Item
+                  leftSection={<Plus size={14} strokeWidth={2.2} />}
+                  onClick={() => setSavedViewCreatorOpen(true)}
+                >
+                  Save current search as view
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<Settings2 size={14} strokeWidth={2.2} />}
+                  onClick={() => {
+                    void openSavedViewsSettings().catch((error) => {
+                      pushToast({ title: "Could not open saved view settings", message: String(error), tone: "danger" });
+                    });
+                  }}
+                >
+                  Manage saved views
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <Menu
+              withinPortal
+              position="bottom-start"
+              width={300}
+              opened={scenarioMenuOpen}
+              onChange={(opened) => {
+                if (opened) openScenarioMenu();
+                else setScenarioMenuOpen(false);
+              }}
+            >
+              <Menu.Target>
+                <UiButton
+                  type="button"
+                  className={`scenario-trigger${activeScenarioSession ? " is-active" : ""}`}
+                  variant="default"
+                  aria-label={activeScenarioSession ? `Active scenario: ${activeScenarioSession.scenarioName}. Open scenarios` : "Open scenarios"}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  <Radio size={14} strokeWidth={2.3} aria-hidden="true" />
+                  <span>{activeScenarioSession?.scenarioName ?? "Scenario"}</span>
+                </UiButton>
+              </Menu.Target>
+              <Menu.Dropdown className="scenario-menu-dropdown" aria-label="Scenarios">
+                <Menu.Label>Scenarios</Menu.Label>
+                {scenarioSwitcherLoading ? <Menu.Item disabled>Loading scenarios…</Menu.Item> : null}
+                {!scenarioSwitcherLoading && scenarios.length === 0 ? <Menu.Item disabled>No scenarios yet</Menu.Item> : null}
+                {!scenarioSwitcherLoading ? scenarios.map((scenario) => {
+                  const active = activeScenarioSession?.scenarioId === scenario.id;
+                  return (
+                    <Menu.Item
+                      key={scenario.id}
+                      leftSection={active ? <Check size={14} strokeWidth={2.4} /> : <Radio size={14} strokeWidth={2.1} />}
+                      className={active ? "is-active" : undefined}
+                      disabled={active || activeScenarioBusy}
+                      onClick={() => void activateScenarioFromPicker(scenario.id)}
+                    >
+                      <span className="scenario-menu-item">
+                        <strong>{scenario.name}</strong>
+                        <small>{active ? `Active · ${scenario.query || "All history"}` : scenario.query || "All history"}</small>
+                      </span>
+                    </Menu.Item>
+                  );
+                }) : null}
+                <Menu.Divider />
+                {activeScenarioSession ? (
+                  <Menu.Item
+                    leftSection={<Square size={14} strokeWidth={2.2} />}
+                    disabled={activeScenarioBusy}
+                    onClick={() => void stopCurrentScenario()}
+                  >
+                    Stop scenario
+                  </Menu.Item>
+                ) : null}
+                <Menu.Item
+                  leftSection={<Plus size={14} strokeWidth={2.2} />}
+                  onClick={() => {
+                    setScenarioMenuOpen(false);
+                    setScenarioSwitcherOpen(true);
+                  }}
+                >
+                  Create from current search
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<Settings2 size={14} strokeWidth={2.2} />}
+                  onClick={() => {
+                    setScenarioMenuOpen(false);
+                    void openScenarioSettings().catch((error) => {
+                      pushToast({ title: "Could not open scenario settings", message: String(error), tone: "danger" });
+                    });
+                  }}
+                >
+                  Manage scenarios
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </div>
           <div className={`search-field${!aiComposerMode && query ? " has-clear-button" : ""}`}>
             {aiComposerMode ? (
               <UiTextarea
@@ -4427,65 +4506,54 @@ function App() {
           </div>
         ) : null}
 
-        {openedSavedView && openedSavedView.captureTags.length > 0 ? (
+        {openedSavedView ? (
           <div
-            className={`capture-context-bar${captureTagContext?.viewId === openedSavedView.id ? " is-active" : ""}`}
+            className="saved-view-bar"
             aria-live="polite"
-            data-testid="capture-context-bar"
+            data-testid="saved-view-bar"
           >
-            <Tags size={14} strokeWidth={2.3} aria-hidden="true" />
-            <div className="capture-context-copy">
-              <strong>
-                {captureTagContext?.viewId === openedSavedView.id ? "Capturing here" : "Capture tags ready"}
-              </strong>
+            <Bookmark size={14} strokeWidth={2.3} aria-hidden="true" />
+            <div className="saved-view-copy">
+              <strong>Saved view</strong>
               <span>{openedSavedView.title}</span>
-              <span className="capture-context-tags">
-                {openedSavedView.captureTags.map((tag) => `#${tag}`).join(" ")}
-              </span>
+              <span className="saved-view-query">{openedSavedView.query || "All history"}</span>
             </div>
-            {captureTagContext?.viewId === openedSavedView.id ? (
-              <UiButton
-                type="button"
-                variant="default"
-                loading={captureTagContextBusy}
-                onClick={() => void stopCurrentCaptureContext()}
-              >
-                Stop capture
-              </UiButton>
-            ) : (
-              <UiButton
-                type="button"
-                variant="filled"
-                loading={captureTagContextBusy}
-                onClick={() => void armOpenedSavedView()}
-              >
-                Capture here
-              </UiButton>
-            )}
+            <UiButton
+              type="button"
+              variant="default"
+              aria-label={`Exit saved view ${openedSavedView.title}`}
+              onClick={() => {
+                leaveOpenedSavedView();
+                window.setTimeout(() => searchRef.current?.focus(), 0);
+              }}
+            >
+              Exit view
+            </UiButton>
           </div>
         ) : null}
 
-        {scenarioSwitcherOpen ? (
-          <ScenarioSwitcher
-            scenarios={scenarios}
-            availableTags={paletteTags}
-            activeSession={activeScenarioSession}
+        {savedViewCreatorOpen ? (
+          <SavedViewCreator
             currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
-            loading={scenarioSwitcherLoading}
+            busy={savedViewCreatorBusy}
+            onClose={() => {
+              setSavedViewCreatorOpen(false);
+              focusSearch();
+            }}
+            onCreate={createSavedViewFromPicker}
+          />
+        ) : null}
+
+        {scenarioSwitcherOpen ? (
+          <ScenarioCreator
+            availableTags={paletteTags}
+            currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
             busy={activeScenarioBusy}
             onClose={() => {
               setScenarioSwitcherOpen(false);
               focusSearch();
             }}
-            onActivate={activateScenarioFromPicker}
-            onStop={stopCurrentScenario}
             onCreate={createScenarioFromPicker}
-            onManage={() => {
-              setScenarioSwitcherOpen(false);
-              void openScenarioSettings().catch((error) => {
-                pushToast({ title: "Could not open scenario settings", message: String(error), tone: "danger" });
-              });
-            }}
           />
         ) : null}
 

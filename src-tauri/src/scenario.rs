@@ -32,8 +32,6 @@ impl ActiveScenarioState {
             scenario_id: scenario.id,
             scenario_name: scenario.name,
             scenario_revision: scenario.revision,
-            saved_view_id: scenario.saved_view_id,
-            saved_view_title: scenario.saved_view_title,
             query: scenario.query,
             properties: scenario.properties,
             tags: scenario.tags,
@@ -70,8 +68,6 @@ mod tests {
         Scenario {
             id,
             name: name.to_string(),
-            saved_view_id: id,
-            saved_view_title: format!("{name} view"),
             query: format!("tag:{id}"),
             revision: 1,
             properties: ScenarioProperties::default(),

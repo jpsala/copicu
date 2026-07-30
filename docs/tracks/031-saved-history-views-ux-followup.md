@@ -1,8 +1,8 @@
 ---
 id: saved-history-views-ux-followup
-status: waiting_gate
+status: implementation-validated
 updated: 2026-07-29
-execution_route: strong
+execution_route: balanced
 related:
   - specs/009-saved-history-views/spec.md
   - docs/tracks/024-contextual-tag-capture.md
@@ -13,43 +13,38 @@ related:
 
 # 031 Saved History Views UX Follow-up
 
-## Motivo
+## Objetivo
 
-Revisar el modelo y la UX de Saved History Views a partir de nuevos requerimientos de JP, sin asumir que el flujo actual de captura contextual debe conservar su forma visible.
+Separar el modelo visible para que una Saved View sea un filtro nombrado reconocible y un Scenario sea el único contexto público de captura y metadata.
 
-## Estado Verificado En v0.4.1
+## Comportamiento Observable
 
-- La gestión está en `Settings → History → Saved history views`, debajo del resto de opciones de History.
-- Una view persiste `title`, `query`, `captureTags`, hotkey opcional y estado pinned; se crea o edita desde `New saved view`.
-- Abrirla desde Settings o `Ctrl+K` aplica su query y mantiene en frontend la identidad de la view abierta.
-- La barra de captura sólo existe si la view abierta tiene al menos un capture tag. Muestra `Capture tags ready` + `Capture here`; al armarse cambia a `Capturing here` + `Stop capture`.
-- `Capture here` aplica los tags declarados a capturas y recapturas/dedupe por la ruta transaccional normal. `Stop capture` conserva la query abierta y deja de aplicar tags.
-- Sólo hay un contexto de captura activo. Cambiar de view o escribir una query distinta abandona la view y detiene el contexto; reiniciar la aplicación no lo restaura silenciosamente.
-- Una query manual no se convierte en Saved View ni muestra controles de captura. Un Scenario usa su propia sesión y patch automático, aunque internamente referencie una view.
+- El picker ofrece un acceso visible y keyboard-first a Saved Views, con apertura y acceso a su administración sin depender de descubrirlas dentro de Settings.
+- Abrir una Saved View aplica su query y muestra siempre su nombre y una salida explícita, aunque no tenga capture tags; editar la query abandona esa identidad y deja una búsqueda manual.
+- Abrir una Saved View nunca arma captura ni aplica metadata. La edición de Saved Views deja de presentar capture tags.
+- Los controles y el indicador de sesión de Scenario son la única UX de captura contextual; conservan el ciclo de activación, cambio y detención ya validado.
 
-## Problemas De UX Observados
+## Límites Explícitos
 
-- Saved History Views está enterrado dentro de History y no es descubrible como capacidad principal.
-- Si `captureTags` está vacío, no aparece identidad de view abierta, explicación ni camino para configurar captura; parece que la funcionalidad no existe.
-- `Saved history view`, filtro, filter lock, capture context y Scenario son conceptos distintos, pero la UI no explica bien sus límites.
-- El control cotidiano está partido entre Settings, command palette y una barra condicional del picker.
-- El término y el modelo final todavía no están decididos; no promover Saved Views a tab, fusionarlas con Scenarios ni cambiar persistencia antes de escuchar los requerimientos de JP.
+- Sin fusionar Saved Views y Scenarios, agregar sidebar o tab principal, ni rediseñar Settings, Scenarios o el lenguaje de búsqueda.
+- Sin migrar ni borrar datos persistidos en este corte; los capture tags históricos de una Saved View pueden permanecer almacenados, pero no habilitan captura desde la view.
+- Sin cambiar la persistencia de sesiones: una Saved View persiste como definición y un Scenario activo no se restaura silenciosamente al reiniciar.
 
-## Gate De Requerimientos
+## Criterios De Terminado
 
-Esperar que JP describa en la próxima sesión:
+1. Una Saved View puede descubrirse y abrirse desde el picker, y su identidad permanece visible hasta salir o modificar la query.
+2. Una búsqueda manual no adquiere identidad de view y ninguna Saved View ofrece o activa captura contextual, incluso si conserva capture tags históricos.
+3. Activar, cambiar y detener Scenarios sigue siendo la única ruta visible para aplicar tags o metadata a nuevas capturas.
+4. La gestión de Saved Views conserva título, query, hotkey y pinned sin exponer capture tags.
 
-- qué representa para él una Saved History View;
-- cómo espera crearla, abrirla, reconocerla y cerrarla;
-- qué relación debe tener con captura, tags y Scenarios;
-- qué debe persistir entre cierres o reinicios.
+## Checks Focales Mínimos
 
-Después de aclararlo, convertir la decisión en un brief corto antes de tocar código. No implementar desde este track sin cerrar ese gate.
+- Playwright focal desktop y narrow para descubrir/abrir/cerrar una view, mostrar identidad sin capture tags y abandonarla al editar la query.
+- Actualizar el test visual de capture context para comprobar que una Saved View con capture tags históricos no muestra ni arma `Capture here`, y mantener el flujo validado de Scenario.
+- `npm run build`.
 
-## Referencias De Código Y Evidencia
+## Resultado
 
-- UI de gestión: `src/windows/SavedHistoryViews.tsx` y sección History de `src/windows/secondaryWindows.tsx`.
-- Estado y barra del picker: `openedSavedView`, `captureTagContext`, `Capture here` y `Stop capture` en `src/main.tsx`.
-- Backend y contratos: comandos de capture context en `src-tauri/src/lib.rs`, persistencia en `src-tauri/src/storage.rs`, contratos en `src/shared/contracts.ts`.
-- Test actual: `saved view capture context arms, stays distinct from filter lock, and stops without clearing the view` en `tests/visual/shell.spec.ts`.
-- Release actual: `v0.4.1` estable, instalada local promovida.
+Implementado: el picker expone Saved Views en un menú visible, conserva nombre/query con salida explícita y abre su gestión directamente. Editar la query abandona la identidad. La UI y edición de Saved Views ya no muestran ni arman capture tags históricos; Scenarios conserva en exclusiva el contexto visible de captura y metadata.
+
+Evidencia: Playwright focal desktop/narrow `10 passed`, `npm run build` y `cargo check` con target aislado.

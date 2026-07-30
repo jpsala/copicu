@@ -392,7 +392,7 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
     CREATE INDEX idx_scenarios_saved_view
         ON scenarios(saved_view_id, name COLLATE NOCASE);
 
-    CREATE TABLE clipboard_item_properties (
+    CREATE TABLE clipboard_item_properties(
         item_id INTEGER NOT NULL,
         property_key TEXT NOT NULL CHECK(property_key IN ('client', 'project', 'activity')),
         value TEXT NOT NULL,
@@ -425,6 +425,36 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
 
     CREATE INDEX idx_clipboard_capture_events_scenario
         ON clipboard_item_capture_events(scenario_id, captured_at_unix_ms DESC);
+    "#,
+    ),
+    M::up(
+        r#"
+    CREATE TABLE scenarios_independent (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        query TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        client_values_json TEXT NOT NULL DEFAULT '[]',
+        project_values_json TEXT NOT NULL DEFAULT '[]',
+        activity_values_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        created_at_unix_ms INTEGER NOT NULL,
+        updated_at_unix_ms INTEGER NOT NULL
+    );
+
+    INSERT INTO scenarios_independent (
+        id, name, query, revision, client_values_json, project_values_json,
+        activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+    )
+    SELECT
+        s.id, s.name, COALESCE(v.query, ''), s.revision, s.client_values_json,
+        s.project_values_json, s.activity_values_json, s.tags_json,
+        s.created_at_unix_ms, s.updated_at_unix_ms
+    FROM scenarios s
+    LEFT JOIN saved_history_views v ON v.id = s.saved_view_id;
+
+    DROP TABLE scenarios;
+    ALTER TABLE scenarios_independent RENAME TO scenarios;
     "#,
     ),
 ];
