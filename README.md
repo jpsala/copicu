@@ -29,12 +29,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.2](https://github.com/jpsala/copicu/releases/tag/v0.4.2)
-- Asset: `Copicu_0.4.2_x64-setup.exe`
+- [v0.4.3](https://github.com/jpsala/copicu/releases/tag/v0.4.3)
+- Asset: `Copicu_0.4.3_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `82B7CEAB63F414999150ADDF8F8D72148A6D123A024C21E6B3B0F7B4EC64486A`
+- SHA256: `A3E3AEAEBDC3FBD144DF0B355302B004664B60BE85553245A3508E0F5B1AF636`
 
-`v0.4.2` makes Saved Views and Scenarios independent, preserves existing data through a local SQLite migration, and gives both matching picker menus with create-from-current-search flows.
+Restores the compact single-field metadata editor: tags and client/project/activity use inline tokens, with a responsive minimum-size layout.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
