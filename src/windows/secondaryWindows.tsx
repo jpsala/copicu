@@ -612,7 +612,6 @@ if (isTauriRuntime()) {
 export function MetadataWindowApp() {
   const [payload, setPayload] = useState<MetadataEditorPayload | null>(null);
   const [metadataText, setMetadataText] = useState("");
-  const [propertyText, setPropertyText] = useState({ client: "", project: "", activity: "" });
   const [editorSession, setEditorSession] = useState(0);
   const [availableTags, setAvailableTags] = useState<TagSummary[]>([]);
   const [saving, setSaving] = useState(false);
@@ -641,12 +640,11 @@ export function MetadataWindowApp() {
     const itemId = nextPayload?.item.id ?? null;
     recordRendererDiagnostic("metadata.loadPayload", `item_id=${itemId ?? "none"}`);
     setPayload(nextPayload);
-    setMetadataText(formatMetadataText(nextPayload?.item.notes, nextPayload?.itemTags ?? []));
-    setPropertyText({
-      client: nextPayload?.itemProperties.client.join(", ") ?? "",
-      project: nextPayload?.itemProperties.project.join(", ") ?? "",
-      activity: nextPayload?.itemProperties.activity.join(", ") ?? "",
-    });
+    setMetadataText(formatMetadataText(
+      nextPayload?.item.notes,
+      nextPayload?.itemTags ?? [],
+      nextPayload?.itemProperties,
+    ));
     setEditorSession((current) => current + 1);
     setError(null);
     void listTags()
@@ -702,11 +700,7 @@ export function MetadataWindowApp() {
       title: payload.item.title,
       notes: nullableTrim(parsed.notes),
       tags: parsed.tags,
-      properties: {
-        client: propertyText.client.split(",").map((value) => value.trim()).filter(Boolean),
-        project: propertyText.project.split(",").map((value) => value.trim()).filter(Boolean),
-        activity: propertyText.activity.split(",").map((value) => value.trim()).filter(Boolean),
-      },
+      properties: parsed.properties,
     };
     try {
       await updateItemMetadata(request);
@@ -720,7 +714,7 @@ export function MetadataWindowApp() {
     } finally {
       setSaving(false);
     }
-  }, [availableTags, metadataText, payload, propertyText, saving]);
+  }, [availableTags, metadataText, payload, saving]);
 
   const handleEditorKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLFormElement>) => {
@@ -773,32 +767,9 @@ export function MetadataWindowApp() {
               availableTags={availableTags}
               onChange={setMetadataText}
             />
-            <section className="metadata-properties" aria-label="Structured properties">
-              <UiTextInput
-                label="Client"
-                aria-label="Client properties"
-                value={propertyText.client}
-                placeholder="ACME"
-                onChange={(event) => setPropertyText((current) => ({ ...current, client: event.currentTarget.value }))}
-              />
-              <UiTextInput
-                label="Project"
-                aria-label="Project properties"
-                value={propertyText.project}
-                placeholder="Web"
-                onChange={(event) => setPropertyText((current) => ({ ...current, project: event.currentTarget.value }))}
-              />
-              <UiTextInput
-                label="Activity"
-                aria-label="Activity properties"
-                value={propertyText.activity}
-                placeholder="Development, Review"
-                onChange={(event) => setPropertyText((current) => ({ ...current, activity: event.currentTarget.value }))}
-              />
-            </section>
             {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
             <div className="metadata-window-footer">
-              <span><code>#tag</code> anywhere · <code>Ctrl+Enter</code> save</span>
+              <span><code>#tag</code> · <code>client:value</code> · <code>Ctrl+Enter</code></span>
               <div className="metadata-window-buttons">
                 <UiButton type="button" variant="default" onClick={closeWindow}>
                   Cancel

@@ -1930,9 +1930,10 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   await page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click();
   await page.getByLabel("Search clipboard history").click();
   await page.keyboard.press("Shift+F2");
-  await expect(page.getByRole("dialog", { name: "Edit item metadata" })).toBeVisible();
-  await page.getByRole("textbox", { name: "Metadata" }).fill("#perf metadata note");
-  await page.getByRole("button", { name: "Save" }).click();
+  const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
+  await expect(metadataDialog).toBeVisible();
+  await metadataDialog.getByRole("textbox", { name: "Metadata" }).fill("#perf metadata note");
+  await metadataDialog.getByRole("button", { name: "Save", exact: true }).click();
 
   const updateCall = await page.waitForFunction(() => {
     const calls = (window as any).__copicuTestInvocations;
@@ -3675,8 +3676,8 @@ test("ai-output renders markdown and actions without overflow", async ({ page })
   expect(overflow).toBe(false);
 });
 
-test("metadata window shows item content and focuses inline metadata", async ({ page }) => {
-  await page.setViewportSize({ width: 480, height: 340 });
+test("metadata window keeps tags and properties inline at its minimum size", async ({ page }) => {
+  await page.setViewportSize({ width: 380, height: 300 });
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=metadata");
 
@@ -3688,13 +3689,15 @@ test("metadata window shows item content and focuses inline metadata", async ({ 
   await expect(itemContent).toContainText(syntheticLongHistory[3].text);
   await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Notes" })).toHaveCount(0);
-  await expect(page.getByLabel("Client properties")).toHaveValue("ACME");
-  await expect(page.getByLabel("Project properties")).toHaveValue("Web");
-  await page.getByLabel("Client properties").fill("ACME, Globex");
+  await expect(page.getByLabel("Client properties")).toHaveCount(0);
+  await expect(page.getByLabel("Project properties")).toHaveCount(0);
+  await expect(editor).toHaveValue(/client:ACME project:Web activity:Development/);
   await expect(page.getByLabel("Capture context")).toHaveCount(0);
   await expect(page.locator(".metadata-text-suggestions")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
 
-  await editor.fill("Markdown note #wo");
+  await editor.fill('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #wo');
   const suggestionList = page.locator(".metadata-text-suggestions");
   await expect(suggestionList).toBeVisible();
   const [suggestionBox, appBox] = await Promise.all([
@@ -3706,13 +3709,13 @@ test("metadata window shows item content and focuses inline metadata", async ({ 
   expect(suggestionBox!.y + suggestionBox!.height).toBeLessThanOrEqual(appBox!.y + appBox!.height);
   await editor.press("Tab");
   await expect(suggestionList).toHaveCount(0);
-  await expect(editor).toHaveValue("Markdown note #work ");
+  await expect(editor).toHaveValue('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #work ');
 
   await editor.pressSequentially("anywhere #ba");
   await expect(suggestionList).toBeVisible();
   await editor.press("Enter");
   await expect(suggestionList).toHaveCount(0);
-  await expect(editor).toHaveValue("Markdown note #work anywhere #backend ");
+  await expect(editor).toHaveValue('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #work anywhere #backend ');
 
   await editor.pressSequentially("#fresh");
   await editor.press("Control+Enter");
@@ -3726,8 +3729,9 @@ test("metadata window shows item content and focuses inline metadata", async ({ 
   expect(request.tags).toContain("Work");
   expect(request.tags).toContain("Backend");
   expect(request.tags).toContain("fresh");
-  expect(request.properties.client).toEqual(["ACME", "Globex"]);
+  expect(request.properties.client).toEqual(["ACME North", "Globex"]);
   expect(request.properties.project).toEqual(["Web"]);
+  expect(request.properties.activity).toEqual(["Code review"]);
   await expect(page.locator(".metadata-window-buttons .mantine-Loader-root")).toHaveCount(0);
 
   const overflowing = await page.locator(".metadata-window-app").evaluate((element) =>

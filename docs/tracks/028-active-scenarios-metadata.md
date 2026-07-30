@@ -43,6 +43,6 @@ Implementar en un solo corte el piloto `Cliente ACME / Proyecto Web` como scenar
 
 ## Resultado 2026-07-29
 
-Implementado el corte completo: scenarios SQLite separados referencian saved views y patches multivalor; una sesión transitoria abre la view, hace switch atómico y permanece visible hasta `Stop`; captura y dedupe aplican tags/properties con provenance por evento. El editor de metadata permite remover/restaurar valores manualmente y las suppressions mantienen `manual > scenario > enrichment`.
+Implementado el corte completo: scenarios SQLite separados referencian saved views y patches multivalor; una sesión transitoria abre la view, hace switch atómico y permanece visible hasta `Stop`; captura y dedupe aplican tags/properties con provenance por evento. El editor conserva el convenio de un único textbox: además de `#tags`, acepta tokens inline repetibles como `client:ACME`, `project:Web` y `activity:"Code review"`; las suppressions mantienen `manual > scenario > enrichment`.
 
 Evidencia: 5 tests Rust focales pasaron; Playwright focal desktop+narrow pasó creación, activate/switch/stop, hide/reopen y edición de properties; `npm run build` y `cargo check` pasaron. Smoke nativo con watcher: captura oculta activa recibió `client=ACME`, `project=Web`, `activity=Native smoke`, tag y sesión/revisión; tras `Stop` la siguiente captura no recibió patch; tras reiniciar `get_active_scenario_session` devolvió `null`. Sin gates externos pendientes.

@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import type { TagSummary } from "../shared/contracts";
+import type { ScenarioProperties, TagSummary } from "../shared/contracts";
 import {
   UiButton,
   UiIconButton,
@@ -61,7 +61,10 @@ type MetadataTagDraft = {
   query: string;
 };
 
-const METADATA_TAG_PATTERN = /(^|\s)#([\p{L}\p{N}_/-]+)/gu;
+const METADATA_TOKEN_PATTERN = /(^|\s)(?:#([\p{L}\p{N}_/-]+)|(client|project|activity):(?:"((?:\\.|[^"\\])*)"|([^\s]+)))/giu;
+const METADATA_PROPERTY_KEYS = ["client", "project", "activity"] as const;
+
+type MetadataPropertyKey = (typeof METADATA_PROPERTY_KEYS)[number];
 
 function tagKey(value: string) {
   return cleanTagInput(value)
@@ -89,9 +92,40 @@ function uniqueTags(tags: string[]) {
   });
 }
 
-export function formatMetadataText(notes: string | null | undefined, tags: string[]) {
+function uniquePropertyValues(values: string[]) {
+  const seen = new Set<string>();
+  return values.map((value) => value.trim()).filter((value) => {
+    const key = value.toLocaleLowerCase();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatPropertyValue(value: string) {
+  return /^[\p{L}\p{N}_./-]+$/u.test(value) ? value : JSON.stringify(value);
+}
+
+function parseQuotedPropertyValue(value: string) {
+  try {
+    return JSON.parse(`"${value}"`) as string;
+  } catch {
+    return value.replace(/\\(["\\])/g, "$1");
+  }
+}
+
+export function formatMetadataText(
+  notes: string | null | undefined,
+  tags: string[],
+  properties: ScenarioProperties = { client: [], project: [], activity: [] },
+) {
   const tagTokens = uniqueTags(tags).map((tag) => `#${tagKey(tag)}`).filter((tag) => tag !== "#");
-  return [tagTokens.join(" "), notes?.trim() ?? ""].filter(Boolean).join("\n");
+  const propertyTokens = METADATA_PROPERTY_KEYS.flatMap((key) =>
+    uniquePropertyValues(properties[key]).map((value) => `${key}:${formatPropertyValue(value)}`),
+  );
+  return [[...tagTokens, ...propertyTokens].join(" "), notes?.trim() ?? ""].filter(Boolean).join("\n");
 }
 
 export function parseMetadataText(
@@ -109,16 +143,38 @@ export function parseMetadataText(
   }
 
   const tags: string[] = [];
+  const properties: ScenarioProperties = { client: [], project: [], activity: [] };
   const notes = value.replace(
-    METADATA_TAG_PATTERN,
-    (match, prefix: string, token: string, offset: number, source: string) => {
-      tags.push(knownTags.get(tagKey(token)) ?? token);
+    METADATA_TOKEN_PATTERN,
+    (
+      match,
+      prefix: string,
+      tagToken: string | undefined,
+      propertyKey: string | undefined,
+      quotedValue: string | undefined,
+      bareValue: string | undefined,
+      offset: number,
+      source: string,
+    ) => {
+      if (tagToken) {
+        tags.push(knownTags.get(tagKey(tagToken)) ?? tagToken);
+      } else if (propertyKey) {
+        const key = propertyKey.toLocaleLowerCase() as MetadataPropertyKey;
+        const propertyValue = quotedValue === undefined
+          ? (bareValue ?? "")
+          : parseQuotedPropertyValue(quotedValue);
+        properties[key].push(propertyValue);
+      }
       const next = source[offset + match.length] ?? "";
       return /[ \t]/.test(prefix) && /[ \t]/.test(next) ? "" : prefix;
     },
   ).trim();
 
-  return { notes, tags: uniqueTags(tags) };
+  for (const key of METADATA_PROPERTY_KEYS) {
+    properties[key] = uniquePropertyValues(properties[key]);
+  }
+
+  return { notes, tags: uniqueTags(tags), properties };
 }
 
 function metadataTagDraftAt(value: string, caret: number): MetadataTagDraft | null {
@@ -227,7 +283,7 @@ export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInp
           aria-controls="metadata-tag-suggestions"
           aria-expanded={suggestions.length > 0}
           value={value}
-          placeholder="Write a note and add #tags anywhere…"
+          placeholder="Write a note; add #tags or client:value anywhere…"
           onChange={(event) => {
             onChange(event.currentTarget.value);
             setCaret(event.currentTarget.selectionStart);
