@@ -534,6 +534,13 @@ Checkpoint 2026-07-28 `v0.4.1-rc.2`:
 - Checks: 182/182 Playwright, 130 Rust + 1 ignored, build frontend, cargo check, context audit y test focal desktop/narrow.
 - Instalador `Copicu_0.4.1_x64-setup.exe`; SHA256 `5D56EE4826FC8E469DE32CD7029D36B5D9F7D964C9E408CEA07F143ED4A2AC2C`; prerelease publicado sin reemplazar `v0.3.9` como latest estable.
 
+Checkpoint 2026-07-30 `v0.4.3`:
+
+- El editor standalone de metadata vuelve al convenio de un único textbox: `#tags`, `client`, `project` y `activity` se editan como tokens inline; valores con espacios aceptan comillas y los tokens repetidos preservan properties multivalor.
+- El layout mantiene contenido, editor y acciones visibles en `380×300`, sin los tres inputs inferiores que rompían el resize.
+- Checks: build frontend, `cargo check --tests`, context audit, capabilities drift y suite visual 206/206.
+- Publicado como stable/latest con instalador, `.sig` y `latest.json`; SHA256 `A3E3AEAEBDC3FBD144DF0B355302B004664B60BE85553245A3508E0F5B1AF636`. Instalación local `0.4.3` verificada y respondiendo.
+
 Pendiente inmediato:
 
 1. Respaldar fuera del repo la key/password vigente de `.codex-run/secrets/`.
