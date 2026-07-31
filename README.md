@@ -10,9 +10,15 @@ Copicu is Windows-first today. It is inspired by advanced clipboard tools like C
 
 These assets use generated synthetic clipboard data only.
 
+Compact picker feed with overflow indicators, bounded image previews, Saved Views, and Scenarios:
+
 ![Copicu synthetic picker screenshot](docs/assets/screenshots/picker-synthetic-history.png)
 
-Short generated flow:
+Full-surface content editor opened with `F2`:
+
+![Copicu synthetic full editor screenshot](docs/assets/screenshots/picker-full-editor.png)
+
+Short generated flow showing search, expansion, quick inline editing, and save:
 
 ![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
 
