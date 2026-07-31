@@ -9,9 +9,16 @@ gobierno del manager.
 Usá `/flow` como única entrada cotidiana:
 
 - **Pensar** explora y converge una decisión.
-- **Planear** crea un brief liviano, declara `execution_route: economical | balanced | strong` y registra el foco.
-- **Hacer** aplica esa ruta (`balanced` por defecto), abre una sesión nueva enlazada con handoff documental revisable y ejecuta allí sin Agent ni auto-send; modelo o auth ausentes bloquean sin fallback.
+- **Planear** crea un brief liviano, declara una `execution_route` revisable y registra el foco.
+- **Hacer** aplica la ruta, abre una sesión nueva enlazada con handoff documental revisable y ejecuta allí sin Agent ni auto-send; modelo o auth ausentes bloquean sin fallback.
 - **Cerrar** guarda sólo valor durable faltante; es opcional si Hacer ya cerró.
+
+`balanced` con Sol Medium es la ruta normal aun para trabajo multifile,
+cross-layer o nativo acotado. `strong` con Sol High queda sólo para ambigüedad
+material o fallos materiales difíciles de detectar; prioridad, cantidad de
+archivos o un efecto externo autorizado no bastan. `economical` con Luna requiere
+pedido explícito de JP por cuota y checks deterministas. `Ctrl+P` alterna Sol
+Medium/High y `Ctrl+L` conserva la selección manual.
 
 `realinear os` sigue disponible como operación para auditar la capa agentica. Las
 skills de producto, SpecKit, release/research, taskflows y computer use no forman

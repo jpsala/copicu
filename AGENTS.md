@@ -38,7 +38,8 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 ## Comandos De Sistema
 
 - `/flow` es la única entrada Pi cotidiana: `Pensar | Planear | Hacer | Cerrar`; Copicu exige `aos.flow-first@1.1.0`, un comando global `user/package` y foco documental válido.
-- Planear declara `execution_route: economical | balanced | strong`; Hacer aplica esa ruta (`balanced` por defecto) y bloquea sin fallback si falta modelo o auth.
+- Planear usa `balanced` con Sol Medium como ruta normal, incluso para trabajo multifile/cross-layer/nativo acotado. `strong` con Sol High queda sólo para ambigüedad material, arquitectura abierta, seguridad/auth/privacidad, irreversibilidad, alto impacto productivo o fallos materiales difíciles de detectar. `economical` con Luna requiere pedido explícito de JP por cuota y checks deterministas. Hacer bloquea sin fallback si falta modelo o auth.
+- `Ctrl+P` alterna Sol Medium/High; `Ctrl+L` conserva la selección manual de modelo.
 - `/flow → Hacer` abre una única sesión nueva enlazada con handoff revisable y ejecuta allí sin Agent ni auto-send.
 - En `WORKING_MEMORY.md`, cada campo de control de `Foco Único De Ejecución` debe ocupar una sola línea física; no envolver `Plan`, `Próximo batch`, `Referencia`, `Bloqueo`, `Gate` ni `Siguiente acción`, aunque MD013 sugiera hacerlo.
 - `aos-realinear-os` / `realinear os`: abrir `docs/topics/agentic-os-operations.md` y reparar solo la capa agentica salvo pedido explícito.

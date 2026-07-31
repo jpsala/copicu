@@ -34,9 +34,16 @@ según el contrato global.
 - Después de tocar código/configuración, usar diagnóstico/check del repo sólo si
   es evidencia relevante para el cambio.
 
-Las rutas son `economical` (Luna High para docs o mecánica de bajo riesgo),
-`balanced` (Sol Medium por defecto) y `strong` (Sol High para trabajo sensible).
-No hay Terra, clasificador extra ni routing por turno.
+`balanced` con Sol Medium es la ruta normal, incluso para trabajo multifile,
+cross-layer o nativo acotado cuando la decisión ya está tomada y hay checks
+razonables. `strong` con Sol High queda sólo para ambigüedad material,
+arquitectura abierta, seguridad/auth/privacidad, irreversibilidad, alto impacto
+productivo o fallos materiales difíciles de detectar. Prioridad, cantidad de
+archivos, stack nativo, contrato/review, planificación compleja o un efecto
+externo ya autorizado no bastan. `economical` con Luna requiere pedido explícito
+de JP por cuota y checks deterministas. `Ctrl+P` alterna Sol Medium/High y
+`Ctrl+L` conserva la selección manual. No hay Terra, clasificador extra ni
+routing por turno.
 
 ## Gates
 

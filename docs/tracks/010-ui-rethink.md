@@ -196,8 +196,8 @@ Decimocuarto corte documental:
 
 - `docs/topics/custom-window-system.md` quedo como registro canonico de research de ventanas Tauri.
 - Fuentes canonicas prioritarias:
-  - https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/
-  - https://v2.tauri.app/learn/window-customization/
+  - <https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/>
+  - <https://v2.tauri.app/learn/window-customization/>
 - Regla fijada: si issues, blogs, recuerdos locales o StackOverflow contradicen esas guias oficiales actuales de Tauri v2, ganan las guias oficiales; antes de fijar decisiones durables, verificar version actual de Tauri.
 - Research complementario guardado: Window API, WebviewWindowBuilder docs.rs, Electron BrowserWindow/modal como comparativa, y issues Tauri sobre transparencia/undecorated en Windows.
 - Direccion acordada: la mayoria de funcionalidad vivira fuera del picker; las superficies ricas deben ser ventanas standalone de producto con label/capability propios, no pseudo-modales dentro de `ui-host` transparente.
@@ -303,6 +303,17 @@ Vigesimo segundo corte aplicado:
 - `main.tsx` lazy-loadea la superficie de notificaciones desde el archivo nuevo; `secondaryWindows.tsx` quedo sin IPC/resize/constants propios de notifications.
 - Checks pasados: `npm run build`, `npm run visual:check` 86/86, `mise run release-vite-chunk-check`; `npm run dev:restart` dejo app dev viva (`copicu.exe` responding).
 - Proximo split UI recomendado: `UiHostApp`; evitar mover `SettingsPanel` hasta seguir bajando helpers/superficies chicas.
+
+Editor de contenido F2 aplicado 2026-07-31:
+
+- F2 reemplaza el feed por un modo editor que ocupa toda la superficie util del picker; ya no monta un panel modal dentro de Items.
+- `src/ui/ItemContentEditor.tsx` integra CodeMirror 6 mediante `@uiw/react-codemirror`, lazy-loaded para no cargar el editor en el arranque normal del picker.
+- Incluye numeros de linea, undo/redo, busqueda, bracket matching, Tab/indent, wrap configurable, linea/columna, conteos y estado `Modified`.
+- Atajos: `F2`, `Ctrl+S` y `Ctrl+Enter` guardan; `Escape` cancela. `Shift+F2` conserva el editor standalone de metadata.
+- Correccion posterior: F2 se maneja en toda la superficie del picker, no solo desde el search; el menu contextual muestra el keycap F2 junto a Edit.
+- Settings suma una seccion `Editor` persistida con font, tamano 11-20 px, interlineado, wrap inicial, tab size 2/4/8, numeros de linea y active-line highlight, mas preview local inmediato.
+- Decision durable: CodeMirror queda para edicion larga/code-like; metadata conserva `MetadataTextInput` y su autocomplete de dominio hasta que necesite un lenguaje con completions/highlighting/diagnostics propios. Politica en `docs/topics/ui-surface-architecture.md`.
+- Checks pasados: LSP sin errores, `npm run build`, `cargo check --tests`, tests focales desktop/narrow y `npm run visual:check` 206/206. Los tests Rust compilan pero el binario mantiene el fallo conocido `STATUS_ENTRYPOINT_NOT_FOUND` al arrancar.
 
 ## Diagnostico Inicial
 

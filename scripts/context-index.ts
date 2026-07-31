@@ -49,6 +49,22 @@ function trackStatus(content: string) {
   return scalar(fm, "status") || "unknown";
 }
 
+function focusedTrackPaths(): Set<string> {
+  if (!exists("docs/WORKING_MEMORY.md")) return new Set();
+  const memory = read("docs/WORKING_MEMORY.md");
+  const heading = "## Foco Único De Ejecución";
+  const start = memory.indexOf(heading);
+  if (start < 0) return new Set();
+  const remainder = memory.slice(start + heading.length);
+  const nextHeading = remainder.search(/\r?\n##\s/);
+  const focus = nextHeading >= 0 ? remainder.slice(0, nextHeading) : remainder;
+  const state = focus.match(/^- \*\*Estado:\*\* `([^`]+)`/m)?.[1];
+  const field = state === "ready" ? "Plan" : state === "blocked" || state === "waiting_gate" ? "Referencia" : undefined;
+  if (!field) return new Set();
+  const pattern = new RegExp("^- \\*\\*" + field + ":\\*\\* `(docs/tracks/[^`]+\\.md)`", "gm");
+  return new Set([...focus.matchAll(pattern)].map((match) => match[1]));
+}
+
 const lines: string[] = [];
 lines.push("# Context Index");
 lines.push("");
@@ -70,13 +86,18 @@ lines.push("");
 
 lines.push("## Tracks");
 lines.push("");
+const focusedTracks = focusedTrackPaths();
+let focusedTrackCount = 0;
 for (const path of markdownFiles("docs/tracks")) {
-  if (path.endsWith("/README.md") || path.endsWith("/TEMPLATE.md")) continue;
+  if (path.endsWith("/README.md") || path.endsWith("/TEMPLATE.md") || !focusedTracks.has(path)) continue;
   const content = read(path);
   const status = trackStatus(content);
   const label = title(content);
   lines.push(`- ${status}: [${label}](../${path.replace("docs/", "")})`);
+  focusedTrackCount += 1;
 }
+if (!focusedTrackCount) lines.push("- No focused track. Search `docs/tracks/` on demand.");
+else lines.push("- Other tracks are omitted from the hot index; search `docs/tracks/` on demand.");
 lines.push("");
 
 lines.push("## Specs");

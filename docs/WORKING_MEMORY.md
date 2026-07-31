@@ -11,8 +11,8 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 ## Foco Único De Ejecución
 
 - **Estado:** `complete`.
-- **Referencia:** `docs/tracks/028-active-scenarios-metadata.md`.
-- **Siguiente acción:** ninguna requerida; `v0.4.3` está publicada, instalada localmente y verificada.
+- **Referencia:** `docs/tracks/033-picker-compact-previews-inline-edit.md`.
+- **Siguiente acción:** ninguna requerida; el picker ya tiene previews compactas, expansión de overflow y edición rápida inline, conservando F2 como editor completo.
 
 ## Lectura Rapida
 

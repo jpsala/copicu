@@ -534,6 +534,8 @@ pub struct AppSettings {
     pub history: HistorySettings,
     pub appearance: AppearanceSettings,
     #[serde(default)]
+    pub editor: EditorSettings,
+    #[serde(default)]
     pub tray: TraySettings,
     #[serde(default)]
     pub scripts: ScriptsSettings,
@@ -618,6 +620,51 @@ pub struct AppearanceSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub theme_id: ThemeId,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSettings {
+    pub font_family: EditorFontFamily,
+    pub font_size: u8,
+    pub line_height: EditorLineHeight,
+    pub wrap_lines: bool,
+    pub tab_size: u8,
+    pub line_numbers: bool,
+    pub highlight_active_line: bool,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            font_family: EditorFontFamily::SystemMono,
+            font_size: 13,
+            line_height: EditorLineHeight::Comfortable,
+            wrap_lines: true,
+            tab_size: 4,
+            line_numbers: true,
+            highlight_active_line: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum EditorFontFamily {
+    #[default]
+    SystemMono,
+    CascadiaMono,
+    Consolas,
+    UiSans,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum EditorLineHeight {
+    Compact,
+    #[default]
+    Comfortable,
+    Relaxed,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -715,6 +762,7 @@ impl Default for AppSettings {
                 theme: ThemeSetting::System,
                 theme_id: ThemeId::Default,
             },
+            editor: EditorSettings::default(),
             tray: TraySettings::default(),
             scripts: ScriptsSettings::default(),
             enrichment: crate::enrichment::EnrichmentSettings::default(),
@@ -3932,6 +3980,12 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     if contains_hotkey_sequence_delimiter(&settings.picker.preview_shortcut) {
         return Err("preview shortcut must be a single shortcut".to_string());
     }
+    if !(11..=20).contains(&settings.editor.font_size) {
+        return Err("editor font size must be between 11 and 20".to_string());
+    }
+    if !matches!(settings.editor.tab_size, 2 | 4 | 8) {
+        return Err("editor tab size must be 2, 4, or 8".to_string());
+    }
     if settings.scripts.folder_path.trim().is_empty() {
         return Err("scripts folder path cannot be empty".to_string());
     }
@@ -4078,6 +4132,17 @@ mod tests {
     }
 
     #[test]
+    fn settings_validation_rejects_invalid_editor_values() {
+        let mut settings = AppSettings::default();
+        settings.editor.font_size = 10;
+        assert!(validate_settings(&settings).is_err());
+
+        settings.editor.font_size = 13;
+        settings.editor.tab_size = 3;
+        assert!(validate_settings(&settings).is_err());
+    }
+
+    #[test]
     fn settings_deserialize_old_schema_adds_scripts_defaults() {
         let json = r#"{
             "schemaVersion": 1,
@@ -4100,6 +4165,7 @@ mod tests {
         assert_eq!(settings.ai, AiSettings::default());
         assert_eq!(settings.ai.api_key, "");
         assert_eq!(settings.appearance.theme_id, ThemeId::Default);
+        assert_eq!(settings.editor, EditorSettings::default());
         assert!(settings.general.capture_enabled);
         assert!(settings.picker.promote_active_on_copy);
         assert_eq!(

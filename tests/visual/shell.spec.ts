@@ -103,6 +103,50 @@ const syntheticLongHistory = [
   },
 ];
 
+const compactPreviewText = Array.from(
+  { length: 18 },
+  (_, index) => `COPICU_COMPACT_LINE_${String(index + 1).padStart(2, "0")} value`,
+).join("\n");
+
+const syntheticCompactPreviewHistory = [
+  {
+    ...syntheticLongHistory[1],
+    id: 1201,
+    text: "Short text",
+    normalized_hash: "compact-short-text",
+    title: null,
+    notes: null,
+    tags: null,
+  },
+  {
+    ...syntheticLongHistory[3],
+    id: 1202,
+    text: compactPreviewText,
+    normalized_hash: "compact-overflow-text",
+    title: null,
+    notes: null,
+    tags: null,
+  },
+  ...[
+    { id: 1203, width: 72, height: 48, color: "#245f53" },
+    { id: 1204, width: 120, height: 640, color: "#69747a" },
+    { id: 1205, width: 920, height: 96, color: "#374047" },
+  ].map(({ id, width, height, color }) => ({
+    ...syntheticLongHistory[1],
+    id,
+    content_kind: "image",
+    text: "",
+    normalized_hash: `compact-image-${id}`,
+    mime_primary: "image/png",
+    width,
+    height,
+    thumbnail_data_url: svgDataUrl(width, height, color),
+    title: null,
+    notes: null,
+    tags: null,
+  })),
+];
+
 const syntheticPagedHistory = Array.from({ length: 80 }, (_, index) => ({
   id: 5000 - index,
   content_kind: "text",
@@ -142,6 +186,15 @@ type MockTauriOptions = {
   deferStructuredSearchUntilEnter?: boolean;
   searchTriggerUpdateDelayMs?: number;
   previewShortcut?: string;
+  editorSettings?: Partial<{
+    fontFamily: "systemMono" | "cascadiaMono" | "consolas" | "uiSans";
+    fontSize: number;
+    lineHeight: "compact" | "comfortable" | "relaxed";
+    wrapLines: boolean;
+    tabSize: 2 | 4 | 8;
+    lineNumbers: boolean;
+    highlightActiveLine: boolean;
+  }>;
 };
 
 async function mockTauriInvoke(
@@ -285,6 +338,16 @@ async function mockTauriInvoke(
       appearance: {
         theme: "system",
         themeId: "default",
+      },
+      editor: {
+        fontFamily: "systemMono",
+        fontSize: 13,
+        lineHeight: "comfortable",
+        wrapLines: true,
+        tabSize: 4,
+        lineNumbers: true,
+        highlightActiveLine: true,
+        ...mockOptions.editorSettings,
       },
       scripts: {
         folderPath: "C:\\Users\\JP\\Documents\\Copicu\\Scripts",
@@ -1898,6 +1961,83 @@ test("long synthetic history stays contained", async ({ page }) => {
   }
 });
 
+test("compact previews expose only real overflow and keep inline editing stable", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticCompactPreviewHistory);
+  await gotoShell(page);
+
+  const feedScroll = page.locator(".history-feed-scroll");
+  const shortRow = page.locator("#history-item-1201");
+  const longRow = page.locator("#history-item-1202");
+  await expect(shortRow.locator(".text-preview-overflow")).toHaveCount(0);
+
+  const expectedChars = Array.from(compactPreviewText).length;
+  const overflow = longRow.locator(".text-preview-overflow");
+  await expect(overflow).toHaveAttribute("aria-label", `${expectedChars} characters, 18 lines`);
+  await longRow.locator(".feed-item").click();
+  const collapsedHeight = await longRow.evaluate((row) => row.getBoundingClientRect().height);
+  const scrollBeforeExpand = await feedScroll.evaluate((feed) => feed.scrollTop);
+  await overflow.getByRole("button", { name: "Expand" }).click();
+  await expect(longRow.locator(".feed-item")).toHaveAttribute("aria-current", "true");
+  await expect(overflow.getByRole("button", { name: "Collapse" })).toBeVisible();
+  expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeGreaterThan(collapsedHeight);
+  expect(await feedScroll.evaluate((feed) => feed.scrollTop)).toBe(scrollBeforeExpand);
+  await overflow.getByRole("button", { name: "Collapse" }).click();
+  expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeCloseTo(collapsedHeight, 0);
+
+  await longRow.hover();
+  await longRow.getByRole("button", { name: "Quick edit item" }).click();
+  const inlineEditor = longRow.getByRole("textbox", { name: "Quick edit item 1202" });
+  await expect(inlineEditor).toBeFocused();
+  await inlineEditor.fill("COPICU_INLINE_SAVED\nsecond line");
+  await inlineEditor.press("Control+Enter");
+  await expect(inlineEditor).toBeHidden();
+  await expect(longRow.locator(".feed-item")).toHaveAttribute("aria-current", "true");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (entry: any) => entry.cmd === "update_history_item" && entry.args.request.text === "COPICU_INLINE_SAVED\nsecond line",
+    ),
+  );
+
+  const updatesAfterSave = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "update_history_item").length,
+  );
+  await longRow.hover();
+  await longRow.getByRole("button", { name: "Quick edit item" }).click();
+  await inlineEditor.fill("COPICU_INLINE_CANCELLED");
+  await inlineEditor.press("Escape");
+  await expect(inlineEditor).toBeHidden();
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "update_history_item").length,
+  )).toBe(updatesAfterSave);
+
+  for (const viewport of [
+    { width: 900, height: 620, imageMaxHeight: 181 },
+    { width: 420, height: 620, imageMaxHeight: 149 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(100);
+    const imageBoxes = await page.locator(".image-preview").evaluateAll((previews) => previews.map((preview) => {
+      const box = preview.getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    }));
+    expect(imageBoxes).toHaveLength(3);
+    expect(imageBoxes[0].width).toBeLessThanOrEqual(74);
+    expect(imageBoxes[0].height).toBeLessThanOrEqual(50);
+    expect(imageBoxes.every((box) => box.height <= viewport.imageMaxHeight)).toBe(true);
+    expect(imageBoxes.every((box) => box.width <= viewport.width)).toBe(true);
+  }
+
+  const verticalRow = page.locator("#history-item-1204");
+  const heightBeforeSelection = await verticalRow.evaluate((row) => row.getBoundingClientRect().height);
+  await verticalRow.locator(".image-preview").click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (entry: any) => entry.cmd === "open_item_preview" && entry.args.request.itemId === 1204,
+    ),
+  );
+  expect(await verticalRow.evaluate((row) => row.getBoundingClientRect().height)).toBe(heightBeforeSelection);
+});
+
 test("history feed uses preview DTO and edit fetches full content on demand", async ({ page }) => {
   const fullText = `COPICU_SYNTH_FULL_CONTENT_START ${"full-content-token ".repeat(180)}COPICU_SYNTH_FULL_CONTENT_END`;
   const previewText = fullText.slice(0, 120);
@@ -1949,7 +2089,17 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
 });
 
 test("F2 edits content and Shift+F2 opens the metadata window from shortcut or menu", async ({ page }) => {
-  await mockTauriInvoke(page);
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    editorSettings: {
+      fontFamily: "consolas",
+      fontSize: 16,
+      lineHeight: "relaxed",
+      wrapLines: false,
+      tabSize: 2,
+      lineNumbers: false,
+      highlightActiveLine: false,
+    },
+  });
   await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
@@ -1958,16 +2108,44 @@ test("F2 edits content and Shift+F2 opens the metadata window from shortcut or m
   const metadataMenuItem = page.getByRole("menuitem", { name: /Edit metadata/ });
   await expect(metadataMenuItem).toBeVisible();
   await expect(metadataMenuItem.getByLabel("Shift+F2")).toBeVisible();
-  await search.click();
+  await page.keyboard.press("Escape");
+  await expect(metadataMenuItem).toBeHidden();
+  const firstItem = page.locator(".feed-item").first();
+  await firstItem.click();
+  await firstItem.focus();
+  await expect(firstItem).toBeFocused();
 
   await page.keyboard.press("F2");
-  const contentDialog = page.getByRole("dialog", { name: "Edit clipboard item" });
-  await expect(contentDialog).toBeVisible();
-  await expect(contentDialog.getByRole("textbox", { name: "Content" })).toBeVisible();
-  await expect(contentDialog.getByRole("textbox", { name: "Metadata" })).toHaveCount(0);
+  const contentEditor = page.getByRole("region", { name: "Edit clipboard item" });
+  await expect(contentEditor).toBeVisible();
+  const contentInput = contentEditor.getByRole("textbox", { name: "Item content" });
+  await expect(contentInput).toBeFocused();
+  await expect(contentInput).toHaveCSS("font-size", "16px");
+  await expect(contentInput).toHaveCSS("font-family", /Consolas/);
+  await expect(contentEditor.getByRole("button", { name: "Wrap" })).toHaveAttribute("aria-pressed", "false");
+  await expect(contentEditor.locator(".cm-lineNumbers")).toHaveCount(0);
+  await expect(page.locator(".history-feed-scroll")).toHaveCount(0);
+  const editorBox = await contentEditor.boundingBox();
+  const pickerBox = await page.locator(".picker-panel").boundingBox();
+  expect(editorBox?.width).toBe(pickerBox?.width);
+  expect(editorBox?.height).toBe(pickerBox?.height);
+  await page.keyboard.press("End");
+  await page.keyboard.type(" edited");
+  await expect(contentEditor.getByText("Modified")).toBeVisible();
+  await page.keyboard.press("Control+s");
+  await expect(contentEditor).toBeHidden();
+  const contentUpdate = await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.find(
+      (entry: any) => entry.cmd === "update_history_item" && entry.args.request.text.includes(" edited"),
+    ),
+  );
+  expect((await contentUpdate.jsonValue() as any).args.request.id).toBe(syntheticLongHistory[0].id);
 
+  await search.focus();
+  await page.keyboard.press("F2");
+  await expect(contentEditor).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(contentDialog).toBeHidden();
+  await expect(contentEditor).toBeHidden();
 
   await page.keyboard.press("Shift+F2");
   const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
@@ -3458,6 +3636,21 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByRole("option", { name: "Moss" })).toBeVisible();
   await expect(page.getByRole("option", { name: "Rose" })).toBeVisible();
   await page.getByRole("option", { name: "Code" }).click();
+
+  await page.getByRole("tab", { name: /Editor/ }).click();
+  const editorFont = page.getByRole("combobox", { name: "Editor font" });
+  await editorFont.click();
+  await page.getByRole("option", { name: "Consolas", exact: true }).click();
+  await page.getByLabel("Editor font size").fill("16");
+  const lineSpacing = page.getByRole("combobox", { name: "Editor line spacing" });
+  await lineSpacing.click();
+  await page.getByRole("option", { name: "Relaxed" }).click();
+  await page.getByRole("switch", { name: "Wrap long lines" }).click();
+  const tabSize = page.getByRole("combobox", { name: "Editor tab size" });
+  await tabSize.click();
+  await page.getByRole("option", { name: "2 spaces" }).click();
+  await page.getByRole("switch", { name: "Highlight active line" }).click();
+  await expect(page.getByLabel("Editor appearance preview").locator("code").first()).toHaveCSS("font-size", "16px");
   await page.getByRole("button", { name: "Save" }).click();
 
   await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
@@ -3469,6 +3662,15 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   const savedSettings = await page.evaluate(() => (window as any).__copicuTestSettings);
   expect(savedSettings.appearance.theme).toBe("dark");
   expect(savedSettings.appearance.themeId).toBe("code");
+  expect(savedSettings.editor).toMatchObject({
+    fontFamily: "consolas",
+    fontSize: 16,
+    lineHeight: "relaxed",
+    wrapLines: false,
+    tabSize: 2,
+    lineNumbers: true,
+    highlightActiveLine: false,
+  });
   expect(savedSettings.general.captureEnabled).toBe(false);
   expect(savedSettings.picker.previewShortcut).toBe("F3");
 
@@ -3485,7 +3687,7 @@ test("hovered item exposes preview and edit actions plus contextual menu", async
 
   const secondItem = page.locator(".feed-item").nth(1);
   const previewButton = page.getByRole("button", { name: "Preview item" }).nth(1);
-  const editButton = page.getByRole("button", { name: "Edit item" }).nth(1);
+  const editButton = page.getByRole("button", { name: "Quick edit item" }).nth(1);
   await expect(previewButton).toHaveCSS("opacity", "0");
   await expect(editButton).toHaveCSS("opacity", "0");
   await secondItem.hover();
@@ -3499,7 +3701,7 @@ test("hovered item exposes preview and edit actions plus contextual menu", async
   );
 
   await editButton.click();
-  await expect(page.getByRole("dialog", { name: "Edit clipboard item" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Quick edit item 101" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await page.locator(".feed-item").first().click({ button: "right" });

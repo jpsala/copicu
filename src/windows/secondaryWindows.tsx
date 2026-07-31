@@ -59,8 +59,14 @@ import type {
 } from "../shared/contracts";
 import {
   DEFAULT_SETTINGS,
+  EDITOR_FONT_OPTIONS,
+  EDITOR_LINE_HEIGHT_OPTIONS,
+  editorFontStack,
+  editorLineHeightValue,
   normalizeSettings,
   type AppSettings,
+  type EditorFontFamily,
+  type EditorLineHeight,
   type SearchTriggerMode,
 } from "../shared/settings";
 import {
@@ -1693,6 +1699,7 @@ type SettingSection =
   | "history"
   | "scenarios"
   | "appearance"
+  | "editor"
   | "enrichment"
   | "tags"
   | "scripts"
@@ -1717,6 +1724,7 @@ function initialSettingsSection(): SettingSection {
     "history",
     "scenarios",
     "appearance",
+    "editor",
     "enrichment",
     "tags",
     "scripts",
@@ -1889,6 +1897,11 @@ function SettingsPanel({
       id: "appearance",
       label: "Appearance",
       description: "Theme and preset",
+    },
+    {
+      id: "editor",
+      label: "Editor",
+      description: "Font and editing display",
     },
     {
       id: "enrichment",
@@ -2359,6 +2372,161 @@ function SettingsPanel({
                       }
                     />
                   </SettingRow>
+                ) : null}
+              </SettingsSection>
+            ) : null}
+
+            {displayedSections.some((section) => section.id === "editor") ? (
+              <SettingsSection title="Editor" description="Typography and display behavior for F2 content editing.">
+                {visible("editor", "Font", "Editor font family monospace Cascadia Consolas sans") ? (
+                  <SettingRow label="Font" description="Uses installed system fonts and falls back safely when unavailable.">
+                    <UiSelect
+                      aria-label="Editor font"
+                      value={draft.editor.fontFamily}
+                      data={EDITOR_FONT_OPTIONS}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          editor: {
+                            ...draft.editor,
+                            fontFamily: (value ?? "systemMono") as EditorFontFamily,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Font size", "Editor text size 11 to 20 pixels") ? (
+                  <SettingRow label="Font size" description="Text size from 11 to 20 pixels.">
+                    <UiNumberInput
+                      aria-label="Editor font size"
+                      value={draft.editor.fontSize}
+                      min={11}
+                      max={20}
+                      clampBehavior="strict"
+                      suffix=" px"
+                      onChange={(value) => {
+                        const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
+                        onDraftChange({
+                          ...draft,
+                          editor: {
+                            ...draft.editor,
+                            fontSize: Number.isFinite(parsed)
+                              ? Math.min(20, Math.max(11, parsed))
+                              : DEFAULT_SETTINGS.editor.fontSize,
+                          },
+                        });
+                      }}
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Line spacing", "Compact comfortable relaxed line height") ? (
+                  <SettingRow label="Line spacing" description="Controls vertical density without changing the font size.">
+                    <UiSelect
+                      aria-label="Editor line spacing"
+                      value={draft.editor.lineHeight}
+                      data={EDITOR_LINE_HEIGHT_OPTIONS}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          editor: {
+                            ...draft.editor,
+                            lineHeight: (value ?? "comfortable") as EditorLineHeight,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Wrap long lines", "Word wrap long clipboard text") ? (
+                  <SettingRow label="Wrap long lines" description="Keeps long text visible without horizontal scrolling by default.">
+                    <UiSwitch
+                      label="Wrap long lines"
+                      checked={draft.editor.wrapLines}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          editor: { ...draft.editor, wrapLines: checked },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Tab size", "Indent width 2 4 8 columns") ? (
+                  <SettingRow label="Tab size" description="Visual width of tab characters and editor indentation.">
+                    <UiSelect
+                      aria-label="Editor tab size"
+                      value={String(draft.editor.tabSize)}
+                      data={[
+                        { value: "2", label: "2 spaces" },
+                        { value: "4", label: "4 spaces" },
+                        { value: "8", label: "8 spaces" },
+                      ]}
+                      allowDeselect={false}
+                      onChange={(value) =>
+                        onDraftChange({
+                          ...draft,
+                          editor: {
+                            ...draft.editor,
+                            tabSize: Number(value ?? 4) as 2 | 4 | 8,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Line numbers", "Show editor gutter line numbers") ? (
+                  <SettingRow label="Line numbers" description="Shows a stable line-number gutter beside the content.">
+                    <UiSwitch
+                      label="Show line numbers"
+                      checked={draft.editor.lineNumbers}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          editor: { ...draft.editor, lineNumbers: checked },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Active line", "Highlight current editor line and gutter") ? (
+                  <SettingRow label="Active line" description="Highlights the line containing the cursor.">
+                    <UiSwitch
+                      label="Highlight active line"
+                      checked={draft.editor.highlightActiveLine}
+                      onChange={(checked) =>
+                        onDraftChange({
+                          ...draft,
+                          editor: { ...draft.editor, highlightActiveLine: checked },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("editor", "Preview", "Live editor typography preview") ? (
+                  <div className="editor-settings-preview" aria-label="Editor appearance preview">
+                    {[
+                      "const clip = clipboard.active();",
+                      "return clip.text.trim();",
+                      "// F2 opens the full editor",
+                    ].map((line, index) => (
+                      <div
+                        key={line}
+                        className={draft.editor.highlightActiveLine && index === 1 ? "is-active" : undefined}
+                        style={{
+                          fontFamily: editorFontStack(draft.editor.fontFamily),
+                          fontSize: `${draft.editor.fontSize}px`,
+                          lineHeight: editorLineHeightValue(draft.editor.lineHeight),
+                          whiteSpace: draft.editor.wrapLines ? "pre-wrap" : "pre",
+                        }}
+                      >
+                        {draft.editor.lineNumbers ? <span>{index + 1}</span> : null}
+                        <code>{line}</code>
+                      </div>
+                    ))}
+                  </div>
                 ) : null}
               </SettingsSection>
             ) : null}

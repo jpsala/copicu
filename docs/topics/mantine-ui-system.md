@@ -135,6 +135,8 @@ Noveno slice 2026-06-06:
 - Para decidir si usar Mantine, empezar por `docs/topics/ui-surface-architecture.md`.
 - Mantine primero para Settings y superficies de configuracion.
 - Mantine primero para botones, action icons, menus, selects, switches, tabs, segmented controls, tooltips y popovers nuevos.
+- Para edicion larga/code-like, seguir la politica de CodeMirror en `docs/topics/ui-surface-architecture.md`; Mantine sigue envolviendo acciones y settings, no reemplaza el motor de texto.
+- Inputs compactos y metadata mantienen `UiTextarea` o componentes especializados mientras CodeMirror no aporte una capacidad de dominio medible.
 - Picker/feed principal se migra con cuidado, componente por componente, sin romper virtualizacion ni keyboard behavior.
 - No mezclar estilos ad hoc y Mantine sin wrapper si el componente se va a repetir.
 - Mantener CSS variables actuales hasta cerrar el modelo de temas Copicu.
@@ -224,11 +226,11 @@ Objetivo del estudio: reducir CSS propio y usar Mantine para controles comunes s
 - Mantine notifications: `Notifications` es componente regular dentro de `MantineProvider`; `position` controla top/bottom/left/right/center dentro del documento.
 - Mantine colors generator: existe herramienta/paquete para generar 10 shades, pero la recomendacion oficial advierte revisar contraste y pre-generar cuando sea posible.
 - Docs oficiales consultadas 2026-06-06:
-  - https://mantine.dev/
-  - https://mantine.dev/theming/color-schemes/
-  - https://mantine.dev/styles/css-variables/
-  - https://mantine.dev/styles/styles-api/
-  - https://mantine.dev/theming/colors/
-  - https://mantine.dev/colors-generator/
-  - https://mantine.dev/x/notifications/
-  - https://mantine.dev/changelog/9-3-0/
+  - <https://mantine.dev/>
+  - <https://mantine.dev/theming/color-schemes/>
+  - <https://mantine.dev/styles/css-variables/>
+  - <https://mantine.dev/styles/styles-api/>
+  - <https://mantine.dev/theming/colors/>
+  - <https://mantine.dev/colors-generator/>
+  - <https://mantine.dev/x/notifications/>
+  - <https://mantine.dev/changelog/9-3-0/>

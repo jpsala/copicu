@@ -1,5 +1,7 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
+
+declare const process: { env: Record<string, string | undefined> };
 
 const restartMode = process.env.COPICU_VITE_RESTART_MODE === "1";
 const probeMode = process.env.COPICU_VITE_PROBE_MODE === "1";
@@ -71,12 +73,12 @@ function vendorChunk(moduleId: string) {
   return null;
 }
 
-function copicuHtmlEntryPlugin(useBootEntry: boolean) {
+function copicuHtmlEntryPlugin(useBootEntry: boolean): Plugin {
   return {
     name: "copicu-html-entry",
     transformIndexHtml: {
       order: "post",
-      handler(html) {
+      handler(html: string) {
         const entryHtml = useBootEntry
           ? html.replace(
               /<script type="module" src="\/src\/main\.tsx"><\/script>/g,
@@ -95,16 +97,21 @@ function copicuHtmlEntryPlugin(useBootEntry: boolean) {
   };
 }
 
-function devRequestTimingPlugin() {
+function devRequestTimingPlugin(): Plugin {
   return {
     name: "copicu-dev-request-timing",
-    configureServer(server) {
+    configureServer(server: ViteDevServer) {
       server.middlewares.use((req, res, next) => {
+        const request = req as typeof req & {
+          url?: string;
+          method?: string;
+          headers: Record<string, string | string[] | undefined>;
+        };
         const startedAt = performance.now();
-        const url = req.url ?? "";
+        const url = request.url ?? "";
         if (tauriDevMode) {
-          delete req.headers["if-none-match"];
-          delete req.headers["if-modified-since"];
+          delete request.headers["if-none-match"];
+          delete request.headers["if-modified-since"];
           res.setHeader("Cache-Control", "no-store, max-age=0");
         }
         if (
@@ -116,10 +123,10 @@ function devRequestTimingPlugin() {
           url.includes("@vite/client") ||
           url.includes("@react-refresh")
         ) {
-          console.error(`[vite:req] start ${req.method} ${url}`);
-          const done = (event) => {
+          console.error(`[vite:req] start ${request.method} ${url}`);
+          const done = (event: "finish" | "close") => {
             const elapsed = Math.round(performance.now() - startedAt);
-            console.error(`[vite:req] ${event} ${req.method} ${url} status=${res.statusCode} elapsed=${elapsed}ms`);
+            console.error(`[vite:req] ${event} ${request.method} ${url} status=${res.statusCode} elapsed=${elapsed}ms`);
           };
           res.once("finish", () => done("finish"));
           res.once("close", () => done("close"));
@@ -156,6 +163,9 @@ export default defineConfig(({ command }) => ({
     host: "127.0.0.1",
     port: 1420,
     strictPort: true,
+    watch: {
+      ignored: ["**/.agents/**"],
+    },
     hmr: tauriDevMode ? false : undefined,
     warmup: tauriDevMode || probeMode
       ? undefined

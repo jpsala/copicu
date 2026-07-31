@@ -8,9 +8,16 @@ runtime global de AOS.
 Usar `/flow` como única entrada cotidiana:
 
 1. **Pensar** — explorar y converger una decisión.
-2. **Planear** — registrar un brief liviano, `execution_route: economical | balanced | strong` y un foco válido.
-3. **Hacer** — aplicar esa ruta (`balanced` por defecto), abrir una sesión nueva enlazada y ejecutar el foco sin Agent ni auto-send; modelo o auth ausentes bloquean sin fallback.
+2. **Planear** — registrar un brief liviano, una `execution_route` revisable y un foco válido.
+3. **Hacer** — aplicar la ruta, abrir una sesión nueva enlazada y ejecutar el foco sin Agent ni auto-send; modelo o auth ausentes bloquean sin fallback.
 4. **Cerrar** — persistir sólo valor durable faltante; no inicia otro batch.
+
+`balanced` con Sol Medium es la ruta normal aun para trabajo multifile,
+cross-layer o nativo acotado. `strong` con Sol High queda sólo para ambigüedad
+material o fallos materiales difíciles de detectar; prioridad, cantidad de
+archivos o un efecto externo autorizado no bastan. `economical` con Luna requiere
+pedido explícito de JP por cuota y checks deterministas. `Ctrl+P` alterna Sol
+Medium/High y `Ctrl+L` conserva la selección manual.
 
 Los downstreams declaran `aos.requirements.json` y consumen el package global de
 `AOS_HOME`. No copian `.pi/extensions/aos-flujo.ts`.

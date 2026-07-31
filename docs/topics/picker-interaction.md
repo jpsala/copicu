@@ -175,8 +175,8 @@ Navegacion por teclado:
 - Los menus WebView muestran shortcuts como keycaps compactas en tipografia mono, no como texto corrido. `Settings` siempre usa el valor configurado de `settingsShortcut`. El tray nativo conserva la convencion visual de Windows mediante accelerators del OS para abrir picker y Settings; ambos se actualizan despues de guardar Settings.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
-- `F2`: edita contenido del item activo.
-- `Shift+F2`: abre el editor completo de metadata del item activo.
+- `F2`: reemplaza el feed por el editor CodeMirror full-surface del item activo; funciona con foco en cualquier control del picker. `F2`, `Ctrl+S` y `Ctrl+Enter` guardan; `Escape` cancela.
+- `Shift+F2`: abre el editor completo de metadata del item activo. Metadata conserva su textarea compacto y autocomplete especifico; no usa CodeMirror por defecto.
 - `Ctrl+Shift+C`: global app-owned; abre la utility de metadata para el item activo o el ultimo activado.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 

@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-30T15:22:00.289Z
+Generated: 2026-07-31T20:37:16.069Z
 
 ## Topics
 
@@ -46,44 +46,8 @@ Generated: 2026-07-30T15:22:00.289Z
 
 ## Tracks
 
-- first-slice-implemented: [Settings Design](../tracks/001-settings-design.md)
-- first-slice-implemented: [Virtual History List](../tracks/002-virtual-history-list.md)
-- first-slice-implemented: [History Ordering And Dedupe](../tracks/003-history-ordering-dedupe.md)
-- active-dogfood: [Actions And Scripting](../tracks/004-actions-scripting.md)
-- pending: [Rich MIME Research](../tracks/005-rich-mime-research.md)
-- first-planner-slice-implemented: [AI Search, Metadata And Command Planning](../tracks/006-ai-vague-search.md)
-- imported: [007 CopyQ Import](../tracks/007-copyq-import.md)
-- active: [Filtering Search Foundation](../tracks/008-filtering-search-foundation.md)
-- first-slice-implemented: [UI Host Custom Surface](../tracks/009-ui-host-custom-surface.md)
-- active: [010 UI Rethink](../tracks/010-ui-rethink.md)
-- active-next-theme-contrast-polish: [011 Mantine Component Migration](../tracks/011-mantine-component-migration.md)
-- complete: [012 Hotkeys, WhichKey And Tags](../tracks/012-tags-and-hotkeys.md)
-- active: [Open Source Growth](../tracks/013-open-source-growth.md)
-- active: [Performance And Memory](../tracks/014-performance-memory.md)
-- parked: [015 macOS Port Spike](../tracks/015-macos-port-spike.md)
-- complete: [Architecture Hardening](../tracks/016-architecture-hardening.md)
-- active: [Actions Modularization](../tracks/017-actions-modularization.md)
-- active: [Public Launch Readiness](../tracks/018-public-launch-readiness.md)
-- parked: [Paste Queue](../tracks/019-paste-queue.md)
-- parked: [Secure Clips / Password Metadata](../tracks/020-secure-clips-password.md)
-- active-next: [Distribution Trust And Code Signing](../tracks/021-distribution-trust-code-signing.md)
-- proposed: [022 Reusable Quick Pick](../tracks/022-reusable-quick-pick.md)
-- implementation-validated: [023 Item Preview Window](../tracks/023-item-preview-window.md)
-- implementation-validated: [024 Contextual Tag Capture](../tracks/024-contextual-tag-capture.md)
-- active-roadmap: [025 Clipboard Power Architecture Options](../tracks/025-clipboard-power-architecture-options.md)
-- parked: [026 Capture/Paste Pipeline](../tracks/026-capture-paste-pipeline.md)
-- parked: [027 Destination Paste Profiles](../tracks/027-destination-paste-profiles.md)
-- implementation-validated: [028 Active Scenarios And Metadata](../tracks/028-active-scenarios-metadata.md)
-- implementation-validated: [029 Picker Scenario Switcher](../tracks/029-picker-scenario-switcher.md)
-- implementation-validated: [030 Picker Selection And Marks UX](../tracks/030-picker-selection-and-marks-ux.md)
-- implementation-validated: [031 Saved History Views UX Follow-up](../tracks/031-saved-history-views-ux-followup.md)
-- released: [032 Saved Views And Scenarios Independent Model](../tracks/032-saved-views-scenarios-independent-model.md)
-- active: [CopyQ Capability Roadmap](../tracks/copyq-capability-roadmap.md)
-- paused: [Fixvox Reference Rethink](../tracks/fixvox-reference-rethink.md)
-- validated: [Image Capture Spike](../tracks/image-capture-spike.md)
-- historical: [MVP 0 Definition](../tracks/mvp0-definition.md)
-- implementation-validated: [MVP 0 Research Gate](../tracks/mvp0-research-gate.md)
-- active: [Post-MVP Hardening](../tracks/post-mvp-hardening.md)
+- ready: [033 Picker Compact Previews And Inline Edit](../tracks/033-picker-compact-previews-inline-edit.md)
+- Other tracks are omitted from the hot index; search `docs/tracks/` on demand.
 
 ## Specs
 

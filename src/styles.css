@@ -2293,6 +2293,97 @@ button {
   max-height: 5.5em;
 }
 
+.text-preview {
+  display: grid;
+  grid-column: 1 / -1;
+  min-width: 0;
+  gap: 4px;
+}
+
+.feed-item:not(.is-image) .text-preview.is-expanded pre {
+  max-height: min(14em, 34vh);
+  overflow: auto;
+}
+
+.text-preview-overflow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.text-preview-toggle {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  padding: 2px 4px;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.text-preview-toggle:hover,
+.text-preview-toggle:focus-visible {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.inline-item-editor {
+  display: grid;
+  grid-column: 1 / -1;
+  min-width: 0;
+  gap: 5px;
+}
+
+.inline-item-editor textarea {
+  width: 100%;
+  min-height: 84px;
+  max-height: min(180px, 32vh);
+  resize: vertical;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  padding: 7px 8px;
+  color: var(--ink);
+  font-family:
+    "Cascadia Mono",
+    "Consolas",
+    monospace;
+  font-size: 0.78rem;
+  line-height: 1.38;
+  outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  outline-offset: 0;
+}
+
+.inline-item-editor-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.inline-item-editor-footer > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.inline-item-editor-error {
+  color: var(--danger);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
 .markdown-preview {
   display: grid;
   grid-column: 1 / -1;
@@ -2304,8 +2395,7 @@ button {
   display: flex;
   width: fit-content;
   max-width: 100%;
-  min-height: 120px;
-  max-height: 480px;
+  max-height: 180px;
   align-items: center;
   justify-content: flex-start;
   overflow: hidden;
@@ -2325,7 +2415,7 @@ button {
   width: auto;
   max-width: 100%;
   height: auto;
-  max-height: 480px;
+  max-height: 180px;
   object-fit: contain;
 }
 
@@ -2347,9 +2437,9 @@ button {
 .image-preview {
   display: flex;
   grid-column: 1 / -1;
-  width: 100%;
-  min-height: 240px;
-  max-height: 440px;
+  width: fit-content;
+  max-width: 100%;
+  max-height: 180px;
   align-items: flex-start;
   justify-content: flex-start;
   overflow: hidden;
@@ -2363,7 +2453,7 @@ button {
   width: auto;
   max-width: 100%;
   height: auto;
-  max-height: 440px;
+  max-height: 180px;
   object-fit: contain;
 }
 
@@ -2722,6 +2812,188 @@ kbd {
   padding: 6px 9px;
   color: var(--danger);
   font-size: 0.8rem;
+}
+
+.item-content-editor-loading {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.item-content-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.item-content-editor-header,
+.item-content-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+}
+
+.item-content-editor-header > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.item-content-editor-header strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.item-content-editor-header span,
+.item-content-editor-status,
+.item-content-editor-hints {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.item-content-editor-state {
+  flex: none;
+}
+
+.item-content-editor-state.is-dirty {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.item-content-editor-canvas {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.item-content-editor-canvas > div,
+.item-content-editor-canvas .cm-editor {
+  height: 100%;
+}
+
+.item-content-editor-canvas .cm-editor {
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--editor-font-family, var(--font-mono));
+  font-size: var(--editor-font-size, 13px);
+}
+
+.item-content-editor-canvas .cm-editor.cm-focused {
+  outline: none;
+}
+
+.item-content-editor-canvas .cm-scroller {
+  overflow: auto;
+  font-family: inherit;
+  line-height: var(--editor-line-height, 1.52);
+}
+
+.item-content-editor-canvas .cm-content {
+  min-height: 100%;
+  padding: 10px 0 28px;
+  caret-color: var(--accent);
+}
+
+.item-content-editor-canvas .cm-line {
+  padding: 0 12px 0 6px;
+}
+
+.item-content-editor-canvas .cm-gutters {
+  border-right: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
+.item-content-editor-canvas .cm-lineNumbers .cm-gutterElement {
+  min-width: 38px;
+  padding: 0 8px 0 6px;
+}
+
+.item-content-editor-canvas .cm-activeLine,
+.item-content-editor-canvas .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.item-content-editor-canvas .cm-selectionBackground,
+.item-content-editor-canvas .cm-content ::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent) !important;
+}
+
+.item-content-editor-canvas .cm-cursor {
+  border-left-color: var(--accent);
+}
+
+.item-content-editor-canvas .cm-search {
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+
+.item-content-editor-canvas .cm-search input,
+.item-content-editor-canvas .cm-search button {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.item-content-editor-footer {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  padding-block: 6px;
+}
+
+.item-content-editor-status,
+.item-content-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-content-editor-status > span + span::before {
+  margin-right: 8px;
+  color: var(--line-strong);
+  content: "·";
+}
+
+.item-content-editor-actions {
+  margin-left: auto;
+}
+
+.item-content-editor-hints {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 560px), (max-height: 400px) {
+  .item-content-editor-header {
+    padding-block: 6px;
+  }
+
+  .item-content-editor-footer {
+    align-items: flex-end;
+  }
+
+  .item-content-editor-hints {
+    display: none;
+  }
 }
 
 .edit-backdrop {
@@ -3562,6 +3834,44 @@ kbd {
 .setting-row.is-wide {
   grid-template-columns: 1fr;
   align-items: start;
+}
+
+.editor-settings-preview {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  padding-block: 8px;
+}
+
+.editor-settings-preview > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  color: var(--ink);
+}
+
+.editor-settings-preview > div.is-active {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.editor-settings-preview span {
+  min-width: 34px;
+  border-right: 1px solid var(--line);
+  padding-inline: 8px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.editor-settings-preview code {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline: 10px;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
 }
 
 .scenario-settings,
@@ -4967,22 +5277,19 @@ kbd {
     right: 92px;
   }
 
-  .image-preview {
-    min-height: 220px;
-    max-height: 380px;
-  }
-
-  .image-preview img {
-    max-height: 380px;
-  }
-
+  .image-preview,
   .markdown-image-frame {
-    min-height: 220px;
-    max-height: 380px;
+    max-height: 148px;
   }
 
+  .image-preview img,
   .markdown-image-frame img {
-    max-height: 380px;
+    max-height: 148px;
+  }
+
+  .inline-item-editor-footer {
+    align-items: flex-end;
+    flex-direction: column;
   }
 
   .edit-grid {

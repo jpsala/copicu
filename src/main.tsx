@@ -11,6 +11,7 @@ import {
   lazy,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -320,6 +321,8 @@ type EditDraft = {
   tags: string;
   mimePrimary: string;
 };
+
+type InlineEditDraft = Omit<EditDraft, "mode">;
 
 type CreateItemDraft = {
   text: string;
@@ -919,6 +922,9 @@ const LazyMetadataWindowApp = lazy(() =>
 const LazyItemPreviewWindowApp = lazy(() =>
   import("./windows/ItemPreviewWindowApp").then((module) => ({ default: module.ItemPreviewWindowApp })),
 );
+const LazyItemContentEditor = lazy(() =>
+  import("./ui/ItemContentEditor").then((module) => ({ default: module.ItemContentEditor })),
+);
 
 if (isTauriRuntime()) {
   recordRendererDiagnostic("module-load", `label=${currentWindowLabel()}`);
@@ -1050,6 +1056,9 @@ function App() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [inlineEditDraft, setInlineEditDraft] = useState<InlineEditDraft | null>(null);
+  const [inlineEditSaving, setInlineEditSaving] = useState(false);
+  const [expandedItemIds, setExpandedItemIds] = useState<Set<number>>(() => new Set());
   const [createItemDraft, setCreateItemDraft] = useState<CreateItemDraft | null>(null);
   const [batchMetadataDraft, setBatchMetadataDraft] = useState<BatchMetadataDraft | null>(null);
   const [tagEditorDraft, setTagEditorDraft] = useState<TagEditorDraft | null>(null);
@@ -1071,6 +1080,7 @@ function App() {
   const [whichKeyState, setWhichKeyState] = useState<WhichKeyState | null>(null);
   const searchRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const editTextRef = useRef<HTMLTextAreaElement>(null);
+  const inlineEditTextRef = useRef<HTMLTextAreaElement>(null);
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
@@ -1097,6 +1107,7 @@ function App() {
   const pickerWasHiddenRef = useRef(false);
   const filterLockedRef = useRef(filterLocked);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
+  const overflowContentFetchIdsRef = useRef<Set<number>>(new Set());
 
   const selectedIndex = useMemo(
     () => history.findIndex((item) => item.id === selectedItemId),
@@ -1158,10 +1169,10 @@ function App() {
       }
       const markdownImageCount = markdownImages(item.text).length;
       if (markdownImageCount > 0) {
-        return Math.min(2800, 220 + markdownImageCount * 700);
+        return Math.min(900, 100 + markdownImageCount * 180);
       }
       if (item.content_kind === "image") {
-        return 450;
+        return 190;
       }
       return hasMetadata(item) ? 132 : 108;
     },
@@ -1302,6 +1313,9 @@ function App() {
 
   const closeTransientEditors = useCallback(() => {
     setEditDraft(null);
+    setInlineEditDraft(null);
+    setInlineEditSaving(false);
+    setExpandedItemIds(new Set());
     setCreateItemDraft(null);
     setBatchMetadataDraft(null);
     setTagEditorDraft(null);
@@ -2591,10 +2605,130 @@ function App() {
     return fullItem;
   }, []);
 
+  const mutateRowLayout = useCallback((itemId: number, mutate: () => void) => {
+    const scrollElement = historyScrollRef.current;
+    const scrollTop = scrollElement?.scrollTop ?? 0;
+    mutate();
+    window.requestAnimationFrame(() => {
+      const row = document.getElementById(`history-item-${itemId}`);
+      if (row instanceof HTMLElement) {
+        rowVirtualizer.measureElement(row);
+      }
+      if (scrollElement) {
+        scrollElement.scrollTop = scrollTop;
+      }
+    });
+  }, [rowVirtualizer]);
+
+  const loadOverflowContent = useCallback((item: HistoryItem) => {
+    if (item.includes_content || overflowContentFetchIdsRef.current.has(item.id)) {
+      return;
+    }
+    overflowContentFetchIdsRef.current.add(item.id);
+    void ensureFullHistoryItem(item)
+      .catch((error) => {
+        setActionError(String(error));
+      })
+      .finally(() => {
+        overflowContentFetchIdsRef.current.delete(item.id);
+      });
+  }, [ensureFullHistoryItem]);
+
+  const toggleTextPreview = useCallback((itemId: number) => {
+    mutateRowLayout(itemId, () => {
+      setExpandedItemIds((current) => {
+        const next = new Set(current);
+        if (next.has(itemId)) {
+          next.delete(itemId);
+        } else {
+          next.add(itemId);
+        }
+        return next;
+      });
+    });
+  }, [mutateRowLayout]);
+
+  const cancelInlineEdit = useCallback(() => {
+    if (!inlineEditDraft) {
+      return;
+    }
+    const itemId = inlineEditDraft.id;
+    mutateRowLayout(itemId, () => {
+      setInlineEditDraft(null);
+      setEditError(null);
+    });
+    focusSearch();
+  }, [focusSearch, inlineEditDraft, mutateRowLayout]);
+
+  const beginInlineEdit = useCallback(async (item: HistoryItem) => {
+    try {
+      setEditError(null);
+      setOpenItemMenu(null);
+      const fullItem = await ensureFullHistoryItem(item);
+      selectionInteractionSeqRef.current += 1;
+      selectedItemIdRef.current = item.id;
+      setSelectedItemId(item.id);
+      selectedIdsRef.current = new Set();
+      setSelectedIds(new Set());
+      selectionAnchorItemIdRef.current = item.id;
+      mutateRowLayout(item.id, () => {
+        setExpandedItemIds((current) => {
+          const next = new Set(current);
+          next.delete(item.id);
+          return next;
+        });
+        setInlineEditDraft({
+          id: fullItem.id,
+          text: fullItem.text,
+          title: fullItem.title ?? "",
+          notes: fullItem.notes ?? "",
+          tags: fullItem.tags ?? "",
+          mimePrimary: fullItem.mime_primary ?? "",
+        });
+      });
+      window.setTimeout(() => inlineEditTextRef.current?.focus(), 0);
+    } catch (error) {
+      setEditError(String(error));
+      focusSearch();
+    }
+  }, [ensureFullHistoryItem, focusSearch, mutateRowLayout]);
+
+  const saveInlineEdit = useCallback(async () => {
+    if (!inlineEditDraft || inlineEditSaving) {
+      return;
+    }
+    const draft = inlineEditDraft;
+    const request: UpdateHistoryItemRequest = {
+      id: draft.id,
+      text: draft.text,
+      title: nullableTrim(draft.title),
+      notes: nullableTrim(draft.notes),
+      tags: metadataTags(draft.notes),
+      mimePrimary: nullableTrim(draft.mimePrimary),
+    };
+
+    try {
+      setInlineEditSaving(true);
+      setEditError(null);
+      await invoke("update_history_item", { request });
+      mutateRowLayout(draft.id, () => setInlineEditDraft(null));
+      await refreshAppliedHistory();
+      selectedItemIdRef.current = draft.id;
+      setSelectedItemId(draft.id);
+      focusSearch();
+    } catch (error) {
+      setEditError(String(error));
+      window.setTimeout(() => inlineEditTextRef.current?.focus(), 0);
+    } finally {
+      setInlineEditSaving(false);
+    }
+  }, [focusSearch, inlineEditDraft, inlineEditSaving, mutateRowLayout, refreshAppliedHistory]);
+
   const beginEdit = useCallback(
     async (item: HistoryItem, mode: EditMode) => {
       try {
         setEditError(null);
+        setInlineEditDraft(null);
         setOpenItemMenu(null);
         if (mode === "metadata" && isTauriRuntime()) {
           try {
@@ -2984,14 +3118,14 @@ function App() {
     [beginBatchMetadataEdit, beginEdit, effectiveSelection, hasMultiSelection, selectedItem],
   );
 
-  const saveEdit = useCallback(async () => {
+  const saveEdit = useCallback(async (textOverride?: string) => {
     if (!editDraft) {
       return;
     }
 
     const request: UpdateHistoryItemRequest = {
       id: editDraft.id,
-      text: editDraft.text,
+      text: textOverride ?? editDraft.text,
       title: nullableTrim(editDraft.title),
       notes: nullableTrim(editDraft.notes),
       tags: metadataTags(editDraft.notes),
@@ -3978,7 +4112,41 @@ function App() {
         onQuit={quitCopicu}
         onPinChange={setPickerPinned}
       >
-      <section className="picker-panel" aria-label="Copicu">
+      <section
+        className="picker-panel"
+        aria-label="Copicu"
+        onKeyDown={(event) => {
+          if (event.defaultPrevented || event.key !== "F2") {
+            return;
+          }
+          event.preventDefault();
+          beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+        }}
+      >
+        {editDraft?.mode === "content" ? (
+          <Suspense fallback={(
+            <div className="item-content-editor-loading" role="status">
+              <UiLoader size="sm" />
+              <span>Loading editor</span>
+            </div>
+          )}>
+            <LazyItemContentEditor
+              itemId={editDraft.id}
+              mimePrimary={editDraft.mimePrimary}
+              value={editDraft.text}
+              error={editError}
+              settings={settings.editor}
+              onChange={(text) => setEditDraft((draft) => draft ? { ...draft, text } : draft)}
+              onCancel={() => {
+                setEditDraft(null);
+                setEditError(null);
+                focusSearch();
+              }}
+              onSave={(text) => void saveEdit(text)}
+            />
+          </Suspense>
+        ) : (
+        <>
         <div className={`search-row${aiComposerMode ? " is-ai-mode" : ""}`}>
           <div className="selection-controls">
             <UiTooltip label={allVisibleSelected ? "Clear visible selection" : "Select all visible"}>
@@ -4746,17 +4914,20 @@ function App() {
                       aria-hidden="true"
                     />
                   </UiIconButton>
-                  <button
+                  <div
                     className={`feed-item${itemIsSelected ? " is-selected" : ""}${
                       itemIsMultiSelected ? " is-multi-selected" : ""
                     }${
                       item.content_kind === "image" ? " is-image" : ""
                     }`}
-                    type="button"
+                    role="button"
+                    tabIndex={-1}
                     aria-current={itemIsSelected ? "true" : undefined}
                     aria-pressed={itemIsMultiSelected}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={(event) => {
+                      const imageWasClicked = event.target instanceof Element
+                        && Boolean(event.target.closest(".image-preview, .markdown-image-frame"));
                       if (event.shiftKey) {
                         setRangeSelection(index);
                       } else if (event.ctrlKey || event.metaKey) {
@@ -4779,6 +4950,11 @@ function App() {
                       setOpenItemMenu(null);
                       setOpenMarkMenu(null);
                       focusSearch();
+                      if (imageWasClicked) {
+                        void openItemPreview(item.id).catch((previewError) => {
+                          setActionError(String(previewError));
+                        });
+                      }
                     }}
                     onDoubleClick={() => {
                       void activateItem(item);
@@ -4799,8 +4975,50 @@ function App() {
                         </span>
                       ) : null}
                     </span>
-                    {item.content_kind === "image" && item.thumbnail_data_url ? (
-                      <span className="image-preview">
+                    {inlineEditDraft?.id === item.id ? (
+                      <div
+                        className="inline-item-editor"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <textarea
+                          ref={inlineEditTextRef}
+                          aria-label={`Quick edit item ${item.id}`}
+                          value={inlineEditDraft.text}
+                          disabled={inlineEditSaving}
+                          onChange={(event) => {
+                            const text = event.currentTarget.value;
+                            setInlineEditDraft((draft) => draft ? { ...draft, text } : draft);
+                          }}
+                          onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.key === "F2") {
+                              event.preventDefault();
+                              void beginEdit(item, "content");
+                            } else if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelInlineEdit();
+                            } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                              event.preventDefault();
+                              void saveInlineEdit();
+                            }
+                          }}
+                        />
+                        {editError ? <span className="inline-item-editor-error">{editError}</span> : null}
+                        <div className="inline-item-editor-footer">
+                          <span><UiKbd>Ctrl Enter</UiKbd> save · <UiKbd>Esc</UiKbd> cancel</span>
+                          <div>
+                            <UiButton type="button" size="compact-xs" variant="subtle" disabled={inlineEditSaving} onClick={cancelInlineEdit}>
+                              Cancel
+                            </UiButton>
+                            <UiButton type="button" size="compact-xs" variant="filled" loading={inlineEditSaving} onClick={() => void saveInlineEdit()}>
+                              Save
+                            </UiButton>
+                          </div>
+                        </div>
+                      </div>
+                    ) : item.content_kind === "image" && item.thumbnail_data_url ? (
+                      <span className="image-preview" title="Open full preview">
                         <img
                           src={item.thumbnail_data_url}
                           alt=""
@@ -4813,9 +5031,15 @@ function App() {
                         onImageLoad={measureImageRow}
                       />
                     ) : (
-                      <pre>{item.text}</pre>
+                      <TextPreview
+                        item={item}
+                        expanded={expandedItemIds.has(item.id)}
+                        onOverflow={() => loadOverflowContent(item)}
+                        onToggle={() => toggleTextPreview(item.id)}
+                        onLayoutChange={() => mutateRowLayout(item.id, () => undefined)}
+                      />
                     )}
-                  </button>
+                  </div>
                   <UiIconButton
                     type="button"
                     className="item-preview-button"
@@ -4834,22 +5058,24 @@ function App() {
                   >
                     <Search size={14} strokeWidth={2.3} aria-hidden="true" />
                   </UiIconButton>
-                  <UiIconButton
-                    type="button"
-                    className="item-edit-button"
-                    aria-label="Edit item"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void beginEdit(item, "content");
-                    }}
-                  >
-                    <Pencil size={14} strokeWidth={2.3} aria-hidden="true" />
-                  </UiIconButton>
+                  {item.content_kind === "text" ? (
+                    <UiIconButton
+                      type="button"
+                      className="item-edit-button"
+                      aria-label="Quick edit item"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void beginInlineEdit(item);
+                      }}
+                    >
+                      <Pencil size={14} strokeWidth={2.3} aria-hidden="true" />
+                    </UiIconButton>
+                  ) : null}
                   <UiIconButton
                     type="button"
                     className="item-delete-button"
@@ -4983,15 +5209,29 @@ function App() {
                             <span>Preview</span>
                             <ShortcutBadge shortcut={settings.picker.previewShortcut} />
                           </UiUnstyledButton>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            className="item-menu-action"
-                            onClick={() => void beginEdit(item, "content")}
-                          >
-                            <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Edit</span>
-                          </UiUnstyledButton>
+                          {item.content_kind === "text" ? (
+                            <>
+                              <UiUnstyledButton
+                                type="button"
+                                role="menuitem"
+                                className="item-menu-action"
+                                onClick={() => void beginInlineEdit(item)}
+                              >
+                                <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
+                                <span>Quick edit</span>
+                              </UiUnstyledButton>
+                              <UiUnstyledButton
+                                type="button"
+                                role="menuitem"
+                                className="item-menu-action"
+                                onClick={() => void beginEdit(item, "content")}
+                              >
+                                <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                                <span>Open full editor</span>
+                                <ShortcutBadge shortcut="F2" />
+                              </UiUnstyledButton>
+                            </>
+                          ) : null}
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
@@ -5215,34 +5455,6 @@ function App() {
                 }
               }}
             >
-              {editDraft.mode === "content" ? (
-                <label>
-                  <span>Content</span>
-                  <UiTextarea
-                    ref={editTextRef}
-                    value={editDraft.text}
-                    onChange={(event) =>
-                      setEditDraft({ ...editDraft, text: event.currentTarget.value })
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setEditDraft(null);
-                        focusSearch();
-                      }
-                      if (event.key === "F2") {
-                        event.preventDefault();
-                        void saveEdit();
-                      }
-                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                        event.preventDefault();
-                        void saveEdit();
-                      }
-                    }}
-                    autosize={false}
-                  />
-                </label>
-              ) : null}
               {editDraft.mode === "metadata" ? (
                 <label>
                   <span>Metadata</span>
@@ -5382,6 +5594,8 @@ function App() {
             </UiPaper>
           </div>
         ) : null}
+        </>
+        )}
       </section>
       </CustomWindowFrame>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
@@ -6415,6 +6629,76 @@ function normalizeMarkdownImageSrc(src: string) {
     return `file:///${trimmed.replaceAll("\\", "/")}`;
   }
   return trimmed;
+}
+
+function TextPreview({
+  item,
+  expanded,
+  onOverflow,
+  onToggle,
+  onLayoutChange,
+}: {
+  item: HistoryItem;
+  expanded: boolean;
+  onOverflow: () => void;
+  onToggle: () => void;
+  onLayoutChange: () => void;
+}) {
+  const previewRef = useRef<HTMLPreElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    if (!preview || expanded) {
+      return undefined;
+    }
+    const measure = () => {
+      setOverflowing(preview.scrollHeight > Math.ceil(preview.clientHeight) + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(preview);
+    return () => observer.disconnect();
+  }, [expanded, item.text]);
+
+  useEffect(() => {
+    if (overflowing && !item.includes_content) {
+      onOverflow();
+    }
+  }, [item.includes_content, onOverflow, overflowing]);
+
+  useLayoutEffect(() => {
+    onLayoutChange();
+  }, [expanded, item.text, overflowing]);
+
+  const lineCount = item.text.split(/\r\n|\r|\n/).length;
+  const showOverflowControls = overflowing && item.includes_content;
+
+  return (
+    <span className={`text-preview${expanded ? " is-expanded" : ""}`}>
+      <pre ref={previewRef}>{item.text}</pre>
+      {showOverflowControls ? (
+        <span className="text-preview-overflow" aria-label={`${item.text_char_count} characters, ${lineCount} lines`}>
+          <span>{item.text_char_count.toLocaleString()} chars · {lineCount.toLocaleString()} lines</span>
+          <button
+            type="button"
+            className="text-preview-toggle"
+            aria-expanded={expanded}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle();
+            }}
+          >
+            {expanded ? "Collapse" : "Expand"}
+          </button>
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 function MarkdownPreview({

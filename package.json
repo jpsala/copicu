@@ -1,7 +1,7 @@
 {
   "name": "copicu",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
@@ -50,6 +50,7 @@
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
+    "@uiw/react-codemirror": "^4.25.11",
     "ai": "^6.0.197",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",

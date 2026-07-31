@@ -52,11 +52,19 @@ Si el cambio toca scripts/prompts/toasts, abrir tambien `docs/tracks/009-ui-host
 | Picker rapido | Buscar, preview, copiar/pegar | Mantener custom, compacto, keyboard-first y virtualizado. No convertirlo en app shell. |
 | Settings | Configuracion durable | Ventana Tauri standalone label `settings`, Mantine-first. No overlay dentro del picker. |
 | Command mode | Ejecutar acciones rapidas | Puede vivir como modo del picker, pero no como modal pesado ni ventana simulada dentro de otra. |
-| Item editor / metadata | Editar contenido/metadata | `metadata` ya existe como ventana standalone para edicion single-item en Tauri. Inline queda como fallback web/test y para edicion chica donde aplique. No agrandar el picker por defecto. |
+| Item editor / metadata | Editar contenido/metadata | F2 usa CodeMirror como modo full-surface dentro del picker para contenido largo. `metadata` sigue como utility standalone compacta con textarea y autocomplete de dominio. No montar paneles modales dentro del feed. |
 | Scripts workbench | Editar/revisar scripts y diagnostics | Futuro `scripts` standalone via surface registry. No alojar en `ui-host`. |
 | UI host | Toast, confirm, input chico de scripts | Ventana auxiliar `ui-host` con request/response IDs. No usar como superficie rica ni como host generico para ventanas de producto; `Assign metadata` usa la surface `metadata` via `copicu.metadata.editActive()`. |
 | Notifications | Toasts no bloqueantes | Ventana auxiliar liviana; no usar para prompts ricos. |
 | History manager futuro | Revision larga, colecciones, bulk | Ventana task-oriented separada del quick picker. |
+
+## Politica De Editores De Texto
+
+CodeMirror 6 es la infraestructura preferida para superficies de edicion larga o code-like donde aporten varias de estas capacidades: undo/redo robusto, busqueda, lineas, indentacion, seleccion avanzada, syntax highlighting o diagnostics. Reusar `src/ui/ItemContentEditor.tsx`, sus settings persistidos y carga lazy antes de crear otro editor propio. Candidatos claros: contenido F2, futuro scripts workbench, JSON, Markdown y prompts/snippets extensos.
+
+No usar CodeMirror por reflejo en inputs compactos, search, tags o formularios. Mantine `Textarea`/controles nativos siguen siendo la opcion correcta cuando la tarea es corta y el comportamiento nativo pesa mas que las herramientas de editor.
+
+`metadata` queda deliberadamente fuera de CodeMirror por ahora: `MetadataTextInput` ya tiene autocomplete especifico de `#tags`, ranking y manejo de caret; la ventana se prewarm-ea y no debe cargar el chunk del editor sin una ganancia concreta. Mejorar primero ese autocomplete de dominio para properties/valores/validacion. Migrar metadata a CodeMirror solo si evoluciona a un lenguaje que justifique completion sources, highlighting y diagnostics propios; CodeMirror no aporta ese conocimiento automaticamente.
 
 ## Stack UI Vigente
 
