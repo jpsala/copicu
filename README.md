@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.4](https://github.com/jpsala/copicu/releases/tag/v0.4.4)
-- Asset: `Copicu_0.4.4_x64-setup.exe`
+- [v0.4.5](https://github.com/jpsala/copicu/releases/tag/v0.4.5)
+- Asset: `Copicu_0.4.5_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `C3A05970EE76E76FCF4DE61F2EF330F8D1C79C93C16C858A482A464EEBBDC0C0`
+- SHA256: `53B96B8B663CC249188B8F7BD30BA0303DC1A56CE5402C692F87BE539764093E`
 
-Picker editing and preview refresh: full-surface editor, compact image previews, overflow expansion, inline quick edit, and persistent editor preferences.
+Metadata autocomplete hotfix: accepted suggestions now close deterministically, Tab exits the editor, and Escape dismisses autocomplete without closing the metadata window.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

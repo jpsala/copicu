@@ -196,8 +196,9 @@ export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInp
     const suggestionListRef = useRef<HTMLDivElement | null>(null);
     const [caret, setCaret] = useState(0);
     const [activeIndex, setActiveIndex] = useState(0);
+    const [dismissedSuggestionKey, setDismissedSuggestionKey] = useState<string | null>(null);
     const tagDraft = metadataTagDraftAt(value, caret);
-    const suggestions = useMemo(() => {
+    const candidateSuggestions = useMemo(() => {
       if (!tagDraft) {
         return [];
       }
@@ -216,6 +217,8 @@ export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInp
         })
         .slice(0, 6);
     }, [availableTags, tagDraft]);
+    const suggestionKey = `${value}\u0000${caret}`;
+    const suggestions = dismissedSuggestionKey === suggestionKey ? [] : candidateSuggestions;
 
     useEffect(() => {
       const selected = suggestionListRef.current?.querySelector<HTMLElement>(
@@ -245,14 +248,22 @@ export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInp
       onChange(nextValue);
       setCaret(nextCaret);
       setActiveIndex(0);
+      setDismissedSuggestionKey(`${nextValue}\u0000${nextCaret}`);
       window.requestAnimationFrame(() => {
         localRef.current?.focus();
         localRef.current?.setSelectionRange(nextCaret, nextCaret);
+        setCaret(nextCaret);
       });
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        return;
+      }
+      if (event.key === "Escape" && suggestions.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissedSuggestionKey(suggestionKey);
         return;
       }
       if (!tagDraft || suggestions.length === 0) {
@@ -288,6 +299,7 @@ export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInp
             onChange(event.currentTarget.value);
             setCaret(event.currentTarget.selectionStart);
             setActiveIndex(0);
+            setDismissedSuggestionKey(null);
           }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}

@@ -3919,6 +3919,17 @@ test("metadata window keeps tags and properties inline at its minimum size", asy
   await expect(suggestionList).toHaveCount(0);
   await expect(editor).toHaveValue('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #work anywhere #backend ');
 
+  await editor.press("Tab");
+  await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await editor.focus();
+  await editor.pressSequentially("#wo");
+  await expect(suggestionList).toBeVisible();
+  await editor.press("Escape");
+  await expect(suggestionList).toHaveCount(0);
+  await expect(editor).toBeFocused();
+  await editor.press("Backspace");
+  await editor.press("Backspace");
+  await editor.press("Backspace");
   await editor.pressSequentially("#fresh");
   await editor.press("Control+Enter");
 
