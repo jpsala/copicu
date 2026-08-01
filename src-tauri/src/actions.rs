@@ -131,7 +131,11 @@ fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
 
         if matches!(
             shortcut.as_str(),
-            "Ctrl+Shift+," | "Ctrl+Shift+Space" | "Ctrl+Shift+C"
+            "Ctrl+Shift+,"
+                | "Ctrl+Shift+Space"
+                | "Ctrl+Shift+C"
+                | "Ctrl+Shift+ArrowUp"
+                | "Ctrl+Shift+ArrowDown"
         ) {
             action.diagnostics.push(ActionDiagnostic {
                 severity: DiagnosticSeverity::Error,
@@ -2163,7 +2167,7 @@ mod tests {
         let mut actions = vec![
             test_script_action(
                 "examples.reserved",
-                "Ctrl+Shift+C",
+                "Ctrl+Shift+ArrowUp",
                 SelectionRequirement::None,
             ),
             test_script_action("examples.one", "Ctrl+Alt+J", SelectionRequirement::None),

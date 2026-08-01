@@ -3527,11 +3527,16 @@ function App() {
     let active = true;
     let unlisten: (() => void) | null = null;
     void listen<{ itemId: number }>(PICKER_ACTIVE_ITEM_EVENT, (event) => {
-      if (!active || document.visibilityState === "hidden") {
+      if (!active) {
         return;
       }
 
       const itemId = event.payload.itemId;
+      const nextSelection = new Set([itemId]);
+      selectedIdsRef.current = nextSelection;
+      selectedItemIdRef.current = itemId;
+      selectionAnchorItemIdRef.current = itemId;
+      lastActivatedItemIdRef.current = itemId;
       const activationSelectionSeq = ++selectionInteractionSeqRef.current;
       void refreshAppliedHistory({
         respectManualScroll: false,
@@ -3544,10 +3549,6 @@ function App() {
         if (targetIndex < 0) {
           return;
         }
-        const nextSelection = new Set([itemId]);
-        selectedIdsRef.current = nextSelection;
-        selectedItemIdRef.current = itemId;
-        selectionAnchorItemIdRef.current = itemId;
         setSelectedIds(nextSelection);
         setSelectedItemId(itemId);
         if (targetIndex === 0) {

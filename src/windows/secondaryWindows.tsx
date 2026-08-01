@@ -3336,6 +3336,12 @@ function AppShortcutInventory({
           shortcut: "Ctrl+Shift+C",
         },
         {
+          id: "global.navigateActive",
+          title: "Previous / next active item",
+          description: "Global shortcuts. Activates and copies the older or newer clipboard item, wrapping at history boundaries.",
+          shortcut: "Ctrl+Shift+ArrowUp, Ctrl+Shift+ArrowDown",
+        },
+        {
           id: "picker.editSelection",
           title: "Edit active item",
           description: "F2 edits content. Shift+F2 opens the advanced metadata editor.",
@@ -3352,12 +3358,12 @@ function AppShortcutInventory({
           </div>
           <div className="hotkey-meta">
             <ReadOnlyStatus
-              value={entry.id === "metadata.editActive" ? "Global" : "Picker local"}
+              value={entry.id === "metadata.editActive" || entry.id === "global.navigateActive" ? "Global" : "Picker local"}
               tone="success"
             />
             <ReadOnlyStatus value="Read-only" />
             <ReadOnlyStatus
-              value={entry.id === "metadata.editActive" ? "Native source" : "Renderer source"}
+              value={entry.id === "metadata.editActive" || entry.id === "global.navigateActive" ? "Native source" : "Renderer source"}
             />
           </div>
         </section>

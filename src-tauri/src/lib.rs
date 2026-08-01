@@ -106,7 +106,13 @@ const COMMAND_PALETTE_SHORTCUT_LABEL: &str = "Ctrl+Shift+Space";
 #[cfg(not(test))]
 const METADATA_SHORTCUT_LABEL: &str = "Ctrl+Shift+C";
 #[cfg(not(test))]
+const ACTIVE_PREVIOUS_SHORTCUT_LABEL: &str = "Ctrl+Shift+ArrowUp";
+#[cfg(not(test))]
+const ACTIVE_NEXT_SHORTCUT_LABEL: &str = "Ctrl+Shift+ArrowDown";
+#[cfg(not(test))]
 const METADATA_EDIT_ACTIVE_EVENT: &str = "copicu://metadata/edit-active";
+#[cfg(not(test))]
+const PICKER_ACTIVE_ITEM_EVENT: &str = "copicu://picker/active-item";
 #[cfg(not(test))]
 const HIDE_ON_FOCUS_LOST_DELAY: Duration = Duration::from_millis(320);
 #[cfg(not(test))]
@@ -1835,6 +1841,8 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
         || normalized == settings.picker.settings_shortcut
         || normalized == COMMAND_PALETTE_SHORTCUT_LABEL
         || normalized == METADATA_SHORTCUT_LABEL
+        || normalized == ACTIVE_PREVIOUS_SHORTCUT_LABEL
+        || normalized == ACTIVE_NEXT_SHORTCUT_LABEL
     {
         return Err(format!("saved view shortcut conflicts with an app shortcut: {normalized}"));
     }
@@ -3938,6 +3946,97 @@ fn spawn_edit_active_metadata<R: tauri::Runtime + 'static>(app: tauri::AppHandle
 }
 
 #[cfg(not(test))]
+fn spawn_activate_neighbor<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    direction: storage::HistoryNeighborDirection,
+) {
+    thread::spawn(move || {
+        let title = match direction {
+            storage::HistoryNeighborDirection::Older => "← Previous item",
+            storage::HistoryNeighborDirection::Newer => "Next item →",
+        };
+        let result = (|| {
+            let storage = app.state::<storage::AppStorage>().inner().clone();
+            let current_id = storage
+                .list_recent()?
+                .first()
+                .map(|item| item.id())
+                .ok_or_else(|| "Clipboard history is empty.".to_string())?;
+            let target = storage
+                .get_neighbor_item(current_id, direction, true)?
+                .ok_or_else(|| "There is no other item to activate.".to_string())?;
+            if target.id() == current_id {
+                return Err("There is no other item to activate.".to_string());
+            }
+
+            let suppression = app
+                .state::<clipboard::SelfWriteSuppression>()
+                .inner()
+                .clone();
+            let previous_window = app
+                .state::<window_focus::PreviousWindow>()
+                .inner()
+                .clone();
+            host::activate_item(
+                &app,
+                None,
+                &storage,
+                &suppression,
+                &previous_window,
+                host::ActivateItemRequest {
+                    item_id: target.id(),
+                    copy: true,
+                    mark_used: true,
+                    hide_picker: false,
+                    focus_previous: false,
+                    paste: false,
+                    paste_shortcut: host::PasteShortcut::Default,
+                },
+            )?;
+            app.emit_to(
+                MAIN_WINDOW_LABEL,
+                PICKER_ACTIVE_ITEM_EVENT,
+                serde_json::json!({ "itemId": target.id() }),
+            )
+            .map_err(|error| format!("picker active item emit failed: {error}"))?;
+            Ok(active_item_preview(&target))
+        })();
+
+        let (message, tone) = match result {
+            Ok(preview) => (preview, actions::ToastTone::Info),
+            Err(error) => (error, actions::ToastTone::Warning),
+        };
+        emit_toast_on_main_thread(
+            app,
+            actions::ActionToast {
+                title: Some(title.to_string()),
+                message,
+                tone,
+                duration_ms: Some(3_600),
+            },
+            "active item navigation",
+        );
+    });
+}
+
+#[cfg(not(test))]
+fn active_item_preview(item: &storage::HistoryItem) -> String {
+    let compact = item.text().split_whitespace().collect::<Vec<_>>().join(" ");
+    let value = if compact.is_empty() {
+        format!("[{}]", item.content_kind())
+    } else {
+        compact
+    };
+    let mut characters = value.chars();
+    let preview = characters.by_ref().take(95).collect::<String>();
+    if characters.next().is_some() {
+        format!("{preview}…")
+    } else {
+        preview
+    }
+}
+
+#[cfg(not(test))]
 fn spawn_toggle_main_window_pin<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
     thread::spawn(move || {
         thread::sleep(NATIVE_WINDOW_TASK_DELAY);
@@ -4011,6 +4110,22 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     {
         eprintln!("metadata shortcut pressed: {shortcut:?}");
         spawn_edit_active_metadata(app.clone());
+        return;
+    }
+
+    if shortcut_from_label(ACTIVE_PREVIOUS_SHORTCUT_LABEL)
+        .is_some_and(|active_previous_shortcut| *shortcut == active_previous_shortcut)
+    {
+        eprintln!("active previous shortcut pressed: {shortcut:?}");
+        spawn_activate_neighbor(app.clone(), storage::HistoryNeighborDirection::Older);
+        return;
+    }
+
+    if shortcut_from_label(ACTIVE_NEXT_SHORTCUT_LABEL)
+        .is_some_and(|active_next_shortcut| *shortcut == active_next_shortcut)
+    {
+        eprintln!("active next shortcut pressed: {shortcut:?}");
+        spawn_activate_neighbor(app.clone(), storage::HistoryNeighborDirection::Newer);
         return;
     }
 
@@ -4425,6 +4540,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
     refresh_picker_pin_shortcut_from_settings(app, settings);
     refresh_command_palette_shortcut(app);
     refresh_metadata_shortcut(app);
+    refresh_active_item_navigation_shortcuts(app);
 
     if let Some(shortcuts) = app.try_state::<GlobalScriptShortcuts>() {
         for shortcut in shortcuts.current_shortcuts() {
@@ -4653,6 +4769,23 @@ fn refresh_metadata_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         Err(error) => eprintln!(
             "metadata shortcut registration failed for {METADATA_SHORTCUT_LABEL}: {error}"
         ),
+    }
+}
+
+#[cfg(not(test))]
+fn refresh_active_item_navigation_shortcuts<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    for label in [ACTIVE_PREVIOUS_SHORTCUT_LABEL, ACTIVE_NEXT_SHORTCUT_LABEL] {
+        let Some(shortcut) = shortcut_from_label(label) else {
+            eprintln!("active item shortcut not refreshed: unsupported shortcut {label}");
+            continue;
+        };
+        if app.global_shortcut().is_registered(shortcut) {
+            continue;
+        }
+        match app.global_shortcut().register(shortcut) {
+            Ok(()) => eprintln!("active item shortcut registered: {label}"),
+            Err(error) => eprintln!("active item shortcut registration failed for {label}: {error}"),
+        }
     }
 }
 

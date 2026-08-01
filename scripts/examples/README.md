@@ -33,6 +33,8 @@ with the direction and item preview:
 | `032-activate-previous-global.ts` | `Ctrl+Alt+ArrowUp` | `← Previous` |
 | `033-activate-next-global.ts` | `Ctrl+Alt+ArrowDown` | `Next item →` (newer) |
 
+Copicu now provides the everyday version internally with app-owned `Ctrl+Shift+ArrowUp` / `Ctrl+Shift+ArrowDown`. Scripts `032`/`033` remain reference examples for custom shortcuts and host API composition.
+
 Copicu can execute ready scripts manually from Settings with the `Run` button when the script declares `devRun` or `commandPalette`. The current real bridge supports:
 
 - `copicu.log.*`;

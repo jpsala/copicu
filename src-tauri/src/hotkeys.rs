@@ -421,6 +421,15 @@ mod tests {
     }
 
     #[test]
+    fn parses_and_formats_global_active_navigation_hotkeys() {
+        let previous = HotkeySequence::parse("Ctrl+Shift+ArrowUp").expect("valid previous shortcut");
+        let next = HotkeySequence::parse("Ctrl+Shift+ArrowDown").expect("valid next shortcut");
+
+        assert_eq!(previous.to_string(), "Ctrl+Shift+ArrowUp");
+        assert_eq!(next.to_string(), "Ctrl+Shift+ArrowDown");
+    }
+
+    #[test]
     fn parses_and_formats_compound_hotkey() {
         let sequence = HotkeySequence::parse("ctrl+alt+c, j").expect("valid sequence");
 

@@ -2177,6 +2177,24 @@ test("Ctrl+Shift+C targets the last item activated with Enter", async ({ page })
   expect((await update.jsonValue() as any).args.request.id).toBe(activatedItem.id);
 });
 
+test("native global activation updates the active item while the picker is hidden", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    return (window as any).__copicuTestEmitEvent(
+      "copicu://picker/active-item",
+      { itemId: 101 },
+    );
+  });
+
+  await expect(page.locator("#history-item-101 .feed-item")).toHaveClass(/is-selected/);
+});
+
 test("manual scroll is not reset by history refresh", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);

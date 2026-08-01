@@ -178,6 +178,7 @@ Navegacion por teclado:
 - `F2`: reemplaza el feed por el editor CodeMirror full-surface del item activo; funciona con foco en cualquier control del picker. `F2`, `Ctrl+S` y `Ctrl+Enter` guardan; `Escape` cancela.
 - `Shift+F2`: abre el editor completo de metadata del item activo. Metadata conserva su textarea compacto y autocomplete especifico; no usa CodeMirror por defecto.
 - `Ctrl+Shift+C`: global app-owned; abre la utility de metadata para el item activo o el ultimo activado.
+- `Ctrl+Shift+Up` / `Ctrl+Shift+Down`: globales app-owned; activan y copian el item anterior (más viejo) o siguiente (más nuevo), con wrap en los extremos y feedback por toast. La implementación interna reemplaza la necesidad de los scripts `032`/`033` para este flujo cotidiano.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 
 Crear item manual:
