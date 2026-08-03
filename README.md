@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.6](https://github.com/jpsala/copicu/releases/tag/v0.4.6)
-- Asset: `Copicu_0.4.6_x64-setup.exe`
+- [v0.4.7](https://github.com/jpsala/copicu/releases/tag/v0.4.7)
+- Asset: `Copicu_0.4.7_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `33ACE66DCF022FC3F15A7B5C352CBE0EEFCF435C9F8402591604B8BA0E98DC02`
+- SHA256: `B12ADFC8993E58AA8A1E2BCB22D207BC6956A2FA7F732D2285F898DECDA555DC`
 
-Global history navigation: Ctrl+Shift+Up/Down now activates and copies the older/newer item internally, wraps at history boundaries, updates the hidden picker active item, and shows directional feedback.
+Fixes picker opening flicker by keeping overflow summaries stable and loading full clip content only when Expand is requested.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

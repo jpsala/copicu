@@ -1107,7 +1107,7 @@ function App() {
   const pickerWasHiddenRef = useRef(false);
   const filterLockedRef = useRef(filterLocked);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
-  const overflowContentFetchIdsRef = useRef<Set<number>>(new Set());
+  const fullContentFetchIdsRef = useRef<Set<number>>(new Set());
 
   const selectedIndex = useMemo(
     () => history.findIndex((item) => item.id === selectedItemId),
@@ -2620,21 +2620,24 @@ function App() {
     });
   }, [rowVirtualizer]);
 
-  const loadOverflowContent = useCallback((item: HistoryItem) => {
-    if (item.includes_content || overflowContentFetchIdsRef.current.has(item.id)) {
-      return;
-    }
-    overflowContentFetchIdsRef.current.add(item.id);
-    void ensureFullHistoryItem(item)
-      .catch((error) => {
+  const toggleTextPreview = useCallback(async (item: HistoryItem) => {
+    const itemId = item.id;
+    const expanding = !expandedItemIds.has(itemId);
+    if (expanding && !item.includes_content) {
+      if (fullContentFetchIdsRef.current.has(itemId)) {
+        return;
+      }
+      fullContentFetchIdsRef.current.add(itemId);
+      try {
+        await ensureFullHistoryItem(item);
+      } catch (error) {
         setActionError(String(error));
-      })
-      .finally(() => {
-        overflowContentFetchIdsRef.current.delete(item.id);
-      });
-  }, [ensureFullHistoryItem]);
+        return;
+      } finally {
+        fullContentFetchIdsRef.current.delete(itemId);
+      }
+    }
 
-  const toggleTextPreview = useCallback((itemId: number) => {
     mutateRowLayout(itemId, () => {
       setExpandedItemIds((current) => {
         const next = new Set(current);
@@ -2646,7 +2649,7 @@ function App() {
         return next;
       });
     });
-  }, [mutateRowLayout]);
+  }, [ensureFullHistoryItem, expandedItemIds, mutateRowLayout]);
 
   const cancelInlineEdit = useCallback(() => {
     if (!inlineEditDraft) {
@@ -5035,8 +5038,7 @@ function App() {
                       <TextPreview
                         item={item}
                         expanded={expandedItemIds.has(item.id)}
-                        onOverflow={() => loadOverflowContent(item)}
-                        onToggle={() => toggleTextPreview(item.id)}
+                        onToggle={() => void toggleTextPreview(item)}
                         onLayoutChange={() => mutateRowLayout(item.id, () => undefined)}
                       />
                     )}
@@ -6635,13 +6637,11 @@ function normalizeMarkdownImageSrc(src: string) {
 function TextPreview({
   item,
   expanded,
-  onOverflow,
   onToggle,
   onLayoutChange,
 }: {
   item: HistoryItem;
   expanded: boolean;
-  onOverflow: () => void;
   onToggle: () => void;
   onLayoutChange: () => void;
 }) {
@@ -6662,25 +6662,26 @@ function TextPreview({
     return () => observer.disconnect();
   }, [expanded, item.text]);
 
-  useEffect(() => {
-    if (overflowing && !item.includes_content) {
-      onOverflow();
-    }
-  }, [item.includes_content, onOverflow, overflowing]);
-
   useLayoutEffect(() => {
     onLayoutChange();
   }, [expanded, item.text, overflowing]);
 
+  const previewCharCount = Array.from(item.text).length;
+  const previewContainsFullText = item.includes_content || previewCharCount >= item.text_char_count;
   const lineCount = item.text.split(/\r\n|\r|\n/).length;
-  const showOverflowControls = overflowing && item.includes_content;
+  const overflowLabel = previewContainsFullText
+    ? `${item.text_char_count} characters, ${lineCount} lines`
+    : `${item.text_char_count} characters`;
+  const overflowText = previewContainsFullText
+    ? `${item.text_char_count.toLocaleString()} chars · ${lineCount.toLocaleString()} lines`
+    : `${item.text_char_count.toLocaleString()} chars`;
 
   return (
     <span className={`text-preview${expanded ? " is-expanded" : ""}`}>
       <pre ref={previewRef}>{item.text}</pre>
-      {showOverflowControls ? (
-        <span className="text-preview-overflow" aria-label={`${item.text_char_count} characters, ${lineCount} lines`}>
-          <span>{item.text_char_count.toLocaleString()} chars · {lineCount.toLocaleString()} lines</span>
+      {overflowing ? (
+        <span className="text-preview-overflow" aria-label={overflowLabel}>
+          <span>{overflowText}</span>
           <button
             type="button"
             className="text-preview-toggle"

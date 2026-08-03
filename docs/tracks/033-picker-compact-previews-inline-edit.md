@@ -43,7 +43,8 @@ Implementado el 2026-07-31:
 - previews de imagen y Markdown acotadas al contenido; click en imagen abre la preview completa existente sin cambiar la altura por selección;
 - overflow real medido en DOM, conteos exactos de caracteres/líneas y expansión acotada con remedición de la fila sin mover el scroll;
 - edición rápida de un único texto con textarea inline, `Ctrl+Enter` para guardar y `Escape` para cancelar; `F2` conserva el editor CodeMirror full-surface;
-- selección y scroll preservados al expandir, contraer, editar y guardar.
+- selección y scroll preservados al expandir, contraer, editar y guardar;
+- corrección 2026-08-03: el summary de overflow aparece desde el DTO inicial y el contenido completo se carga solo al pulsar `Expand`, evitando cambios de altura escalonados al abrir el picker.
 
 ## Evidencia
 

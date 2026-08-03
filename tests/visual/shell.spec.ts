@@ -1973,10 +1973,16 @@ test("compact previews expose only real overflow and keep inline editing stable"
   const expectedChars = Array.from(compactPreviewText).length;
   const overflow = longRow.locator(".text-preview-overflow");
   await expect(overflow).toHaveAttribute("aria-label", `${expectedChars} characters, 18 lines`);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "get_history_item").length,
+  )).toBe(0);
   await longRow.locator(".feed-item").click();
   const collapsedHeight = await longRow.evaluate((row) => row.getBoundingClientRect().height);
   const scrollBeforeExpand = await feedScroll.evaluate((feed) => feed.scrollTop);
   await overflow.getByRole("button", { name: "Expand" }).click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "get_history_item").length === 1,
+  );
   await expect(longRow.locator(".feed-item")).toHaveAttribute("aria-current", "true");
   await expect(overflow.getByRole("button", { name: "Collapse" })).toBeVisible();
   expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeGreaterThan(collapsedHeight);
