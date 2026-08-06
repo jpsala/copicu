@@ -262,6 +262,18 @@ type HistoryPageCursor = {
   afterId: number;
 };
 
+type HistoryPaginationBlock = {
+  descriptorFingerprint: string;
+  cursor: HistoryPageCursor;
+  error: string;
+};
+
+const sameHistoryPageCursor = (left: HistoryPageCursor | null, right: HistoryPageCursor | null) =>
+  left !== null
+  && right !== null
+  && left.afterSortUnixMs === right.afterSortUnixMs
+  && left.afterId === right.afterId;
+
 type HistoryPageRequest = {
   query: string;
   cursor: HistoryPageCursor | null;
@@ -1076,7 +1088,7 @@ function App() {
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyLoadingDelayed, setHistoryLoadingDelayed] = useState(false);
   const [historyNextCursor, setHistoryNextCursor] = useState<HistoryPageCursor | null>(null);
-  const [historyPaginationBlocked, setHistoryPaginationBlocked] = useState(false);
+  const [historyPaginationBlocked, setHistoryPaginationBlocked] = useState<HistoryPaginationBlock | null>(null);
   const [historyTotalCount, setHistoryTotalCount] = useState<number | null>(null);
   const [historyFilteredCount, setHistoryFilteredCount] = useState<number | null>(null);
   // Search snapshot/generation transitions live here; legacy item state remains
@@ -1140,7 +1152,7 @@ function App() {
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
   const historyLoadMoreSeqRef = useRef(0);
-  const historyPaginationBlockedRef = useRef(false);
+  const historyPaginationBlockedRef = useRef<HistoryPaginationBlock | null>(null);
   const searchIntentGenerationRef = useRef(0);
   const appliedSnapshotGenerationRef = useRef(0);
   const appliedDescriptorRef = useRef<AppliedSearchDescriptor | null>(null);
@@ -1224,7 +1236,11 @@ function App() {
   );
   const allVisibleSelected = history.length > 0 && selectedVisibleCount === history.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
-  const hasNextHistoryPage = historyNextCursor !== null && !historyPaginationBlocked;
+  const historyPaginationBlockMatchesCurrent = historyPaginationBlocked !== null
+    && historyNextCursor !== null
+    && historyPaginationBlocked.descriptorFingerprint === appliedDescriptorRef.current?.fingerprint
+    && sameHistoryPageCursor(historyPaginationBlocked.cursor, historyNextCursor);
+  const hasNextHistoryPage = historyNextCursor !== null && !historyPaginationBlockMatchesCurrent;
   const searchTriggerMode = settings.picker.searchTriggerMode;
   const scenarioCommandQuery = aiComposerMode ? null : scenarioCommandSearch(query);
   const scenarioCommandOptions = useMemo(() => {
@@ -2327,6 +2343,11 @@ function App() {
       const canRetainAppliedSnapshot =
         appliedDescriptorRef.current?.fingerprint === committedDescriptor.fingerprint;
       if (respectManualScroll && scrollTop > 24 && canRetainAppliedSnapshot) {
+        const retainedPaginationBlock = historyPaginationBlockedRef.current;
+        const retainedPaginationBlockMatches = retainedPaginationBlock !== null
+          && page.nextCursor !== null
+          && retainedPaginationBlock.descriptorFingerprint === committedDescriptor.fingerprint
+          && sameHistoryPageCursor(retainedPaginationBlock.cursor, page.nextCursor);
         if (
           currentFirstId !== null &&
           incomingFirstId !== null &&
@@ -2341,11 +2362,16 @@ function App() {
           setHistoryFilteredCount(page.filteredCount);
         }
         void refreshMarkedCount().catch(() => undefined);
+        setHistoryNextCursor(page.nextCursor);
         if (foreground) {
           setHistoryPending(false);
           setAiPlanning(false);
         }
-        setHistoryError(null);
+        if (retainedPaginationBlock && !retainedPaginationBlockMatches) {
+          historyPaginationBlockedRef.current = null;
+          setHistoryPaginationBlocked(null);
+        }
+        setHistoryError(retainedPaginationBlockMatches ? retainedPaginationBlock.error : null);
         dispatchSearch({
           type: "applyRetained",
           generation: snapshotGeneration,
@@ -2359,8 +2385,8 @@ function App() {
       historyRef.current = page.items;
       setHistory(page.items);
       setHistoryNextCursor(page.nextCursor);
-      historyPaginationBlockedRef.current = false;
-      setHistoryPaginationBlocked(false);
+      historyPaginationBlockedRef.current = null;
+      setHistoryPaginationBlocked(null);
       if (typeof page.totalCount === "number") {
         setHistoryTotalCount(page.totalCount);
       }
@@ -2698,7 +2724,16 @@ function App() {
   }, [focusSearch, refreshHistory]);
 
   const loadNextHistoryPage = useCallback(async () => {
-    if (!historyNextCursor || historyLoadingMore || historyPaginationBlockedRef.current) {
+    const paginationBlock = historyPaginationBlockedRef.current;
+    if (
+      !historyNextCursor
+      || historyLoadingMore
+      || (
+        paginationBlock !== null
+        && paginationBlock.descriptorFingerprint === appliedDescriptorRef.current?.fingerprint
+        && sameHistoryPageCursor(paginationBlock.cursor, historyNextCursor)
+      )
+    ) {
       return;
     }
 
@@ -2778,8 +2813,13 @@ function App() {
       setHistoryError(null);
     } catch (error) {
       if (loadSeq === historyLoadMoreSeqRef.current) {
-        historyPaginationBlockedRef.current = true;
-        setHistoryPaginationBlocked(true);
+        const paginationBlock = {
+          descriptorFingerprint: appliedFingerprint,
+          cursor,
+          error: String(error),
+        } satisfies HistoryPaginationBlock;
+        historyPaginationBlockedRef.current = paginationBlock;
+        setHistoryPaginationBlocked(paginationBlock);
         setHistoryError(String(error));
         dispatchSearch({
           type: "pageFailed",
@@ -3941,13 +3981,16 @@ function App() {
     }
     const queryChanged = trimmedQuery !== historyInputQuery;
     const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
+    const paginationRecoveryError = historyPaginationBlockMatchesCurrent
+      ? historyPaginationBlocked?.error ?? null
+      : null;
     if (isScenarioCommand(trimmedQuery) || searchInput.mode === "ai" || effectiveSearchTriggerMode !== "realtime") {
       if (searchDebounceTimerRef.current !== null) {
         window.clearTimeout(searchDebounceTimerRef.current);
         searchDebounceTimerRef.current = null;
       }
       setHistoryPending(false);
-      setHistoryError(null);
+      setHistoryError(queryChanged ? null : paginationRecoveryError);
       if (historyTotalCount === null && historyInputQuery === "" && trimmedQuery === "") {
         refreshHistory({ resetScroll: false, showPending: false, allowAi: false }).catch((error) => {
           if (active) {
@@ -3965,7 +4008,7 @@ function App() {
         searchDebounceTimerRef.current = null;
       }
       setHistoryPending(false);
-      setHistoryError(null);
+      setHistoryError(paginationRecoveryError);
       return () => {
         active = false;
       };
@@ -3992,7 +4035,16 @@ function App() {
         searchDebounceTimerRef.current = null;
       }
     };
-  }, [aiComposerMode, effectiveSearchTriggerMode, historyInputQuery, historyTotalCount, query, refreshHistory]);
+  }, [
+    aiComposerMode,
+    effectiveSearchTriggerMode,
+    historyInputQuery,
+    historyPaginationBlockMatchesCurrent,
+    historyPaginationBlocked,
+    historyTotalCount,
+    query,
+    refreshHistory,
+  ]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -4463,6 +4515,9 @@ function App() {
   }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent]);
   const discardSearchDraft = useCallback(() => {
     const appliedQuery = historyInputQueryRef.current;
+    const paginationRecoveryError = historyPaginationBlockMatchesCurrent
+      ? historyPaginationBlocked?.error ?? null
+      : null;
     autocompleteCommittedQueryRef.current = null;
     queryRef.current = appliedQuery;
     setQuery(appliedQuery);
@@ -4470,8 +4525,11 @@ function App() {
     setHistoryPending(false);
     setHistoryError(null);
     supersedeSearchIntent(appliedQuery, "idle");
+    if (paginationRecoveryError) {
+      setHistoryError(paginationRecoveryError);
+    }
     window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [supersedeSearchIntent]);
+  }, [historyPaginationBlockMatchesCurrent, historyPaginationBlocked, supersedeSearchIntent]);
   const acceptSearchSuggestion = useCallback((index = activeSearchSuggestionIndex) => {
     if (scenarioCommandOpen) {
       const scenario = scenarioCommandOptions[index];

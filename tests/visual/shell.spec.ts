@@ -2505,6 +2505,81 @@ test("failed pagination stops automatic retries", async ({ page }) => {
   )).toBe(callsAfterFailure);
 });
 
+test("pagination recovery survives a held draft discard", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, {
+    historySearchFailOnCursor: true,
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  const feed = page.locator(".history-feed-scroll");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+  await search.fill("held draft");
+  await expect(search).toHaveValue("held draft");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await search.press("Escape");
+  await expect(search).toHaveValue("");
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+  const callsAfterDiscard = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  );
+  await page.waitForTimeout(350);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  )).toBe(callsAfterDiscard);
+
+  await page.evaluate(() => {
+    (window as any).__copicuTestMockOptions.historySearchFailOnCursor = false;
+  });
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("pagination recovery survives a retained focus refresh", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, { historySearchFailOnCursor: true });
+  await gotoShell(page);
+
+  const feed = page.locator(".history-feed-scroll");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  const callsAfterPageFailure = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  );
+
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction((previousCalls) =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length > previousCalls,
+  callsAfterPageFailure);
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+  const callsAfterRetainedRefresh = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  );
+  await page.waitForTimeout(350);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  )).toBe(callsAfterRetainedRefresh);
+});
+
 test("initial history failure uses contextual copy and Retry recovers", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchFailNext: true });
   await gotoShell(page);
