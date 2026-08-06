@@ -74,6 +74,19 @@ import type {
   CreateScenarioFromQueryRequest,
   CreateTagRequest,
   EnterAction,
+  FindCloseRequest,
+  FindCloseResponse,
+  FindFieldMatches,
+  FindItemMatches,
+  FindMatchesForItemsRequest,
+  FindMatchesForItemsResponse,
+  FindNavigateRequest,
+  FindNavigateResponse,
+  FindOccurrence,
+  FindStartRequest,
+  FindStartResponse,
+  FindTargetRequest,
+  FindTargetResponse,
   MarkdownOutputPayload,
   RunActionRequest,
   SavedHistoryView,
@@ -138,6 +151,8 @@ import {
   PickerSelectionBar,
   PickerStatusAnnouncer,
 } from "./ui/PickerShell";
+import { FindBar, type FindBarStatus } from "./ui/FindBar";
+import { FindHighlightedText, findFieldMatches } from "./ui/FindHighlight";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
 import "@mantine/core/styles.css";
@@ -462,6 +477,20 @@ type CommandPaletteEntry =
       action: ActionDefinition;
     };
 
+type FindUiState = {
+  active: boolean;
+  needle: string;
+  sessionId: string | null;
+  filterFingerprint: string | null;
+  generation: number;
+  status: FindBarStatus;
+  total: number;
+  currentOrdinal: number | null;
+  currentTarget: FindOccurrence | null;
+  error: string | null;
+  recoveryAttempted: boolean;
+};
+
 const outcomeLabel: Record<CaptureEvent["outcome"], string> = {
   captured_text: "Captured",
   captured_image: "Image",
@@ -612,6 +641,26 @@ function historySearch(request: HistorySearchRequest) {
 
 function getHistoryItem(id: number) {
   return invoke<HistoryItem>("get_history_item", { id });
+}
+
+function findStart(request: FindStartRequest) {
+  return invoke<FindStartResponse>("find_start", { request });
+}
+
+function findNavigate(request: FindNavigateRequest) {
+  return invoke<FindNavigateResponse>("find_navigate", { request });
+}
+
+function findMatchesForItems(request: FindMatchesForItemsRequest) {
+  return invoke<FindMatchesForItemsResponse>("find_matches_for_items", { request });
+}
+
+function findTarget(request: FindTargetRequest) {
+  return invoke<FindTargetResponse>("find_target", { request });
+}
+
+function findClose(request: FindCloseRequest) {
+  return invoke<FindCloseResponse>("find_close", { request });
 }
 
 function historySearchInput(
@@ -1136,6 +1185,10 @@ function App() {
   const [commandPalette, setCommandPalette] = useState<CommandPaletteState | null>(null);
   const [actionPicker, setActionPicker] = useState<ActionPickerState | null>(null);
   const [searchHelpOpen, setSearchHelpOpen] = useState(false);
+  const [findState, setFindState] = useState<FindUiState | null>(null);
+  const [findMatches, setFindMatches] = useState<Map<number, FindItemMatches>>(() => new Map());
+  const [findRevealItemId, setFindRevealItemId] = useState<number | null>(null);
+  const [findTargetItem, setFindTargetItem] = useState<HistoryItem | null>(null);
   const [searchTriggerUpdating, setSearchTriggerUpdating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -1144,6 +1197,7 @@ function App() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [whichKeyState, setWhichKeyState] = useState<WhichKeyState | null>(null);
   const searchRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const findInputRef = useRef<HTMLInputElement>(null);
   const editTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditTextRef = useRef<HTMLTextAreaElement>(null);
   const itemMenuRef = useRef<HTMLDivElement>(null);
@@ -1184,6 +1238,13 @@ function App() {
   const filterLockedRef = useRef(filterLocked);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
   const fullContentFetchIdsRef = useRef<Set<number>>(new Set());
+  const findStateRef = useRef<FindUiState | null>(findState);
+  const findGenerationRef = useRef(0);
+  const findRequestSeqRef = useRef(0);
+  const findNavigationSeqRef = useRef(0);
+  const findDebounceTimerRef = useRef<number | null>(null);
+  const findMatchesRequestSeqRef = useRef(0);
+  const findTargetItemRef = useRef<HistoryItem | null>(null);
 
   const updateClearSearchPending = useCallback((pending: boolean) => {
     clearSearchPendingRef.current = pending;
@@ -1280,13 +1341,20 @@ function App() {
   const effectiveSearchTriggerMode: SearchTriggerMode = structuredSearchHold ? "enter" : searchTriggerMode;
   const nextTriggerMode = nextSearchTriggerMode(searchTriggerMode);
   const searchTriggerAriaLabel = `Search trigger: ${searchTriggerModeName(searchTriggerMode)}, switch to ${searchTriggerModeName(nextTriggerMode)}`;
-  const virtualRowCount = hasNextHistoryPage ? history.length + 1 : history.length;
+  const displayedHistory = useMemo(() => {
+    if (!findTargetItem || history.some((item) => item.id === findTargetItem.id)) {
+      return history;
+    }
+    return [...history, findTargetItem];
+  }, [findTargetItem, history]);
+  const remoteFindItemId = displayedHistory !== history ? findTargetItem?.id ?? null : null;
+  const virtualRowCount = hasNextHistoryPage ? displayedHistory.length + 1 : displayedHistory.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
     getScrollElement: () => historyScrollRef.current,
     measureElement: (element) => element.getBoundingClientRect().height,
     estimateSize: (index) => {
-      const item = history[index];
+      const item = displayedHistory[index];
       if (!item) {
         return 38;
       }
@@ -1299,7 +1367,7 @@ function App() {
       }
       return hasMetadata(item) ? 132 : 108;
     },
-    getItemKey: (index) => history[index]?.id ?? `loader-${index}`,
+    getItemKey: (index) => displayedHistory[index]?.id ?? `loader-${index}`,
     ...({ shouldAdjustScrollPositionOnItemSizeChange: () => false } as Record<string, unknown>),
     overscan: 24,
   });
@@ -1369,6 +1437,625 @@ function App() {
   const focusSearch = useCallback(() => {
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, []);
+
+  useEffect(() => {
+    findStateRef.current = findState;
+  }, [findState]);
+
+  const clearFindDebounce = useCallback(() => {
+    if (findDebounceTimerRef.current !== null) {
+      window.clearTimeout(findDebounceTimerRef.current);
+      findDebounceTimerRef.current = null;
+    }
+  }, []);
+
+  const clearFindPresentation = useCallback(() => {
+    setFindMatches(new Map());
+    setFindRevealItemId(null);
+    findTargetItemRef.current = null;
+    setFindTargetItem(null);
+  }, []);
+
+  const closeFind = useCallback(
+    async ({ restoreFocus = true }: { restoreFocus?: boolean } = {}) => {
+      clearFindDebounce();
+      findGenerationRef.current += 1;
+      findRequestSeqRef.current += 1;
+      findNavigationSeqRef.current += 1;
+      findMatchesRequestSeqRef.current += 1;
+      const previous = findStateRef.current;
+      findStateRef.current = null;
+      setFindState(null);
+      clearFindPresentation();
+      const closeRequest = previous?.sessionId
+        ? findClose({ sessionId: previous.sessionId }).catch(() => undefined)
+        : Promise.resolve();
+      if (restoreFocus) {
+        focusSearch();
+      }
+      await closeRequest;
+    },
+    [clearFindDebounce, clearFindPresentation, focusSearch],
+  );
+
+  useEffect(() => () => {
+    void closeFind({ restoreFocus: false });
+  }, [closeFind]);
+
+  const materializedFindItem = useCallback(
+    (materialized: NonNullable<FindTargetResponse["materialized"]>) => {
+      const item = materialized.item;
+      const text = item.text ?? "";
+      return {
+        id: item.id,
+        content_kind: item.contentKind,
+        text,
+        preview_text: text.slice(0, 2400),
+        text_char_count: Array.from(text).length,
+        includes_content: true,
+        normalized_hash: "",
+        created_at_unix_ms: 0,
+        last_used_at_unix_ms: 0,
+        last_copied_at_unix_ms: 0,
+        copy_count: 0,
+        mime_primary: null,
+        blob_path: null,
+        thumbnail_path: null,
+        byte_size: null,
+        width: null,
+        height: null,
+        thumbnail_data_url: null,
+        title: item.title,
+        notes: item.notes,
+        tags: item.tags,
+        is_marked: false,
+        marked_at_unix_ms: null,
+      } satisfies HistoryItem;
+    },
+    [],
+  );
+
+  const revealFindTarget = useCallback(
+    async (
+      target: FindOccurrence | null,
+      sessionId: string,
+      generation: number,
+      recoveryAttempted = false,
+      navigationSeq?: number,
+    ) => {
+      if (!target) {
+        setFindRevealItemId(null);
+        findTargetItemRef.current = null;
+        setFindTargetItem(null);
+        return;
+      }
+      if (
+        findStateRef.current?.sessionId !== sessionId
+        || findStateRef.current.generation !== generation
+        || (navigationSeq !== undefined && navigationSeq !== findNavigationSeqRef.current)
+      ) {
+        return;
+      }
+
+      if (findTargetItemRef.current && findTargetItemRef.current.id !== target.itemId) {
+        findTargetItemRef.current = null;
+        setFindTargetItem(null);
+      }
+
+      setFindState((current) => current && current.sessionId === sessionId && current.generation === generation
+        ? {
+            ...current,
+            currentOrdinal: target.ordinal,
+            currentTarget: target,
+            error: null,
+          }
+        : current);
+      setFindRevealItemId(target.itemId);
+
+      try {
+        const response = await findTarget({ sessionId, ordinal: target.ordinal });
+        if (
+          findStateRef.current?.sessionId !== sessionId
+          || findStateRef.current.generation !== generation
+          || (navigationSeq !== undefined && navigationSeq !== findNavigationSeqRef.current)
+        ) {
+          return;
+        }
+        if (typeof response.total === "number") {
+          setFindState((current) => current && current.sessionId === sessionId
+            ? { ...current, total: response.total }
+            : current);
+        }
+        if (!response.target) {
+          setFindState((current) => current && current.sessionId === sessionId
+            ? {
+                ...current,
+                status: "empty",
+                total: 0,
+                currentOrdinal: null,
+                currentTarget: null,
+                error: null,
+              }
+            : current);
+          clearFindPresentation();
+          return;
+        }
+        setFindState((current) => current && current.sessionId === sessionId
+          ? {
+              ...current,
+              currentOrdinal: response.target?.ordinal ?? target.ordinal,
+              currentTarget: response.target,
+              status: response.total > 0 ? "ready" : "empty",
+              error: null,
+            }
+          : current);
+
+        if (response.materialized) {
+          const materialized = materializedFindItem(response.materialized);
+          const existing = historyRef.current.find((item) => item.id === materialized.id);
+          if (!existing || !existing.includes_content) {
+            if (existing) {
+              const nextItem = {
+                ...existing,
+                ...materialized,
+                normalized_hash: existing.normalized_hash,
+                created_at_unix_ms: existing.created_at_unix_ms,
+                last_used_at_unix_ms: existing.last_used_at_unix_ms,
+                last_copied_at_unix_ms: existing.last_copied_at_unix_ms,
+                copy_count: existing.copy_count,
+                is_marked: existing.is_marked,
+                marked_at_unix_ms: existing.marked_at_unix_ms,
+              } satisfies HistoryItem;
+              historyRef.current = historyRef.current.map((item) => item.id === materialized.id ? nextItem : item);
+              setHistory(historyRef.current);
+            } else {
+              findTargetItemRef.current = materialized;
+              setFindTargetItem(materialized);
+            }
+          } else {
+            findTargetItemRef.current = null;
+            setFindTargetItem(null);
+          }
+        } else {
+          const existing = historyRef.current.find((item) => item.id === target.itemId);
+          if (existing && !existing.includes_content) {
+            const fullItem = await getHistoryItem(existing.id);
+            historyRef.current = historyRef.current.map((item) => item.id === fullItem.id ? fullItem : item);
+            setHistory(historyRef.current);
+          }
+        }
+
+        window.requestAnimationFrame(() => {
+          if (
+            findStateRef.current?.sessionId !== sessionId
+            || findStateRef.current.generation !== generation
+            || (navigationSeq !== undefined && navigationSeq !== findNavigationSeqRef.current)
+          ) {
+            return;
+          }
+          const targetIndex = historyRef.current.findIndex((item) => item.id === target.itemId);
+          const remoteTargetIndex = findTargetItemRef.current?.id === target.itemId
+            ? historyRef.current.length
+            : -1;
+          const revealIndex = targetIndex >= 0 ? targetIndex : remoteTargetIndex;
+          if (revealIndex >= 0) {
+            rowVirtualizer.scrollToIndex(revealIndex, { align: "center" });
+            window.requestAnimationFrame(() => {
+              if (navigationSeq !== undefined && navigationSeq !== findNavigationSeqRef.current) {
+                return;
+              }
+              const row = document.getElementById(`history-item-${target.itemId}`);
+              row?.scrollIntoView({ block: "center", behavior: "auto" });
+            });
+          }
+        });
+      } catch (error) {
+        if (
+          findStateRef.current?.sessionId !== sessionId
+          || findStateRef.current.generation !== generation
+          || navigationSeq !== findNavigationSeqRef.current
+        ) {
+          return;
+        }
+        const message = String(error);
+        setFindState((current) => current && current.sessionId === sessionId
+          ? {
+              ...current,
+              status: "error",
+              recoveryAttempted: recoveryAttempted || /session not found|sessionInvalidated|find session/i.test(message),
+              error: "Could not load this match. Try again.",
+            }
+          : current);
+      }
+    },
+    [clearFindPresentation, materializedFindItem, rowVirtualizer],
+  );
+
+  const startFind = useCallback(
+    async (needle: string, generation = findGenerationRef.current, recoveryAttempted = false) => {
+      const trimmedNeedle = needle.trim();
+      const descriptor = appliedDescriptorRef.current;
+      if (!isAppliedSearchDescriptor(descriptor)) {
+        setFindState((current) => current
+          ? { ...current, status: "error", error: "Apply a filter before using Find." }
+          : current);
+        clearFindPresentation();
+        return;
+      }
+      const requestSeq = ++findRequestSeqRef.current;
+      const previous = findStateRef.current;
+      if (previous?.sessionId) {
+        void findClose({ sessionId: previous.sessionId }).catch(() => undefined);
+      }
+      if (!trimmedNeedle) {
+        setFindState((current) => current
+          ? {
+              ...current,
+              sessionId: null,
+              generation,
+              status: "idle",
+              total: 0,
+              currentOrdinal: null,
+              currentTarget: null,
+              error: null,
+              recoveryAttempted: false,
+            }
+          : current);
+        clearFindPresentation();
+        return;
+      }
+
+      setFindState((current) => current
+        ? {
+            ...current,
+            sessionId: null,
+            filterFingerprint: descriptor.fingerprint,
+            generation,
+            status: "starting",
+            total: 0,
+            currentOrdinal: null,
+            currentTarget: null,
+            error: null,
+            recoveryAttempted,
+          }
+        : current);
+      clearFindPresentation();
+
+      try {
+        const response = await findStart({
+          appliedDescriptor: descriptor,
+          needle: trimmedNeedle,
+          generation,
+        });
+        if (
+          requestSeq !== findRequestSeqRef.current
+          || findStateRef.current?.generation !== generation
+          || !findStateRef.current?.active
+        ) {
+          return;
+        }
+        const target = response.firstTarget;
+        const nextState = findStateRef.current
+          ? {
+              ...findStateRef.current,
+              sessionId: response.sessionId,
+              filterFingerprint: descriptor.fingerprint,
+              generation,
+              status: (response.total > 0 ? "ready" : "empty") as FindBarStatus,
+              total: response.total,
+              currentOrdinal: target?.ordinal ?? null,
+              currentTarget: target,
+              error: null,
+              recoveryAttempted,
+            }
+          : null;
+        if (nextState) {
+          findStateRef.current = nextState;
+          setFindState(nextState);
+        }
+        if (target) {
+          await revealFindTarget(target, response.sessionId, generation, recoveryAttempted);
+        }
+      } catch (error) {
+        if (
+          requestSeq !== findRequestSeqRef.current
+          || findStateRef.current?.generation !== generation
+        ) {
+          return;
+        }
+        setFindState((current) => current
+          ? {
+              ...current,
+              sessionId: null,
+              status: "error",
+              error: "Find could not scan these results. Try again.",
+              recoveryAttempted,
+            }
+          : current);
+      }
+    },
+    [clearFindPresentation, revealFindTarget],
+  );
+
+  const scheduleFind = useCallback(
+    (needle: string, generation: number) => {
+      clearFindDebounce();
+      findDebounceTimerRef.current = window.setTimeout(() => {
+        findDebounceTimerRef.current = null;
+        void startFind(needle, generation);
+      }, 120);
+    },
+    [clearFindDebounce, startFind],
+  );
+
+  const rebaseFind = useCallback(() => {
+    const current = findStateRef.current;
+    if (!current?.active || !current.needle.trim()) {
+      return;
+    }
+    findGenerationRef.current += 1;
+    const generation = findGenerationRef.current;
+    const nextState: FindUiState = {
+      ...current,
+      generation,
+      sessionId: null,
+      status: "starting",
+      total: 0,
+      currentOrdinal: null,
+      currentTarget: null,
+      error: null,
+      recoveryAttempted: false,
+    };
+    findStateRef.current = nextState;
+    setFindState(nextState);
+    clearFindPresentation();
+    scheduleFind(current.needle, generation);
+  }, [clearFindPresentation, scheduleFind]);
+
+  const openFind = useCallback(() => {
+    const descriptor = appliedDescriptorRef.current;
+    if (!isAppliedSearchDescriptor(descriptor)) {
+      return;
+    }
+    const existing = findStateRef.current;
+    if (existing?.active) {
+      window.setTimeout(() => findInputRef.current?.focus(), 0);
+      return;
+    }
+    findGenerationRef.current += 1;
+    const nextState: FindUiState = {
+      active: true,
+      needle: "",
+      sessionId: null,
+      filterFingerprint: descriptor.fingerprint,
+      generation: findGenerationRef.current,
+      status: "idle",
+      total: 0,
+      currentOrdinal: null,
+      currentTarget: null,
+      error: null,
+      recoveryAttempted: false,
+    };
+    findStateRef.current = nextState;
+    setFindState(nextState);
+    clearFindPresentation();
+    window.setTimeout(() => findInputRef.current?.focus(), 0);
+  }, [clearFindPresentation]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && findStateRef.current?.active) {
+        event.preventDefault();
+        event.stopPropagation();
+        void closeFind();
+        return;
+      }
+      if (
+        !(event.ctrlKey || event.metaKey)
+        || event.altKey
+        || event.shiftKey
+        || event.key.toLocaleLowerCase() !== "f"
+        || editDraft
+        || inlineEditDraft
+        || createItemDraft
+        || batchMetadataDraft
+        || tagEditorDraft
+        || commandPalette
+        || actionPicker
+        || searchHelpOpen
+      ) {
+        return;
+      }
+      const descriptor = appliedDescriptorRef.current;
+      if (!isAppliedSearchDescriptor(descriptor)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openFind();
+    };
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => document.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [
+    actionPicker,
+    batchMetadataDraft,
+    closeFind,
+    commandPalette,
+    createItemDraft,
+    editDraft,
+    inlineEditDraft,
+    openFind,
+    searchHelpOpen,
+    tagEditorDraft,
+  ]);
+
+  const navigateFind = useCallback(
+    async (direction: "next" | "previous") => {
+      const current = findStateRef.current;
+      if (!current?.active || !current.sessionId || current.total <= 0) {
+        return;
+      }
+      const sessionId = current.sessionId;
+      const generation = current.generation;
+      const navigationSeq = ++findNavigationSeqRef.current;
+      try {
+        const response = await findNavigate({
+          sessionId,
+          currentOrdinal: current.currentOrdinal,
+          ordinal: current.currentOrdinal,
+          direction,
+        });
+        if (
+          findStateRef.current?.sessionId !== sessionId
+          || findStateRef.current.generation !== generation
+          || navigationSeq !== findNavigationSeqRef.current
+        ) {
+          return;
+        }
+        if (response.target) {
+          setFindState((state) => state && state.sessionId === sessionId
+            ? {
+                ...state,
+                total: response.total,
+                currentOrdinal: response.target?.ordinal ?? null,
+                currentTarget: response.target,
+                status: response.total > 0 ? "ready" : "empty",
+                error: null,
+              }
+            : state);
+          await revealFindTarget(response.target, sessionId, generation, current.recoveryAttempted, navigationSeq);
+        } else {
+          setFindState((state) => state && state.sessionId === sessionId
+            ? { ...state, total: response.total, currentOrdinal: null, currentTarget: null, status: "empty" }
+            : state);
+          clearFindPresentation();
+        }
+      } catch (error) {
+        if (
+          findStateRef.current?.sessionId !== sessionId
+          || findStateRef.current.generation !== generation
+          || navigationSeq !== findNavigationSeqRef.current
+        ) {
+          return;
+        }
+        const message = String(error);
+        if (!current.recoveryAttempted && /session not found|sessionInvalidated|find session/i.test(message)) {
+          const needle = current.needle;
+          setFindState((state) => state && state.sessionId === sessionId
+            ? { ...state, status: "starting", recoveryAttempted: true, error: null }
+            : state);
+          await startFind(needle, generation, true);
+          return;
+        }
+        setFindState((state) => state && state.sessionId === sessionId
+          ? { ...state, status: "error", error: "Find navigation failed. Try again." }
+          : state);
+      }
+    },
+    [clearFindPresentation, revealFindTarget, startFind],
+  );
+
+  const handleFindInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const needle = event.currentTarget.value;
+    findGenerationRef.current += 1;
+    findNavigationSeqRef.current += 1;
+    const generation = findGenerationRef.current;
+    const current = findStateRef.current;
+    if (!current) {
+      return;
+    }
+    const nextState: FindUiState = {
+      ...current,
+      needle,
+      generation,
+      status: needle.trim() ? "starting" : "idle",
+      total: 0,
+      currentOrdinal: null,
+      currentTarget: null,
+      error: null,
+      recoveryAttempted: false,
+    };
+    findStateRef.current = nextState;
+    setFindState(nextState);
+    if (!needle.trim()) {
+      clearFindDebounce();
+      void startFind("", generation);
+      return;
+    }
+    scheduleFind(needle, generation);
+  }, [clearFindDebounce, scheduleFind, startFind]);
+
+  const handleFindInputKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void navigateFind(event.shiftKey ? "previous" : "next");
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void closeFind();
+    }
+  }, [closeFind, navigateFind]);
+
+  useEffect(() => {
+    const sessionId = findState?.sessionId;
+    if (!findState?.active || !sessionId || history.length === 0) {
+      setFindMatches(new Map());
+      return undefined;
+    }
+    const requestSeq = ++findMatchesRequestSeqRef.current;
+    let active = true;
+    const itemIds = Array.from(new Set([
+      ...history.map((item) => item.id),
+      ...(findTargetItem ? [findTargetItem.id] : []),
+    ]));
+    void findMatchesForItems({ sessionId, itemIds })
+      .then((response) => {
+        if (
+          !active
+          || requestSeq !== findMatchesRequestSeqRef.current
+          || findStateRef.current?.sessionId !== sessionId
+        ) {
+          return;
+        }
+        const next = new Map<number, FindItemMatches>();
+        for (const item of response.items) {
+          next.set(item.itemId, item);
+        }
+        setFindMatches(next);
+      })
+      .catch((error) => {
+        if (!active || findStateRef.current?.sessionId !== sessionId) {
+          return;
+        }
+        const message = String(error);
+        if (/session not found|sessionInvalidated|find session/i.test(message)) {
+          const current = findStateRef.current;
+          if (current && !current.recoveryAttempted && current.needle.trim()) {
+            setFindState({ ...current, status: "starting", recoveryAttempted: true, error: null });
+            void startFind(current.needle, current.generation, true);
+          } else {
+            setFindState((currentState) => currentState && currentState.sessionId === sessionId
+              ? { ...currentState, status: "error", error: "Find session expired. Change the Find text to retry." }
+              : currentState);
+          }
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [findState?.sessionId, findState?.active, findTargetItem?.id, history, startFind]);
+
+  useEffect(() => {
+    const appliedFingerprint = searchState.applied?.descriptor.fingerprint ?? null;
+    if (
+      findStateRef.current?.active
+      && findStateRef.current.filterFingerprint
+      && findStateRef.current.filterFingerprint !== appliedFingerprint
+    ) {
+      void closeFind({ restoreFocus: false });
+    }
+  }, [closeFind, searchState.applied?.descriptor.fingerprint]);
 
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -1458,6 +2145,7 @@ function App() {
   }, []);
 
   const resetPickerSession = useCallback(() => {
+    void closeFind({ restoreFocus: false });
     closeTransientEditors();
     setCommandPalette(null);
     setActionPicker(null);
@@ -1487,7 +2175,7 @@ function App() {
     setSelectedIds(emptySelection);
     selectionAnchorItemIdRef.current = null;
     historyScrollRef.current?.scrollTo({ top: 0 });
-  }, [closeTransientEditors]);
+  }, [closeFind, closeTransientEditors]);
 
   const openSettingsPanel = useCallback(() => {
     setSettingsError(null);
@@ -3198,6 +3886,7 @@ function App() {
       await invoke("update_history_item", { request });
       mutateRowLayout(draft.id, () => setInlineEditDraft(null));
       await refreshAppliedHistory();
+      rebaseFind();
       selectedItemIdRef.current = draft.id;
       setSelectedItemId(draft.id);
       focusSearch();
@@ -3207,7 +3896,7 @@ function App() {
     } finally {
       setInlineEditSaving(false);
     }
-  }, [focusSearch, inlineEditDraft, inlineEditSaving, mutateRowLayout, refreshAppliedHistory]);
+  }, [focusSearch, inlineEditDraft, inlineEditSaving, mutateRowLayout, rebaseFind, refreshAppliedHistory]);
 
   const beginEdit = useCallback(
     async (item: HistoryItem, mode: EditMode) => {
@@ -3303,13 +3992,14 @@ function App() {
         }
         setSelectedIds(new Set());
         await refreshAppliedHistory();
+        rebaseFind();
         focusSearch();
       } catch (error) {
         setActionError(String(error));
         focusSearch();
       }
     },
-    [focusSearch, refreshAppliedHistory],
+    [focusSearch, rebaseFind, refreshAppliedHistory],
   );
 
   const refreshAfterMarkedChange = useCallback(async () => {
@@ -3634,12 +4324,13 @@ function App() {
       await invoke("update_history_item", { request });
       setEditDraft(null);
       await refreshAppliedHistory();
+      rebaseFind();
       focusSearch();
     } catch (error) {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [editDraft, focusSearch, refreshAppliedHistory]);
+  }, [editDraft, focusSearch, rebaseFind, refreshAppliedHistory]);
 
   const saveCreateItem = useCallback(async () => {
     if (!createItemDraft || !createItemDraft.text.trim()) {
@@ -3713,12 +4404,13 @@ function App() {
       }
       setBatchMetadataDraft(null);
       await refreshAppliedHistory();
+      rebaseFind();
       focusSearch();
     } catch (error) {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, refreshAppliedHistory]);
+  }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, rebaseFind, refreshAppliedHistory]);
 
   const saveTagEditor = useCallback(async (tags: string[], removeTags: string[]) => {
     if (!tagEditorDraft || tagEditorSaving) {
@@ -3740,6 +4432,7 @@ function App() {
         listTags(),
         refreshAppliedHistory(),
       ]);
+      rebaseFind();
       setPaletteTags(availableTags);
       setKnownTagSlugs(availableTags.map((tag) => tag.slug));
       if (itemCount > 1) {
@@ -3755,7 +4448,7 @@ function App() {
     } finally {
       setTagEditorSaving(false);
     }
-  }, [focusSearch, pushToast, refreshAppliedHistory, tagEditorDraft, tagEditorSaving]);
+  }, [focusSearch, pushToast, rebaseFind, refreshAppliedHistory, tagEditorDraft, tagEditorSaving]);
 
   useEffect(() => {
     let active = true;
@@ -4421,13 +5114,14 @@ function App() {
         reason: "foreground",
       };
     }
+    void closeFind({ restoreFocus: false });
     autocompleteCommittedQueryRef.current = null;
     if (searchDebounceTimerRef.current !== null) {
       window.clearTimeout(searchDebounceTimerRef.current);
       searchDebounceTimerRef.current = null;
     }
     void refreshHistory({ resetScroll: true, allowAi: true });
-  }, [aiComposerMode, query, refreshHistory, searchTriggerMode, structuredSearchDraft]);
+  }, [aiComposerMode, closeFind, query, refreshHistory, searchTriggerMode, structuredSearchDraft]);
   const toggleFilterLock = useCallback(() => {
     const nextLocked = !filterLockedRef.current;
     if (nextLocked) {
@@ -4761,6 +5455,10 @@ function App() {
           break;
         case "Escape":
           event.preventDefault();
+          if (findState?.active) {
+            void closeFind();
+            break;
+          }
           if (searchSuggestionsOpen) {
             setDismissedAutocompleteQuery(query);
             break;
@@ -5392,6 +6090,22 @@ function App() {
           </Menu>
         </div>
 
+        {findState?.active ? (
+          <FindBar
+            needle={findState.needle}
+            total={findState.total}
+            currentOrdinal={findState.currentOrdinal}
+            status={findState.status}
+            error={findState.error}
+            inputRef={findInputRef}
+            onChange={handleFindInputChange}
+            onKeyDown={handleFindInputKeyDown}
+            onPrevious={() => void navigateFind("previous")}
+            onNext={() => void navigateFind("next")}
+            onClose={() => void closeFind()}
+          />
+        ) : null}
+
         {hasActivePickerContext || hasSearchContext ? (
           <PickerContextStrip>
         {activeScenarioSession ? (
@@ -5590,6 +6304,11 @@ function App() {
 
         <PickerStatusAnnouncer>
           {selectionAnnouncement}
+          {findState?.active && findState.total > 0 && findState.currentOrdinal !== null
+            ? ` Find ${findState.currentOrdinal} of ${findState.total}${findState.currentTarget ? ` in ${findState.currentTarget.field}.` : "."}`
+            : findState?.active && findState.status === "empty"
+              ? " Find has no matches in these results."
+              : ""}
         </PickerStatusAnnouncer>
         </PickerHeader>
 
@@ -5597,11 +6316,11 @@ function App() {
           <div ref={historyScrollRef} className="history-feed-scroll">
             <ol
               id="clipboard-feed"
-              className={`history-feed${history.length > 0 ? " has-items" : ""}`}
+              className={`history-feed${displayedHistory.length > 0 ? " has-items" : ""}`}
               aria-label="Clipboard history results"
-              style={history.length > 0 ? { height: `${rowVirtualizer.getTotalSize()}px` } : undefined}
+              style={displayedHistory.length > 0 ? { height: `${rowVirtualizer.getTotalSize()}px` } : undefined}
             >
-            {history.length === 0 ? (
+            {displayedHistory.length === 0 ? (
               <li className="empty-history">
                 {historyError ? (
                   <span className="empty-loading" role="status" aria-live="polite">
@@ -5639,7 +6358,7 @@ function App() {
               </li>
             ) : (
               virtualRows.map((virtualRow) => {
-                const item = history[virtualRow.index];
+                const item = displayedHistory[virtualRow.index];
                 const index = virtualRow.index;
                 if (!item) {
                   return (
@@ -5662,6 +6381,9 @@ function App() {
 
                 const itemIsSelected = item.id === selectedItemId;
                 const itemIsMultiSelected = selectedIds.has(item.id);
+                const itemFindMatches = findState?.active ? findMatches.get(item.id) : undefined;
+                const itemIsFindTarget = findState?.active && findRevealItemId === item.id;
+                const itemIsRemoteFindTarget = remoteFindItemId === item.id;
                 const itemDeleteTargets = itemIsMultiSelected && selectedIds.size > 0
                   ? effectiveSelection
                   : [item];
@@ -5671,8 +6393,8 @@ function App() {
                   key={item.id}
                   id={`history-item-${item.id}`}
                   data-index={virtualRow.index}
-                  aria-posinset={index + 1}
-                  aria-setsize={historyAriaSetSize ?? undefined}
+                  aria-posinset={itemIsRemoteFindTarget ? undefined : index + 1}
+                  aria-setsize={itemIsRemoteFindTarget ? undefined : (historyAriaSetSize ?? undefined)}
                   ref={rowVirtualizer.measureElement}
                   style={{
                     transform: `translateY(${Math.ceil(virtualRow.start) + (virtualRow.index > 0 ? 1 : 0)}px)`,
@@ -5728,7 +6450,7 @@ function App() {
                       itemIsMultiSelected ? " is-multi-selected" : ""
                     }${
                       item.content_kind === "image" ? " is-image" : ""
-                    }`}
+                    }${itemIsFindTarget ? " has-find-target" : ""}`}
                     role="button"
                     tabIndex={-1}
                     aria-current={itemIsSelected ? "true" : undefined}
@@ -5774,11 +6496,29 @@ function App() {
                     }}
                   >
                     <span className="item-main">
-                      {hasMetadata(item) ? (
+                      {item.title || hasMetadata(item) ? (
                         <span className="item-metadata">
-                          {item.tags ? <span>{item.tags}</span> : null}
+                          {item.title ? (
+                            <FindHighlightedText
+                              matches={findFieldMatches(itemFindMatches?.fields, "title")}
+                              currentOrdinal={findState?.currentOrdinal ?? null}
+                              className="item-title"
+                              fallback={<span className="item-title">{item.title}</span>}
+                            />
+                          ) : null}
+                          {item.tags ? (
+                            <FindHighlightedText
+                              matches={findFieldMatches(itemFindMatches?.fields, "tag")}
+                              currentOrdinal={findState?.currentOrdinal ?? null}
+                              fallback={<span>{item.tags}</span>}
+                            />
+                          ) : null}
                           {metadataNotesPreview(item.notes, item.tags) ? (
-                            <span>{metadataNotesPreview(item.notes, item.tags)}</span>
+                            <FindHighlightedText
+                              matches={findFieldMatches(itemFindMatches?.fields, "notes")}
+                              currentOrdinal={findState?.currentOrdinal ?? null}
+                              fallback={<span>{metadataNotesPreview(item.notes, item.tags)}</span>}
+                            />
                           ) : null}
                         </span>
                       ) : null}
@@ -5836,12 +6576,17 @@ function App() {
                     ) : markdownImages(item.text).length > 0 ? (
                       <MarkdownPreview
                         text={item.text}
+                        contentMatches={findFieldMatches(itemFindMatches?.fields, "content")}
+                        imageAltMatches={findFieldMatches(itemFindMatches?.fields, "imageAlt")}
+                        currentOrdinal={findState?.currentOrdinal ?? null}
                         onImageLoad={measureImageRow}
                       />
                     ) : (
                       <TextPreview
                         item={item}
-                        expanded={expandedItemIds.has(item.id)}
+                        expanded={expandedItemIds.has(item.id) || Boolean(itemIsFindTarget)}
+                        findMatches={findFieldMatches(itemFindMatches?.fields, "content")}
+                        currentOrdinal={findState?.currentOrdinal ?? null}
                         onToggle={() => void toggleTextPreview(item)}
                         onLayoutChange={() => mutateRowLayout(item.id, () => undefined)}
                       />
@@ -7459,11 +8204,15 @@ function normalizeMarkdownImageSrc(src: string) {
 function TextPreview({
   item,
   expanded,
+  findMatches,
+  currentOrdinal,
   onToggle,
   onLayoutChange,
 }: {
   item: HistoryItem;
   expanded: boolean;
+  findMatches?: FindFieldMatches | null;
+  currentOrdinal?: number | null;
   onToggle: () => void;
   onLayoutChange: () => void;
 }) {
@@ -7497,10 +8246,33 @@ function TextPreview({
   const overflowText = previewContainsFullText
     ? `${item.text_char_count.toLocaleString()} chars · ${lineCount.toLocaleString()} lines`
     : `${item.text_char_count.toLocaleString()} chars`;
+  const previewFindMatches = findMatches && !item.includes_content && !expanded
+    ? {
+        ...findMatches,
+        displayText: item.text,
+        segments: [{
+          segment: 0,
+          startUtf16: 0,
+          endUtf16: item.text.length,
+          displayText: item.text,
+        }],
+        ranges: findMatches.ranges
+          .filter((range) => range.startUtf16 < item.text.length)
+          .map((range) => ({
+            ...range,
+            startUtf16: Math.min(range.startUtf16, item.text.length),
+            endUtf16: Math.min(range.endUtf16, item.text.length),
+          })),
+      }
+    : findMatches;
 
   return (
     <span className={`text-preview${expanded ? " is-expanded" : ""}`}>
-      <pre ref={previewRef}>{item.text}</pre>
+      <pre ref={previewRef}>
+        {previewFindMatches
+          ? <FindHighlightedText matches={previewFindMatches} currentOrdinal={currentOrdinal ?? null} fallback={item.text} />
+          : item.text}
+      </pre>
       {overflowing ? (
         <span className="text-preview-overflow" aria-label={overflowLabel}>
           <span>{overflowText}</span>
@@ -7527,30 +8299,65 @@ function TextPreview({
 
 function MarkdownPreview({
   text,
+  contentMatches,
+  imageAltMatches,
+  currentOrdinal,
   onImageLoad,
 }: {
   text: string;
+  contentMatches?: FindFieldMatches | null;
+  imageAltMatches?: FindFieldMatches | null;
+  currentOrdinal?: number | null;
   onImageLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
 }) {
   const segments = markdownSegments(text);
 
   return (
     <span className="markdown-preview">
-      {segments.map((segment, index) =>
-        segment.kind === "image" ? (
-          <span className="markdown-image-frame" key={`${segment.image.src}-${index}`}>
-            <img
-              src={segment.image.src}
-              alt={segment.image.alt}
-              onLoad={onImageLoad}
-            />
-          </span>
-        ) : (
+      {segments.map((segment, index) => {
+        if (segment.kind === "image") {
+          const imageSegment = segments
+            .slice(0, index + 1)
+            .filter((candidate) => candidate.kind === "image").length - 1;
+          const altMatches = imageAltMatches
+            ? {
+                ...imageAltMatches,
+                ranges: imageAltMatches.ranges.filter((range) => range.segment === imageSegment),
+                segments: imageAltMatches.segments.filter((candidate) => candidate.segment === imageSegment),
+                displayText: imageAltMatches.segments.find((candidate) => candidate.segment === imageSegment)?.displayText
+                  ?? segment.image.alt,
+              }
+            : null;
+          return (
+            <span
+              className={`markdown-image-frame${altMatches?.ranges.length ? " has-find-alt" : ""}`}
+              key={`${segment.image.src}-${index}`}
+            >
+              <img
+                src={segment.image.src}
+                alt={segment.image.alt}
+                onLoad={onImageLoad}
+              />
+              {altMatches?.ranges.length ? (
+                <span className="markdown-image-alt" aria-label={`Image alt: ${segment.image.alt}`}>
+                  <FindHighlightedText
+                    matches={altMatches}
+                    currentOrdinal={currentOrdinal ?? null}
+                    fallback={segment.image.alt}
+                  />
+                </span>
+              ) : null}
+            </span>
+          );
+        }
+        return (
           <span className="markdown-text-preview" key={`text-${index}`}>
-            {segment.text}
+            {segments.length === 1 && contentMatches
+              ? <FindHighlightedText matches={contentMatches} currentOrdinal={currentOrdinal ?? null} fallback={segment.text} />
+              : segment.text}
           </span>
-        ),
-      )}
+        );
+      })}
     </span>
   );
 }

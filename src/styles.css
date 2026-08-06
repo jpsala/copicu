@@ -569,6 +569,107 @@ button {
   max-height: min(150px, 22vh);
 }
 
+.find-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-raised));
+  padding: 5px 9px;
+}
+
+.find-bar-label {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.find-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  padding: 0 8px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  outline: none;
+}
+
+.find-input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 54%, transparent);
+  outline-offset: 1px;
+}
+
+.find-count {
+  min-width: 48px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.find-status-copy {
+  min-width: 0;
+  max-width: min(28ch, 28vw);
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find-bar.is-error .find-status-copy,
+.find-bar.is-empty .find-status-copy {
+  color: var(--warning);
+}
+
+.find-navigation {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.find-control {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.find-control:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.find-control:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.find-control:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.find-close {
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
 .scenario-session-bar {
   border-bottom: 1px solid color-mix(in srgb, var(--success) 35%, var(--line));
   background: color-mix(in srgb, var(--success) 11%, var(--surface));
@@ -1391,6 +1492,39 @@ button {
   content: "";
 }
 
+.feed-item.has-find-target {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, var(--line));
+  outline-offset: -2px;
+}
+
+.find-highlight {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--warning) 46%, transparent);
+  color: inherit;
+  padding: 0 1px;
+}
+
+.find-highlight.is-current {
+  background: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.markdown-image-alt {
+  display: block;
+  max-width: 100%;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.markdown-image-frame.has-find-alt {
+  border-color: color-mix(in srgb, var(--warning) 52%, var(--line));
+}
+
 .feed-item:focus {
   outline: none;
 }
@@ -1498,6 +1632,11 @@ button {
   font-size: 0.76rem;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.item-title {
+  color: var(--ink);
+  font-weight: 850;
 }
 
 .toast-stack {
@@ -5459,6 +5598,46 @@ kbd {
   .search-row.is-ai-mode {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     grid-template-areas: "selection search apply menu";
+  }
+
+  .find-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label input close"
+      "status status nav";
+    gap: 4px 6px;
+    padding: 5px 7px;
+  }
+
+  .find-bar-label {
+    grid-area: label;
+  }
+
+  .find-input {
+    grid-area: input;
+  }
+
+  .find-count {
+    grid-area: status;
+    justify-self: start;
+  }
+
+  .find-status-copy {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .find-navigation {
+    grid-area: nav;
+    justify-self: end;
+  }
+
+  .find-close {
+    grid-area: close;
   }
 
   .scenario-session-copy,
