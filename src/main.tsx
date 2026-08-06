@@ -2362,7 +2362,9 @@ function App() {
           setHistoryFilteredCount(page.filteredCount);
         }
         void refreshMarkedCount().catch(() => undefined);
-        setHistoryNextCursor(page.nextCursor);
+        // A retained refresh describes fresh metadata for the same visible rows.
+        // Keep the legacy cursor bridged to those rows; the fresh cursor is only
+        // used above to decide whether an existing pagination block still matches.
         if (foreground) {
           setHistoryPending(false);
           setAiPlanning(false);

@@ -178,6 +178,7 @@ type MockTauriOptions = {
   historySearchFailNext?: boolean;
   historySearchFailMessage?: string;
   historySearchFailOnCursor?: boolean;
+  historySearchBoundaryShiftOnNextRefresh?: boolean;
   pickerSessionDelayMs?: number;
   pickerSessionSnapshots?: Array<{
     reset: boolean;
@@ -223,6 +224,8 @@ async function mockTauriInvoke(
     (window as any).__copicuTestInvocations = [];
     (window as any).__copicuTestWindowPinned = false;
     (window as any).__copicuTestHistoryItems = items;
+    (window as any).__copicuTestHistoryResponses = [];
+    (window as any).__copicuTestBoundaryShifted = false;
     (window as any).__copicuTestCompoundPending = pending;
     (window as any).__copicuTestMockOptions = mockOptions;
     (window as any).__copicuTestWindowVisible = true;
@@ -704,14 +707,23 @@ async function mockTauriInvoke(
               .slice(startIndex, startIndex + limit)
               .map((item: any) => withHistoryPreview(item, includeContent));
             const nextItem = filteredItems[startIndex + limit - 1];
+            const shiftBoundary = Boolean(mockOptions.historySearchBoundaryShiftOnNextRefresh)
+              && (cursor === null || cursor === undefined);
+            if (shiftBoundary) {
+              mockOptions.historySearchBoundaryShiftOnNextRefresh = false;
+              (window as any).__copicuTestBoundaryShifted = true;
+            }
+            const cursorItem = shiftBoundary
+              ? filteredItems[startIndex + limit]
+              : nextItem;
             const hasNextPage = startIndex + limit < filteredItems.length;
-            return {
+            const response = {
               items: pageItems,
               nextCursor:
-                hasNextPage && nextItem
+                hasNextPage && cursorItem
                   ? {
-                      afterSortUnixMs: nextItem.last_copied_at_unix_ms ?? nextItem.created_at_unix_ms,
-                      afterId: nextItem.id,
+                      afterSortUnixMs: cursorItem.last_copied_at_unix_ms ?? cursorItem.created_at_unix_ms,
+                      afterId: cursorItem.id,
                     }
                   : null,
               totalCount: includeCounts ? sourceItems.length : null,
@@ -728,6 +740,12 @@ async function mockTauriInvoke(
               warnings: aiMode ? ["Synthetic unsupported source filter ignored."] : [],
               appliedDescriptor,
             };
+            (window as any).__copicuTestHistoryResponses.push({
+              cursor: cursor ?? null,
+              ids: pageItems.map((item: any) => item.id),
+              nextCursor: response.nextCursor,
+            });
+            return response;
           }
           case "get_history_item": {
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
@@ -2578,6 +2596,66 @@ test("pagination recovery survives a retained focus refresh", async ({ page }) =
   expect(await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
   )).toBe(callsAfterRetainedRefresh);
+});
+
+test("retained boundary refresh keeps cursor bridge continuity", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory, null, { historySearchFailOnCursor: true });
+  await gotoShell(page);
+
+  const feed = page.locator(".history-feed-scroll");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await feed.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+
+  const cursorA = {
+    afterSortUnixMs: syntheticPagedHistory[59].created_at_unix_ms,
+    afterId: syntheticPagedHistory[59].id,
+  };
+  const cursorB = {
+    afterSortUnixMs: syntheticPagedHistory[60].created_at_unix_ms,
+    afterId: syntheticPagedHistory[60].id,
+  };
+  await page.evaluate(() => {
+    const options = (window as any).__copicuTestMockOptions;
+    options.historySearchFailOnCursor = false;
+    options.historySearchBoundaryShiftOnNextRefresh = true;
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(() => (window as any).__copicuTestBoundaryShifted === true);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.waitForFunction((expectedCursor) =>
+    (window as any).__copicuTestHistoryResponses.some(
+      (response: any) => response.cursor && response.cursor.afterId === expectedCursor.afterId,
+    ),
+  cursorA);
+
+  const continuity = await page.evaluate(() => {
+    const responses = (window as any).__copicuTestHistoryResponses as Array<{
+      cursor: { afterSortUnixMs: number; afterId: number } | null;
+      ids: number[];
+      nextCursor: { afterSortUnixMs: number; afterId: number } | null;
+    }>;
+    const firstPage = [...responses].reverse().find((response) => response.cursor === null);
+    const pagedResponses = responses.filter((response) => response.cursor !== null);
+    const paged = pagedResponses.at(-1);
+    return {
+      firstIds: firstPage?.ids ?? [],
+      pageIds: paged?.ids ?? [],
+      freshNextCursor: firstPage?.nextCursor ?? null,
+      pagedCursors: pagedResponses.map((response) => response.cursor),
+    };
+  });
+  expect(continuity.freshNextCursor).toEqual(cursorB);
+  expect(continuity.pagedCursors.at(-1)).toEqual(cursorA);
+  const expectedFirstIds = syntheticPagedHistory.slice(0, 60).map((item) => item.id);
+  const expectedPageIds = syntheticPagedHistory.slice(60).map((item) => item.id);
+  expect(continuity.firstIds).toEqual(expectedFirstIds);
+  expect(continuity.pageIds).toEqual(expectedPageIds);
+  const allIds = [...continuity.firstIds, ...continuity.pageIds];
+  expect(allIds).toEqual(syntheticPagedHistory.map((item) => item.id));
+  expect(new Set(allIds).size).toBe(allIds.length);
 });
 
 test("initial history failure uses contextual copy and Retry recovers", async ({ page }) => {

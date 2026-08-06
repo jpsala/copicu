@@ -95,7 +95,7 @@ export type PickerSearchAction<Item, Cursor = unknown> =
       type: "applyRetained";
       generation: number;
       descriptor: AppliedSearchDescriptor;
-      page?: Pick<AppliedSearchPage<Item, Cursor>, "totalCount" | "filteredCount">;
+      page?: Pick<AppliedSearchPage<Item, Cursor>, "nextCursor" | "totalCount" | "filteredCount">;
       source?: PickerSearchApplySource;
     }
   | { type: "pageFailed"; generation: number; error: string; source?: PickerSearchApplySource }

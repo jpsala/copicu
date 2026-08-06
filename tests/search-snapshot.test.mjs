@@ -280,7 +280,7 @@ test("manual-scroll refresh settles the generation while retaining the snapshot"
     type: "applyRetained",
     generation: 1,
     descriptor,
-    page: { totalCount: 4, filteredCount: 2 },
+    page: { nextCursor: { afterId: 2 }, totalCount: 4, filteredCount: 2 },
     source: "background",
   });
 
