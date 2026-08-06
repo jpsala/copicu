@@ -31,6 +31,63 @@ test("closed structured values fail closed while date and free values remain app
   assert.equal(classifyStructuredSearchDraft("mime:text/plain").kind, "complete");
 });
 
+test("structured classifier matches Rust date and negation invalid-value rules", () => {
+  const invalid = [
+    "after:not-a-date",
+    "after:today,yesterday",
+    "-after:today",
+    "-source:clipboard",
+    "-format:html",
+    "-fmt:html",
+    "on:2026-13-40",
+    "on:2026-02-29",
+    "after:-1-01-01",
+  ];
+  for (const query of invalid) {
+    const classification = classifyStructuredSearchDraft(query);
+    assert.equal(classification.kind, "invalid", query);
+    assert.equal(classification.structured, true, query);
+    assert.equal(
+      shouldHoldStructuredSearchDraft(classification, {
+        draftChanged: true,
+        searchTriggerMode: "realtime",
+        deferStructuredSearchUntilEnter: false,
+      }),
+      true,
+      query,
+    );
+  }
+
+  for (const query of [
+    "after:today",
+    "after:-1d",
+    "after:2026-08-06T14:32:00-03:00",
+    "on:2026-08-06",
+    "source:clipboard",
+    "format:html",
+    "fmt:html",
+  ]) {
+    assert.equal(classifyStructuredSearchDraft(query).kind, "complete", query);
+  }
+});
+
+test("every negated token keeps structured semantics, including unknown operators", () => {
+  for (const query of ["-foo:bar", "-http://", "-plain"]) {
+    const classification = classifyStructuredSearchDraft(query);
+    assert.equal(classification.structured, true, query);
+    assert.equal(classification.kind, "complete", query);
+    assert.equal(
+      shouldHoldStructuredSearchDraft(classification, {
+        draftChanged: true,
+        searchTriggerMode: "realtime",
+        deferStructuredSearchUntilEnter: true,
+      }),
+      true,
+      query,
+    );
+  }
+});
+
 test("tag and operator autocomplete exposes keyboard-completable replacements", () => {
   assert.deepEqual(searchSuggestions("#wo", ["work", "world"]), [
     { label: "#work", replacement: "#work" },
