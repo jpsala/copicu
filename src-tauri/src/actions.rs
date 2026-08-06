@@ -1396,6 +1396,7 @@ fn script_history_search(
         .map_err(|error| format!("invalid history.search payload: {error}"))?;
     let page = storage.history_search(crate::storage::HistorySearchRequest {
         query: payload.query,
+        display_query: None,
         cursor: None,
         limit: payload.limit,
         plan: None,
@@ -1404,6 +1405,7 @@ fn script_history_search(
         include_counts: true,
         explain: false,
         ai_context: None,
+        applied_descriptor: None,
     })?;
     let content = payload.content.unwrap_or(false);
     serde_json::to_value(

@@ -1341,6 +1341,7 @@ pub(super) fn finish_history_page(
     explanation: Option<String>,
     query_explanation: Option<HistorySearchExplanation>,
     warnings: Vec<String>,
+    applied_descriptor: Option<super::AppliedSearchDescriptor>,
 ) -> Result<HistoryPage, String> {
     let next_cursor = if items.len() as i64 > limit {
         items.truncate(limit as usize);
@@ -1361,6 +1362,7 @@ pub(super) fn finish_history_page(
         explanation,
         query_explanation,
         warnings,
+        applied_descriptor,
     })
 }
 

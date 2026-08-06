@@ -772,7 +772,7 @@ fn history_search(
     storage: State<'_, storage::AppStorage>,
     request: storage::HistorySearchRequest,
 ) -> Result<storage::HistoryPage, String> {
-    if request.mode == storage::HistorySearchMode::Ai {
+    if request.mode == storage::HistorySearchMode::Ai && request.applied_descriptor.is_none() {
         return history_search_with_ai_planner(&app, &storage, request);
     }
     storage.history_search(request)
@@ -789,9 +789,20 @@ fn history_search_with_ai_planner(
         Ok(plan) => plan,
         Err(error) => {
             let original_query = request.query.clone();
+            let display_query = request
+                .display_query
+                .clone()
+                .unwrap_or_else(|| original_query.clone());
             let mut fallback_request = request;
             fallback_request.mode = storage::HistorySearchMode::Structured;
             fallback_request.explain = true;
+            fallback_request.applied_descriptor = Some(
+                storage::AppliedSearchDescriptor::for_query(
+                    display_query,
+                    original_query.clone(),
+                    storage::AppliedSearchMode::Ai,
+                )?,
+            );
             let mut page = storage.history_search(fallback_request)?;
             page.interpreted_query = Some(original_query);
             page.explanation =
@@ -803,10 +814,22 @@ fn history_search_with_ai_planner(
     if plan.intent == ai_planner::AiSearchIntent::HistoryAction {
         return execute_ai_history_action_plan(app, storage, request, plan);
     }
+    let display_query = request
+        .display_query
+        .clone()
+        .unwrap_or_else(|| request.query.clone());
     let mut planned_request = request.clone();
-    planned_request.query = plan.query.trim().to_string();
+    let effective_query = plan.query.trim().to_string();
+    planned_request.query = effective_query.clone();
     planned_request.mode = storage::HistorySearchMode::Structured;
     planned_request.explain = true;
+    planned_request.applied_descriptor = Some(
+        storage::AppliedSearchDescriptor::for_query(
+            display_query,
+            effective_query,
+            storage::AppliedSearchMode::Ai,
+        )?,
+    );
 
     let mut page = storage.history_search(planned_request)?;
     page.interpreted_query = Some(plan.query);
@@ -924,6 +947,13 @@ fn execute_ai_history_action_plan(
                 .to_string();
             refreshed_request.mode = storage::HistorySearchMode::Structured;
             refreshed_request.explain = true;
+            refreshed_request.applied_descriptor = Some(
+                storage::AppliedSearchDescriptor::for_query(
+                    refreshed_request.query.clone(),
+                    refreshed_request.query.clone(),
+                    storage::AppliedSearchMode::Ai,
+                )?,
+            );
             let mut page = storage.history_search(refreshed_request)?;
             page.interpreted_query = Some(
                 script_plan

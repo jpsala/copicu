@@ -13,6 +13,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -94,6 +95,13 @@ import {
   searchSuggestions,
   usesStructuredSearchSyntax,
 } from "./shared/search";
+import {
+  createPickerSearchState,
+  isAppliedSearchDescriptor,
+  pickerSearchReducer,
+  type AppliedSearchDescriptor,
+  type AppliedSearchPage,
+} from "./shared/searchSnapshot";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -251,12 +259,14 @@ type HistoryPageRequest = {
 };
 
 type HistorySearchRequest = HistoryPageRequest & {
+  displayQuery?: string | null;
   mode?: "plain" | "structured" | "ai";
   includeContent?: boolean;
   includeCounts?: boolean;
   explain?: boolean;
   plan?: unknown | null;
   aiContext?: AiScriptContext | null;
+  appliedDescriptor?: AppliedSearchDescriptor | null;
 };
 
 type SearchQueryChip = {
@@ -285,6 +295,7 @@ type HistoryPage = {
   explanation?: string | null;
   queryExplanation?: SearchQueryExplanation | null;
   warnings?: string[];
+  appliedDescriptor?: AppliedSearchDescriptor | null;
 };
 
 type SearchInterpretation = {
@@ -1032,6 +1043,12 @@ function App() {
   const [historyNextCursor, setHistoryNextCursor] = useState<HistoryPageCursor | null>(null);
   const [historyTotalCount, setHistoryTotalCount] = useState<number | null>(null);
   const [historyFilteredCount, setHistoryFilteredCount] = useState<number | null>(null);
+  // Search snapshot/generation transitions live here; legacy item state remains
+  // a rendering bridge until the picker shell extraction moves it over.
+  const [searchState, dispatchSearch] = useReducer(
+    pickerSearchReducer<HistoryItem, HistoryPageCursor>,
+    createPickerSearchState<HistoryItem, HistoryPageCursor>(initialFilterQuery),
+  );
   const [markedTotalCount, setMarkedTotalCount] = useState<number | null>(null);
   const [newClipsAvailable, setNewClipsAvailable] = useState(false);
   const [query, setQuery] = useState(initialFilterQuery);
@@ -1085,6 +1102,7 @@ function App() {
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
   const historyLoadMoreSeqRef = useRef(0);
+  const appliedDescriptorRef = useRef<AppliedSearchDescriptor | null>(null);
   const queryRef = useRef(query);
   const queryInteractionSeqRef = useRef(0);
   const historyInputQueryRef = useRef(historyInputQuery);
@@ -1195,6 +1213,12 @@ function App() {
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+
+  useEffect(() => {
+    if (searchState.applied) {
+      appliedDescriptorRef.current = searchState.applied.descriptor;
+    }
+  }, [searchState.applied]);
 
   useEffect(() => {
     queryRef.current = query;
@@ -1893,7 +1917,7 @@ function App() {
       currentItemId: items[0]?.id ?? selectedItem?.id ?? null,
       selectedItemIds: selectedContextItems.map((item) => item.id),
       view: {
-        query: historyQuery,
+        query: appliedDescriptorRef.current?.effectiveQuery ?? historyQuery,
         visibleItemIds: history.map((item) => item.id),
         currentIndex: selectedIndex >= 0 ? selectedIndex : null,
       },
@@ -1983,6 +2007,7 @@ function App() {
       queryOverride = null,
       allowAi = true,
       source = "foreground",
+      descriptorOverride = null,
     }: {
       resetScroll?: boolean;
       respectManualScroll?: boolean;
@@ -1990,10 +2015,13 @@ function App() {
       queryOverride?: string | null;
       allowAi?: boolean;
       source?: "foreground" | "background";
+      descriptorOverride?: AppliedSearchDescriptor | null;
     } = {}) => {
       const trimmed = (queryOverride ?? query).trim();
       const originalSearchInput = historySearchInput(trimmed, aiComposerMode);
       let searchInput = originalSearchInput;
+      const appliedDescriptorForRequest = descriptorOverride
+        ?? (source === "background" ? appliedDescriptorRef.current : null);
       if (!allowAi && searchInput.mode === "ai") {
         if (historyInputQuery === trimmed && historyQuery.trim()) {
           searchInput = { query: historyQuery, mode: "structured" };
@@ -2021,17 +2049,25 @@ function App() {
       if (planningAi) {
         setAiPlanning(true);
       }
+      dispatchSearch({
+        type: "applyStarted",
+        generation: requestSeq,
+        query: trimmed,
+      });
 
       let page: HistoryPage;
       try {
         page = await historySearch({
-          query: searchInput.query,
+          query: appliedDescriptorForRequest?.effectiveQuery ?? searchInput.query,
+          displayQuery: appliedDescriptorForRequest?.displayQuery ?? trimmed,
           cursor: null,
           limit: HISTORY_PAGE_LIMIT,
-          mode: searchInput.mode,
+          mode: appliedDescriptorForRequest?.mode ?? searchInput.mode,
           includeContent: false,
           includeCounts: true,
           explain: true,
+          plan: appliedDescriptorForRequest?.plan ?? null,
+          appliedDescriptor: appliedDescriptorForRequest,
           aiContext: searchInput.mode === "ai"
             ? {
                 currentQuery: historyQuery,
@@ -2051,6 +2087,7 @@ function App() {
             setForegroundSearchInFlight(false);
           }
           setHistoryError(String(error));
+          dispatchSearch({ type: "applyFailed", generation: requestSeq, error: String(error) });
           setSearchInterpretation(
             trimmed
               ? {
@@ -2076,6 +2113,10 @@ function App() {
         foregroundSearchInFlightRef.current = false;
         setForegroundSearchInFlight(false);
       }
+
+      const appliedDescriptor = isAppliedSearchDescriptor(page.appliedDescriptor)
+        ? page.appliedDescriptor
+        : appliedDescriptorForRequest;
 
       const scrollTop = historyScrollRef.current?.scrollTop ?? 0;
       const incomingFirstId = page.items[0]?.id ?? null;
@@ -2138,6 +2179,15 @@ function App() {
       setAiPlanning(false);
       setNewClipsAvailable(false);
       setHistoryError(null);
+      if (appliedDescriptor) {
+        appliedDescriptorRef.current = appliedDescriptor;
+        dispatchSearch({
+          type: "applySucceeded",
+          generation: requestSeq,
+          descriptor: appliedDescriptor,
+          page: page as AppliedSearchPage<HistoryItem, HistoryPageCursor>,
+        });
+      }
       const canResetSelection = resetScroll && selectionInteractionSeq === selectionInteractionSeqRef.current;
       setSelectedIds((current) => {
         if (canResetSelection) {
@@ -2212,11 +2262,13 @@ function App() {
         return;
       }
       deferredAppliedRefreshRef.current = false;
+      const appliedDescriptor = appliedDescriptorRef.current;
       await refreshHistory({
         ...options,
-        queryOverride: applied,
+        queryOverride: appliedDescriptor?.effectiveQuery ?? applied,
         allowAi: false,
         source: "background",
+        descriptorOverride: appliedDescriptor,
       });
     },
     [refreshHistory],
@@ -2307,7 +2359,9 @@ function App() {
       return;
     }
 
-    const appliedQuery = historyQuery;
+    const appliedDescriptor = appliedDescriptorRef.current;
+    const appliedQuery = appliedDescriptor?.effectiveQuery ?? historyQuery;
+    const appliedFingerprint = appliedDescriptor?.fingerprint ?? null;
     const cursor = historyNextCursor;
     const firstPageSeq = historyRequestSeqRef.current;
     const loadSeq = ++historyLoadMoreSeqRef.current;
@@ -2316,16 +2370,20 @@ function App() {
     try {
       const page = await historySearch({
         query: appliedQuery,
+        displayQuery: appliedDescriptor?.displayQuery ?? appliedQuery,
         cursor,
         limit: HISTORY_PAGE_LIMIT,
-        mode: "structured",
+        mode: appliedDescriptor?.mode ?? "structured",
         includeContent: false,
         includeCounts: false,
+        plan: appliedDescriptor?.plan ?? null,
+        appliedDescriptor,
       });
 
       if (
         loadSeq !== historyLoadMoreSeqRef.current ||
-        firstPageSeq !== historyRequestSeqRef.current
+        firstPageSeq !== historyRequestSeqRef.current ||
+        appliedFingerprint !== (appliedDescriptorRef.current?.fingerprint ?? null)
       ) {
         return;
       }
@@ -2346,10 +2404,19 @@ function App() {
       }
       setHistoryQuery(appliedQuery);
       setHistoryError(null);
+      if (appliedDescriptor) {
+        dispatchSearch({
+          type: "pageAppended",
+          generation: firstPageSeq,
+          page: page as AppliedSearchPage<HistoryItem, HistoryPageCursor>,
+        });
+      }
     } catch (error) {
       if (loadSeq === historyLoadMoreSeqRef.current) {
-        setHistoryNextCursor(null);
         setHistoryError(String(error));
+        if (appliedDescriptor) {
+          dispatchSearch({ type: "pageFailed", generation: firstPageSeq, error: String(error) });
+        }
       }
     } finally {
       if (loadSeq === historyLoadMoreSeqRef.current) {
@@ -2885,7 +2952,7 @@ function App() {
           focusSearch();
           return;
         }
-        const markQuery = historyQuery.trim();
+        const markQuery = (appliedDescriptorRef.current?.effectiveQuery ?? historyQuery).trim();
         if (aiComposerMode && !markQuery) {
           setActionError("Mark all results needs an applied structured filter outside AI mode.");
           focusSearch();
@@ -3817,6 +3884,7 @@ function App() {
     skipNextRealtimeSearchRef.current = true;
     queryRef.current = "";
     setQuery("");
+    dispatchSearch({ type: "draftChanged", query: "", status: "applying" });
     setDismissedAutocompleteQuery(null);
     setSearchInterpretation(null);
     setActionError(null);
@@ -3831,6 +3899,7 @@ function App() {
     skipNextRealtimeSearchRef.current = true;
     queryRef.current = chip.queryWithoutClause;
     setQuery(chip.queryWithoutClause);
+    dispatchSearch({ type: "draftChanged", query: chip.queryWithoutClause, status: "applying" });
     setSearchInterpretation(null);
     setSelectedItemId(null);
     setSelectedIds(new Set());
@@ -3864,6 +3933,11 @@ function App() {
     setDismissedAutocompleteQuery(nextQuery);
     setQuery(nextQuery);
     setHistoryPending(searchTriggerMode === "realtime" && !nextStructuredHold);
+    dispatchSearch({
+      type: "draftChanged",
+      query: nextQuery,
+      status: nextStructuredHold ? "held" : searchTriggerMode === "realtime" ? "applying" : "idle",
+    });
     setAiPlanning(false);
     setActionError(null);
     setSearchInterpretation(null);
@@ -3910,6 +3984,11 @@ function App() {
       queryRef.current = nextQuery;
       setQuery(nextQuery);
       setHistoryPending(!isScenarioCommand(nextQuery) && searchTriggerMode === "realtime" && !nextStructuredHold);
+      dispatchSearch({
+        type: "draftChanged",
+        query: nextQuery,
+        status: nextStructuredHold ? "held" : searchTriggerMode === "realtime" ? "applying" : "idle",
+      });
       setAiPlanning(false);
       setActionError(null);
       setSearchInterpretation(null);

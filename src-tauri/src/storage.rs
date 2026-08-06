@@ -267,10 +267,101 @@ impl Default for HistorySearchMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AppliedSearchMode {
+    Structured,
+    Ai,
+}
+
+impl From<HistorySearchMode> for AppliedSearchMode {
+    fn from(value: HistorySearchMode) -> Self {
+        match value {
+            HistorySearchMode::Ai => Self::Ai,
+            HistorySearchMode::Plain | HistorySearchMode::Structured => Self::Structured,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedSearchDescriptor {
+    pub schema_version: u8,
+    pub display_query: String,
+    pub effective_query: String,
+    pub mode: AppliedSearchMode,
+    pub plan: SearchPlanV1,
+    pub fingerprint: String,
+}
+
+impl AppliedSearchDescriptor {
+    pub const SCHEMA_VERSION: u8 = 1;
+
+    pub fn for_query(
+        display_query: impl Into<String>,
+        effective_query: impl Into<String>,
+        mode: AppliedSearchMode,
+    ) -> Result<Self, String> {
+        let effective_query = effective_query.into();
+        let plan = search_plan_from_query(effective_query.trim());
+        Self::new(display_query, effective_query, mode, plan)
+    }
+
+    pub fn new(
+        display_query: impl Into<String>,
+        effective_query: impl Into<String>,
+        mode: AppliedSearchMode,
+        plan: SearchPlanV1,
+    ) -> Result<Self, String> {
+        compile_search_plan(&plan)?;
+        let descriptor = Self {
+            schema_version: Self::SCHEMA_VERSION,
+            display_query: display_query.into(),
+            effective_query: effective_query.into(),
+            mode,
+            plan,
+            fingerprint: String::new(),
+        };
+        Ok(Self {
+            fingerprint: descriptor.fingerprint_for_plan()?,
+            ..descriptor
+        })
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema_version != Self::SCHEMA_VERSION {
+            return Err(format!(
+                "unsupported applied search descriptor schema version: {}",
+                self.schema_version
+            ));
+        }
+        compile_search_plan(&self.plan)?;
+        let expected = self.fingerprint_for_plan()?;
+        if self.fingerprint != expected {
+            return Err("applied search descriptor fingerprint does not match its plan".to_string());
+        }
+        Ok(())
+    }
+
+    fn fingerprint_for_plan(&self) -> Result<String, String> {
+        let basis = serde_json::json!({
+            "schemaVersion": self.schema_version,
+            "mode": self.mode,
+            "plan": self.plan,
+        });
+        let encoded = serde_json::to_vec(&basis)
+            .map_err(|error| format!("serialize applied search descriptor fingerprint: {error}"))?;
+        let digest = Sha256::digest(encoded);
+        Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistorySearchRequest {
     pub query: String,
+    #[serde(default)]
+    pub display_query: Option<String>,
     pub cursor: Option<HistoryPageCursor>,
     pub limit: Option<i64>,
     #[serde(default)]
@@ -285,6 +376,8 @@ pub struct HistorySearchRequest {
     pub explain: bool,
     #[serde(default)]
     pub ai_context: Option<crate::ai_planner::AiScriptContext>,
+    #[serde(default, alias = "descriptor")]
+    pub applied_descriptor: Option<AppliedSearchDescriptor>,
 }
 
 #[derive(Clone, Serialize)]
@@ -321,6 +414,7 @@ pub struct HistoryPage {
     pub explanation: Option<String>,
     pub query_explanation: Option<HistorySearchExplanation>,
     pub warnings: Vec<String>,
+    pub applied_descriptor: Option<AppliedSearchDescriptor>,
 }
 
 pub struct NewActionRun {
@@ -1292,6 +1386,7 @@ impl AppStorage {
     pub fn list_page(&self, request: HistoryPageRequest) -> Result<HistoryPage, String> {
         self.history_search(HistorySearchRequest {
             query: request.query,
+            display_query: None,
             cursor: request.cursor,
             limit: request.limit,
             plan: None,
@@ -1300,6 +1395,7 @@ impl AppStorage {
             include_counts: true,
             explain: false,
             ai_context: None,
+            applied_descriptor: None,
         })
     }
 
@@ -1337,12 +1433,36 @@ impl AppStorage {
                     .then(|| "Fix the structured search syntax before searching.".to_string()),
                 query_explanation: request.explain.then_some(query_explanation),
                 warnings,
+                applied_descriptor: None,
             });
         }
 
-        let plan = request
-            .plan
-            .clone()
+        let descriptor = if let Some(descriptor) = request.applied_descriptor.clone() {
+            descriptor.validate()?;
+            if request.cursor.is_some()
+                && descriptor.effective_query.trim() != trimmed
+            {
+                return Err("applied search descriptor does not match the request query".to_string());
+            }
+            Some(descriptor)
+        } else {
+            let plan = request
+                .plan
+                .clone()
+                .unwrap_or_else(|| search_plan_from_query(trimmed));
+            Some(AppliedSearchDescriptor::new(
+                request
+                    .display_query
+                    .clone()
+                    .unwrap_or_else(|| trimmed.to_string()),
+                trimmed,
+                request.mode.clone().into(),
+                plan,
+            )?)
+        };
+        let plan = descriptor
+            .as_ref()
+            .map(|descriptor| descriptor.plan.clone())
             .unwrap_or_else(|| search_plan_from_query(trimmed));
         let custom_sort = !plan.sort.is_empty();
         if request.cursor.is_some() && custom_sort {
@@ -1395,6 +1515,7 @@ impl AppStorage {
                 request.explain.then(|| explain_history_query(trimmed)),
                 request.explain.then(|| query_explanation.clone()),
                 warnings,
+                descriptor.clone(),
             )?;
             drop(conn);
             self.attach_thumbnail_data_urls(&mut page.items);
@@ -1414,6 +1535,7 @@ impl AppStorage {
             request.explain.then(|| explain_history_query(trimmed)),
             request.explain.then_some(query_explanation),
             warnings,
+            descriptor,
         )?;
         if custom_sort {
             page.next_cursor = None;
@@ -4361,6 +4483,11 @@ mod tests {
         assert_eq!(ids(&first_page.items), vec![5, 4]);
         assert_eq!(first_page.total_count, Some(5));
         assert_eq!(first_page.filtered_count, Some(5));
+        let first_descriptor = first_page
+            .applied_descriptor
+            .clone()
+            .expect("first page should identify its applied search");
+        assert_eq!(first_descriptor.effective_query, "");
         assert_eq!(
             first_page.next_cursor,
             Some(HistoryPageCursor {
@@ -4379,6 +4506,14 @@ mod tests {
         assert_eq!(ids(&second_page.items), vec![3, 2]);
         assert_eq!(second_page.total_count, Some(5));
         assert_eq!(second_page.filtered_count, Some(5));
+        assert_eq!(
+            second_page
+                .applied_descriptor
+                .as_ref()
+                .expect("second page should identify its applied search")
+                .fingerprint,
+            first_descriptor.fingerprint
+        );
     }
 
     #[test]
@@ -4389,6 +4524,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: "sqlite".to_string(),
+                display_query: None,
                 cursor: None,
                 limit: Some(10),
                 plan: None,
@@ -4397,11 +4533,19 @@ mod tests {
                 include_counts: true,
                 explain: true,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("history search should load");
 
         assert_eq!(ids(&page.items), vec![1]);
         assert_eq!(page.interpreted_query.as_deref(), Some("sqlite"));
+        assert_eq!(
+            page.applied_descriptor
+                .as_ref()
+                .expect("AI page should identify its applied search")
+                .mode,
+            AppliedSearchMode::Ai
+        );
         assert!(page
             .explanation
             .as_deref()
@@ -4418,6 +4562,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: "kind:".to_string(),
+                display_query: None,
                 cursor: None,
                 limit: Some(10),
                 plan: None,
@@ -4426,6 +4571,7 @@ mod tests {
                 include_counts: true,
                 explain: true,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("malformed query should return a diagnostic page");
 
@@ -4438,6 +4584,50 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "missingValue" && diagnostic.severity == "error"));
+    }
+
+    #[test]
+    fn applied_search_descriptor_round_trips_and_rejects_tampering() {
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "AI invoices",
+            "tag:work invoice",
+            AppliedSearchMode::Ai,
+        )
+        .expect("descriptor should be created from a validated query");
+        let encoded = serde_json::to_string(&descriptor).expect("descriptor should serialize");
+        let decoded: AppliedSearchDescriptor =
+            serde_json::from_str(&encoded).expect("descriptor should deserialize");
+        assert_eq!(decoded, descriptor);
+        decoded.validate().expect("round-tripped descriptor should validate");
+
+        let mut tampered = decoded;
+        tampered.plan = search_plan_from_query("tag:private");
+        assert!(tampered.validate().is_err());
+    }
+
+    #[test]
+    fn applied_search_fingerprint_is_semantic_and_excludes_display_query() {
+        let first = AppliedSearchDescriptor::for_query(
+            "private clipboard phrase",
+            "tag:work",
+            AppliedSearchMode::Structured,
+        )
+        .expect("first descriptor");
+        let second = AppliedSearchDescriptor::for_query(
+            "different visible wording",
+            "tag:work",
+            AppliedSearchMode::Structured,
+        )
+        .expect("second descriptor");
+        assert_eq!(first.fingerprint, second.fingerprint);
+
+        let changed = AppliedSearchDescriptor::for_query(
+            "different visible wording",
+            "tag:personal",
+            AppliedSearchMode::Structured,
+        )
+        .expect("changed descriptor");
+        assert_ne!(first.fingerprint, changed.fingerprint);
     }
 
     #[test]
@@ -4536,6 +4726,7 @@ mod tests {
             let page = storage
                 .history_search(HistorySearchRequest {
                     query: query.to_string(),
+                    display_query: None,
                     cursor: None,
                     limit: Some(10),
                     plan: None,
@@ -4544,6 +4735,7 @@ mod tests {
                     include_counts: true,
                     explain: false,
                     ai_context: None,
+                    applied_descriptor: None,
                 })
                 .unwrap_or_else(|error| panic!("query {query} should search context: {error}"));
             assert_eq!(
@@ -4760,6 +4952,7 @@ mod tests {
         let preview_page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: Some(10),
                 plan: None,
@@ -4768,6 +4961,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("preview page should load");
 
@@ -4784,6 +4978,7 @@ mod tests {
         let full_page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: Some(10),
                 plan: None,
@@ -4792,6 +4987,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("full page should load");
 
@@ -4821,6 +5017,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: Some(10),
                 plan: None,
@@ -4829,6 +5026,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("image page should load");
 
@@ -4911,6 +5109,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: "needle".to_string(),
+                display_query: None,
                 cursor: None,
                 limit: Some(2),
                 plan: None,
@@ -4919,6 +5118,7 @@ mod tests {
                 include_counts: false,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("history search without counts should load");
 
@@ -5114,6 +5314,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: "tag:backend".to_string(),
+                display_query: None,
                 cursor: None,
                 limit: Some(10),
                 plan: None,
@@ -5122,6 +5323,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("tag search should load");
         assert_eq!(ids(&page.items), vec![1]);
@@ -5846,6 +6048,7 @@ mod tests {
         let recent_page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: Some(60),
                 plan: None,
@@ -5854,6 +6057,7 @@ mod tests {
                 include_counts: false,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("recent benchmark query should load");
         let recent_ms = recent_started.elapsed().as_millis();
@@ -5862,6 +6066,7 @@ mod tests {
         let target_page = storage
             .history_search(HistorySearchRequest {
                 query: "phase7-target-needle".to_string(),
+                display_query: None,
                 cursor: None,
                 limit: Some(60),
                 plan: None,
@@ -5870,6 +6075,7 @@ mod tests {
                 include_counts: false,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("target benchmark query should load");
         let target_ms = target_started.elapsed().as_millis();
@@ -5878,6 +6084,7 @@ mod tests {
         let counted_page = storage
             .history_search(HistorySearchRequest {
                 query: "phase7-target-needle".to_string(),
+                display_query: None,
                 cursor: None,
                 limit: Some(60),
                 plan: None,
@@ -5886,6 +6093,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("counted benchmark query should load");
         let counted_ms = counted_started.elapsed().as_millis();
@@ -5926,6 +6134,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: None,
                 plan: Some(SearchPlanV1 {
@@ -5948,6 +6157,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("plan search should load");
 
@@ -5962,6 +6172,7 @@ mod tests {
 
         let result = storage.history_search(HistorySearchRequest {
             query: String::new(),
+            display_query: None,
             cursor: Some(HistoryPageCursor {
                 after_sort_unix_ms: 30_001,
                 after_id: 1,
@@ -5980,6 +6191,7 @@ mod tests {
             include_counts: false,
             explain: false,
             ai_context: None,
+            applied_descriptor: None,
         });
         let error = match result {
             Ok(_) => panic!("custom sort cursor must be rejected until it is sort-aware"),
@@ -5998,6 +6210,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: Some(1),
                 plan: Some(SearchPlanV1 {
@@ -6013,6 +6226,7 @@ mod tests {
                 include_counts: false,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("custom sort first page should load");
 
@@ -6069,6 +6283,7 @@ mod tests {
         let page = storage
             .history_search(HistorySearchRequest {
                 query: String::new(),
+                display_query: None,
                 cursor: None,
                 limit: None,
                 plan: Some(SearchPlanV1 {
@@ -6089,6 +6304,7 @@ mod tests {
                 include_counts: true,
                 explain: false,
                 ai_context: None,
+                applied_descriptor: None,
             })
             .expect("scoped plan search should load");
 
