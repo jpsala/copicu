@@ -1104,6 +1104,8 @@ function App() {
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
   const historyLoadMoreSeqRef = useRef(0);
+  const searchIntentGenerationRef = useRef(0);
+  const appliedSnapshotGenerationRef = useRef(0);
   const appliedDescriptorRef = useRef<AppliedSearchDescriptor | null>(null);
   const queryRef = useRef(query);
   const queryInteractionSeqRef = useRef(0);
@@ -1131,8 +1133,7 @@ function App() {
 
   const supersedeSearchIntent = useCallback(
     (draftQuery: string, status: "idle" | "held" | "applying") => {
-      const generation = ++historyRequestSeqRef.current;
-      historyLoadMoreSeqRef.current += 1;
+      const intentGeneration = ++searchIntentGenerationRef.current;
       foregroundSearchInFlightRef.current = false;
       setForegroundSearchInFlight(false);
       setAiPlanning(false);
@@ -1141,7 +1142,7 @@ function App() {
         type: "draftChanged",
         query: draftQuery,
         status,
-        generation,
+        generation: intentGeneration,
       });
     },
     [],
@@ -1237,6 +1238,7 @@ function App() {
   useEffect(() => {
     if (searchState.applied) {
       appliedDescriptorRef.current = searchState.applied.descriptor;
+      appliedSnapshotGenerationRef.current = searchState.applied.generation;
     }
   }, [searchState.applied]);
 
@@ -2042,6 +2044,11 @@ function App() {
       let searchInput = originalSearchInput;
       const appliedDescriptorForRequest = descriptorOverride
         ?? (source === "background" ? appliedDescriptorRef.current : null);
+      const foreground = source === "foreground";
+      const intentGeneration = searchIntentGenerationRef.current;
+      if (source === "background" && !isAppliedSearchDescriptor(appliedDescriptorForRequest)) {
+        return;
+      }
       if (!allowAi && searchInput.mode === "ai") {
         if (historyInputQuery === trimmed && historyQuery.trim()) {
           searchInput = { query: historyQuery, mode: "structured" };
@@ -2053,7 +2060,6 @@ function App() {
         deferredAppliedRefreshRef.current = true;
         return;
       }
-      const foreground = source === "foreground";
       if (foreground) {
         foregroundSearchInFlightRef.current = true;
         setForegroundSearchInFlight(true);
@@ -2066,7 +2072,7 @@ function App() {
       const descriptorRequest = appliedDescriptorForRequest
         ? appliedSearchRequestFields(appliedDescriptorForRequest)
         : null;
-      if (showPending) {
+      if (showPending && foreground) {
         setHistoryPending(true);
       }
       if (planningAi) {
@@ -2074,8 +2080,11 @@ function App() {
       }
       dispatchSearch({
         type: "applyStarted",
-        generation: requestSeq,
+        generation: foreground ? intentGeneration : appliedSnapshotGenerationRef.current,
         query: appliedDescriptorForRequest?.displayQuery ?? trimmed,
+        source,
+        intentGeneration,
+        descriptor: appliedDescriptorForRequest,
       });
 
       let page: HistoryPage;
@@ -2102,34 +2111,49 @@ function App() {
             : null,
         });
       } catch (error) {
-        if (requestSeq === historyRequestSeqRef.current) {
-          setHistoryPending(false);
-          setAiPlanning(false);
+        const requestIsCurrent = requestSeq === historyRequestSeqRef.current
+          && (!foreground || intentGeneration === searchIntentGenerationRef.current);
+        if (requestIsCurrent) {
+          if (foreground) {
+            setHistoryPending(false);
+            setAiPlanning(false);
+          }
           if (foreground) {
             foregroundSearchInFlightRef.current = false;
             setForegroundSearchInFlight(false);
           }
           setHistoryError(String(error));
-          dispatchSearch({ type: "applyFailed", generation: requestSeq, error: String(error) });
-          setSearchInterpretation(
-            trimmed
-              ? {
-                  mode: searchInput.mode === "ai" ? "ai" : "structured",
-                  query: searchInput.query,
-                  explanation: searchInput.mode === "ai"
-                    ? "AI search failed before Copicu could run local structured search."
-                    : null,
-                  chips: [],
-                  diagnostics: [],
-                  warnings: [String(error)],
-                }
-              : null,
-          );
+          dispatchSearch({
+            type: "applyFailed",
+            generation: foreground ? intentGeneration : appliedSnapshotGenerationRef.current,
+            intentGeneration,
+            source,
+            error: String(error),
+          });
+          if (foreground) {
+            setSearchInterpretation(
+              trimmed
+                ? {
+                    mode: searchInput.mode === "ai" ? "ai" : "structured",
+                    query: searchInput.query,
+                    explanation: searchInput.mode === "ai"
+                      ? "AI search failed before Copicu could run local structured search."
+                      : null,
+                    chips: [],
+                    diagnostics: [],
+                    warnings: [String(error)],
+                  }
+                : null,
+            );
+          }
         }
         return;
       }
 
-      if (requestSeq !== historyRequestSeqRef.current) {
+      if (
+        requestSeq !== historyRequestSeqRef.current
+        || (foreground && intentGeneration !== searchIntentGenerationRef.current)
+      ) {
         return;
       }
       if (foreground) {
@@ -2150,18 +2174,50 @@ function App() {
         const descriptorError = !appliedDescriptor
           ? "Search response did not include a valid applied descriptor."
           : "Search response changed the applied descriptor.";
-        setHistoryPending(false);
-        setAiPlanning(false);
+        if (foreground) {
+          setHistoryPending(false);
+          setAiPlanning(false);
+        }
         setHistoryError(descriptorError);
-        dispatchSearch({ type: "applyFailed", generation: requestSeq, error: descriptorError });
+        dispatchSearch({
+          type: "applyFailed",
+          generation: foreground ? intentGeneration : appliedSnapshotGenerationRef.current,
+          intentGeneration,
+          source,
+          error: descriptorError,
+        });
         return;
       }
+      const snapshotGeneration = foreground
+        ? appliedSnapshotGenerationRef.current + 1
+        : appliedSnapshotGenerationRef.current;
+      if (
+        !foreground
+        && (
+          !searchState.applied
+          || searchState.applied.generation !== snapshotGeneration
+        )
+      ) {
+        const snapshotError = "Background refresh lost the visible applied snapshot.";
+        setHistoryError(snapshotError);
+        dispatchSearch({
+          type: "applyFailed",
+          generation: snapshotGeneration,
+          intentGeneration,
+          source,
+          error: snapshotError,
+        });
+        return;
+      }
+      const committedDescriptor = foreground
+        ? appliedDescriptor
+        : searchState.applied?.descriptor ?? appliedDescriptor;
 
       const scrollTop = historyScrollRef.current?.scrollTop ?? 0;
       const incomingFirstId = page.items[0]?.id ?? null;
       const currentFirstId = historyRef.current[0]?.id ?? null;
       const canRetainAppliedSnapshot =
-        appliedDescriptorRef.current?.fingerprint === appliedDescriptor.fingerprint;
+        appliedDescriptorRef.current?.fingerprint === committedDescriptor.fingerprint;
       if (respectManualScroll && scrollTop > 24 && canRetainAppliedSnapshot) {
         if (
           currentFirstId !== null &&
@@ -2177,52 +2233,20 @@ function App() {
           setHistoryFilteredCount(page.filteredCount);
         }
         void refreshMarkedCount().catch(() => undefined);
-        setHistoryPending(false);
-        setAiPlanning(false);
+        if (foreground) {
+          setHistoryPending(false);
+          setAiPlanning(false);
+        }
         setHistoryError(null);
         dispatchSearch({
           type: "applyRetained",
-          generation: requestSeq,
-          descriptor: appliedDescriptor,
+          generation: snapshotGeneration,
+          descriptor: committedDescriptor,
           page,
+          source,
         });
         return;
       }
-
-      const reusingAppliedDescriptor = appliedDescriptorForRequest !== null;
-      const preservingAppliedAi = reusingAppliedDescriptor && appliedDescriptor.mode === "ai";
-      const previousInterpretation = searchInterpretation;
-      const visibleDisplayQuery = appliedDescriptor.displayQuery.trim() || trimmed;
-      const visibleMode = appliedDescriptor.mode === "ai" || originalSearchInput.mode === "ai"
-        ? "ai"
-        : "structured";
-      const visibleInterpretationQuery = preservingAppliedAi
-        ? previousInterpretation?.query
-          ?? searchState.applied?.descriptor.effectiveQuery
-          ?? page.interpretedQuery
-          ?? appliedDescriptor.effectiveQuery
-        : originalSearchInput.mode === "ai"
-          ? page.interpretedQuery ?? searchInput.query
-          : searchInput.query;
-      const visibleExplanation = preservingAppliedAi
-        ? previousInterpretation?.explanation
-          ?? searchState.applied?.explanation
-          ?? page.explanation
-          ?? null
-        : page.explanation ?? null;
-      const visibleQueryExplanation = preservingAppliedAi && previousInterpretation
-        ? {
-            version: 1,
-            chips: previousInterpretation.chips,
-            diagnostics: previousInterpretation.diagnostics,
-          }
-        : page.queryExplanation;
-      const visibleWarnings = preservingAppliedAi
-        ? previousInterpretation?.warnings
-          ?? searchState.applied?.warnings
-          ?? page.warnings
-          ?? []
-        : page.warnings ?? [];
 
       historyRef.current = page.items;
       setHistory(page.items);
@@ -2233,37 +2257,78 @@ function App() {
       if (typeof page.filteredCount === "number") {
         setHistoryFilteredCount(page.filteredCount);
       }
-      historyInputQueryRef.current = visibleDisplayQuery;
-      setHistoryInputQuery(visibleDisplayQuery);
-      setHistoryQuery(visibleInterpretationQuery);
-      const showInterpretation = Boolean(visibleDisplayQuery) && (
-        visibleMode === "ai" ||
-        (visibleQueryExplanation?.chips.length ?? 0) > 0 ||
-        (visibleQueryExplanation?.diagnostics.length ?? 0) > 0 ||
-        visibleWarnings.length > 0
-      );
-      setSearchInterpretation(
-        showInterpretation
+      if (foreground) {
+        const reusingAppliedDescriptor = appliedDescriptorForRequest !== null;
+        const preservingAppliedAi = reusingAppliedDescriptor && appliedDescriptor.mode === "ai";
+        const previousInterpretation = searchInterpretation;
+        const visibleDisplayQuery = appliedDescriptor.displayQuery.trim() || trimmed;
+        const visibleMode = appliedDescriptor.mode === "ai" || originalSearchInput.mode === "ai"
+          ? "ai"
+          : "structured";
+        const visibleInterpretationQuery = preservingAppliedAi
+          ? previousInterpretation?.query
+            ?? searchState.applied?.descriptor.effectiveQuery
+            ?? page.interpretedQuery
+            ?? appliedDescriptor.effectiveQuery
+          : originalSearchInput.mode === "ai"
+            ? page.interpretedQuery ?? searchInput.query
+            : searchInput.query;
+        const visibleExplanation = preservingAppliedAi
+          ? previousInterpretation?.explanation
+            ?? searchState.applied?.explanation
+            ?? page.explanation
+            ?? null
+          : page.explanation ?? null;
+        const visibleQueryExplanation = preservingAppliedAi && previousInterpretation
           ? {
-              mode: visibleMode,
-              query: visibleInterpretationQuery,
-              explanation: visibleExplanation,
-              chips: visibleQueryExplanation?.chips ?? [],
-              diagnostics: visibleQueryExplanation?.diagnostics ?? [],
-              warnings: visibleWarnings,
+              version: 1,
+              chips: previousInterpretation.chips,
+              diagnostics: previousInterpretation.diagnostics,
             }
-          : null,
-      );
-      setHistoryPending(false);
-      setAiPlanning(false);
-      setNewClipsAvailable(false);
+          : page.queryExplanation;
+        const visibleWarnings = preservingAppliedAi
+          ? previousInterpretation?.warnings
+            ?? searchState.applied?.warnings
+            ?? page.warnings
+            ?? []
+          : page.warnings ?? [];
+        historyInputQueryRef.current = visibleDisplayQuery;
+        setHistoryInputQuery(visibleDisplayQuery);
+        setHistoryQuery(visibleInterpretationQuery);
+        const showInterpretation = Boolean(visibleDisplayQuery) && (
+          visibleMode === "ai" ||
+          (visibleQueryExplanation?.chips.length ?? 0) > 0 ||
+          (visibleQueryExplanation?.diagnostics.length ?? 0) > 0 ||
+          visibleWarnings.length > 0
+        );
+        setSearchInterpretation(
+          showInterpretation
+            ? {
+                mode: visibleMode,
+                query: visibleInterpretationQuery,
+                explanation: visibleExplanation,
+                chips: visibleQueryExplanation?.chips ?? [],
+                diagnostics: visibleQueryExplanation?.diagnostics ?? [],
+                warnings: visibleWarnings,
+              }
+            : null,
+        );
+        setHistoryPending(false);
+        setAiPlanning(false);
+        setNewClipsAvailable(false);
+      }
       setHistoryError(null);
-      appliedDescriptorRef.current = appliedDescriptor;
+      appliedDescriptorRef.current = committedDescriptor;
+      if (foreground) {
+        appliedSnapshotGenerationRef.current = snapshotGeneration;
+      }
       dispatchSearch({
         type: "applySucceeded",
-        generation: requestSeq,
-        descriptor: appliedDescriptor,
+        generation: snapshotGeneration,
+        descriptor: committedDescriptor,
         page: page as AppliedSearchPage<HistoryItem, HistoryPageCursor>,
+        source,
+        intentGeneration,
       });
       const canResetSelection = resetScroll && selectionInteractionSeq === selectionInteractionSeqRef.current;
       setSelectedIds((current) => {
@@ -2449,19 +2514,21 @@ function App() {
       setHistoryError("Cannot paginate without a valid applied search descriptor.");
       return;
     }
+    const appliedSnapshot = searchState.applied;
     if (
-      searchState.generation !== historyRequestSeqRef.current
-      || searchState.applied?.generation !== historyRequestSeqRef.current
+      !appliedSnapshot
+      || appliedSnapshot.generation !== appliedSnapshotGenerationRef.current
+      || searchState.generation !== appliedSnapshot.generation
+      || appliedSnapshot.descriptor.fingerprint !== appliedDescriptor.fingerprint
     ) {
       setHistoryError("Cannot paginate while the applied search snapshot is settling.");
       return;
     }
     const descriptorRequest = appliedSearchRequestFields(appliedDescriptor);
-    const appliedQuery = appliedDescriptor?.effectiveQuery ?? historyQuery;
+    const appliedQuery = appliedDescriptor.effectiveQuery;
     const appliedFingerprint = appliedDescriptor.fingerprint;
     const cursor = historyNextCursor;
-    const firstPageSeq = historyRequestSeqRef.current;
-    const firstPageGeneration = searchState.applied?.generation ?? null;
+    const firstPageGeneration = appliedSnapshot.generation;
     const loadSeq = ++historyLoadMoreSeqRef.current;
     setHistoryLoadingMore(true);
 
@@ -2480,7 +2547,6 @@ function App() {
 
       if (
         loadSeq !== historyLoadMoreSeqRef.current ||
-        firstPageSeq !== historyRequestSeqRef.current ||
         firstPageGeneration !== searchState.applied?.generation ||
         appliedFingerprint !== (appliedDescriptorRef.current?.fingerprint ?? null)
       ) {
@@ -2496,7 +2562,7 @@ function App() {
 
       dispatchSearch({
         type: "pageAppended",
-        generation: firstPageSeq,
+        generation: firstPageGeneration,
         descriptor: appliedDescriptor,
         page: page as AppliedSearchPage<HistoryItem, HistoryPageCursor>,
       });
@@ -2520,7 +2586,11 @@ function App() {
     } catch (error) {
       if (loadSeq === historyLoadMoreSeqRef.current) {
         setHistoryError(String(error));
-        dispatchSearch({ type: "pageFailed", generation: firstPageSeq, error: String(error) });
+        dispatchSearch({
+          type: "pageFailed",
+          generation: firstPageGeneration,
+          error: String(error),
+        });
       }
     } finally {
       if (loadSeq === historyLoadMoreSeqRef.current) {

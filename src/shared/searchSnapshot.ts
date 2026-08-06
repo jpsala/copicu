@@ -45,9 +45,14 @@ export type PickerSearchState<Item, Cursor = unknown> = {
   draftQuery: string;
   applied: AppliedSearchSnapshot<Item, Cursor> | null;
   filterStatus: PickerSearchFilterStatus;
+  /** Generation/token of the latest draft intent. Draft edits advance this. */
+  intentGeneration: number;
+  /** Generation of the visible applied snapshot. Draft edits do not advance this. */
   generation: number;
   error: string | null;
 };
+
+export type PickerSearchApplySource = "foreground" | "background";
 
 export type PickerSearchAction<Item, Cursor = unknown> =
   | {
@@ -56,27 +61,44 @@ export type PickerSearchAction<Item, Cursor = unknown> =
       status: "idle" | "held" | "applying";
       generation?: number;
     }
-  | { type: "applyStarted"; generation: number; query: string }
+  | {
+      type: "applyStarted";
+      generation: number;
+      query: string;
+      source?: PickerSearchApplySource;
+      intentGeneration?: number;
+      descriptor?: AppliedSearchDescriptor | null;
+    }
   | {
       type: "applySucceeded";
       generation: number;
       descriptor: AppliedSearchDescriptor;
       page: AppliedSearchPage<Item, Cursor>;
+      source?: PickerSearchApplySource;
+      intentGeneration?: number;
     }
-  | { type: "applyFailed"; generation: number; error: string }
+  | {
+      type: "applyFailed";
+      generation: number;
+      error: string;
+      source?: PickerSearchApplySource;
+      intentGeneration?: number;
+    }
   | {
       type: "pageAppended";
       generation: number;
       descriptor: AppliedSearchDescriptor;
       page: AppliedSearchPage<Item, Cursor>;
+      source?: PickerSearchApplySource;
     }
   | {
       type: "applyRetained";
       generation: number;
       descriptor: AppliedSearchDescriptor;
       page?: Pick<AppliedSearchPage<Item, Cursor>, "totalCount" | "filteredCount">;
+      source?: PickerSearchApplySource;
     }
-  | { type: "pageFailed"; generation: number; error: string }
+  | { type: "pageFailed"; generation: number; error: string; source?: PickerSearchApplySource }
   | { type: "clearError" };
 
 export function createPickerSearchState<Item, Cursor = unknown>(
@@ -86,13 +108,10 @@ export function createPickerSearchState<Item, Cursor = unknown>(
     draftQuery,
     applied: null,
     filterStatus: "idle",
+    intentGeneration: 0,
     generation: 0,
     error: null,
   };
-}
-
-function isNewerGeneration(current: number, incoming: number) {
-  return incoming >= current;
 }
 
 function snapshotFromPage<Item, Cursor>(
@@ -113,6 +132,16 @@ function snapshotFromPage<Item, Cursor>(
   };
 }
 
+function intentGenerationForAction(
+  action: { generation: number; intentGeneration?: number },
+) {
+  return action.intentGeneration ?? action.generation;
+}
+
+function snapshotGenerationForAction(action: { generation: number }) {
+  return action.generation;
+}
+
 export function pickerSearchReducer<Item, Cursor = unknown>(
   state: PickerSearchState<Item, Cursor>,
   action: PickerSearchAction<Item, Cursor>,
@@ -120,52 +149,119 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
   switch (action.type) {
     case "draftChanged":
       {
-        const generation = Math.max(
-          state.generation + 1,
-          action.generation ?? state.generation + 1,
+        const intentGeneration = Math.max(
+          state.intentGeneration + 1,
+          action.generation ?? state.intentGeneration + 1,
         );
         return {
           ...state,
           draftQuery: action.query,
           filterStatus: action.status,
-          generation,
+          intentGeneration,
           error: null,
         };
       }
     case "applyStarted":
-      if (!isNewerGeneration(state.generation, action.generation)) {
-        return state;
+      {
+        const source = action.source ?? "foreground";
+        if (source === "background") {
+          const descriptor = action.descriptor;
+          if (
+            !state.applied
+            || snapshotGenerationForAction(action) !== state.generation
+            || !isAppliedSearchDescriptor(descriptor)
+            || descriptor.fingerprint !== state.applied.descriptor.fingerprint
+          ) {
+            return state;
+          }
+          return state;
+        }
+        const intentGeneration = intentGenerationForAction(action);
+        if (intentGeneration < state.intentGeneration) {
+          return state;
+        }
+        return {
+          ...state,
+          draftQuery: action.query,
+          intentGeneration,
+          filterStatus: "applying",
+          error: null,
+        };
       }
-      return {
-        ...state,
-        draftQuery: action.query,
-        generation: action.generation,
-        filterStatus: "applying",
-        error: null,
-      };
     case "applySucceeded":
-      if (
-        action.generation !== state.generation
-        || !isAppliedSearchDescriptor(action.descriptor)
-      ) {
-        return state;
+      {
+        const source = action.source ?? "foreground";
+        if (!isAppliedSearchDescriptor(action.descriptor)) {
+          return state;
+        }
+        if (source === "background") {
+          if (
+            !state.applied
+            || snapshotGenerationForAction(action) !== state.generation
+            || action.descriptor.fingerprint !== state.applied.descriptor.fingerprint
+          ) {
+            return state;
+          }
+          const appliedDescriptor = state.applied.descriptor;
+          const refreshed = snapshotFromPage(
+            appliedDescriptor,
+            action.page,
+            state.applied.generation,
+          );
+          const preservePresentation = state.applied.descriptor.mode === "ai";
+          return {
+            ...state,
+            applied: {
+              ...refreshed,
+              generation: state.applied.generation,
+              explanation: preservePresentation
+                ? state.applied.explanation
+                : refreshed.explanation,
+              queryExplanation: preservePresentation
+                ? state.applied.queryExplanation
+                : refreshed.queryExplanation,
+              warnings: preservePresentation ? state.applied.warnings : refreshed.warnings,
+            },
+            error: null,
+          };
+        }
+        if (intentGenerationForAction(action) !== state.intentGeneration) {
+          return state;
+        }
+        const snapshotGeneration = snapshotGenerationForAction(action);
+        if (snapshotGeneration <= state.generation) {
+          return state;
+        }
+        return {
+          ...state,
+          applied: snapshotFromPage(action.descriptor, action.page, snapshotGeneration),
+          draftQuery: action.descriptor.displayQuery,
+          generation: snapshotGeneration,
+          filterStatus: "idle",
+          error: null,
+        };
       }
-      return {
-        ...state,
-        applied: snapshotFromPage(action.descriptor, action.page, action.generation),
-        draftQuery: action.descriptor.displayQuery,
-        filterStatus: "idle",
-        error: null,
-      };
     case "applyFailed":
-      if (action.generation !== state.generation) {
-        return state;
+      {
+        const source = action.source ?? "foreground";
+        if (source === "background") {
+          if (
+            !state.applied
+            || snapshotGenerationForAction(action) !== state.generation
+          ) {
+            return state;
+          }
+          return { ...state, error: action.error };
+        }
+        if (intentGenerationForAction(action) !== state.intentGeneration) {
+          return state;
+        }
+        return {
+          ...state,
+          filterStatus: "error",
+          error: action.error,
+        };
       }
-      return {
-        ...state,
-        filterStatus: "error",
-        error: action.error,
-      };
     case "pageAppended":
       if (
         !state.applied
@@ -201,7 +297,6 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
             queryExplanation: action.page.queryExplanation ?? state.applied.queryExplanation,
             warnings: action.page.warnings ?? state.applied.warnings,
           },
-          filterStatus: "idle",
           error: null,
         };
       }
@@ -222,7 +317,7 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
           totalCount: action.page?.totalCount ?? state.applied.totalCount,
           filteredCount: action.page?.filteredCount ?? state.applied.filteredCount,
         },
-        filterStatus: "idle",
+        filterStatus: action.source === "background" ? state.filterStatus : "idle",
         error: null,
       };
     case "pageFailed":
@@ -235,7 +330,6 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
       }
       return {
         ...state,
-        filterStatus: "error",
         error: action.error,
       };
     case "clearError":
