@@ -1,4 +1,5 @@
 use crate::storage::{AppStorage, AppliedSearchDescriptor};
+use caseless::Caseless;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{
@@ -1382,7 +1383,7 @@ fn project_notes(source: &str, item: &crate::storage::FindSourceItem) -> Project
 }
 
 fn canonical_casefold(value: &str) -> Vec<char> {
-    value.nfc().flat_map(case_fold_char).collect()
+    value.nfc().default_case_fold().collect()
 }
 
 fn match_projected_field(field: &ProjectedField, needle: &[char]) -> Vec<OffsetSpan> {
@@ -1456,34 +1457,12 @@ fn lowercase_projected_field(field: &ProjectedField) -> (Vec<char>, Vec<OffsetSp
             end_utf16: last_span.end_utf16,
             segment: first_span.segment,
         };
-        for normalized_ch in normalized.chars() {
-            for folded_ch in case_fold_char(normalized_ch) {
-                lowered.push(folded_ch);
-                spans.push(source_span);
-            }
+        for folded_ch in normalized.chars().default_case_fold() {
+            lowered.push(folded_ch);
+            spans.push(source_span);
         }
     }
     (lowered, spans)
-}
-
-fn case_fold_char(ch: char) -> Vec<char> {
-    match ch {
-        // Full Unicode case folding includes compatibility-like singleton and
-        // ligature expansions that Rust's lowercase iterator does not expose.
-        '\u{03c2}' => vec!['\u{03c3}'],
-        '\u{017f}' => vec!['s'],
-        '\u{00b5}' => vec!['\u{03bc}'],
-        '\u{00df}' | '\u{1e9e}' => vec!['s', 's'],
-        '\u{0132}' | '\u{0133}' => vec!['i', 'j'],
-        '\u{0149}' => vec!['\u{02bc}', 'n'],
-        '\u{fb00}' => vec!['f', 'f'],
-        '\u{fb01}' => vec!['f', 'i'],
-        '\u{fb02}' => vec!['f', 'l'],
-        '\u{fb03}' => vec!['f', 'f', 'i'],
-        '\u{fb04}' => vec!['f', 'f', 'l'],
-        '\u{fb05}' | '\u{fb06}' => vec!['s', 't'],
-        _ => ch.to_lowercase().collect(),
-    }
 }
 
 #[cfg(test)]
@@ -1645,7 +1624,7 @@ mod tests {
 
     #[test]
     fn canonical_casefold_is_nfc_accent_sensitive_and_handles_sigma_and_expansion() {
-        let source = vec![item(4, "text", "Cafe\u{301} ΟΣ Straße ſ µ ﬁ ﬃ")];
+        let source = vec![item(4, "text", "Cafe\u{301} ΟΣ Straße ſ µ ﬁ ﬃ ϐ β K")];
         let cancelled = AtomicBool::new(false);
         let (accented, _) = build_occurrence_index(&source, "CAFÉ", &cancelled).unwrap();
         assert_eq!(accented.len(), 1);
@@ -1665,6 +1644,24 @@ mod tests {
         let (single_expansion, _) =
             build_occurrence_index(&[item(5, "text", "ß")], "s", &cancelled).unwrap();
         assert_eq!(single_expansion.len(), 1);
+        let (beta, _) = build_occurrence_index(&source, "β", &cancelled).unwrap();
+        assert_eq!(beta.len(), 2, "U+03D0 must fold to Greek beta");
+        let (kelvin, _) = build_occurrence_index(&source, "k", &cancelled).unwrap();
+        assert_eq!(kelvin.len(), 1, "Kelvin sign must use its official simple fold");
+
+        let (beta_offsets, _) =
+            build_occurrence_index(&[item(6, "text", "ϐβ")], "β", &cancelled).unwrap();
+        assert_eq!(
+            beta_offsets
+                .iter()
+                .map(|occurrence| (occurrence.start_utf16, occurrence.end_utf16))
+                .collect::<Vec<_>>(),
+            vec![(0, 1), (1, 2)]
+        );
+
+        assert_eq!(canonical_casefold("ϐ"), vec!['β']);
+        assert_eq!(canonical_casefold("ŉ"), vec!['\u{02bc}', 'n']);
+        assert_eq!(canonical_casefold("ﬃ"), vec!['f', 'f', 'i']);
     }
 
     #[test]
