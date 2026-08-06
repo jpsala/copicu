@@ -310,6 +310,25 @@ type SearchInterpretation = {
   warnings: string[];
 } | null;
 
+type SearchReplayToken = {
+  query: string;
+  intentGeneration: number;
+  appliedGeneration: number;
+  reason: "foreground" | "draft";
+};
+
+type SearchFailureReplay = {
+  source: "foreground" | "background";
+  query: string;
+  intentGeneration: number;
+  descriptor: AppliedSearchDescriptor | null;
+};
+
+type PendingFilterLock = {
+  query: string;
+  intentGeneration: number;
+};
+
 type AiScriptContext = {
   currentQuery: string;
   visibleItemIds: number[];
@@ -1000,7 +1019,11 @@ const FILTER_LOCK_SHORTCUT = "Ctrl+Shift+L";
 function readLockedFilterQuery(): string | null {
   try {
     const value = window.localStorage?.getItem(FILTER_LOCK_STORAGE_KEY)?.trim() ?? "";
-    return value || null;
+    if (!value) {
+      return null;
+    }
+    const classification = classifyStructuredSearchDraft(value);
+    return classification.kind === "plain" || classification.kind === "complete" ? value : null;
   } catch {
     return null;
   }
@@ -1040,6 +1063,7 @@ function App() {
   const [searchInterpretation, setSearchInterpretation] = useState<SearchInterpretation>(null);
   const [aiComposerMode, setAiComposerMode] = useState(false);
   const [historyPending, setHistoryPending] = useState(false);
+  const [clearSearchPending, setClearSearchPending] = useState(false);
   const [foregroundSearchInFlight, setForegroundSearchInFlight] = useState(false);
   const [aiPlanning, setAiPlanning] = useState(false);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
@@ -1113,10 +1137,13 @@ function App() {
   const historyInputQueryRef = useRef(historyInputQuery);
   const pickerSearchSettingsRef = useRef(settings.picker);
   const searchDebounceTimerRef = useRef<number | null>(null);
-  const skipNextRealtimeSearchRef = useRef(false);
+  const skipNextRealtimeSearchRef = useRef<SearchReplayToken | null>(null);
   const autocompleteCommittedQueryRef = useRef<string | null>(null);
   const foregroundSearchInFlightRef = useRef(false);
-  const deferredAppliedRefreshRef = useRef(false);
+  const [deferredAppliedRefresh, setDeferredAppliedRefresh] = useState<SearchReplayToken | null>(null);
+  const lastSearchFailureRef = useRef<SearchFailureReplay | null>(null);
+  const pendingFilterLockRef = useRef<PendingFilterLock | null>(null);
+  const clearSearchPendingRef = useRef(false);
   const selectedIdsRef = useRef<Set<number>>(new Set());
   const selectedItemIdRef = useRef<number | null>(selectedItemId);
   const lastActivatedItemIdRef = useRef<number | null>(null);
@@ -1133,6 +1160,11 @@ function App() {
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
   const fullContentFetchIdsRef = useRef<Set<number>>(new Set());
 
+  const updateClearSearchPending = useCallback((pending: boolean) => {
+    clearSearchPendingRef.current = pending;
+    setClearSearchPending(pending);
+  }, []);
+
   const supersedeSearchIntent = useCallback(
     (draftQuery: string, status: "idle" | "held" | "applying") => {
       const intentGeneration = ++searchIntentGenerationRef.current;
@@ -1140,6 +1172,8 @@ function App() {
       setForegroundSearchInFlight(false);
       setAiPlanning(false);
       setHistoryError(null);
+      lastSearchFailureRef.current = null;
+      pendingFilterLockRef.current = null;
       dispatchSearch({
         type: "draftChanged",
         query: draftQuery,
@@ -2056,6 +2090,18 @@ function App() {
         ?? (source === "background" ? appliedDescriptorRef.current : null);
       const foreground = source === "foreground";
       const intentGeneration = searchIntentGenerationRef.current;
+      const rememberFailure = () => {
+        lastSearchFailureRef.current = {
+          source,
+          query: source === "background"
+            ? appliedDescriptorForRequest?.displayQuery?.trim() ?? trimmed
+            : trimmed,
+          intentGeneration,
+          descriptor: isAppliedSearchDescriptor(appliedDescriptorForRequest)
+            ? appliedDescriptorForRequest
+            : null,
+        };
+      };
       if (source === "background" && !isAppliedSearchDescriptor(appliedDescriptorForRequest)) {
         return;
       }
@@ -2067,9 +2113,15 @@ function App() {
         }
       }
       if (source === "background" && foregroundSearchInFlightRef.current) {
-        deferredAppliedRefreshRef.current = true;
+        setDeferredAppliedRefresh({
+          query: queryRef.current.trim(),
+          intentGeneration,
+          appliedGeneration: appliedSnapshotGenerationRef.current,
+          reason: "foreground",
+        });
         return;
       }
+      lastSearchFailureRef.current = null;
       if (foreground) {
         foregroundSearchInFlightRef.current = true;
         setForegroundSearchInFlight(true);
@@ -2124,6 +2176,10 @@ function App() {
         const requestIsCurrent = requestSeq === historyRequestSeqRef.current
           && (!foreground || intentGeneration === searchIntentGenerationRef.current);
         if (requestIsCurrent) {
+          rememberFailure();
+          if (foreground && pendingFilterLockRef.current?.intentGeneration === intentGeneration) {
+            pendingFilterLockRef.current = null;
+          }
           if (foreground) {
             setHistoryPending(false);
             setAiPlanning(false);
@@ -2188,6 +2244,10 @@ function App() {
           setHistoryPending(false);
           setAiPlanning(false);
         }
+        if (foreground && pendingFilterLockRef.current?.intentGeneration === intentGeneration) {
+          pendingFilterLockRef.current = null;
+        }
+        rememberFailure();
         setHistoryError(descriptorError);
         dispatchSearch({
           type: "applyFailed",
@@ -2209,6 +2269,7 @@ function App() {
         )
       ) {
         const snapshotError = "Background refresh lost the visible applied snapshot.";
+        rememberFailure();
         setHistoryError(snapshotError);
         dispatchSearch({
           type: "applyFailed",
@@ -2328,9 +2389,25 @@ function App() {
         setNewClipsAvailable(false);
       }
       setHistoryError(null);
+      lastSearchFailureRef.current = null;
       appliedDescriptorRef.current = committedDescriptor;
       if (foreground) {
         appliedSnapshotGenerationRef.current = snapshotGeneration;
+        if (clearSearchPendingRef.current && trimmed === "") {
+          updateClearSearchPending(false);
+        }
+        const pendingFilterLock = pendingFilterLockRef.current;
+        if (
+          pendingFilterLock
+          && pendingFilterLock.query === trimmed
+          && pendingFilterLock.intentGeneration === intentGeneration
+          && committedDescriptor.displayQuery.trim() === trimmed
+        ) {
+          pendingFilterLockRef.current = null;
+          filterLockedRef.current = true;
+          setFilterLocked(true);
+          writeLockedFilterQuery(committedDescriptor.displayQuery.trim());
+        }
       }
       dispatchSearch({
         type: "applySucceeded",
@@ -2377,6 +2454,7 @@ function App() {
       refreshMarkedCount,
       searchInterpretation,
       searchState.applied,
+      updateClearSearchPending,
     ],
   );
 
@@ -2417,6 +2495,7 @@ function App() {
           draftChanged: draft !== applied,
           searchTriggerMode: pickerSearch.searchTriggerMode,
           deferStructuredSearchUntilEnter: pickerSearch.deferStructuredSearchUntilEnter,
+          autocompleteActive: autocompleteOpen && !scenarioCommandOpen,
           autocompleteCommitted: autocompleteCommittedQueryRef.current?.trim() === draft,
         },
       );
@@ -2425,10 +2504,15 @@ function App() {
         draft !== applied &&
         !structuredHold
       ) {
-        deferredAppliedRefreshRef.current = true;
+        setDeferredAppliedRefresh({
+          query: draft,
+          intentGeneration: searchIntentGenerationRef.current,
+          appliedGeneration: appliedSnapshotGenerationRef.current,
+          reason: "draft",
+        });
         return;
       }
-      deferredAppliedRefreshRef.current = false;
+      setDeferredAppliedRefresh(null);
       const appliedDescriptor = appliedDescriptorRef.current;
       await refreshHistory({
         ...options,
@@ -2438,16 +2522,32 @@ function App() {
         descriptorOverride: appliedDescriptor,
       });
     },
-    [refreshHistory],
+    [autocompleteOpen, refreshHistory, scenarioCommandOpen],
   );
 
   useEffect(() => {
-    if (foregroundSearchInFlight || historyPending || !deferredAppliedRefreshRef.current) {
+    const deferredRefresh = deferredAppliedRefresh;
+    if (!deferredRefresh) {
       return;
     }
-    deferredAppliedRefreshRef.current = false;
+    if (foregroundSearchInFlight || historyPending) {
+      return;
+    }
+    if (
+      deferredRefresh.intentGeneration !== searchIntentGenerationRef.current
+      || deferredRefresh.query !== queryRef.current.trim()
+      || deferredRefresh.appliedGeneration !== appliedSnapshotGenerationRef.current
+    ) {
+      setDeferredAppliedRefresh(null);
+      return;
+    }
+    if (deferredRefresh.reason === "draft") {
+      setDeferredAppliedRefresh(null);
+      return;
+    }
+    setDeferredAppliedRefresh(null);
     void refreshAppliedHistory({ showPending: false });
-  }, [foregroundSearchInFlight, historyInputQuery, historyPending, refreshAppliedHistory]);
+  }, [deferredAppliedRefresh, foregroundSearchInFlight, historyPending, refreshAppliedHistory]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -3724,13 +3824,19 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    if (skipNextRealtimeSearchRef.current) {
-      skipNextRealtimeSearchRef.current = false;
-      return () => {
-        active = false;
-      };
-    }
+    const skipNextRealtimeSearch = skipNextRealtimeSearchRef.current;
     const trimmedQuery = query.trim();
+    if (skipNextRealtimeSearch) {
+      skipNextRealtimeSearchRef.current = null;
+      if (
+        skipNextRealtimeSearch.query === trimmedQuery
+        && skipNextRealtimeSearch.intentGeneration === searchIntentGenerationRef.current
+      ) {
+        return () => {
+          active = false;
+        };
+      }
+    }
     const queryChanged = trimmedQuery !== historyInputQuery;
     const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
     if (isScenarioCommand(trimmedQuery) || searchInput.mode === "ai" || effectiveSearchTriggerMode !== "realtime") {
@@ -3999,6 +4105,9 @@ function App() {
     if (historyError) {
       return "Could not update results";
     }
+    if (clearSearchPending) {
+      return "Clearing filter";
+    }
     if (aiPlanning) {
       return "AI planning";
     }
@@ -4033,6 +4142,7 @@ function App() {
     history.length,
     aiDraftActive,
     aiPlanning,
+    clearSearchPending,
     historyError,
     historyFilteredCount,
     historyMatchesQuery,
@@ -4046,11 +4156,35 @@ function App() {
     structuredSearchFeedback,
   ]);
   const retryFailedSearch = useCallback(() => {
+    const failure = lastSearchFailureRef.current;
+    if (failure?.source === "background") {
+      return refreshAppliedHistory({ resetScroll: true, showPending: false });
+    }
+    if (failure?.source === "foreground") {
+      if (queryRef.current.trim() !== failure.query) {
+        queryRef.current = failure.query;
+        setQuery(failure.query);
+        supersedeSearchIntent(failure.query, "applying");
+      }
+      const intentGeneration = searchIntentGenerationRef.current;
+      skipNextRealtimeSearchRef.current = {
+        query: failure.query,
+        intentGeneration,
+        appliedGeneration: appliedSnapshotGenerationRef.current,
+        reason: "foreground",
+      };
+      autocompleteCommittedQueryRef.current = null;
+      return refreshHistory({
+        resetScroll: true,
+        allowAi: true,
+        queryOverride: failure.query,
+      });
+    }
     if (searchState.filterStatus === "held") {
       return refreshAppliedHistory({ resetScroll: true, showPending: false });
     }
     return refreshHistory({ resetScroll: true, allowAi: true });
-  }, [refreshAppliedHistory, refreshHistory, searchState.filterStatus]);
+  }, [refreshAppliedHistory, refreshHistory, searchState.filterStatus, supersedeSearchIntent]);
   const currentDraftCanApply = aiComposerMode
     || structuredSearchDraft.kind === "plain"
     || structuredSearchDraft.kind === "complete";
@@ -4088,7 +4222,12 @@ function App() {
       searchTriggerMode === "realtime"
       && historySearchInput(query.trim(), aiComposerMode).mode === "structured"
     ) {
-      skipNextRealtimeSearchRef.current = true;
+      skipNextRealtimeSearchRef.current = {
+        query: query.trim(),
+        intentGeneration: searchIntentGenerationRef.current,
+        appliedGeneration: appliedSnapshotGenerationRef.current,
+        reason: "foreground",
+      };
     }
     autocompleteCommittedQueryRef.current = null;
     if (searchDebounceTimerRef.current !== null) {
@@ -4104,11 +4243,27 @@ function App() {
       if (!filterQuery || aiComposerMode) {
         return;
       }
-      filterLockedRef.current = true;
-      writeLockedFilterQuery(filterQuery);
-      setFilterLocked(true);
+      if (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid") {
+        return;
+      }
       if (filterQuery !== historyInputQuery.trim()) {
+        pendingFilterLockRef.current = {
+          query: filterQuery,
+          intentGeneration: searchIntentGenerationRef.current,
+        };
         runSearchNow();
+      } else {
+        const appliedSnapshot = searchState.applied;
+        if (
+          !appliedSnapshot
+          || !isAppliedSearchDescriptor(appliedSnapshot.descriptor)
+          || appliedSnapshot.descriptor.displayQuery.trim() !== filterQuery
+        ) {
+          return;
+        }
+        filterLockedRef.current = true;
+        writeLockedFilterQuery(filterQuery);
+        setFilterLocked(true);
       }
     } else {
       filterLockedRef.current = false;
@@ -4116,7 +4271,7 @@ function App() {
       setFilterLocked(false);
     }
     window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [aiComposerMode, historyInputQuery, query, runSearchNow]);
+  }, [aiComposerMode, historyInputQuery, query, runSearchNow, searchState.applied, structuredSearchDraft]);
   const clearSearchFilter = useCallback(() => {
     leaveOpenedSavedView();
     if (searchDebounceTimerRef.current !== null) {
@@ -4126,11 +4281,17 @@ function App() {
     filterLockedRef.current = false;
     writeLockedFilterQuery(null);
     setFilterLocked(false);
-    skipNextRealtimeSearchRef.current = true;
     autocompleteCommittedQueryRef.current = null;
     queryRef.current = "";
     setQuery("");
     supersedeSearchIntent("", "applying");
+    skipNextRealtimeSearchRef.current = {
+      query: "",
+      intentGeneration: searchIntentGenerationRef.current,
+      appliedGeneration: appliedSnapshotGenerationRef.current,
+      reason: "foreground",
+    };
+    updateClearSearchPending(true);
     setDismissedAutocompleteQuery(null);
     setSearchInterpretation(null);
     setActionError(null);
@@ -4139,14 +4300,19 @@ function App() {
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
     window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent]);
+  }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent, updateClearSearchPending]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
     leaveOpenedSavedView();
-    skipNextRealtimeSearchRef.current = true;
     autocompleteCommittedQueryRef.current = null;
     queryRef.current = chip.queryWithoutClause;
     setQuery(chip.queryWithoutClause);
     supersedeSearchIntent(chip.queryWithoutClause, "applying");
+    skipNextRealtimeSearchRef.current = {
+      query: chip.queryWithoutClause.trim(),
+      intentGeneration: searchIntentGenerationRef.current,
+      appliedGeneration: appliedSnapshotGenerationRef.current,
+      reason: "foreground",
+    };
     setSearchInterpretation(null);
     setSelectedItemId(null);
     setSelectedIds(new Set());
@@ -4229,6 +4395,9 @@ function App() {
       'Search help: use plain text, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const nextQuery = event.currentTarget.value;
+      if (clearSearchPendingRef.current) {
+        updateClearSearchPending(false);
+      }
       if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
         leaveOpenedSavedView();
       }
@@ -4340,7 +4509,7 @@ function App() {
 
       switch (event.key) {
         case "Tab":
-          if (searchSuggestionsOpen) {
+          if (searchSuggestionsOpen && !event.shiftKey) {
             event.preventDefault();
             acceptSearchSuggestion();
           }
@@ -4405,11 +4574,11 @@ function App() {
           if (openItemMenu !== null) {
             setOpenItemMenu(null);
           }
-          if (hasSearchDraft) {
+          if (hasSearchDraft && !clearSearchPending) {
             discardSearchDraft();
             break;
           }
-          if (historyInputQuery.trim()) {
+          if (historyInputQuery.trim() && !clearSearchPending) {
             clearSearchFilter();
             break;
           }

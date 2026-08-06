@@ -42,20 +42,32 @@ test("structured classifier matches Rust date and negation invalid-value rules",
     "on:2026-13-40",
     "on:2026-02-29",
     "after:-1-01-01",
+    "after:d",
+    "after:0x10d",
+    "after:0b10d",
+    "after:0o10d",
+    "tag:,",
+    "mime:,",
+    "title:,,",
+    "source:,",
+    "format:,,",
+    "-tag:,",
   ];
   for (const query of invalid) {
     const classification = classifyStructuredSearchDraft(query);
     assert.equal(classification.kind, "invalid", query);
     assert.equal(classification.structured, true, query);
-    assert.equal(
-      shouldHoldStructuredSearchDraft(classification, {
-        draftChanged: true,
-        searchTriggerMode: "realtime",
-        deferStructuredSearchUntilEnter: false,
-      }),
-      true,
-      query,
-    );
+    for (const deferStructuredSearchUntilEnter of [false, true]) {
+      assert.equal(
+        shouldHoldStructuredSearchDraft(classification, {
+          draftChanged: true,
+          searchTriggerMode: "realtime",
+          deferStructuredSearchUntilEnter,
+        }),
+        true,
+        `${query} defer=${deferStructuredSearchUntilEnter}`,
+      );
+    }
   }
 
   for (const query of [
@@ -86,6 +98,17 @@ test("every negated token keeps structured semantics, including unknown operator
       query,
     );
   }
+});
+
+test("negated autocomplete excludes non-negatable operators and values", () => {
+  assert.equal(searchSuggestions("-", []).some((suggestion) => suggestion.replacement === "-after:"), false);
+  assert.equal(searchSuggestions("-", []).some((suggestion) => suggestion.replacement === "-source:"), false);
+  assert.deepEqual(searchSuggestions("-after:", []), []);
+  assert.deepEqual(searchSuggestions("-since:to", []), []);
+  assert.deepEqual(searchSuggestions("-source:", []), []);
+  assert.deepEqual(searchSuggestions("-format:", []), []);
+  assert.deepEqual(searchSuggestions("-fmt:", []), []);
+  assert.ok(searchSuggestions("-tag:", ["work"]).some((suggestion) => suggestion.replacement === "-tag:work"));
 });
 
 test("tag and operator autocomplete exposes keyboard-completable replacements", () => {

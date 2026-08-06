@@ -55,8 +55,12 @@ const DATE_FILTER_KEYS = new Set(["after", "since", "before", "until", "on"]);
 const NON_NEGATABLE_FILTER_KEYS = new Set(["source", "format", "fmt"]);
 const MIN_I64 = -(1n << 63n);
 const MAX_I64 = (1n << 63n) - 1n;
+const DECIMAL_I64_PATTERN = /^[+-]?\d+$/;
 
 function isI64Integer(value: string) {
+  if (!DECIMAL_I64_PATTERN.test(value)) {
+    return false;
+  }
   try {
     const parsed = BigInt(value);
     return parsed >= MIN_I64 && parsed <= MAX_I64;
@@ -297,7 +301,8 @@ export function classifyStructuredSearchDraft(
       );
     const invalidNegatedFilter = negated && NON_NEGATABLE_FILTER_KEYS.has(operator);
     if (
-      invalidDateFilter
+      values.length === 0
+      || invalidDateFilter
       || invalidNegatedFilter
       || (closedValues && (!values.length || values.some((part) => !closedValues.includes(part.toLocaleLowerCase()))))
     ) {
@@ -381,6 +386,8 @@ export function searchSuggestions(query: string, tags: string[]): SearchSuggesti
   if (separator === -1) {
     const prefix = rawToken.toLocaleLowerCase();
     return OPERATOR_SUGGESTIONS
+      .filter((operator) => !negated || !NON_NEGATABLE_FILTER_KEYS.has(operator.slice(0, -1)))
+      .filter((operator) => !negated || !DATE_FILTER_KEYS.has(operator.slice(0, -1)))
       .filter((operator) => operator.startsWith(prefix))
       .map((operator) => ({ label: `${negated}${operator}`, replacement: `${negated}${operator}` }));
   }
@@ -392,6 +399,9 @@ export function searchSuggestions(query: string, tags: string[]): SearchSuggesti
   }
 
   const canonicalKey = VALUE_KEY_ALIASES[key] ?? key;
+  if (negated && (DATE_FILTER_KEYS.has(key) || NON_NEGATABLE_FILTER_KEYS.has(key) || DATE_FILTER_KEYS.has(canonicalKey))) {
+    return [];
+  }
   const normalizedValue = value.toLocaleLowerCase();
   return (CLOSED_VALUES[canonicalKey] ?? [])
     .filter((item) => item.startsWith(normalizedValue) && item !== normalizedValue)

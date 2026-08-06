@@ -5208,7 +5208,46 @@ kbd {
   }
 
   .search-row {
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "selection context search search new menu"
+      "selection context composer trigger help apply";
+  }
+
+  .search-row .selection-controls {
+    grid-area: selection;
+  }
+
+  .search-row .picker-context-controls {
+    grid-area: context;
+  }
+
+  .search-row .search-field {
+    grid-area: search;
+  }
+
+  .search-row .new-item-button {
+    grid-area: new;
+  }
+
+  .search-row .composer-mode-button {
+    grid-area: composer;
+  }
+
+  .search-row .search-trigger-button {
+    grid-area: trigger;
+  }
+
+  .search-row .search-help-button {
+    grid-area: help;
+  }
+
+  .search-row .composer-run-button {
+    grid-area: apply;
+  }
+
+  .search-row .picker-menu-button {
+    grid-area: menu;
   }
 
   .scenario-trigger,
@@ -5246,11 +5285,18 @@ kbd {
   }
 
   .search-row.is-ai-mode {
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "selection context search search search menu"
+      "selection context new composer trigger apply";
   }
 
   .search-row.is-ai-mode .search-field {
-    grid-column: 3 / -1;
+    grid-column: auto;
+  }
+
+  .search-row.is-ai-mode .search-help-button {
+    display: none;
   }
 
   .scenario-session-copy,
