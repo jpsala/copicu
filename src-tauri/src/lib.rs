@@ -6,6 +6,7 @@ mod clipboard;
 mod clipboard_probe;
 mod diagnostics;
 mod enrichment;
+mod find;
 mod host;
 mod hotkeys;
 mod image_capture;
@@ -776,6 +777,52 @@ fn history_search(
         return history_search_with_ai_planner(&app, &storage, request);
     }
     storage.history_search(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn find_start(
+    storage: State<'_, storage::AppStorage>,
+    sessions: State<'_, find::FindSessionStore>,
+    request: find::FindStartRequest,
+) -> Result<find::FindStartResponse, String> {
+    sessions.start(storage.inner().clone(), request).await
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn find_navigate(
+    sessions: State<'_, find::FindSessionStore>,
+    request: find::FindNavigateRequest,
+) -> Result<find::FindNavigateResponse, String> {
+    sessions.navigate(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn find_matches_for_items(
+    sessions: State<'_, find::FindSessionStore>,
+    request: find::FindMatchesForItemsRequest,
+) -> Result<find::FindMatchesForItemsResponse, String> {
+    sessions.matches_for_items(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn find_target(
+    sessions: State<'_, find::FindSessionStore>,
+    request: find::FindTargetRequest,
+) -> Result<find::FindTargetResponse, String> {
+    sessions.target(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn find_close(
+    sessions: State<'_, find::FindSessionStore>,
+    request: find::FindCloseRequest,
+) -> Result<find::FindCloseResponse, String> {
+    sessions.close(request)
 }
 
 #[cfg(not(test))]
@@ -1630,6 +1677,7 @@ fn count_marked_history_items(storage: State<'_, storage::AppStorage>) -> Result
 fn update_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
+    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::UpdateHistoryItemRequest,
 ) -> Result<(), String> {
     require_surface_window(
@@ -1637,7 +1685,12 @@ fn update_history_item(
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "update_history_item",
     )?;
-    storage.update_item(request)
+    let item_id = request.id;
+    let result = storage.update_item(request);
+    if result.is_ok() {
+        find_sessions.invalidate_item(item_id);
+    }
+    result
 }
 
 #[cfg(not(test))]
@@ -1645,6 +1698,7 @@ fn update_history_item(
 fn update_item_metadata(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
+    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::UpdateItemMetadataRequest,
 ) -> Result<(), String> {
     require_surface_window(
@@ -1652,7 +1706,12 @@ fn update_item_metadata(
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "update_item_metadata",
     )?;
-    storage.update_item_metadata(request)
+    let item_id = request.id;
+    let result = storage.update_item_metadata(request);
+    if result.is_ok() {
+        find_sessions.invalidate_item(item_id);
+    }
+    result
 }
 
 #[cfg(not(test))]
@@ -1661,10 +1720,14 @@ fn create_history_item(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
+    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::CreateHistoryItemRequest,
 ) -> Result<storage::CreateHistoryItemResult, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_history_item")?;
     let result = storage.create_text_item(request)?;
+    if !result.created {
+        find_sessions.invalidate_item(result.id);
+    }
     if let Err(error) = app.emit(
         HISTORY_CHANGED_EVENT,
         serde_json::json!({
@@ -1682,10 +1745,15 @@ fn create_history_item(
 fn delete_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
+    find_sessions: State<'_, find::FindSessionStore>,
     id: i64,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "delete_history_item")?;
-    storage.delete_item(id)
+    let result = storage.delete_item(id);
+    if result.is_ok() {
+        find_sessions.invalidate_item(id);
+    }
+    result
 }
 
 #[cfg(not(test))]
@@ -2254,10 +2322,16 @@ fn get_item_tags(
 fn set_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
+    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::SetItemTagsRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_item_tags")?;
-    storage.set_item_tags(request)
+    let item_id = request.item_id;
+    let result = storage.set_item_tags(request);
+    if result.is_ok() {
+        find_sessions.invalidate_item(item_id);
+    }
+    result
 }
 
 #[cfg(not(test))]
@@ -2265,10 +2339,18 @@ fn set_item_tags(
 fn apply_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
+    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::ApplyItemTagsRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "apply_item_tags")?;
-    storage.apply_item_tags(request)
+    let item_ids = request.item_ids.clone();
+    let result = storage.apply_item_tags(request);
+    if result.is_ok() {
+        for item_id in item_ids {
+            find_sessions.invalidate_item(item_id);
+        }
+    }
+    result
 }
 
 #[cfg(not(test))]
@@ -2707,6 +2789,11 @@ pub fn run() {
             search_items,
             list_history_page,
             history_search,
+            find_start,
+            find_navigate,
+            find_matches_for_items,
+            find_target,
+            find_close,
             show_picker,
             hide_picker,
             quit_app,
@@ -2828,6 +2915,7 @@ pub fn run() {
 
             app.manage(PickerFocusPolicy::default());
             app.manage(PickerSessionController::default());
+            app.manage(find::FindSessionStore::default());
             let initial_main_window_hide = InitialMainWindowHide::default();
             app.manage(initial_main_window_hide.clone());
             app.manage(GlobalScriptShortcuts::default());

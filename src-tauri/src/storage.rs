@@ -1,12 +1,16 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use rusqlite::{params, params_from_iter, types::{Type, Value}, Connection, OptionalExtension};
+use rusqlite::{
+    params, params_from_iter,
+    types::{Type, Value},
+    Connection, OpenFlags, OptionalExtension,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 #[path = "storage/blobs.rs"]
 mod blobs;
@@ -58,6 +62,19 @@ pub struct AppStorage {
     conn: Arc<Mutex<Connection>>,
     db_path: PathBuf,
     app_data_dir: PathBuf,
+}
+
+/// The small, non-sensitive row projection consumed by the ephemeral Find worker.
+/// Keeping this separate from `HistoryItem` prevents the session index from retaining
+/// blobs, MIME data, hashes or other technical fields that Find never renders.
+#[derive(Clone, Debug)]
+pub(crate) struct FindSourceItem {
+    pub id: i64,
+    pub content_kind: String,
+    pub text: String,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -931,6 +948,61 @@ impl AppStorage {
 
     pub fn db_path(&self) -> &Path {
         &self.db_path
+    }
+
+    /// Read the applied Search snapshot through a dedicated read-only WAL connection.
+    ///
+    /// This deliberately does not touch `self.conn`: the operational connection is
+    /// guarded by a mutex and is used by capture/write paths. Find can therefore scan
+    /// a stable result set without retaining that mutex or a transaction after this
+    /// method returns.
+    pub(crate) fn read_find_items(
+        &self,
+        descriptor: &AppliedSearchDescriptor,
+    ) -> Result<Vec<FindSourceItem>, String> {
+        descriptor.validate()?;
+        let conn = Connection::open_with_flags(
+            &self.db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|error| format!("failed to open Find read-only sqlite connection: {error}"))?;
+        conn.busy_timeout(Duration::from_millis(250))
+            .map_err(|error| format!("failed to configure Find sqlite busy timeout: {error}"))?;
+
+        let compiled = compile_search_plan(&descriptor.plan)?;
+        let sql = format!(
+            "SELECT id, content_kind, text, title, notes, tags
+             FROM clipboard_items
+             {}
+             ORDER BY {}",
+            compiled.where_sql, compiled.order_sql
+        );
+        let transaction = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to start Find sqlite snapshot: {error}"))?;
+        let mut statement = transaction
+            .prepare(&sql)
+            .map_err(|error| format!("failed to prepare Find snapshot query: {error}"))?;
+        let rows = statement
+            .query_map(params_from_iter(compiled.params.iter()), |row| {
+                Ok(FindSourceItem {
+                    id: row.get(0)?,
+                    content_kind: row.get(1)?,
+                    text: row.get(2)?,
+                    title: row.get(3)?,
+                    notes: row.get(4)?,
+                    tags: row.get(5)?,
+                })
+            })
+            .map_err(|error| format!("failed to query Find snapshot: {error}"))?;
+        let items = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("failed to read Find snapshot row: {error}"))?;
+        drop(statement);
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to close Find sqlite snapshot: {error}"))?;
+        Ok(items)
     }
 
     pub fn insert_text(&self, text: &str, normalized_hash: &str) -> Result<i64, String> {
@@ -6794,6 +6866,38 @@ mod tests {
             .expect("tag source");
         assert_eq!(property_source, "manual");
         assert_eq!(tag_source, "manual");
+    }
+
+    #[test]
+    fn find_snapshot_reads_without_the_operational_connection_mutex() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-snapshot-test-{}",
+            now_unix_ms()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        storage
+            .insert_text("invoice snapshot", &hash_text("invoice snapshot"))
+            .expect("test item should insert");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "all",
+            "",
+            AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+
+        let operational_lock = storage.conn.lock().expect("operational lock should work");
+        let worker_storage = storage.clone();
+        let worker_descriptor = descriptor.clone();
+        let rows = std::thread::spawn(move || worker_storage.read_find_items(&worker_descriptor))
+            .join()
+            .expect("Find read worker should finish while the operational lock is held")
+            .expect("Find read worker should read the snapshot");
+        drop(operational_lock);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].text, "invoice snapshot");
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
     }
 
     fn test_storage() -> AppStorage {

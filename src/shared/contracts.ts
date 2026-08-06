@@ -1,5 +1,79 @@
 import type { AppliedSearchDescriptor } from "./searchSnapshot";
 
+export type FindField = "content" | "imageAlt" | "title" | "tag" | "notes";
+
+export type FindOccurrence = {
+  ordinal: number;
+  itemId: number;
+  field: FindField;
+  startUtf16: number;
+  endUtf16: number;
+};
+
+export type FindRange = Pick<FindOccurrence, "ordinal" | "startUtf16" | "endUtf16">;
+
+export type FindFieldMatches = {
+  field: FindField;
+  ranges: FindRange[];
+};
+
+export type FindItemMatches = {
+  itemId: number;
+  fields: FindFieldMatches[];
+};
+
+export type FindStartRequest = {
+  appliedDescriptor: AppliedSearchDescriptor;
+  needle: string;
+  generation?: number;
+};
+
+export type FindStartResponse = {
+  sessionId: string;
+  generation: number;
+  total: number;
+  firstTarget: FindOccurrence | null;
+};
+
+export type FindNavigateRequest = {
+  sessionId: string;
+  ordinal?: number | null;
+  currentOrdinal?: number | null;
+  direction: "next" | "previous";
+};
+
+export type FindNavigateResponse = {
+  total: number;
+  target: FindOccurrence | null;
+};
+
+export type FindMatchesForItemsRequest = {
+  sessionId: string;
+  itemIds: number[];
+};
+
+export type FindMatchesForItemsResponse = {
+  items: FindItemMatches[];
+};
+
+export type FindCloseRequest = {
+  sessionId: string;
+};
+
+export type FindCloseResponse = {
+  closed: boolean;
+};
+
+export type FindTargetRequest = {
+  sessionId: string;
+  ordinal: number;
+};
+
+export type FindTargetResponse = {
+  total: number;
+  target: FindOccurrence | null;
+};
+
 export type TagSummary = {
   id: number;
   slug: string;
