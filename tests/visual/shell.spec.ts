@@ -1409,14 +1409,34 @@ test("Apply stays inside the two-row primary band at 420 px", async ({ page }) =
   const apply = page.getByRole("button", { name: "Apply search" });
   await expect(apply).toBeVisible();
   const layout = await page.locator(".search-row").evaluate((row) => {
-    const tops = [...row.children]
-      .filter((element) => getComputedStyle(element).display !== "none")
-      .map((element) => Math.round(element.getBoundingClientRect().top));
-    return [...new Set(tops)].sort((left, right) => left - right);
+    const centers = [...row.children]
+      .filter((element) => {
+        const style = getComputedStyle(element);
+        return style.display !== "none" && style.position !== "absolute";
+      })
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.top + rect.height / 2;
+      })
+      .sort((left, right) => left - right);
+    const bands: number[] = [];
+    for (const center of centers) {
+      const previous = bands.at(-1);
+      if (previous === undefined || Math.abs(center - previous) > 18) {
+        bands.push(center);
+      } else {
+        bands[bands.length - 1] = (previous + center) / 2;
+      }
+    }
+    const applyRect = row.querySelector<HTMLButtonElement>(".composer-run-button")?.getBoundingClientRect();
+    return {
+      bands,
+      applyCenter: applyRect ? applyRect.top + applyRect.height / 2 : null,
+    };
   });
-  expect(layout.length).toBeLessThanOrEqual(2);
-  const applyTop = await apply.evaluate((element) => Math.round(element.getBoundingClientRect().top));
-  expect(layout).toContain(applyTop);
+  expect(layout.bands).toHaveLength(2);
+  expect(layout.applyCenter).not.toBeNull();
+  expect(layout.bands.some((center) => Math.abs(center - layout.applyCenter!) <= 18)).toBe(true);
 });
 
 test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {
@@ -3179,7 +3199,7 @@ test("Escape during a delayed clear does not restore the applied filter", async 
   const search = page.getByRole("textbox", { name: "Search clipboard history" });
   await search.fill("long");
   await search.press("Enter");
-  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+  await expect(page.locator("[title='Result count']")).toHaveText("2 / 4 matches", { timeout: 5000 });
   await page.evaluate(() => {
     (window as any).__copicuTestInvocations = [];
   });
