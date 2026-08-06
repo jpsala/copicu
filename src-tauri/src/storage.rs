@@ -62,38 +62,8 @@ const MAX_RETENTION_COUNT: i64 = 100_000;
 
 #[cfg(test)]
 struct FindScanGate {
-    db_path: PathBuf,
     reached: std::sync::Barrier,
     release: std::sync::Barrier,
-}
-
-#[cfg(test)]
-static FIND_SCAN_BEFORE_FIRST_ROW_GATE:
-    std::sync::OnceLock<Mutex<Option<Arc<FindScanGate>>>> = std::sync::OnceLock::new();
-
-#[cfg(test)]
-fn install_find_before_first_row_gate(gate: Arc<FindScanGate>) {
-    let slot = FIND_SCAN_BEFORE_FIRST_ROW_GATE.get_or_init(|| Mutex::new(None));
-    *slot.lock().expect("Find scan gate lock should work") = Some(gate);
-}
-
-#[cfg(test)]
-fn wait_for_find_before_first_row_gate(db_path: &Path) {
-    let Some(slot) = FIND_SCAN_BEFORE_FIRST_ROW_GATE.get() else {
-        return;
-    };
-    let gate = {
-        let mut guard = slot.lock().expect("Find scan gate lock should work");
-        if guard.as_ref().is_some_and(|gate| gate.db_path == db_path) {
-            guard.take()
-        } else {
-            None
-        }
-    };
-    if let Some(gate) = gate {
-        gate.reached.wait();
-        gate.release.wait();
-    }
 }
 
 #[derive(Clone)]
@@ -102,6 +72,8 @@ pub struct AppStorage {
     db_path: PathBuf,
     app_data_dir: PathBuf,
     mutation_epoch: Arc<AtomicU64>,
+    #[cfg(test)]
+    find_scan_gate: Arc<Mutex<Option<Arc<FindScanGate>>>>,
 }
 
 /// The small, non-sensitive row projection consumed by the ephemeral Find worker.
@@ -985,6 +957,8 @@ impl AppStorage {
             db_path,
             app_data_dir: app_data_dir.to_path_buf(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            #[cfg(test)]
+            find_scan_gate: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -998,6 +972,27 @@ impl AppStorage {
 
     fn bump_mutation_epoch(&self) {
         self.mutation_epoch.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn install_find_before_first_row_gate(&self, gate: Arc<FindScanGate>) {
+        *self
+            .find_scan_gate
+            .lock()
+            .expect("Find scan gate lock should work") = Some(gate);
+    }
+
+    #[cfg(test)]
+    fn wait_for_find_before_first_row_gate(&self) {
+        let gate = self
+            .find_scan_gate
+            .lock()
+            .expect("Find scan gate lock should work")
+            .take();
+        if let Some(gate) = gate {
+            gate.reached.wait();
+            gate.release.wait();
+        }
     }
 
     /// Read the applied Search snapshot through a dedicated read-only WAL connection.
@@ -1098,7 +1093,7 @@ impl AppStorage {
                 .map_err(|error| format!("failed to query Find snapshot: {error}"))?;
 
             #[cfg(test)]
-            wait_for_find_before_first_row_gate(&self.db_path);
+            self.wait_for_find_before_first_row_gate();
 
             let mut items = Vec::new();
             let mut row_index = 0usize;
@@ -5599,6 +5594,8 @@ mod tests {
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            #[cfg(test)]
+            find_scan_gate: Arc::new(Mutex::new(None)),
         };
         let page = storage
             .list_page(HistoryPageRequest {
@@ -5664,6 +5661,8 @@ mod tests {
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            #[cfg(test)]
+            find_scan_gate: Arc::new(Mutex::new(None)),
         };
 
         let tags = storage.list_tags().expect("tags should list");
@@ -6915,6 +6914,8 @@ mod tests {
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            #[cfg(test)]
+            find_scan_gate: Arc::new(Mutex::new(None)),
         };
 
         let scenario = storage
@@ -7403,12 +7404,11 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let gate = Arc::new(FindScanGate {
-            db_path: storage.db_path.clone(),
             reached: std::sync::Barrier::new(2),
             release: std::sync::Barrier::new(2),
         });
         let test_gate = gate.clone();
-        install_find_before_first_row_gate(gate);
+        storage.install_find_before_first_row_gate(gate);
         let worker_storage = storage.clone();
         let worker_cancelled = cancelled.clone();
         let worker_epoch = storage.mutation_epoch.clone();
@@ -7451,12 +7451,11 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let gate = Arc::new(FindScanGate {
-            db_path: storage.db_path.clone(),
             reached: std::sync::Barrier::new(2),
             release: std::sync::Barrier::new(2),
         });
         let test_gate = gate.clone();
-        install_find_before_first_row_gate(gate);
+        storage.install_find_before_first_row_gate(gate);
         let worker_storage = storage.clone();
         let worker_cancelled = cancelled.clone();
         let worker_epoch = storage.mutation_epoch.clone();
@@ -7573,7 +7572,7 @@ mod tests {
         let initial_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let settings = AppSettings {
             history: HistorySettings {
-                retention_count: 1,
+                retention_count: MIN_RETENTION_COUNT,
                 ..AppSettings::default().history
             },
             ..AppSettings::default()
@@ -7592,11 +7591,23 @@ mod tests {
             .expect("retention settings should persist");
         }
 
-        storage
-            .insert_text("new invoice", &hash_text("new invoice"))
-            .expect("pruning capture should succeed");
+        for index in 0..MIN_RETENTION_COUNT {
+            let text = format!("new invoice filler {index}");
+            storage
+                .insert_text(&text, &hash_text(&text))
+                .expect("pruning capture should succeed");
+        }
         assert!(storage.mutation_epoch.load(Ordering::SeqCst) > initial_epoch);
         assert!(storage.get_item(target_id).is_err());
+        let retained = storage
+            .conn
+            .lock()
+            .expect("sqlite lock should work")
+            .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("retained item count should load");
+        assert_eq!(retained, MIN_RETENTION_COUNT);
     }
 
     fn test_storage() -> AppStorage {
@@ -7610,6 +7621,8 @@ mod tests {
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            #[cfg(test)]
+            find_scan_gate: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -7626,6 +7639,8 @@ mod tests {
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            #[cfg(test)]
+            find_scan_gate: Arc::new(Mutex::new(None)),
         }
     }
 

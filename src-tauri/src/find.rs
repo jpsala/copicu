@@ -902,14 +902,34 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
             continue;
         }
         if source[cursor..].starts_with("![") || source[cursor..].starts_with('[') {
-            break_projection(&mut content);
-            return (content, image_alts);
+            if let Some((label_end, hidden_end)) =
+                malformed_markdown_construct_range(source, cursor)
+            {
+                // Preserve the visible label while suppressing an ambiguous or
+                // unterminated destination. The rest of the source remains
+                // searchable once the malformed construct has ended.
+                append_raw_range(&mut content, source, cursor, label_end + 1);
+                break_projection(&mut content);
+                cursor = hidden_end.max(label_end + 1);
+                line_start = false;
+                continue;
+            }
+            let ch = source[cursor..]
+                .chars()
+                .next()
+                .expect("cursor is a char boundary");
+            append_projected_char(&mut content, ch);
+            cursor += ch.len_utf8();
+            line_start = false;
+            continue;
         }
         if source[cursor..].starts_with("```") {
             break_projection(&mut content);
-            let Some(end) = source[cursor + 3..].find("```") else {
+            let Some((body_start, body_end, end)) = fenced_body_range(source, cursor) else {
                 return (content, image_alts);
             };
+            append_raw_range(&mut content, source, body_start, body_end);
+            break_projection(&mut content);
             cursor += 3 + end + 3;
             line_start = false;
             continue;
@@ -926,8 +946,22 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
                 line_start = false;
                 continue;
             }
-            break_projection(&mut content);
-            return (content, image_alts);
+            if source[next..]
+                .chars()
+                .next()
+                .is_some_and(is_probable_html_tag_start)
+            {
+                // An unfinished tag-like construct is ambiguous; fail closed
+                // for the remainder rather than exposing possible markup data.
+                break_projection(&mut content);
+                return (content, image_alts);
+            }
+            // A bare less-than sign is visible text, not an HTML construct.
+            // Keep scanning instead of truncating the remainder of the field.
+            append_projected_char(&mut content, ch);
+            cursor = next;
+            line_start = false;
+            continue;
         }
         if ch == '\\' {
             if let Some(escaped) = source[next..].chars().next() {
@@ -1038,6 +1072,48 @@ fn append_visible_range(destination: &mut ProjectedField, source: &str, start: u
         }
         cursor = next;
     }
+}
+
+fn append_raw_range(destination: &mut ProjectedField, source: &str, start: usize, end: usize) {
+    for ch in source[start..end].chars() {
+        append_projected_char(destination, ch);
+    }
+}
+
+fn is_probable_html_tag_start(ch: char) -> bool {
+    ch.is_ascii_alphabetic() || matches!(ch, '/' | '!' | '?')
+}
+
+fn fenced_body_range(source: &str, cursor: usize) -> Option<(usize, usize, usize)> {
+    let after_open = cursor + 3;
+    let close_offset = source[after_open..].find("```")?;
+    let close = after_open + close_offset;
+    let body_start = source[after_open..close]
+        .find('\n')
+        .map(|newline| after_open + newline + 1)
+        .unwrap_or(after_open);
+    Some((body_start, close, close_offset))
+}
+
+fn malformed_markdown_construct_range(source: &str, cursor: usize) -> Option<(usize, usize)> {
+    let label_start = if source[cursor..].starts_with("![") {
+        cursor + 2
+    } else {
+        cursor + 1
+    };
+    let label_end = find_closing_bracket(source, label_start)?;
+    let after_label = label_end + 1;
+    if !(source[after_label..].starts_with('(') || source[after_label..].starts_with('[')) {
+        return None;
+    }
+
+    // An incomplete destination/reference is hidden through the current line;
+    // keeping later lines searchable avoids truncating unrelated visible text.
+    let hidden_end = source[after_label..]
+        .find('\n')
+        .map(|offset| after_label + offset)
+        .unwrap_or(source.len());
+    Some((label_end, hidden_end))
 }
 
 fn find_markdown_destination_end(source: &str, start: usize) -> Option<usize> {
@@ -1620,6 +1696,61 @@ mod tests {
         let (fenced_secret, _) = build_occurrence_index(&fenced, "secret.example", &cancelled)
             .unwrap();
         assert!(fenced_secret.is_empty());
+    }
+
+    #[test]
+    fn fail_closed_markers_preserve_visible_literals_and_closed_fence_body() {
+        let source = vec![item(
+            9,
+            "text",
+            "before [draft] and less < than after ```rust\nInvoice body\n``` tail",
+        )];
+        let cancelled = AtomicBool::new(false);
+
+        let draft = build_occurrence_index(&source, "draft", &cancelled).unwrap().0;
+        assert_eq!(draft.len(), 1, "unresolved [draft] must remain visible");
+
+        let after = build_occurrence_index(&source, "after", &cancelled).unwrap().0;
+        assert_eq!(after.len(), 1, "a literal < must not truncate later text");
+
+        let body = build_occurrence_index(&source, "invoice body", &cancelled)
+            .unwrap()
+            .0;
+        assert_eq!(body.len(), 1, "closed fence body is visible content");
+    }
+
+    #[test]
+    fn malformed_destination_remains_private_without_truncating_next_line() {
+        let source = vec![item(
+            10,
+            "text",
+            "[label](https://secret.example/unclosed\nvisible invoice",
+        )];
+        let cancelled = AtomicBool::new(false);
+        let secret = build_occurrence_index(&source, "secret.example", &cancelled)
+            .unwrap()
+            .0;
+        assert!(secret.is_empty());
+        let visible = build_occurrence_index(&source, "visible invoice", &cancelled)
+            .unwrap()
+            .0;
+        assert_eq!(visible.len(), 1);
+    }
+
+    #[test]
+    fn unfinished_tag_like_markup_fails_closed_but_less_than_literal_stays_visible() {
+        let cancelled = AtomicBool::new(false);
+        let literal = vec![item(11, "text", "one < two three")];
+        let three = build_occurrence_index(&literal, "three", &cancelled)
+            .unwrap()
+            .0;
+        assert_eq!(three.len(), 1);
+
+        let ambiguous = vec![item(12, "text", "one <script secret.example after")];
+        let secret = build_occurrence_index(&ambiguous, "secret.example", &cancelled)
+            .unwrap()
+            .0;
+        assert!(secret.is_empty());
     }
 
     #[test]
