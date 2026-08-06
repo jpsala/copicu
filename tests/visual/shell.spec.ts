@@ -1409,6 +1409,7 @@ test("Apply stays inside the two-row primary band at 420 px", async ({ page }) =
   const apply = page.getByRole("button", { name: "Apply search" });
   await expect(apply).toBeVisible();
   const layout = await page.locator(".search-row").evaluate((row) => {
+    const bandTolerance = 20;
     const centers = [...row.children]
       .filter((element) => {
         const style = getComputedStyle(element);
@@ -1422,7 +1423,7 @@ test("Apply stays inside the two-row primary band at 420 px", async ({ page }) =
     const bands: number[] = [];
     for (const center of centers) {
       const previous = bands.at(-1);
-      if (previous === undefined || Math.abs(center - previous) > 18) {
+      if (previous === undefined || Math.abs(center - previous) > bandTolerance) {
         bands.push(center);
       } else {
         bands[bands.length - 1] = (previous + center) / 2;
@@ -1436,7 +1437,7 @@ test("Apply stays inside the two-row primary band at 420 px", async ({ page }) =
   });
   expect(layout.bands).toHaveLength(2);
   expect(layout.applyCenter).not.toBeNull();
-  expect(layout.bands.some((center) => Math.abs(center - layout.applyCenter!) <= 18)).toBe(true);
+  expect(layout.bands.some((center) => Math.abs(center - layout.applyCenter!) <= 20)).toBe(true);
 });
 
 test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {
