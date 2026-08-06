@@ -4,6 +4,32 @@ const STRUCTURED_FILTER_KEYS = new Set([
 
 export type SearchSuggestion = { label: string; replacement: string };
 
+export type StructuredSearchDraftKind = "plain" | "complete" | "incomplete" | "invalid";
+
+export type StructuredSearchDraftClassification = {
+  kind: StructuredSearchDraftKind;
+  token: string | null;
+  operator: string | null;
+  message: string | null;
+  /** True when the draft contains a supported structured token. */
+  structured: boolean;
+};
+
+export type StructuredSearchTriggerMode = "realtime" | "enter";
+
+export type StructuredSearchHoldOptions = {
+  draftChanged: boolean;
+  searchTriggerMode: StructuredSearchTriggerMode;
+  deferStructuredSearchUntilEnter: boolean;
+  autocompleteActive?: boolean;
+  autocompleteCommitted?: boolean;
+};
+
+type DraftToken = {
+  value: string;
+  hasUnclosedQuote: boolean;
+};
+
 const OPERATOR_SUGGESTIONS = [
   "tag:", "kind:", "is:", "mime:", "has:", "meta:", "title:", "notes:",
   "ctx:", "app:", "window:", "domain:", "source:", "format:", "after:",
@@ -11,9 +37,9 @@ const OPERATOR_SUGGESTIONS = [
 ];
 
 const CLOSED_VALUES: Record<string, string[]> = {
-  kind: ["text", "image", "html", "file", "unknown"],
+  kind: ["text", "image", "html", "file", "file-list", "unknown"],
   is: ["marked", "checked", "unmarked", "unchecked"],
-  has: ["text", "title", "notes", "tags", "metadata", "mime", "blob", "image"],
+  has: ["text", "title", "note", "notes", "tag", "tags", "metadata", "meta", "mime", "blob", "file", "image"],
   after: ["today", "yesterday", "7d"],
   before: ["today", "yesterday", "7d"],
   on: ["today", "yesterday", "7d"],
@@ -27,6 +53,192 @@ const VALUE_KEY_ALIASES: Record<string, string> = {
 
 function activeToken(query: string) {
   return query.slice(query.lastIndexOf(" ") + 1);
+}
+
+function draftTokens(query: string): DraftToken[] {
+  const tokens: DraftToken[] = [];
+  let start = -1;
+  let inQuote = false;
+  let escaped = false;
+
+  for (let index = 0; index < query.length; index += 1) {
+    const char = query[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inQuote) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      if (start === -1) {
+        start = index;
+      }
+      inQuote = !inQuote;
+      continue;
+    }
+    if (/\s/.test(char) && !inQuote) {
+      if (start !== -1) {
+        tokens.push({ value: query.slice(start, index), hasUnclosedQuote: false });
+        start = -1;
+      }
+      continue;
+    }
+    if (start === -1) {
+      start = index;
+    }
+  }
+
+  if (start !== -1) {
+    tokens.push({ value: query.slice(start), hasUnclosedQuote: inQuote });
+  }
+
+  return tokens;
+}
+
+function structuredDraftMessage(
+  kind: Exclude<StructuredSearchDraftKind, "plain" | "complete">,
+  token: string,
+  operator: string | null,
+  hasUnclosedQuote = false,
+) {
+  if (kind === "incomplete" && hasUnclosedQuote) {
+    return "Close the quoted search value before applying.";
+  }
+  if (kind === "incomplete") {
+    if (operator === "#" || operator === "tag" || operator === "tags") {
+      return `Choose or type a tag after \`${operator === "#" ? "#" : `${operator}:`}\`.`;
+    }
+    return `Choose or type a value after \`${operator ?? "the operator"}:\`.`;
+  }
+  return `\`${token}\` is not a supported ${operator ?? "structured"} filter.`;
+}
+
+/**
+ * Classify the current draft without becoming the semantic authority for
+ * search. Rust still validates every request; this helper only decides if the
+ * renderer should hold the applied snapshot and which feedback to show.
+ */
+export function classifyStructuredSearchDraft(
+  query: string,
+): StructuredSearchDraftClassification {
+  const tokens = draftTokens(query);
+  if (tokens.length === 0) {
+    return { kind: "plain", token: null, operator: null, message: null, structured: false };
+  }
+
+  let structured = false;
+  let incompleteToken: string | null = null;
+  let incompleteOperator: string | null = null;
+  let incompleteHasUnclosedQuote = false;
+  let invalidToken: string | null = null;
+  let invalidOperator: string | null = null;
+
+  for (const token of tokens) {
+    const negated = token.value.startsWith("-") && token.value.length > 1;
+    const rawToken = negated ? token.value.slice(1) : token.value;
+    if (rawToken.startsWith("#")) {
+      structured = true;
+      const value = rawToken.slice(1).trim();
+      const normalizedValue = value.replace(/^"|"$/g, "").trim();
+      if (token.hasUnclosedQuote || !normalizedValue) {
+        incompleteToken ??= token.value;
+        incompleteOperator ??= "#";
+        incompleteHasUnclosedQuote ||= token.hasUnclosedQuote;
+      }
+      continue;
+    }
+
+    const separator = rawToken.indexOf(":");
+    if (separator <= 0) {
+      if (negated) {
+        structured = true;
+      }
+      if (token.hasUnclosedQuote) {
+        structured = true;
+        incompleteToken ??= token.value;
+        incompleteHasUnclosedQuote ||= token.hasUnclosedQuote;
+      }
+      continue;
+    }
+
+    const operator = rawToken.slice(0, separator).toLocaleLowerCase();
+    if (!STRUCTURED_FILTER_KEYS.has(operator)) {
+      if (token.hasUnclosedQuote) {
+        structured = true;
+        incompleteToken ??= token.value;
+        incompleteHasUnclosedQuote ||= token.hasUnclosedQuote;
+      }
+      continue;
+    }
+    structured = true;
+    const value = rawToken.slice(separator + 1).trim();
+    const normalizedValue = value.replace(/^"|"$/g, "").trim();
+    if (token.hasUnclosedQuote || !normalizedValue) {
+      incompleteToken ??= token.value;
+      incompleteOperator ??= operator;
+      incompleteHasUnclosedQuote ||= token.hasUnclosedQuote;
+      continue;
+    }
+
+    const canonicalKey = VALUE_KEY_ALIASES[operator] ?? operator;
+    const values = normalizedValue.split(",").map((part) => part.trim()).filter(Boolean);
+    const closedValues = ["kind", "is", "has"].includes(canonicalKey)
+      ? CLOSED_VALUES[canonicalKey]
+      : undefined;
+    if (closedValues && (!values.length || values.some((part) => !closedValues.includes(part.toLocaleLowerCase())))) {
+      invalidToken ??= token.value;
+      invalidOperator ??= operator;
+    }
+  }
+
+  if (incompleteToken) {
+    return {
+      kind: "incomplete",
+      token: incompleteToken,
+      operator: incompleteOperator,
+      message: structuredDraftMessage(
+        "incomplete",
+        incompleteToken,
+        incompleteOperator,
+        incompleteHasUnclosedQuote,
+      ),
+      structured,
+    };
+  }
+  if (invalidToken) {
+    return {
+      kind: "invalid",
+      token: invalidToken,
+      operator: invalidOperator,
+      message: structuredDraftMessage("invalid", invalidToken, invalidOperator),
+      structured,
+    };
+  }
+  if (!structured) {
+    return { kind: "plain", token: null, operator: null, message: null, structured: false };
+  }
+
+  return { kind: "complete", token: null, operator: null, message: null, structured: true };
+}
+
+export function shouldHoldStructuredSearchDraft(
+  classification: StructuredSearchDraftClassification,
+  options: StructuredSearchHoldOptions,
+) {
+  if (!options.draftChanged) {
+    return false;
+  }
+  return classification.kind === "incomplete"
+    || classification.kind === "invalid"
+    || options.autocompleteActive === true
+    || options.autocompleteCommitted === true
+    || (
+      options.searchTriggerMode === "realtime"
+      && options.deferStructuredSearchUntilEnter
+      && classification.kind === "complete"
+    );
 }
 
 function matchingTags(prefix: string, tags: string[], replacement: (tag: string) => string) {
@@ -105,4 +317,6 @@ export function positiveTagFilters(query: string) {
   return tags;
 }
 
-export function usesStructuredSearchSyntax(query: string) { return tokenizeSearchQuery(query).some((token) => { const negated = token.startsWith("-") && token.length > 1; const rawToken = negated ? token.slice(1) : token; if (negated || rawToken.startsWith("#")) return true; const separator = rawToken.indexOf(":"); return separator > 0 && separator < rawToken.length - 1 && STRUCTURED_FILTER_KEYS.has(rawToken.slice(0, separator).toLocaleLowerCase()); }); }
+export function usesStructuredSearchSyntax(query: string) {
+  return classifyStructuredSearchDraft(query).structured;
+}

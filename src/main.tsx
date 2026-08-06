@@ -91,9 +91,10 @@ import type {
 } from "./shared/contracts";
 import { setupAutomaticUpdates, type AutoUpdateStatus } from "./autoUpdate";
 import {
+  classifyStructuredSearchDraft,
   replaceActiveSearchToken,
   searchSuggestions,
-  usesStructuredSearchSyntax,
+  shouldHoldStructuredSearchDraft,
 } from "./shared/search";
 import {
   appliedQueryMutationFields,
@@ -1113,6 +1114,7 @@ function App() {
   const pickerSearchSettingsRef = useRef(settings.picker);
   const searchDebounceTimerRef = useRef<number | null>(null);
   const skipNextRealtimeSearchRef = useRef(false);
+  const autocompleteCommittedQueryRef = useRef<string | null>(null);
   const foregroundSearchInFlightRef = useRef(false);
   const deferredAppliedRefreshRef = useRef(false);
   const selectedIdsRef = useRef<Set<number>>(new Set());
@@ -1171,14 +1173,6 @@ function App() {
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const hasNextHistoryPage = historyNextCursor !== null;
   const searchTriggerMode = settings.picker.searchTriggerMode;
-  const structuredSearchHold =
-    searchTriggerMode === "realtime" &&
-    settings.picker.deferStructuredSearchUntilEnter &&
-    query.trim() !== historyInputQuery &&
-    usesStructuredSearchSyntax(query);
-  const effectiveSearchTriggerMode: SearchTriggerMode = structuredSearchHold ? "enter" : searchTriggerMode;
-  const nextTriggerMode = nextSearchTriggerMode(searchTriggerMode);
-  const searchTriggerAriaLabel = `Search trigger: ${searchTriggerModeName(searchTriggerMode)}, switch to ${searchTriggerModeName(nextTriggerMode)}`;
   const scenarioCommandQuery = aiComposerMode ? null : scenarioCommandSearch(query);
   const scenarioCommandOptions = useMemo(() => {
     if (scenarioCommandQuery === null) {
@@ -1196,6 +1190,21 @@ function App() {
   const autocompleteOpen = autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
   const scenarioCommandOpen = scenarioCommandOptions.length > 0 && dismissedAutocompleteQuery !== query;
   const searchSuggestionsOpen = autocompleteOpen || scenarioCommandOpen;
+  const structuredSearchDraft = useMemo(
+    () => classifyStructuredSearchDraft(query),
+    [query],
+  );
+  const hasSearchDraft = query.trim() !== historyInputQuery;
+  const structuredSearchHold = shouldHoldStructuredSearchDraft(structuredSearchDraft, {
+    draftChanged: hasSearchDraft,
+    searchTriggerMode,
+    deferStructuredSearchUntilEnter: settings.picker.deferStructuredSearchUntilEnter,
+    autocompleteActive: autocompleteOpen && !scenarioCommandOpen,
+    autocompleteCommitted: autocompleteCommittedQueryRef.current === query,
+  });
+  const effectiveSearchTriggerMode: SearchTriggerMode = structuredSearchHold ? "enter" : searchTriggerMode;
+  const nextTriggerMode = nextSearchTriggerMode(searchTriggerMode);
+  const searchTriggerAriaLabel = `Search trigger: ${searchTriggerModeName(searchTriggerMode)}, switch to ${searchTriggerModeName(nextTriggerMode)}`;
   const virtualRowCount = hasNextHistoryPage ? history.length + 1 : history.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualRowCount,
@@ -1384,6 +1393,7 @@ function App() {
     setAiComposerMode(false);
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
+    autocompleteCommittedQueryRef.current = null;
     if (!filterLockedRef.current && !activeScenarioSessionRef.current) {
       queryRef.current = "";
       historyInputQueryRef.current = "";
@@ -2401,8 +2411,15 @@ function App() {
       const draft = queryRef.current.trim();
       const applied = historyInputQueryRef.current;
       const pickerSearch = pickerSearchSettingsRef.current;
-      const structuredHold =
-        pickerSearch.deferStructuredSearchUntilEnter && usesStructuredSearchSyntax(draft);
+      const structuredHold = shouldHoldStructuredSearchDraft(
+        classifyStructuredSearchDraft(draft),
+        {
+          draftChanged: draft !== applied,
+          searchTriggerMode: pickerSearch.searchTriggerMode,
+          deferStructuredSearchUntilEnter: pickerSearch.deferStructuredSearchUntilEnter,
+          autocompleteCommitted: autocompleteCommittedQueryRef.current?.trim() === draft,
+        },
+      );
       if (
         pickerSearch.searchTriggerMode === "realtime" &&
         draft !== applied &&
@@ -3973,9 +3990,14 @@ function App() {
   ]);
 
   const isFilteringHistory = effectiveSearchTriggerMode === "realtime" && !historyMatchesQuery && !aiDraftActive;
+  const structuredSearchFeedback = !historyMatchesQuery
+    && structuredSearchDraft.structured
+    && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")
+    ? structuredSearchDraft.message
+    : null;
   const searchStatus = useMemo(() => {
     if (historyError) {
-      return "Storage unavailable";
+      return "Could not update results";
     }
     if (aiPlanning) {
       return "AI planning";
@@ -3987,8 +4009,11 @@ function App() {
       return "AI draft";
     }
     if (!historyMatchesQuery) {
+      if (structuredSearchFeedback) {
+        return "Complete the structured filter";
+      }
       if (structuredSearchHold) {
-        return "Structured query, press Enter";
+        return "Structured query held";
       }
       if (effectiveSearchTriggerMode === "enter") {
         return "Press Enter";
@@ -4018,7 +4043,29 @@ function App() {
     scenarioCommandQuery,
     effectiveSearchTriggerMode,
     structuredSearchHold,
+    structuredSearchFeedback,
   ]);
+  const retryFailedSearch = useCallback(() => {
+    if (searchState.filterStatus === "held") {
+      return refreshAppliedHistory({ resetScroll: true, showPending: false });
+    }
+    return refreshHistory({ resetScroll: true, allowAi: true });
+  }, [refreshAppliedHistory, refreshHistory, searchState.filterStatus]);
+  const currentDraftCanApply = aiComposerMode
+    || structuredSearchDraft.kind === "plain"
+    || structuredSearchDraft.kind === "complete";
+  const showApplyAction = scenarioCommandQuery === null
+    && currentDraftCanApply
+    && (
+      aiComposerMode
+      || (
+        hasSearchDraft
+        && (
+          searchTriggerMode === "enter"
+          || (searchTriggerMode === "realtime" && structuredSearchHold)
+        )
+      )
+    );
   const markMenuCountLabel = markedTotalCount !== null && markedTotalCount > 0
     ? formatCount(markedTotalCount)
     : null;
@@ -4026,12 +4073,30 @@ function App() {
   const checkedActionItems = markedActionItems ?? visibleMarkedItems;
   const checkedActionCount = markedTotalCount ?? checkedActionItems.length;
   const runSearchNow = useCallback(() => {
+    if (!aiComposerMode && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")) {
+      const error = structuredSearchDraft.message ?? "Complete the structured filter before applying.";
+      setHistoryPending(false);
+      dispatchSearch({
+        type: "applyFailed",
+        generation: searchIntentGenerationRef.current,
+        intentGeneration: searchIntentGenerationRef.current,
+        error,
+      });
+      return;
+    }
+    if (
+      searchTriggerMode === "realtime"
+      && historySearchInput(query.trim(), aiComposerMode).mode === "structured"
+    ) {
+      skipNextRealtimeSearchRef.current = true;
+    }
+    autocompleteCommittedQueryRef.current = null;
     if (searchDebounceTimerRef.current !== null) {
       window.clearTimeout(searchDebounceTimerRef.current);
       searchDebounceTimerRef.current = null;
     }
     void refreshHistory({ resetScroll: true, allowAi: true });
-  }, [refreshHistory]);
+  }, [aiComposerMode, query, refreshHistory, searchTriggerMode, structuredSearchDraft]);
   const toggleFilterLock = useCallback(() => {
     const nextLocked = !filterLockedRef.current;
     if (nextLocked) {
@@ -4062,6 +4127,7 @@ function App() {
     writeLockedFilterQuery(null);
     setFilterLocked(false);
     skipNextRealtimeSearchRef.current = true;
+    autocompleteCommittedQueryRef.current = null;
     queryRef.current = "";
     setQuery("");
     supersedeSearchIntent("", "applying");
@@ -4077,6 +4143,7 @@ function App() {
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
     leaveOpenedSavedView();
     skipNextRealtimeSearchRef.current = true;
+    autocompleteCommittedQueryRef.current = null;
     queryRef.current = chip.queryWithoutClause;
     setQuery(chip.queryWithoutClause);
     supersedeSearchIntent(chip.queryWithoutClause, "applying");
@@ -4090,6 +4157,17 @@ function App() {
       allowAi: false,
     });
   }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent]);
+  const discardSearchDraft = useCallback(() => {
+    const appliedQuery = historyInputQueryRef.current;
+    autocompleteCommittedQueryRef.current = null;
+    queryRef.current = appliedQuery;
+    setQuery(appliedQuery);
+    setDismissedAutocompleteQuery(appliedQuery);
+    setHistoryPending(false);
+    setHistoryError(null);
+    supersedeSearchIntent(appliedQuery, "idle");
+    window.setTimeout(() => searchRef.current?.focus(), 0);
+  }, [supersedeSearchIntent]);
   const acceptSearchSuggestion = useCallback((index = activeSearchSuggestion) => {
     if (scenarioCommandOpen) {
       const scenario = scenarioCommandOptions[index];
@@ -4104,15 +4182,13 @@ function App() {
     if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
       leaveOpenedSavedView();
     }
-    const nextStructuredHold =
-      searchTriggerMode === "realtime" &&
-      settings.picker.deferStructuredSearchUntilEnter &&
-      nextQuery.trim() !== historyInputQuery &&
-      usesStructuredSearchSyntax(nextQuery);
+    const nextStructuredDraft = classifyStructuredSearchDraft(nextQuery);
+    const nextStructuredHold = nextStructuredDraft.structured;
+    autocompleteCommittedQueryRef.current = nextQuery;
     queryRef.current = nextQuery;
     setDismissedAutocompleteQuery(nextQuery);
     setQuery(nextQuery);
-    setHistoryPending(searchTriggerMode === "realtime" && !nextStructuredHold);
+    setHistoryPending(false);
     supersedeSearchIntent(
       nextQuery,
       nextStructuredHold ? "held" : searchTriggerMode === "realtime" ? "applying" : "idle",
@@ -4126,27 +4202,27 @@ function App() {
   }, [
     activeSearchSuggestion,
     autocompleteSuggestions,
-    historyInputQuery,
     leaveOpenedSavedView,
     openedSavedView,
     query,
     scenarioCommandOpen,
     scenarioCommandOptions,
     searchTriggerMode,
-    settings.picker.deferStructuredSearchUntilEnter,
     activateScenarioFromPicker,
     supersedeSearchIntent,
   ]);
   const searchControlBaseProps = {
     className: "search-input",
     variant: "unstyled" as const,
+    role: !aiComposerMode && searchSuggestionsOpen ? "combobox" as const : "textbox" as const,
     "aria-label": "Search clipboard history",
     "aria-autocomplete": aiComposerMode ? "none" as const : "list" as const,
-    "aria-controls": searchSuggestionsOpen ? "search-autocomplete" : "clipboard-feed",
-    "aria-expanded": searchSuggestionsOpen,
-    "aria-activedescendant": searchSuggestionsOpen
+    "aria-haspopup": !aiComposerMode && searchSuggestionsOpen ? "listbox" as const : undefined,
+    "aria-controls": !aiComposerMode && searchSuggestionsOpen ? "search-autocomplete" : undefined,
+    "aria-expanded": !aiComposerMode && searchSuggestionsOpen ? true : undefined,
+    "aria-activedescendant": !aiComposerMode && searchSuggestionsOpen
       ? `search-suggestion-${activeSearchSuggestion}`
-      : selectedItem ? `history-item-${selectedItem.id}` : undefined,
+      : undefined,
     value: query,
     placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — meta:work, #tag, ai:find invoices',
     title:
@@ -4156,11 +4232,17 @@ function App() {
       if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
         leaveOpenedSavedView();
       }
-      const nextStructuredHold =
-        searchTriggerMode === "realtime" &&
-        settings.picker.deferStructuredSearchUntilEnter &&
-        nextQuery.trim() !== historyInputQuery &&
-        usesStructuredSearchSyntax(nextQuery);
+      autocompleteCommittedQueryRef.current = null;
+      const nextStructuredDraft = classifyStructuredSearchDraft(nextQuery);
+      const nextAutocompleteActive = !aiComposerMode
+        && !isScenarioCommand(nextQuery)
+        && searchSuggestions(nextQuery, knownTagSlugs).length > 0;
+      const nextStructuredHold = shouldHoldStructuredSearchDraft(nextStructuredDraft, {
+        draftChanged: nextQuery.trim() !== historyInputQuery,
+        searchTriggerMode,
+        deferStructuredSearchUntilEnter: settings.picker.deferStructuredSearchUntilEnter,
+        autocompleteActive: nextAutocompleteActive,
+      });
       queryRef.current = nextQuery;
       setQuery(nextQuery);
       setHistoryPending(!isScenarioCommand(nextQuery) && searchTriggerMode === "realtime" && !nextStructuredHold);
@@ -4323,6 +4405,14 @@ function App() {
           if (openItemMenu !== null) {
             setOpenItemMenu(null);
           }
+          if (hasSearchDraft) {
+            discardSearchDraft();
+            break;
+          }
+          if (historyInputQuery.trim()) {
+            clearSearchFilter();
+            break;
+          }
           hidePickerWindow();
           break;
         case "F2":
@@ -4335,9 +4425,11 @@ function App() {
           if (scenarioCommandQuery !== null) {
             if (scenarioCommandOpen) acceptSearchSuggestion();
           } else if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
+            autocompleteCommittedQueryRef.current = null;
             runSearchNow();
           } else if (!historyMatchesQuery) {
             if (effectiveSearchTriggerMode === "enter" || effectiveSearchTriggerMode === "realtime") {
+              autocompleteCommittedQueryRef.current = null;
               runSearchNow();
             }
           } else if (!hasMultiSelection) {
@@ -4836,21 +4928,25 @@ function App() {
               <CircleHelp size={15} strokeWidth={2.3} aria-hidden="true" />
             </UiIconButton>
           </UiTooltip>
-          <UiButton
-            type="button"
-            className="composer-run-button"
-            variant="filled"
-            disabled={scenarioCommandQuery !== null || historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={runSearchNow}
-          >
-            Search
-          </UiButton>
+          {showApplyAction ? (
+            <UiButton
+              type="button"
+              className="composer-run-button"
+              variant="filled"
+              aria-label={aiComposerMode ? "Run AI search" : "Apply search"}
+              disabled={scenarioCommandQuery !== null || historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={runSearchNow}
+            >
+              {aiComposerMode ? "Search" : "Apply"}
+            </UiButton>
+          ) : null}
           <UiBadge
             className={`search-status${isFilteringHistory || aiPlanning ? " is-loading" : ""}`}
             variant="default"
             title="Result count"
             aria-live="polite"
+            data-filter-status={historyError ? "error" : historyMatchesQuery ? "applied" : searchState.filterStatus}
             leftSection={isFilteringHistory || aiPlanning ? <LoadingSpinner /> : null}
           >
             <span className="status-text">{searchStatus}</span>
@@ -4994,6 +5090,18 @@ function App() {
           }} />
         ) : null}
 
+        {structuredSearchFeedback && !historyError ? (
+          <div
+            className="search-draft-feedback"
+            role="status"
+            aria-live="polite"
+            data-testid="structured-search-feedback"
+          >
+            <strong>{structuredSearchFeedback}</strong>
+            <span>The applied results stay visible until the filter is valid.</span>
+          </div>
+        ) : null}
+
         {visibleSearchInterpretation ? (
           <div className="search-interpretation" aria-live="polite">
             <span className="search-interpretation-label">
@@ -5071,7 +5179,19 @@ function App() {
           </div>
         ) : null}
 
-        {historyError ? <UiAlert className="error-text" color="red" variant="light">{historyError}</UiAlert> : null}
+        {historyError ? (
+          <UiAlert className="error-text" color="red" variant="light">
+            <span>Could not update the applied results. Previous results are still visible.</span>
+            <UiButton
+              type="button"
+              size="compact-xs"
+              variant="subtle"
+              onClick={() => void retryFailedSearch()}
+            >
+              Retry
+            </UiButton>
+          </UiAlert>
+        ) : null}
         {actionError ? <UiAlert className="error-text" color="red" variant="light">{actionError}</UiAlert> : null}
 
         <section className="feed-panel" aria-label="Clipboard picker">
@@ -5084,13 +5204,15 @@ function App() {
             >
             {history.length === 0 ? (
               <li className="empty-history">
-                {isFilteringHistory ? (
+                {isFilteringHistory || historyPending ? (
                   <span className="empty-loading">
                     <span>{searchStatus}</span>
                   </span>
-                ) : query.trim()
-                  ? "No synthetic history matches that search."
-                  : "Copy synthetic text to populate the picker."}
+                ) : !historyMatchesQuery
+                  ? "Finish the current filter to update results."
+                  : query.trim()
+                    ? "No clips match this search. Edit Search or clear the filter."
+                    : "Copy something to populate Copicu."}
               </li>
             ) : (
               virtualRows.map((virtualRow) => {
