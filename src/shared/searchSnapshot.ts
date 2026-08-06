@@ -24,6 +24,7 @@ export type AppliedSearchPage<Item, Cursor = unknown> = {
   explanation?: string | null;
   queryExplanation?: unknown | null;
   warnings?: string[];
+  appliedDescriptor?: AppliedSearchDescriptor | null;
 };
 
 export type AppliedSearchSnapshot<Item, Cursor = unknown> = {
@@ -49,7 +50,12 @@ export type PickerSearchState<Item, Cursor = unknown> = {
 };
 
 export type PickerSearchAction<Item, Cursor = unknown> =
-  | { type: "draftChanged"; query: string; status: "idle" | "held" | "applying" }
+  | {
+      type: "draftChanged";
+      query: string;
+      status: "idle" | "held" | "applying";
+      generation?: number;
+    }
   | { type: "applyStarted"; generation: number; query: string }
   | {
       type: "applySucceeded";
@@ -61,7 +67,14 @@ export type PickerSearchAction<Item, Cursor = unknown> =
   | {
       type: "pageAppended";
       generation: number;
+      descriptor: AppliedSearchDescriptor;
       page: AppliedSearchPage<Item, Cursor>;
+    }
+  | {
+      type: "applyRetained";
+      generation: number;
+      descriptor: AppliedSearchDescriptor;
+      page?: Pick<AppliedSearchPage<Item, Cursor>, "totalCount" | "filteredCount">;
     }
   | { type: "pageFailed"; generation: number; error: string }
   | { type: "clearError" };
@@ -106,12 +119,19 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
 ): PickerSearchState<Item, Cursor> {
   switch (action.type) {
     case "draftChanged":
-      return {
-        ...state,
-        draftQuery: action.query,
-        filterStatus: action.status,
-        error: null,
-      };
+      {
+        const generation = Math.max(
+          state.generation + 1,
+          action.generation ?? state.generation + 1,
+        );
+        return {
+          ...state,
+          draftQuery: action.query,
+          filterStatus: action.status,
+          generation,
+          error: null,
+        };
+      }
     case "applyStarted":
       if (!isNewerGeneration(state.generation, action.generation)) {
         return state;
@@ -124,7 +144,10 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
         error: null,
       };
     case "applySucceeded":
-      if (action.generation !== state.generation) {
+      if (
+        action.generation !== state.generation
+        || !isAppliedSearchDescriptor(action.descriptor)
+      ) {
         return state;
       }
       return {
@@ -148,6 +171,8 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
         !state.applied
         || action.generation !== state.generation
         || action.generation !== state.applied.generation
+        || !isAppliedSearchDescriptor(action.descriptor)
+        || action.descriptor.fingerprint !== state.applied.descriptor.fingerprint
       ) {
         return state;
       }
@@ -180,6 +205,26 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
           error: null,
         };
       }
+    case "applyRetained":
+      if (
+        !state.applied
+        || action.generation !== state.generation
+        || !isAppliedSearchDescriptor(action.descriptor)
+        || action.descriptor.fingerprint !== state.applied.descriptor.fingerprint
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        applied: {
+          ...state.applied,
+          generation: action.generation,
+          totalCount: action.page?.totalCount ?? state.applied.totalCount,
+          filteredCount: action.page?.filteredCount ?? state.applied.filteredCount,
+        },
+        filterStatus: "idle",
+        error: null,
+      };
     case "pageFailed":
       if (
         !state.applied
@@ -209,6 +254,28 @@ export function isAppliedSearchDescriptor(value: unknown): value is AppliedSearc
     && (descriptor.mode === "structured" || descriptor.mode === "ai")
     && !!descriptor.plan
     && typeof descriptor.plan === "object"
+    && !Array.isArray(descriptor.plan)
     && typeof descriptor.fingerprint === "string"
     && descriptor.fingerprint.length > 0;
+}
+
+export function appliedSearchRequestFields(descriptor: AppliedSearchDescriptor) {
+  return {
+    query: descriptor.effectiveQuery,
+    displayQuery: descriptor.displayQuery,
+    mode: descriptor.mode,
+    plan: descriptor.plan,
+    appliedDescriptor: descriptor,
+  } as const;
+}
+
+export function appliedQueryMutationFields(
+  descriptor: AppliedSearchDescriptor,
+  marked: boolean,
+) {
+  return {
+    query: descriptor.effectiveQuery,
+    marked,
+    appliedDescriptor: descriptor,
+  } as const;
 }

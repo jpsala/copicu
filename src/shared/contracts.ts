@@ -1,3 +1,5 @@
+import type { AppliedSearchDescriptor } from "./searchSnapshot";
+
 export type TagSummary = {
   id: number;
   slug: string;
@@ -306,4 +308,5 @@ export type SetHistoryItemsMarkedRequest = {
 export type SetHistoryQueryMarkedRequest = {
   query: string;
   marked: boolean;
+  appliedDescriptor: AppliedSearchDescriptor;
 };

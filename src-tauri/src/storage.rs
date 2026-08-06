@@ -236,6 +236,8 @@ pub struct SetHistoryItemsMarkedRequest {
 pub struct SetHistoryQueryMarkedRequest {
     pub query: String,
     pub marked: bool,
+    #[serde(default, alias = "descriptor")]
+    pub applied_descriptor: Option<AppliedSearchDescriptor>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1720,7 +1722,16 @@ impl AppStorage {
         {
             return Err("query has invalid structured syntax; refusing marked update".to_string());
         }
-        let plan = search_plan_from_query(trimmed_query);
+        let descriptor = request
+            .applied_descriptor
+            .ok_or_else(|| {
+                "applied search descriptor is required for marked query updates".to_string()
+            })?;
+        descriptor.validate()?;
+        if descriptor.effective_query.trim() != trimmed_query {
+            return Err("applied search descriptor does not match the marked query".to_string());
+        }
+        let plan = descriptor.plan;
         let compiled = compile_search_plan(&plan)?;
         if !trimmed_query.is_empty() && compiled.where_sql.is_empty() {
             return Err(
@@ -5826,11 +5837,18 @@ mod tests {
             },
         );
         insert_test_text_item(&storage, 2, 30_002, "client invoice in content only");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "title:client",
+            "title:client",
+            AppliedSearchMode::Structured,
+        )
+        .expect("title query descriptor should compile");
 
         storage
             .set_query_marked(SetHistoryQueryMarkedRequest {
                 query: "title:client".to_string(),
                 marked: true,
+                applied_descriptor: Some(descriptor),
             })
             .expect("scoped query should mark matching items");
 
@@ -5849,15 +5867,94 @@ mod tests {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 30_001, "first clip");
         insert_test_text_item(&storage, 2, 30_002, "second clip");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "kind: clip",
+            "kind: clip",
+            AppliedSearchMode::Structured,
+        )
+        .expect("malformed query descriptor should still serialize");
 
         let error = storage
             .set_query_marked(SetHistoryQueryMarkedRequest {
                 query: "kind: clip".to_string(),
                 marked: true,
+                applied_descriptor: Some(descriptor),
             })
             .expect_err("malformed structured query must not update matching text globally");
 
         assert!(error.contains("invalid structured syntax"));
+        assert_eq!(storage.count_marked().expect("marked count should load"), 0);
+    }
+
+    #[test]
+    fn set_query_marked_consumes_the_validated_descriptor_plan() {
+        let storage = test_storage_with_migrations();
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 1,
+                created_at: 30_001,
+                content_kind: "text",
+                text: "body only",
+                mime_primary: Some("text/plain"),
+                title: Some("Client invoice"),
+                notes: None,
+                tags: Some("private"),
+            },
+        );
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 2,
+                created_at: 30_002,
+                content_kind: "text",
+                text: "client invoice in content",
+                mime_primary: Some("text/plain"),
+                title: Some("Other"),
+                notes: None,
+                tags: Some("client"),
+            },
+        );
+        let descriptor = AppliedSearchDescriptor::new(
+            "title:client",
+            "title:client",
+            AppliedSearchMode::Structured,
+            search_plan_from_query("tag:client"),
+        )
+        .expect("descriptor plan should compile");
+
+        storage
+            .set_query_marked(SetHistoryQueryMarkedRequest {
+                query: "title:client".to_string(),
+                marked: true,
+                applied_descriptor: Some(descriptor),
+            })
+            .expect("descriptor plan should drive the scoped update");
+
+        let marked_page = storage
+            .list_page(HistoryPageRequest {
+                query: "is:marked".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("marked query should load");
+        assert_eq!(ids(&marked_page.items), vec![2]);
+    }
+
+    #[test]
+    fn set_query_marked_requires_an_applied_descriptor() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 30_001, "first clip");
+
+        let error = storage
+            .set_query_marked(SetHistoryQueryMarkedRequest {
+                query: "first".to_string(),
+                marked: true,
+                applied_descriptor: None,
+            })
+            .expect_err("query mutations must carry the applied descriptor");
+
+        assert!(error.contains("descriptor is required"));
         assert_eq!(storage.count_marked().expect("marked count should load"), 0);
     }
 
