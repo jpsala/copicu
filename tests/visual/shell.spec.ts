@@ -1155,6 +1155,13 @@ function gotoShell(page: Page, url = "/") {
   return page.goto(url, { waitUntil: "domcontentloaded" });
 }
 
+async function openPickerOverflow(page: Page) {
+  await page.getByRole("button", { name: "Open picker menu" }).click();
+  const menu = page.getByRole("menu", { name: "Picker menu" });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 async function waitForDefaultHistoryReady(page: Page) {
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toHaveClass(/is-selected/);
@@ -1196,14 +1203,15 @@ test("picker shell keeps semantic feed state and only mounts active context stri
 
   await expect(page.locator(".picker-header")).toBeVisible();
   await expect(page.getByRole("list", { name: "Clipboard history results" })).toBeVisible();
-  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("Current clip 100 selected");
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("Current clip 100.");
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("No clips selected.");
   await expect(page.locator(".context-strip")).toHaveCount(0);
 
   await page.locator(".feed-item").first().click();
-  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("Current clip 100 selected");
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("Current clip 100.");
 
-  await page.getByRole("button", { name: "Open saved views" }).click();
-  await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: /Work clips/ }).click();
+  const pickerMenu = await openPickerOverflow(page);
+  await pickerMenu.getByRole("menuitem", { name: /Work clips/ }).click();
   await expect(page.locator(".context-strip")).toHaveCount(1);
   await expect(page.getByTestId("saved-view-bar")).toContainText("Work clips");
 });
@@ -1225,6 +1233,16 @@ test("picker row kebab and grouped menu stay keyboard reachable at 420 px", asyn
   await expect(menu.getByRole("group", { name: "Más" })).toBeVisible();
   await expect(menu.getByRole("menuitem").first()).toBeFocused();
 
+  const menuItems = menu.getByRole("menuitem");
+  await page.keyboard.press("ArrowDown");
+  await expect(menuItems.nth(1)).toBeFocused();
+  await page.keyboard.press("End");
+  await expect(menuItems.last()).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(menuItems.first()).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(menuItems.last()).toBeFocused();
+
   const fitsViewport = await menu.evaluate((element) => {
     const rect = element.getBoundingClientRect();
     return rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 && rect.bottom <= window.innerHeight;
@@ -1233,7 +1251,42 @@ test("picker row kebab and grouped menu stay keyboard reachable at 420 px", asyn
 
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
-  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await expect(kebab).toBeFocused();
+});
+
+test("current navigation stays separate from explicit bulk selection", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const rows = page.locator(".feed-item");
+  const first = rows.nth(0);
+  const second = rows.nth(1);
+  const firstRow = page.locator(".history-feed.has-items > li").first();
+  await first.click();
+  await expect(first).toHaveAttribute("aria-current", "true");
+  await expect(firstRow.getByLabel("Select item")).not.toBeChecked();
+  await expect(page.locator(".selection-action-bar")).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("No clips selected.");
+
+  await page.getByLabel("Search clipboard history").press("ArrowDown");
+  await expect(second).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".selection-action-bar")).toHaveCount(0);
+
+  const firstCheckbox = firstRow.getByLabel("Select item");
+  const checkboxTarget = await firstRow.locator(".item-selection-button").boundingBox();
+  expect(checkboxTarget?.width).toBeGreaterThanOrEqual(44);
+  expect(checkboxTarget?.height).toBeGreaterThanOrEqual(44);
+  await firstCheckbox.click();
+  await expect(page.getByLabel("1 selected", { exact: true })).toBeVisible();
+  await expect(firstRow.getByLabel("Deselect item")).toBeChecked();
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("1 clip selected.");
+
+  await page.locator(".selection-action-bar").getByRole("button", { name: "Clear", exact: true }).click();
+  await expect(page.locator(".selection-action-bar")).toHaveCount(0);
+  await expect(first).toHaveAttribute("aria-current", "true");
+  await page.getByLabel("Search clipboard history").press("ArrowDown");
+  await expect(second).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".selection-action-bar")).toHaveCount(0);
 });
 
 test("picker menu renders compact shortcut keycaps including configured Settings hotkey", async ({ page }) => {
@@ -1250,6 +1303,28 @@ test("picker menu renders compact shortcut keycaps including configured Settings
 
   const hasOverflow = await menu.evaluate((element) => element.scrollWidth > element.clientWidth + 1);
   expect(hasOverflow).toBe(false);
+});
+
+test("picker overlays mount from an inactive shell without a context strip", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await expect(page.locator(".context-strip")).toHaveCount(0);
+
+  const menu = await openPickerOverflow(page);
+  await menu.getByRole("menuitem", { name: "Search help" }).click();
+  const help = page.getByRole("dialog", { name: "Search and AI help" });
+  await expect(help).toBeVisible();
+  await help.getByRole("button", { name: "Close search help" }).click();
+
+  const viewsMenu = await openPickerOverflow(page);
+  await viewsMenu.getByRole("menuitem", { name: "Save current search as view" }).click();
+  const viewCreator = page.getByRole("dialog", { name: "Save current search as view" });
+  await expect(viewCreator).toBeVisible();
+  await viewCreator.getByRole("button", { name: "Close saved view creator" }).click();
+
+  const scenariosMenu = await openPickerOverflow(page);
+  await scenariosMenu.getByRole("menuitem", { name: "Create from current search" }).click();
+  await expect(page.getByRole("dialog", { name: "Create scenario" })).toBeVisible();
 });
 
 test("new item dialog creates a manual history item", async ({ page }) => {
@@ -1361,10 +1436,7 @@ test("picker discovers, opens, exits, and manages saved views without capture co
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const viewsButton = page.getByRole("button", { name: "Open saved views" });
-  await expect(viewsButton).toBeVisible();
-  await viewsButton.click();
-  let viewsMenu = page.getByRole("menu", { name: "Saved views" });
+  let viewsMenu = await openPickerOverflow(page);
   await expect(viewsMenu.getByRole("menuitem", { name: /Work clips/ })).toBeVisible();
   await expect(viewsMenu.getByRole("menuitem", { name: "Manage saved views" })).toBeVisible();
   await viewsMenu.getByRole("menuitem", { name: /Work clips/ }).click();
@@ -1379,17 +1451,15 @@ test("picker discovers, opens, exits, and manages saved views without capture co
 
   await page.getByLabel("Search clipboard history").fill("tag:context-smoke");
   await expect(viewBar).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Open saved views" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Open saved views" }).click();
-  viewsMenu = page.getByRole("menu", { name: "Saved views" });
+  viewsMenu = await openPickerOverflow(page);
   await viewsMenu.getByRole("menuitem", { name: /Work clips/ }).click();
   await page.getByRole("button", { name: "Exit saved view Work clips" }).click();
   await expect(page.getByTestId("saved-view-bar")).toHaveCount(0);
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
 
-  await page.getByRole("button", { name: "Open saved views" }).click();
-  await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: "Manage saved views" }).click();
+  viewsMenu = await openPickerOverflow(page);
+  await viewsMenu.getByRole("menuitem", { name: "Manage saved views" }).click();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "open_saved_views_settings"),
   );
@@ -1405,8 +1475,7 @@ test("picker saves the current search as a view from the Views menu", async ({ p
 
   const search = page.getByLabel("Search clipboard history");
   await search.fill("kind:image after:7d");
-  await page.getByRole("button", { name: "Open saved views" }).click();
-  const menu = page.getByRole("menu", { name: "Saved views" });
+  const menu = await openPickerOverflow(page);
   await menu.getByRole("menuitem", { name: "Save current search as view" }).click();
 
   const creator = page.getByRole("dialog", { name: "Save current search as view" });
@@ -1415,7 +1484,7 @@ test("picker saves the current search as a view from the Views menu", async ({ p
   await creator.getByRole("button", { name: "Save view" }).click();
   await expect(creator).toBeHidden();
 
-  await page.getByRole("button", { name: "Open saved views" }).click();
+  await openPickerOverflow(page);
   await expect(menu.getByRole("menuitem", { name: /Recent images/ })).toBeVisible();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
@@ -1433,8 +1502,8 @@ test("saved view access and identity fit the narrow picker", async ({ page }) =>
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: "Open saved views" }).click();
-  await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: /Context clips/ }).click();
+  const menu = await openPickerOverflow(page);
+  await menu.getByRole("menuitem", { name: /Context clips/ }).click();
   const viewBar = page.getByTestId("saved-view-bar");
   await expect(viewBar).toContainText("Context clips");
   await expect(viewBar.getByRole("button", { name: "Exit saved view Context clips" })).toBeVisible();
@@ -1445,7 +1514,7 @@ test("saved view access and identity fit the narrow picker", async ({ page }) =>
   await expect(viewBar).toHaveCount(0);
 });
 
-test("Apply stays inside the two-row primary band at 420 px", async ({ page }) => {
+test("Apply stays inside the single compact primary band at 420 px", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 640 });
   await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
   await gotoShell(page);
@@ -1481,48 +1550,36 @@ test("Apply stays inside the two-row primary band at 420 px", async ({ page }) =
       applyCenter: applyRect ? applyRect.top + applyRect.height / 2 : null,
     };
   });
-  expect(layout.bands).toHaveLength(2);
+  expect(layout.bands).toHaveLength(1);
   expect(layout.applyCenter).not.toBeNull();
   expect(layout.bands.some((center) => Math.abs(center - layout.applyCenter!) <= 20)).toBe(true);
 });
 
-test("AI composer keeps six narrow grid columns and two rows at 420 px", async ({ page }) => {
+test("AI composer keeps Search primary in one compact band at 420 px", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 640 });
   await mockTauriInvoke(page, syntheticLongHistory);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
+  const pickerMenu = await openPickerOverflow(page);
+  await pickerMenu.getByRole("menuitem", { name: "Switch to AI mode" }).click();
   const row = page.locator(".search-row.is-ai-mode");
   await expect(row).toBeVisible();
   const layout = await row.evaluate((element) => {
     const style = getComputedStyle(element);
-    const areas = [...style.gridTemplateAreas.matchAll(/"([^"]+)"/g)]
-      .map((match) => match[1].trim().split(/\s+/));
     const search = element.querySelector<HTMLElement>(".search-field")?.getBoundingClientRect();
-    const newItem = element.querySelector<HTMLElement>(".new-item-button")?.getBoundingClientRect();
     return {
       columns: style.gridTemplateColumns.trim().split(/\s+/),
       rows: style.gridTemplateRows.trim().split(/\s+/),
-      areas,
       searchTop: search?.top ?? null,
       searchWidth: search?.width ?? null,
-      newTop: newItem?.top ?? null,
-      newWidth: newItem?.width ?? null,
       scrollWidth: document.documentElement.scrollWidth,
     };
   });
-  expect(layout.columns).toHaveLength(6);
-  expect(layout.rows).toHaveLength(2);
-  expect(layout.areas).toEqual([
-    ["selection", "context", "search", "search", "search", "menu"],
-    ["selection", "context", "new", "composer", "trigger", "apply"],
-  ]);
+  expect(layout.columns).toHaveLength(4);
+  expect(layout.rows).toHaveLength(1);
   expect(layout.searchTop).not.toBeNull();
-  expect(layout.newTop).not.toBeNull();
-  expect(layout.searchTop!).toBeLessThan(layout.newTop!);
   expect(layout.searchWidth).not.toBeNull();
-  expect(layout.newWidth).not.toBeNull();
-  expect(layout.searchWidth!).toBeGreaterThan(layout.newWidth! * 2);
+  expect(layout.searchWidth!).toBeGreaterThan(180);
   expect(layout.scrollWidth).toBeLessThanOrEqual(420);
 });
 
@@ -1645,7 +1702,7 @@ test("picker scenario menu mirrors Views and supports Alt+S, switching, and Stop
   await gotoShell(page);
 
   await page.getByLabel("Search clipboard history").press("Alt+s");
-  const menu = page.getByRole("menu", { name: "Scenarios" });
+  const menu = page.getByRole("menu", { name: "Picker menu" });
   await expect(menu).toBeVisible();
   await page.keyboard.press("Alt+s");
   await expect(menu).toBeHidden();
@@ -1671,22 +1728,21 @@ test("picker scenario menu mirrors Views and supports Alt+S, switching, and Stop
   expect(layout.feedGap).toBeLessThanOrEqual(2);
   expect(layout.firstItemOffset).toBeLessThan(16);
 
-  await page.getByLabel(/Active scenario: Internal review/).click();
-  await menu.getByRole("menuitem", { name: /Cliente ACME/ }).click();
+  await openPickerOverflow(page);
+  await page.getByRole("menu", { name: "Picker menu" }).getByRole("menuitem", { name: /Cliente ACME/ }).click();
   await expect(page.getByLabel(/Active scenario: Cliente ACME/)).toBeVisible();
 
-  await page.getByLabel(/Active scenario: Cliente ACME/).click();
-  await expect(menu).toBeVisible();
+  await openPickerOverflow(page);
+  await expect(page.getByRole("menu", { name: "Picker menu" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(menu).toBeHidden();
+  await expect(page.getByRole("menu", { name: "Picker menu" })).toBeHidden();
 
-  await page.getByLabel(/Active scenario: Cliente ACME/).click();
-  await menu.getByRole("menuitem", { name: "Stop scenario" }).click();
-  await expect(menu).toBeHidden();
-  await expect(page.getByLabel("Open scenarios")).toBeVisible();
+  await openPickerOverflow(page);
+  await page.getByRole("menu", { name: "Picker menu" }).getByRole("menuitem", { name: "Stop scenario" }).click();
+  await expect(page.getByRole("menu", { name: "Picker menu" })).toBeHidden();
 
-  await page.getByLabel("Open scenarios").click();
-  await menu.getByRole("menuitem", { name: "Manage scenarios" }).click();
+  const manageMenu = await openPickerOverflow(page);
+  await manageMenu.getByRole("menuitem", { name: "Manage scenarios" }).click();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "open_scenario_settings"),
   );
@@ -1710,7 +1766,7 @@ test("switching to an edited scenario applies its updated picker view", async ({
 
   const search = page.getByLabel("Search clipboard history");
   await search.press("Alt+s");
-  const menu = page.getByRole("menu", { name: "Scenarios" });
+  const menu = page.getByRole("menu", { name: "Picker menu" });
   await menu.getByRole("menuitem", { name: /Cliente ACME/ }).click();
   await expect(search).toHaveValue("tag:work kind:text");
 
@@ -1728,7 +1784,7 @@ test("picker creates and activates a scenario from the current query", async ({ 
   await search.fill("#111");
   await expect(search).toHaveValue("#111");
   await search.press("Alt+s");
-  const menu = page.getByRole("menu", { name: "Scenarios" });
+  const menu = page.getByRole("menu", { name: "Picker menu" });
   await menu.getByRole("menuitem", { name: "Create from current search" }).click();
   const creator = page.getByRole("dialog", { name: "Create scenario" });
   await expect(creator.getByRole("code")).toHaveText("#111");
@@ -2103,6 +2159,27 @@ test("long synthetic history stays contained", async ({ page }) => {
     expect(layout.overlappedItems).toBe(false);
     expect(layout.largeGaps).toEqual([]);
   }
+});
+
+test("delayed history loading uses row-shaped skeleton geometry", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 360 });
+  await gotoShell(page);
+
+  await expect(page.locator(".history-skeleton-row")).toHaveCount(4, { timeout: 1200 });
+  const skeleton = await page.locator(".history-skeleton-row").first().evaluate((row) => {
+    const rect = row.getBoundingClientRect();
+    const children = Array.from(row.children).map((child) => {
+      const childRect = (child as HTMLElement).getBoundingClientRect();
+      return { width: childRect.width, height: childRect.height };
+    });
+    return { height: rect.height, children };
+  });
+  expect(skeleton.height).toBeGreaterThanOrEqual(62);
+  expect(skeleton.children).toHaveLength(4);
+  expect(skeleton.children[0].width).toBeGreaterThanOrEqual(20);
+  expect(skeleton.children[3].width).toBeGreaterThanOrEqual(20);
+  await expect(page.locator(".history-skeleton-row")).toHaveCount(0, { timeout: 2000 });
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
 test("compact previews expose only real overflow and keep inline editing stable", async ({ page }) => {
@@ -3034,6 +3111,7 @@ test("foreground search failure survives a focus refresh and retries the exact d
 
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 5000 });
   await expect(page.locator("[title='Result count']")).toHaveText("Could not update results");
+  await expect(page.getByRole("alert")).toContainText("Previous results remain visible.");
   await expect(search).toBeFocused();
   await page.waitForTimeout(180);
   expect(await page.evaluate(() =>
@@ -4189,49 +4267,54 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByLabel("AI API key")).toBeVisible();
 });
 
-test("hovered item exposes preview and edit actions plus contextual menu", async ({ page }) => {
+test("item actions stay behind the stable kebab and expose complete grouped labels", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
   await waitForDefaultHistoryReady(page);
 
   const secondItem = page.locator(".feed-item").nth(1);
-  const previewButton = page.getByRole("button", { name: "Preview item" }).nth(1);
-  const editButton = page.getByRole("button", { name: "Quick edit item" }).nth(1);
-  await expect(previewButton).toHaveCSS("opacity", "0");
-  await expect(editButton).toHaveCSS("opacity", "0");
+  await expect(page.getByRole("button", { name: "Preview item" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Quick edit item" })).toHaveCount(0);
+  const menuButton = page.getByRole("button", { name: "Open item actions" }).nth(1);
+  const hitTarget = await menuButton.boundingBox();
+  expect(hitTarget?.width).toBeGreaterThanOrEqual(44);
+  expect(hitTarget?.height).toBeGreaterThanOrEqual(44);
   await secondItem.hover();
-  await expect(previewButton).toHaveCSS("opacity", "1");
-  await expect(editButton).toHaveCSS("opacity", "1");
-  await previewButton.click();
+  await menuButton.click();
+
+  const itemMenu = page.getByRole("menu", { name: "Item actions" });
+  await expect(itemMenu).toBeVisible();
+  await expect(itemMenu.getByRole("group", { name: "Principal" })).toBeVisible();
+  await expect(itemMenu.getByRole("group", { name: "Editar" })).toBeVisible();
+  await expect(itemMenu.getByRole("group", { name: "Más" })).toBeVisible();
+  const groupOrder = await itemMenu.locator(":scope > .item-menu-group").evaluateAll((groups) =>
+    groups.map((group) => group.getAttribute("aria-label")),
+  );
+  expect(groupOrder).toEqual(["Principal", "Editar", "Más"]);
+  const menuLayout = await itemMenu.evaluate((menu) => ({
+    fitsViewport: menu.getBoundingClientRect().right <= window.innerWidth - 7,
+    labelsWrapWithoutClipping: Array.from(menu.querySelectorAll<HTMLElement>(".item-menu-action > span:not(.shortcut-badge)"))
+      .every((label) => label.scrollHeight <= label.clientHeight + 1),
+    shortcutBadgesFit: Array.from(menu.querySelectorAll<HTMLElement>(".shortcut-badge"))
+      .every((badge) => badge.scrollWidth <= badge.clientWidth + 1),
+  }));
+  expect(menuLayout).toEqual({
+    fitsViewport: true,
+    labelsWrapWithoutClipping: true,
+    shortcutBadgesFit: true,
+  });
+
+  await itemMenu.getByRole("menuitem", { name: /Preview/ }).click();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
       (entry: any) => entry.cmd === "open_item_preview" && entry.args.request.itemId === 101,
     ),
   );
 
-  await editButton.click();
+  await menuButton.click();
+  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   await expect(page.getByRole("textbox", { name: "Quick edit item 101" })).toBeVisible();
   await page.keyboard.press("Escape");
-
-  await page.locator(".feed-item").first().click({ button: "right" });
-  const itemMenu = page.getByRole("menu", { name: "Item actions" });
-  await expect(itemMenu).toHaveCSS("width", "260px");
-  const menuLayout = await itemMenu.evaluate((menu) => ({
-    fitsViewport: menu.getBoundingClientRect().right <= window.innerWidth - 7,
-    singleLineLabels: Array.from(menu.querySelectorAll<HTMLElement>(".item-menu-action > span:not(.shortcut-badge)"))
-      .every((label) => label.scrollHeight <= Math.ceil(Number.parseFloat(getComputedStyle(label).lineHeight) || label.clientHeight) + 1),
-    shortcutBadgesFit: Array.from(menu.querySelectorAll<HTMLElement>(".shortcut-badge"))
-      .every((badge) => badge.scrollWidth <= badge.clientWidth + 1),
-  }));
-  expect(menuLayout).toEqual({
-    fitsViewport: true,
-    singleLineLabels: true,
-    shortcutBadgesFit: true,
-  });
-  const menuPreview = page.getByRole("menuitem", { name: /Preview/ });
-  await expect(menuPreview).toContainText("Alt");
-  await expect(menuPreview).toContainText("Enter");
-  await menuPreview.click();
 });
 
 test("item preview does not open on hover and configurable hotkey toggles it", async ({ page }) => {

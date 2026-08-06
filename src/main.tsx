@@ -1096,7 +1096,7 @@ function App() {
   const [activeScenarioSession, setActiveScenarioSession] = useState<ActiveScenarioSession | null>(null);
   const [activeScenarioBusy, setActiveScenarioBusy] = useState(false);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [scenarioMenuOpen, setScenarioMenuOpen] = useState(false);
+  const [pickerMenuOpen, setPickerMenuOpen] = useState(false);
   const [scenarioSwitcherOpen, setScenarioSwitcherOpen] = useState(false);
   const [scenarioSwitcherLoading, setScenarioSwitcherLoading] = useState(false);
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
@@ -1134,6 +1134,7 @@ function App() {
   const editTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditTextRef = useRef<HTMLTextAreaElement>(null);
   const itemMenuRef = useRef<HTMLDivElement>(null);
+  const itemMenuReturnFocusRef = useRef<HTMLElement | null>(null);
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
@@ -1210,6 +1211,7 @@ function App() {
   );
   const effectiveSelection = selectedItems.length > 0 ? selectedItems : selectedItem ? [selectedItem] : [];
   const hasMultiSelection = effectiveSelection.length > 1;
+  const hasExplicitSelection = selectedItems.length > 0;
   const visibleMarkedItems = useMemo(
     () => history.filter((item) => item.is_marked),
     [history],
@@ -1432,7 +1434,7 @@ function App() {
     setTagEditorSaving(false);
     setOpenItemMenu(null);
     setActionPicker(null);
-    setScenarioMenuOpen(false);
+    setPickerMenuOpen(false);
     setSavedViewCreatorOpen(false);
     setEditError(null);
   }, []);
@@ -1519,7 +1521,7 @@ function App() {
     closeTransientEditors();
     setCommandPalette(null);
     setActionPicker(null);
-    setScenarioMenuOpen(true);
+    setPickerMenuOpen(true);
     void reloadScenarios();
   }, [closeTransientEditors, reloadScenarios]);
 
@@ -1530,7 +1532,7 @@ function App() {
       const session = await activateScenario(id);
       activeScenarioSessionRef.current = session;
       setActiveScenarioSession(session);
-      setScenarioMenuOpen(false);
+      setPickerMenuOpen(false);
       setScenarioSwitcherOpen(false);
       setDismissedAutocompleteQuery(session.query);
     } catch (error) {
@@ -1553,7 +1555,7 @@ function App() {
         const session = await activateScenario(created.id);
         activeScenarioSessionRef.current = session;
         setActiveScenarioSession(session);
-        setScenarioMenuOpen(false);
+        setPickerMenuOpen(false);
         setScenarioSwitcherOpen(false);
       } else {
         pushToast({ title: "Scenario saved", message: created.name, tone: "success" });
@@ -1826,7 +1828,7 @@ function App() {
       ) {
         event.preventDefault();
         event.stopPropagation();
-        if (scenarioMenuOpen) setScenarioMenuOpen(false);
+        if (pickerMenuOpen) setPickerMenuOpen(false);
         else openScenarioMenu();
         return;
       }
@@ -1863,7 +1865,7 @@ function App() {
     tagEditorDraft,
     openActionPicker,
     openScenarioMenu,
-    scenarioMenuOpen,
+    pickerMenuOpen,
     scenarioSwitcherOpen,
     searchHelpOpen,
   ]);
@@ -2805,11 +2807,14 @@ function App() {
       return;
     }
 
-    const nextSelection = new Set([item.id]);
-    selectedIdsRef.current = nextSelection;
+    // Current navigation is intentionally separate from explicit bulk
+    // selection. A plain click/Arrow/Home/End changes the active row without
+    // checking it or opening the batch action bar.
+    const emptySelection = new Set<number>();
+    selectedIdsRef.current = emptySelection;
     selectedItemIdRef.current = item.id;
     setSelectedItemId(item.id);
-    setSelectedIds(nextSelection);
+    setSelectedIds(emptySelection);
     selectionAnchorItemIdRef.current = item.id;
   }, [history]);
 
@@ -3377,12 +3382,14 @@ function App() {
 
   const showItemMenu = useCallback((item: HistoryItem, index: number, event: React.MouseEvent) => {
     selectForContextMenu(item, index);
+    itemMenuReturnFocusRef.current = event.currentTarget as HTMLElement;
     setActionError(null);
     setOpenItemMenu(itemMenuAnchorFromEvent(item.id, event));
   }, [selectForContextMenu]);
 
   const toggleItemMenu = useCallback((item: HistoryItem, index: number, event: React.MouseEvent) => {
     selectForContextMenu(item, index);
+    itemMenuReturnFocusRef.current = event.currentTarget as HTMLElement;
     setActionError(null);
     const nextAnchor = itemMenuAnchorFromEvent(item.id, event);
     setOpenItemMenu((current) => (current?.itemId === item.id ? null : nextAnchor));
@@ -3478,6 +3485,7 @@ function App() {
             <UiUnstyledButton
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="item-menu-action"
               disabled={!hasItems}
               onClick={() => {
@@ -3493,6 +3501,7 @@ function App() {
           <UiUnstyledButton
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="item-menu-action"
             disabled={!hasItems}
             onClick={() => {
@@ -3510,6 +3519,7 @@ function App() {
               key={action.id}
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="item-menu-action"
               onClick={() => void runActionDefinition(action, items, "itemMenu")}
             >
@@ -3522,6 +3532,7 @@ function App() {
             <UiUnstyledButton
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="item-menu-action"
               onClick={onClear}
             >
@@ -3990,8 +4001,8 @@ function App() {
       }
 
       const itemId = event.payload.itemId;
-      const nextSelection = new Set([itemId]);
-      selectedIdsRef.current = nextSelection;
+      const emptySelection = new Set<number>();
+      selectedIdsRef.current = emptySelection;
       selectedItemIdRef.current = itemId;
       selectionAnchorItemIdRef.current = itemId;
       lastActivatedItemIdRef.current = itemId;
@@ -4007,7 +4018,7 @@ function App() {
         if (targetIndex < 0) {
           return;
         }
-        setSelectedIds(nextSelection);
+        setSelectedIds(emptySelection);
         setSelectedItemId(itemId);
         if (targetIndex === 0) {
           historyScrollRef.current?.scrollTo({ top: 0 });
@@ -4045,11 +4056,11 @@ function App() {
         return;
       }
       pendingHistoryActivationItemIdRef.current = null;
-      const nextSelection = new Set([itemId]);
-      selectedIdsRef.current = nextSelection;
+      const emptySelection = new Set<number>();
+      selectedIdsRef.current = emptySelection;
       selectedItemIdRef.current = itemId;
       selectionAnchorItemIdRef.current = itemId;
-      setSelectedIds(nextSelection);
+      setSelectedIds(emptySelection);
       setSelectedItemId(itemId);
       if (targetIndex === 0) {
         historyScrollRef.current?.scrollTo({ top: 0 });
@@ -4197,17 +4208,25 @@ function App() {
     if (!openItemMenu) {
       return;
     }
-    const firstMenuItem = itemMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    const firstMenuItem = itemMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)');
     firstMenuItem?.focus();
   }, [openItemMenu]);
 
-  const selectionAnnouncement = selectedItems.length > 1
-    ? `${selectedItems.length} clips selected.`
-    : selectedItem
-      ? `Current clip ${selectedItem.id} selected.`
-      : history.length > 0
-        ? "No clip selected."
-        : "No clips available.";
+  const selectionAnnouncement = [
+    selectedItem ? `Current clip ${selectedItem.id}.` : history.length > 0 ? "No current clip." : "No clips available.",
+    selectedItems.length > 0
+      ? `${selectedItems.length} ${selectedItems.length === 1 ? "clip" : "clips"} selected.`
+      : "No clips selected.",
+  ].join(" ");
+  const historyAriaSetSize = historyFilteredCount !== null
+    ? historyFilteredCount
+    : historyNextCursor === null
+      ? history.length
+      : null;
+  const hasPreviousHistorySnapshot = history.length > 0 || Boolean(searchState.applied);
+  const historyErrorCopy = hasPreviousHistorySnapshot
+    ? "Could not update results. Previous results remain visible."
+    : "Could not load clipboard history yet. Try again.";
   const structuredSearchFeedback = !historyMatchesQuery
     && structuredSearchDraft.structured
     && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")
@@ -4891,140 +4910,6 @@ function App() {
               </Menu>
             </div>
           </div>
-          <div className="picker-context-controls">
-            <Menu withinPortal position="bottom-start" width={260}>
-              <Menu.Target>
-                <UiButton
-                  type="button"
-                  className={`saved-view-trigger${openedSavedView ? " is-active" : ""}`}
-                  variant="default"
-                  aria-label={openedSavedView ? `Saved view: ${openedSavedView.title}. Open saved views` : "Open saved views"}
-                  onMouseDown={(event) => event.preventDefault()}
-                >
-                  <Bookmark size={14} strokeWidth={2.3} aria-hidden="true" />
-                  <span>{openedSavedView?.title ?? "Views"}</span>
-                </UiButton>
-              </Menu.Target>
-              <Menu.Dropdown aria-label="Saved views">
-                <Menu.Label>Saved views</Menu.Label>
-                {savedHistoryViews.length > 0 ? savedHistoryViews.map((view) => (
-                  <Menu.Item
-                    key={view.id}
-                    leftSection={<Bookmark size={14} strokeWidth={2.2} />}
-                    className={openedSavedView?.id === view.id ? "is-active" : undefined}
-                    onClick={() => openPaletteNavigation({
-                      id: `saved-view.${view.id}`,
-                      kind: "navigation",
-                      group: "Saved views",
-                      title: view.title,
-                      description: view.query || "All history",
-                      query: view.query,
-                      savedView: view,
-                    })}
-                  >
-                    <span className="saved-view-menu-item">
-                      <strong>{view.title}</strong>
-                      <small>{view.query || "All history"}</small>
-                    </span>
-                  </Menu.Item>
-                )) : (
-                  <Menu.Item disabled>No saved views yet</Menu.Item>
-                )}
-                <Menu.Divider />
-                <Menu.Item
-                  leftSection={<Plus size={14} strokeWidth={2.2} />}
-                  onClick={() => setSavedViewCreatorOpen(true)}
-                >
-                  Save current search as view
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<Settings2 size={14} strokeWidth={2.2} />}
-                  onClick={() => {
-                    void openSavedViewsSettings().catch((error) => {
-                      pushToast({ title: "Could not open saved view settings", message: String(error), tone: "danger" });
-                    });
-                  }}
-                >
-                  Manage saved views
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-            <Menu
-              withinPortal
-              position="bottom-start"
-              width={300}
-              opened={scenarioMenuOpen}
-              onChange={(opened) => {
-                if (opened) openScenarioMenu();
-                else setScenarioMenuOpen(false);
-              }}
-            >
-              <Menu.Target>
-                <UiButton
-                  type="button"
-                  className={`scenario-trigger${activeScenarioSession ? " is-active" : ""}`}
-                  variant="default"
-                  aria-label={activeScenarioSession ? `Active scenario: ${activeScenarioSession.scenarioName}. Open scenarios` : "Open scenarios"}
-                  onMouseDown={(event) => event.preventDefault()}
-                >
-                  <Radio size={14} strokeWidth={2.3} aria-hidden="true" />
-                  <span>{activeScenarioSession?.scenarioName ?? "Scenario"}</span>
-                </UiButton>
-              </Menu.Target>
-              <Menu.Dropdown className="scenario-menu-dropdown" aria-label="Scenarios">
-                <Menu.Label>Scenarios</Menu.Label>
-                {scenarioSwitcherLoading ? <Menu.Item disabled>Loading scenarios…</Menu.Item> : null}
-                {!scenarioSwitcherLoading && scenarios.length === 0 ? <Menu.Item disabled>No scenarios yet</Menu.Item> : null}
-                {!scenarioSwitcherLoading ? scenarios.map((scenario) => {
-                  const active = activeScenarioSession?.scenarioId === scenario.id;
-                  return (
-                    <Menu.Item
-                      key={scenario.id}
-                      leftSection={active ? <Check size={14} strokeWidth={2.4} /> : <Radio size={14} strokeWidth={2.1} />}
-                      className={active ? "is-active" : undefined}
-                      disabled={active || activeScenarioBusy}
-                      onClick={() => void activateScenarioFromPicker(scenario.id)}
-                    >
-                      <span className="scenario-menu-item">
-                        <strong>{scenario.name}</strong>
-                        <small>{active ? `Active · ${scenario.query || "All history"}` : scenario.query || "All history"}</small>
-                      </span>
-                    </Menu.Item>
-                  );
-                }) : null}
-                <Menu.Divider />
-                {activeScenarioSession ? (
-                  <Menu.Item
-                    leftSection={<Square size={14} strokeWidth={2.2} />}
-                    disabled={activeScenarioBusy}
-                    onClick={() => void stopCurrentScenario()}
-                  >
-                    Stop scenario
-                  </Menu.Item>
-                ) : null}
-                <Menu.Item
-                  leftSection={<Plus size={14} strokeWidth={2.2} />}
-                  onClick={() => {
-                    setScenarioMenuOpen(false);
-                    setScenarioSwitcherOpen(true);
-                  }}
-                >
-                  Create from current search
-                </Menu.Item>
-                <Menu.Item
-                  leftSection={<Settings2 size={14} strokeWidth={2.2} />}
-                  onClick={() => {
-                    setScenarioMenuOpen(false);
-                    void openScenarioSettings().catch((error) => {
-                      pushToast({ title: "Could not open scenario settings", message: String(error), tone: "danger" });
-                    });
-                  }}
-                >
-                  Manage scenarios
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
-          </div>
           <div className={`search-field${!aiComposerMode && query ? " has-clear-button" : ""}`}>
             {aiComposerMode ? (
               <UiTextarea
@@ -5234,50 +5119,206 @@ function App() {
           >
             <span className="status-text">{searchStatus}</span>
           </UiBadge>
-          <Menu withinPortal position="bottom-end" width={236}>
+          <Menu
+            withinPortal
+            position="bottom-end"
+            width={280}
+            opened={pickerMenuOpen}
+            onChange={(opened) => {
+              setPickerMenuOpen(opened);
+              if (opened && !scenariosLoaded && !scenarioSwitcherLoading) {
+                void reloadScenarios();
+              }
+            }}
+          >
             <Menu.Target>
               <UiIconButton
                 type="button"
                 className="picker-menu-button"
                 variant="default"
                 aria-label="Open picker menu"
+                aria-expanded={pickerMenuOpen}
                 onMouseDown={(event) => event.preventDefault()}
               >
                 <MoreVertical size={16} strokeWidth={2.4} aria-hidden="true" />
               </UiIconButton>
             </Menu.Target>
-            <Menu.Dropdown aria-label="Picker menu">
+            <Menu.Dropdown className="picker-menu-dropdown" aria-label="Picker menu">
+              <Menu.Label>Picker actions</Menu.Label>
               <Menu.Item
                 leftSection={<Plus size={14} strokeWidth={2.2} />}
                 rightSection={<ShortcutBadge shortcut="Ctrl+N" className="menu-shortcut-badge" />}
-                onClick={beginCreateItem}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  beginCreateItem();
+                }}
               >
                 New item
               </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
                 rightSection={<ShortcutBadge shortcut="Ctrl+Alt+Q" className="menu-shortcut-badge" />}
-                onClick={openActionPicker}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  openActionPicker();
+                }}
               >
                 Quick Actions
               </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
                 rightSection={<ShortcutBadge shortcut="Ctrl+K" className="menu-shortcut-badge" />}
-                onClick={openCommandPalette}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  openCommandPalette();
+                }}
               >
                 Commands
               </Menu.Item>
               <Menu.Item
+                leftSection={<Sparkles size={14} strokeWidth={2.2} />}
+                rightSection={<ShortcutBadge shortcut="Ctrl+I" className="menu-shortcut-badge" />}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  if (!aiComposerMode) {
+                    leaveOpenedSavedView();
+                  }
+                  setAiComposerMode((current) => !current);
+                  setSearchInterpretation(null);
+                  window.setTimeout(() => searchRef.current?.focus(), 0);
+                }}
+              >
+                {aiComposerMode ? "Switch to Search mode" : "Switch to AI mode"}
+              </Menu.Item>
+              <Menu.Item
+                leftSection={searchTriggerMode === "realtime" ? <Radio size={14} strokeWidth={2.2} /> : <CornerDownLeft size={14} strokeWidth={2.2} />}
+                disabled={searchTriggerUpdating}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  cycleSearchTriggerMode();
+                  window.setTimeout(() => searchRef.current?.focus(), 0);
+                }}
+              >
+                {searchTriggerAriaLabel}
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Label>Views</Menu.Label>
+              {savedHistoryViews.length > 0 ? savedHistoryViews.map((view) => (
+                <Menu.Item
+                  key={view.id}
+                  leftSection={<Bookmark size={14} strokeWidth={2.2} />}
+                  className={openedSavedView?.id === view.id ? "is-active" : undefined}
+                  onClick={() => {
+                    setPickerMenuOpen(false);
+                    openPaletteNavigation({
+                      id: `saved-view.${view.id}`,
+                      kind: "navigation",
+                      group: "Saved views",
+                      title: view.title,
+                      description: view.query || "All history",
+                      query: view.query,
+                      savedView: view,
+                    });
+                  }}
+                >
+                  <span className="saved-view-menu-item">
+                    <strong>{view.title}</strong>
+                    <small>{view.query || "All history"}</small>
+                  </span>
+                </Menu.Item>
+              )) : (
+                <Menu.Item disabled>No saved views yet</Menu.Item>
+              )}
+              <Menu.Item
+                leftSection={<Plus size={14} strokeWidth={2.2} />}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  setSavedViewCreatorOpen(true);
+                }}
+              >
+                Save current search as view
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<Settings2 size={14} strokeWidth={2.2} />}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  void openSavedViewsSettings().catch((error) => {
+                    pushToast({ title: "Could not open saved view settings", message: String(error), tone: "danger" });
+                  });
+                }}
+              >
+                Manage saved views
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Label>Scenarios</Menu.Label>
+              {scenarioSwitcherLoading ? <Menu.Item disabled>Loading scenarios…</Menu.Item> : null}
+              {!scenarioSwitcherLoading && scenarios.length === 0 ? <Menu.Item disabled>No scenarios yet</Menu.Item> : null}
+              {!scenarioSwitcherLoading ? scenarios.map((scenario) => {
+                const active = activeScenarioSession?.scenarioId === scenario.id;
+                return (
+                  <Menu.Item
+                    key={scenario.id}
+                    leftSection={active ? <Check size={14} strokeWidth={2.4} /> : <Radio size={14} strokeWidth={2.1} />}
+                    className={active ? "is-active" : undefined}
+                    disabled={active || activeScenarioBusy}
+                    onClick={() => void activateScenarioFromPicker(scenario.id)}
+                  >
+                    <span className="scenario-menu-item">
+                      <strong>{scenario.name}</strong>
+                      <small>{active ? `Active · ${scenario.query || "All history"}` : scenario.query || "All history"}</small>
+                    </span>
+                  </Menu.Item>
+                );
+              }) : null}
+              {activeScenarioSession ? (
+                <Menu.Item
+                  leftSection={<Square size={14} strokeWidth={2.2} />}
+                  disabled={activeScenarioBusy}
+                  onClick={() => {
+                    setPickerMenuOpen(false);
+                    void stopCurrentScenario();
+                  }}
+                >
+                  Stop scenario
+                </Menu.Item>
+              ) : null}
+              <Menu.Item
+                leftSection={<Plus size={14} strokeWidth={2.2} />}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  setScenarioSwitcherOpen(true);
+                }}
+              >
+                Create from current search
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<Settings2 size={14} strokeWidth={2.2} />}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  void openScenarioSettings().catch((error) => {
+                    pushToast({ title: "Could not open scenario settings", message: String(error), tone: "danger" });
+                  });
+                }}
+              >
+                Manage scenarios
+              </Menu.Item>
+              <Menu.Divider />
+              <Menu.Item
                 leftSection={<CircleHelp size={14} strokeWidth={2.2} />}
-                onClick={() => setSearchHelpOpen(true)}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  setSearchHelpOpen(true);
+                }}
               >
                 Search help
               </Menu.Item>
               <Menu.Item
                 leftSection={<Settings2 size={14} strokeWidth={2.2} />}
                 rightSection={<ShortcutBadge shortcut={settings.picker.settingsShortcut} className="menu-shortcut-badge" />}
-                onClick={openSettingsPanel}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  openSettingsPanel();
+                }}
               >
                 Settings
               </Menu.Item>
@@ -5343,38 +5384,6 @@ function App() {
           </div>
         ) : null}
 
-        {savedViewCreatorOpen ? (
-          <SavedViewCreator
-            currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
-            busy={savedViewCreatorBusy}
-            onClose={() => {
-              setSavedViewCreatorOpen(false);
-              focusSearch();
-            }}
-            onCreate={createSavedViewFromPicker}
-          />
-        ) : null}
-
-        {scenarioSwitcherOpen ? (
-          <ScenarioCreator
-            availableTags={paletteTags}
-            currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
-            busy={activeScenarioBusy}
-            onClose={() => {
-              setScenarioSwitcherOpen(false);
-              focusSearch();
-            }}
-            onCreate={createScenarioFromPicker}
-          />
-        ) : null}
-
-        {searchHelpOpen ? (
-          <SearchHelpDialog onClose={() => {
-            setSearchHelpOpen(false);
-            focusSearch();
-          }} />
-        ) : null}
-
         {structuredSearchFeedback && !historyError ? (
           <div
             className="search-draft-feedback"
@@ -5427,6 +5436,38 @@ function App() {
           </PickerContextStrip>
         ) : null}
 
+        {savedViewCreatorOpen ? (
+          <SavedViewCreator
+            currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
+            busy={savedViewCreatorBusy}
+            onClose={() => {
+              setSavedViewCreatorOpen(false);
+              focusSearch();
+            }}
+            onCreate={createSavedViewFromPicker}
+          />
+        ) : null}
+
+        {scenarioSwitcherOpen ? (
+          <ScenarioCreator
+            availableTags={paletteTags}
+            currentQuery={scenarioCommandQuery !== null ? historyInputQuery : query.trim()}
+            busy={activeScenarioBusy}
+            onClose={() => {
+              setScenarioSwitcherOpen(false);
+              focusSearch();
+            }}
+            onCreate={createScenarioFromPicker}
+          />
+        ) : null}
+
+        {searchHelpOpen ? (
+          <SearchHelpDialog onClose={() => {
+            setSearchHelpOpen(false);
+            focusSearch();
+          }} />
+        ) : null}
+
         {selectedItems.length > 0 ? (
           <PickerSelectionBar ariaLabel={`${selectedItems.length} selected`}>
             <strong>{selectedItems.length} selected</strong>
@@ -5468,7 +5509,7 @@ function App() {
 
         {historyError ? (
           <UiAlert className="error-text" color="red" variant="light" role="alert" aria-live="assertive">
-            <span>Could not update the applied results. Previous results are still visible.</span>
+            <span>{historyErrorCopy}</span>
             <UiButton
               type="button"
               size="compact-xs"
@@ -5496,13 +5537,26 @@ function App() {
             >
             {history.length === 0 ? (
               <li className="empty-history">
-                {feedLoading ? (
+                {historyError ? (
+                  <span className="empty-loading" role="status" aria-live="polite">
+                    <span>{historyErrorCopy}</span>
+                  </span>
+                ) : feedLoading ? (
                   historyLoadingDelayed ? (
                     <span className="empty-loading history-skeleton-state" role="status" aria-live="polite">
                       <span className="history-skeleton" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
+                        {Array.from({ length: 4 }, (_, skeletonIndex) => (
+                          <span className="history-skeleton-row" key={skeletonIndex}>
+                            <span className="history-skeleton-selection" />
+                            <span className="history-skeleton-mark" />
+                            <span className="history-skeleton-copy">
+                              <span className="history-skeleton-line is-meta" />
+                              <span className="history-skeleton-line" />
+                              <span className="history-skeleton-line is-short" />
+                            </span>
+                            <span className="history-skeleton-menu" />
+                          </span>
+                        ))}
                       </span>
                       <span>{searchStatus}</span>
                     </span>
@@ -5552,7 +5606,7 @@ function App() {
                   id={`history-item-${item.id}`}
                   data-index={virtualRow.index}
                   aria-posinset={index + 1}
-                  aria-setsize={historyFilteredCount ?? history.length}
+                  aria-setsize={historyAriaSetSize ?? undefined}
                   ref={rowVirtualizer.measureElement}
                   style={{
                     transform: `translateY(${Math.ceil(virtualRow.start) + (virtualRow.index > 0 ? 1 : 0)}px)`,
@@ -5729,42 +5783,6 @@ function App() {
                   </div>
                   <UiIconButton
                     type="button"
-                    className="item-preview-button"
-                    aria-label="Preview item"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void openItemPreview(item.id).catch((previewError) => {
-                        setActionError(String(previewError));
-                      });
-                    }}
-                  >
-                    <Search size={14} strokeWidth={2.3} aria-hidden="true" />
-                  </UiIconButton>
-                  {item.content_kind === "text" ? (
-                    <UiIconButton
-                      type="button"
-                      className="item-edit-button"
-                      aria-label="Quick edit item"
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        void beginInlineEdit(item);
-                      }}
-                    >
-                      <Pencil size={14} strokeWidth={2.3} aria-hidden="true" />
-                    </UiIconButton>
-                  ) : null}
-                  <UiIconButton
-                    type="button"
                     className="item-delete-button"
                     aria-label={itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}
                     onMouseDown={(event) => {
@@ -5781,7 +5799,7 @@ function App() {
                   </UiIconButton>
                   <UiIconButton
                     type="button"
-                    className="item-menu-button has-delete-action has-preview-action has-edit-action"
+                    className="item-menu-button"
                     aria-label="Open item actions"
                     aria-expanded={openItemMenu?.itemId === item.id}
                     onMouseDown={(event) => {
@@ -5809,15 +5827,38 @@ function App() {
                       ref={itemMenuRef}
                       style={{ left: openItemMenu.x, top: openItemMenu.y }}
                       onKeyDown={(event) => {
-                        if (event.key !== "Escape") {
+                        const menuItems = Array.from(
+                          itemMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
+                        );
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          const returnTarget = itemMenuReturnFocusRef.current;
+                          setOpenItemMenu(null);
+                          window.setTimeout(() => {
+                            if (returnTarget?.isConnected) {
+                              returnTarget.focus();
+                            } else {
+                              searchRef.current?.focus();
+                            }
+                          }, 0);
+                          return;
+                        }
+                        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || menuItems.length === 0) {
                           return;
                         }
                         event.preventDefault();
-                        setOpenItemMenu(null);
-                        window.setTimeout(() => searchRef.current?.focus(), 0);
+                        const currentIndex = menuItems.indexOf(document.activeElement as HTMLElement);
+                        const nextIndex = event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? menuItems.length - 1
+                            : event.key === "ArrowDown"
+                              ? (currentIndex + 1 + menuItems.length) % menuItems.length
+                              : (currentIndex - 1 + menuItems.length) % menuItems.length;
+                        menuItems[nextIndex]?.focus();
                       }}
                     >
-                      {hasMultiSelection ? (
+                      {hasExplicitSelection ? (
                         <div className="item-menu-group" role="group" aria-label="Principal">
                           <span className="item-menu-group-label">Principal</span>
                           {renderBatchItemActions({
@@ -5837,6 +5878,7 @@ function App() {
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
+                            tabIndex={-1}
                             className="item-menu-action"
                             onClick={() => void activateItem(item, COPY_AND_HIDE_ACTIVATION)}
                           >
@@ -5846,6 +5888,7 @@ function App() {
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
+                            tabIndex={-1}
                             className="item-menu-action"
                             onClick={() => void activateItem(item, PASTE_AND_HIDE_ACTIVATION)}
                           >
@@ -5860,6 +5903,7 @@ function App() {
                             <UiUnstyledButton
                               type="button"
                               role="menuitem"
+                              tabIndex={-1}
                               className="item-menu-action"
                               onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.pastePlain, [item])}
                             >
@@ -5875,6 +5919,7 @@ function App() {
                             <UiUnstyledButton
                               type="button"
                               role="menuitem"
+                              tabIndex={-1}
                               className="item-menu-action"
                               onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.openUrl, [item])}
                             >
@@ -5883,37 +5928,6 @@ function App() {
                             </UiUnstyledButton>
                           ) : null}
                           </div>
-                          <div className="item-menu-group" role="group" aria-label="Más">
-                            <span className="item-menu-group-label">Más</span>
-                          {itemMenuScriptActions(actionDefinitions, [item], item).map((action) => (
-                            <UiUnstyledButton
-                              key={action.id}
-                              type="button"
-                              role="menuitem"
-                              className="item-menu-action"
-                              onClick={() => void runActionDefinition(action, [item], "itemMenu")}
-                            >
-                              <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                              <span>{action.title}</span>
-                              <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
-                            </UiUnstyledButton>
-                          ))}
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            className="item-menu-action"
-                            onClick={() => {
-                              setOpenItemMenu(null);
-                              void openItemPreview(item.id).catch((previewError) => {
-                                setActionError(String(previewError));
-                              });
-                            }}
-                          >
-                            <Search size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Preview</span>
-                            <ShortcutBadge shortcut={settings.picker.previewShortcut} />
-                          </UiUnstyledButton>
-                          </div>
                           <div className="item-menu-group" role="group" aria-label="Editar">
                             <span className="item-menu-group-label">Editar</span>
                           {item.content_kind === "text" ? (
@@ -5921,6 +5935,7 @@ function App() {
                               <UiUnstyledButton
                                 type="button"
                                 role="menuitem"
+                                tabIndex={-1}
                                 className="item-menu-action"
                                 onClick={() => void beginInlineEdit(item)}
                               >
@@ -5930,6 +5945,7 @@ function App() {
                               <UiUnstyledButton
                                 type="button"
                                 role="menuitem"
+                                tabIndex={-1}
                                 className="item-menu-action"
                                 onClick={() => void beginEdit(item, "content")}
                               >
@@ -5942,6 +5958,7 @@ function App() {
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
+                            tabIndex={-1}
                             className="item-menu-action"
                             onClick={() => void beginTagEdit([item])}
                           >
@@ -5952,12 +5969,46 @@ function App() {
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
+                            tabIndex={-1}
                             className="item-menu-action"
                             onClick={() => void beginEdit(item, "metadata")}
                           >
                             <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit metadata</span>
                             <ShortcutBadge shortcut="Shift+F2" />
+                          </UiUnstyledButton>
+                          </div>
+                          <div className="item-menu-group" role="group" aria-label="Más">
+                            <span className="item-menu-group-label">Más</span>
+                          {itemMenuScriptActions(actionDefinitions, [item], item).map((action) => (
+                            <UiUnstyledButton
+                              key={action.id}
+                              type="button"
+                              role="menuitem"
+                              tabIndex={-1}
+                              className="item-menu-action"
+                              onClick={() => void runActionDefinition(action, [item], "itemMenu")}
+                            >
+                              <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                              <span>{action.title}</span>
+                              <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
+                            </UiUnstyledButton>
+                          ))}
+                          <UiUnstyledButton
+                            type="button"
+                            role="menuitem"
+                            tabIndex={-1}
+                            className="item-menu-action"
+                            onClick={() => {
+                              setOpenItemMenu(null);
+                              void openItemPreview(item.id).catch((previewError) => {
+                                setActionError(String(previewError));
+                              });
+                            }}
+                          >
+                            <Search size={14} strokeWidth={2.2} aria-hidden="true" />
+                            <span>Preview</span>
+                            <ShortcutBadge shortcut={settings.picker.previewShortcut} />
                           </UiUnstyledButton>
                           </div>
                         </>

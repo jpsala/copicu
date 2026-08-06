@@ -511,7 +511,7 @@ button {
 
 .search-row {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto auto auto auto;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--line);
@@ -780,9 +780,8 @@ button {
 .saved-view-menu-item small,
 .scenario-menu-item strong,
 .scenario-menu-item small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .saved-view-menu-item small,
@@ -795,6 +794,16 @@ button {
 .scenario-menu-dropdown {
   max-height: min(420px, calc(100vh - 24px));
   overflow-y: auto;
+}
+
+.picker-menu-dropdown {
+  max-height: min(520px, calc(100vh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.picker-menu-dropdown .mantine-Menu-item {
+  min-height: 44px;
 }
 
 .scenario-menu-dropdown .mantine-Menu-item.is-active {
@@ -1349,7 +1358,7 @@ button {
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
-  padding: 8px 10px 8px 64px;
+  padding: 8px 104px 8px 64px;
   color: var(--ink);
   text-align: left;
   transition:
@@ -1391,12 +1400,12 @@ button {
   position: absolute;
   z-index: 2;
   top: 10px;
-  width: 22px;
-  height: 22px;
+  width: 44px;
+  height: 44px;
 }
 
 .item-selection-button {
-  left: 8px;
+  left: 2px;
   display: grid;
   place-items: center;
 }
@@ -1412,7 +1421,9 @@ button {
 }
 
 .item-mark-button {
-  left: 34px;
+  left: 42px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   opacity: 0.48;
 }
@@ -2541,8 +2552,8 @@ button {
 .item-edit-button {
   position: absolute;
   top: 7px;
-  width: 22px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--menu-button-bg);
@@ -2561,23 +2572,23 @@ button {
 }
 
 .item-menu-button {
-  right: 7px;
+  right: 2px;
   opacity: 0.72;
   pointer-events: auto;
 }
 
 .item-menu-button.has-delete-action,
 .item-preview-button {
-  right: 35px;
+  right: 50px;
 }
 
 .item-menu-button.has-preview-action,
 .item-edit-button {
-  right: 63px;
+  right: 98px;
 }
 
 .item-menu-button.has-edit-action {
-  right: 91px;
+  right: 146px;
 }
 
 .item-preview-button,
@@ -2589,7 +2600,7 @@ button {
 }
 
 .item-delete-button {
-  right: 7px;
+  right: 50px;
   border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
   color: var(--danger);
   opacity: 0;
@@ -2668,8 +2679,9 @@ button {
   align-items: center;
   width: 100%;
   min-width: 0;
+  min-height: 44px;
   border-radius: 4px;
-  padding: 7px;
+  padding: 8px 9px;
   color: var(--ink);
   font-size: 0.78rem;
   font-weight: 700;
@@ -2678,9 +2690,8 @@ button {
 
 .item-menu-action > span:not(.shortcut-badge) {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .item-menu-action > .shortcut-badge {
@@ -2915,13 +2926,28 @@ kbd {
 
 .history-skeleton {
   display: grid;
-  width: min(420px, 100%);
+  width: min(720px, calc(100vw - 36px));
   gap: 5px;
 }
 
-.history-skeleton span {
+.history-skeleton-row {
+  position: relative;
+  display: grid;
+  min-height: 62px;
+  grid-template-columns: 44px 30px minmax(0, 1fr) 44px;
+  gap: 4px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, var(--surface-muted));
+  padding: 8px 8px 8px 4px;
+}
+
+.history-skeleton-selection,
+.history-skeleton-mark,
+.history-skeleton-menu,
+.history-skeleton-line {
   display: block;
-  height: 10px;
   border-radius: 999px;
   background: linear-gradient(
     90deg,
@@ -2933,16 +2959,45 @@ kbd {
   animation: picker-skeleton-shimmer 1.35s ease-in-out infinite;
 }
 
-.history-skeleton span:nth-child(1) {
+.history-skeleton-selection {
+  width: 22px;
+  height: 22px;
+  justify-self: center;
+  border-radius: 4px;
+}
+
+.history-skeleton-mark {
+  width: 20px;
+  height: 20px;
+  justify-self: center;
+  border-radius: 4px;
+}
+
+.history-skeleton-menu {
+  width: 22px;
+  height: 28px;
+  justify-self: center;
+  border-radius: 5px;
+}
+
+.history-skeleton-copy {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.history-skeleton-line {
   width: 92%;
+  height: 10px;
 }
 
-.history-skeleton span:nth-child(2) {
-  width: 72%;
+.history-skeleton-line.is-meta {
+  width: 32%;
+  height: 7px;
 }
 
-.history-skeleton span:nth-child(3) {
-  width: 84%;
+.history-skeleton-line.is-short {
+  width: 68%;
 }
 
 @keyframes picker-skeleton-shimmer {
@@ -5349,38 +5404,18 @@ kbd {
   }
 
   .search-row {
-    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr) auto auto;
-    grid-template-areas:
-      "selection context search search new menu"
-      "selection context composer trigger help apply";
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "selection search apply menu";
+    gap: 5px;
+    padding: 6px 7px;
   }
 
   .search-row .selection-controls {
     grid-area: selection;
   }
 
-  .search-row .picker-context-controls {
-    grid-area: context;
-  }
-
   .search-row .search-field {
     grid-area: search;
-  }
-
-  .search-row .new-item-button {
-    grid-area: new;
-  }
-
-  .search-row .composer-mode-button {
-    grid-area: composer;
-  }
-
-  .search-row .search-trigger-button {
-    grid-area: trigger;
-  }
-
-  .search-row .search-help-button {
-    grid-area: help;
   }
 
   .search-row .composer-run-button {
@@ -5391,14 +5426,10 @@ kbd {
     grid-area: menu;
   }
 
-  .scenario-trigger,
-  .saved-view-trigger {
-    width: 32px;
-    padding-inline: 7px;
-  }
-
-  .scenario-trigger span,
-  .saved-view-trigger span {
+  .search-row .new-item-button,
+  .search-row .composer-mode-button,
+  .search-row .search-trigger-button,
+  .search-row .search-help-button {
     display: none;
   }
 
@@ -5426,14 +5457,8 @@ kbd {
   }
 
   .search-row.is-ai-mode {
-    grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr) auto auto;
-    grid-template-areas:
-      "selection context search search search menu"
-      "selection context new composer trigger apply";
-  }
-
-  .search-row.is-ai-mode .search-help-button {
-    display: none;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "selection search apply menu";
   }
 
   .scenario-session-copy,
@@ -5459,28 +5484,12 @@ kbd {
   }
 
   .item-menu-button,
-  .item-delete-button,
-  .item-preview-button,
-  .item-edit-button {
+  .item-delete-button {
     top: 8px;
   }
 
   .item-delete-button {
-    right: 8px;
-  }
-
-  .item-menu-button.has-delete-action,
-  .item-preview-button {
-    right: 36px;
-  }
-
-  .item-menu-button.has-preview-action,
-  .item-edit-button {
-    right: 64px;
-  }
-
-  .item-menu-button.has-edit-action {
-    right: 92px;
+    right: 50px;
   }
 
   .image-preview,

@@ -164,6 +164,7 @@ export const UiUnstyledButton = forwardRef<
     component?: "button";
     disabled?: boolean;
     role?: string;
+    tabIndex?: number;
     type?: ButtonElementType;
     onClick?: MouseEventHandler<HTMLButtonElement>;
     onMouseDown?: MouseEventHandler<HTMLButtonElement>;
