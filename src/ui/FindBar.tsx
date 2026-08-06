@@ -13,6 +13,7 @@ export type FindBarProps = {
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
   onPrevious: () => void;
   onNext: () => void;
+  onRetry: () => void;
   onClose: () => void;
 };
 
@@ -34,6 +35,7 @@ export function FindBar({
   onKeyDown,
   onPrevious,
   onNext,
+  onRetry,
   onClose,
 }: FindBarProps) {
   const hasMatches = total > 0 && currentOrdinal !== null;
@@ -79,6 +81,17 @@ export function FindBar({
       <span className="find-status-copy" role="status" aria-live="polite">
         {statusText}
       </span>
+      {status === "error" ? (
+        <button
+          type="button"
+          className="find-retry"
+          aria-label="Retry Find"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onRetry}
+        >
+          Retry
+        </button>
+      ) : null}
       <div className="find-navigation" aria-label="Find navigation">
         <button
           type="button"

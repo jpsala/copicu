@@ -571,7 +571,7 @@ button {
 
 .find-bar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto) auto auto;
   align-items: center;
   gap: 7px;
   min-width: 0;
@@ -635,6 +635,27 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+
+.find-retry {
+  min-height: 27px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  padding: 0 7px;
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.find-retry:hover,
+.find-retry:focus-visible {
+  border-color: var(--accent);
+}
+
+.find-retry:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .find-control {
@@ -5604,7 +5625,7 @@ kbd {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       "label input close"
-      "status status nav";
+      "status retry nav";
     gap: 4px 6px;
     padding: 5px 7px;
   }
@@ -5634,6 +5655,11 @@ kbd {
   .find-navigation {
     grid-area: nav;
     justify-self: end;
+  }
+
+  .find-retry {
+    grid-area: retry;
+    justify-self: start;
   }
 
   .find-close {

@@ -76,6 +76,7 @@ import type {
   EnterAction,
   FindCloseRequest,
   FindCloseResponse,
+  FindCancelOwnerResponse,
   FindFieldMatches,
   FindItemMatches,
   FindMatchesForItemsRequest,
@@ -491,6 +492,14 @@ type FindUiState = {
   recoveryAttempted: boolean;
 };
 
+type FindStartRunner = (
+  needle: string,
+  generation: number,
+  recoveryAttempted?: boolean,
+  preferredOrdinal?: number | null,
+  preferredTarget?: FindOccurrence | null,
+) => Promise<void>;
+
 const outcomeLabel: Record<CaptureEvent["outcome"], string> = {
   captured_text: "Captured",
   captured_image: "Image",
@@ -661,6 +670,10 @@ function findTarget(request: FindTargetRequest) {
 
 function findClose(request: FindCloseRequest) {
   return invoke<FindCloseResponse>("find_close", { request });
+}
+
+function findCancelOwner() {
+  return invoke<FindCancelOwnerResponse>("find_cancel_owner");
 }
 
 function historySearchInput(
@@ -1245,6 +1258,8 @@ function App() {
   const findDebounceTimerRef = useRef<number | null>(null);
   const findMatchesRequestSeqRef = useRef(0);
   const findTargetItemRef = useRef<HistoryItem | null>(null);
+  const findStartPendingRef = useRef(0);
+  const findStartRef = useRef<FindStartRunner | null>(null);
 
   const updateClearSearchPending = useCallback((pending: boolean) => {
     clearSearchPendingRef.current = pending;
@@ -1470,10 +1485,13 @@ function App() {
       const closeRequest = previous?.sessionId
         ? findClose({ sessionId: previous.sessionId }).catch(() => undefined)
         : Promise.resolve();
+      const cancelPendingRequest = findStartPendingRef.current > 0
+        ? findCancelOwner().catch(() => undefined)
+        : Promise.resolve();
       if (restoreFocus) {
         focusSearch();
       }
-      await closeRequest;
+      await Promise.all([closeRequest, cancelPendingRequest]);
     },
     [clearFindDebounce, clearFindPresentation, focusSearch],
   );
@@ -1514,6 +1532,48 @@ function App() {
     },
     [],
   );
+
+  const recoverFindSession = useCallback((error: unknown, sessionId: string, generation: number) => {
+    const message = String(error);
+    if (!/session not found|sessionInvalidated|find session/i.test(message)) {
+      return false;
+    }
+    const current = findStateRef.current;
+    if (
+      !current
+      || !current.active
+      || current.sessionId !== sessionId
+      || current.generation !== generation
+    ) {
+      return true;
+    }
+    void findClose({ sessionId }).catch(() => undefined);
+    if (current.recoveryAttempted || !current.needle.trim()) {
+      const nextState: FindUiState = {
+        ...current,
+        status: "error",
+        error: "Find session expired. Retry Find to rescan these results.",
+      };
+      findStateRef.current = nextState;
+      setFindState(nextState);
+      return true;
+    }
+    const nextState: FindUiState = {
+      ...current,
+      sessionId: null,
+      status: "starting",
+      error: null,
+      recoveryAttempted: true,
+    };
+    findStateRef.current = nextState;
+    setFindState(nextState);
+    clearFindPresentation();
+    const startRunner = findStartRef.current;
+    if (startRunner) {
+      void startRunner(current.needle, generation, true, current.currentOrdinal, current.currentTarget);
+    }
+    return true;
+  }, [clearFindPresentation]);
 
   const revealFindTarget = useCallback(
     async (
@@ -1653,8 +1713,11 @@ function App() {
         if (
           findStateRef.current?.sessionId !== sessionId
           || findStateRef.current.generation !== generation
-          || navigationSeq !== findNavigationSeqRef.current
+          || (navigationSeq !== undefined && navigationSeq !== findNavigationSeqRef.current)
         ) {
+          return;
+        }
+        if (recoverFindSession(error, sessionId, generation)) {
           return;
         }
         const message = String(error);
@@ -1668,11 +1731,17 @@ function App() {
           : current);
       }
     },
-    [clearFindPresentation, materializedFindItem, rowVirtualizer],
+    [clearFindPresentation, materializedFindItem, recoverFindSession, rowVirtualizer],
   );
 
   const startFind = useCallback(
-    async (needle: string, generation = findGenerationRef.current, recoveryAttempted = false) => {
+    async (
+      needle: string,
+      generation = findGenerationRef.current,
+      recoveryAttempted = false,
+      preferredOrdinal: number | null = null,
+      preferredTarget: FindOccurrence | null = null,
+    ) => {
       const trimmedNeedle = needle.trim();
       const descriptor = appliedDescriptorRef.current;
       if (!isAppliedSearchDescriptor(descriptor)) {
@@ -1721,20 +1790,95 @@ function App() {
         : current);
       clearFindPresentation();
 
+      let startedSessionId: string | null = null;
+      findStartPendingRef.current += 1;
       try {
         const response = await findStart({
           appliedDescriptor: descriptor,
           needle: trimmedNeedle,
           generation,
         });
+        startedSessionId = response.sessionId;
         if (
           requestSeq !== findRequestSeqRef.current
           || findStateRef.current?.generation !== generation
           || !findStateRef.current?.active
         ) {
+          void findClose({ sessionId: response.sessionId }).catch(() => undefined);
           return;
         }
-        const target = response.firstTarget;
+        let target = response.firstTarget;
+        const startedState = findStateRef.current
+          ? {
+              ...findStateRef.current,
+              sessionId: response.sessionId,
+              filterFingerprint: descriptor.fingerprint,
+              generation,
+              status: (response.total > 0 ? "ready" : "empty") as FindBarStatus,
+              total: response.total,
+              currentOrdinal: target?.ordinal ?? null,
+              currentTarget: target,
+              error: null,
+              recoveryAttempted,
+            }
+          : null;
+        if (startedState) {
+          findStateRef.current = startedState;
+          setFindState(startedState);
+        }
+        if (target && response.total > 0 && (preferredOrdinal !== null || preferredTarget)) {
+          const anchorOrdinal = Math.min(
+            Math.max(preferredOrdinal ?? preferredTarget?.ordinal ?? target.ordinal, 1),
+            response.total,
+          );
+          const candidateOrdinals: number[] = [];
+          const seenOrdinals = new Set<number>();
+          for (let distance = 0; distance < response.total; distance += 1) {
+            const candidates = distance === 0
+              ? [anchorOrdinal]
+              : [anchorOrdinal - distance, anchorOrdinal + distance];
+            for (const candidate of candidates) {
+              if (candidate >= 1 && candidate <= response.total && !seenOrdinals.has(candidate)) {
+                seenOrdinals.add(candidate);
+                candidateOrdinals.push(candidate);
+              }
+            }
+          }
+          let fallbackTarget = target;
+          let fallbackSet = false;
+          for (const ordinal of candidateOrdinals) {
+            const candidateResponse = ordinal === target.ordinal
+              ? { target }
+              : await findTarget({ sessionId: response.sessionId, ordinal });
+            const candidate = candidateResponse.target;
+            if (candidate && !fallbackSet) {
+              fallbackTarget = candidate;
+              fallbackSet = true;
+            }
+            const sameAnchor = Boolean(
+              candidate
+              && preferredTarget
+              && candidate.itemId === preferredTarget.itemId
+              && candidate.field === preferredTarget.field
+              && candidate.segment === preferredTarget.segment,
+            );
+            if (!preferredTarget || sameAnchor || candidateOrdinals.length === 1) {
+              target = candidate ?? target;
+              break;
+            }
+          }
+          if (preferredTarget) {
+            target = fallbackTarget;
+          }
+          if (
+            requestSeq !== findRequestSeqRef.current
+            || findStateRef.current?.generation !== generation
+            || !findStateRef.current?.active
+          ) {
+            void findClose({ sessionId: response.sessionId }).catch(() => undefined);
+            return;
+          }
+        }
         const nextState = findStateRef.current
           ? {
               ...findStateRef.current,
@@ -1761,7 +1905,16 @@ function App() {
           requestSeq !== findRequestSeqRef.current
           || findStateRef.current?.generation !== generation
         ) {
+          if (startedSessionId) {
+            void findClose({ sessionId: startedSessionId }).catch(() => undefined);
+          }
           return;
+        }
+        if (startedSessionId && recoverFindSession(error, startedSessionId, generation)) {
+          return;
+        }
+        if (startedSessionId) {
+          void findClose({ sessionId: startedSessionId }).catch(() => undefined);
         }
         setFindState((current) => current
           ? {
@@ -1772,17 +1925,25 @@ function App() {
               recoveryAttempted,
             }
           : current);
+      } finally {
+        findStartPendingRef.current = Math.max(0, findStartPendingRef.current - 1);
       }
     },
-    [clearFindPresentation, revealFindTarget],
+    [clearFindPresentation, recoverFindSession, revealFindTarget],
   );
+  findStartRef.current = startFind;
 
   const scheduleFind = useCallback(
-    (needle: string, generation: number) => {
+    (
+      needle: string,
+      generation: number,
+      preferredOrdinal: number | null = null,
+      preferredTarget: FindOccurrence | null = null,
+    ) => {
       clearFindDebounce();
       findDebounceTimerRef.current = window.setTimeout(() => {
         findDebounceTimerRef.current = null;
-        void startFind(needle, generation);
+        void startFind(needle, generation, false, preferredOrdinal, preferredTarget);
       }, 120);
     },
     [clearFindDebounce, startFind],
@@ -1793,7 +1954,35 @@ function App() {
     if (!current?.active || !current.needle.trim()) {
       return;
     }
+    if (current.sessionId) {
+      void findClose({ sessionId: current.sessionId }).catch(() => undefined);
+    }
     findGenerationRef.current += 1;
+    const generation = findGenerationRef.current;
+    const nextState: FindUiState = {
+      ...current,
+      generation,
+      sessionId: null,
+      status: "starting",
+      total: 0,
+      currentOrdinal: null,
+      currentTarget: null,
+      error: null,
+      recoveryAttempted: false,
+    };
+    findStateRef.current = nextState;
+    setFindState(nextState);
+    clearFindPresentation();
+    scheduleFind(current.needle, generation, current.currentOrdinal, current.currentTarget);
+  }, [clearFindPresentation, scheduleFind]);
+
+  const retryFind = useCallback(() => {
+    const current = findStateRef.current;
+    if (!current?.active || !current.needle.trim()) {
+      return;
+    }
+    findGenerationRef.current += 1;
+    findNavigationSeqRef.current += 1;
     const generation = findGenerationRef.current;
     const nextState: FindUiState = {
       ...current,
@@ -1938,13 +2127,7 @@ function App() {
         ) {
           return;
         }
-        const message = String(error);
-        if (!current.recoveryAttempted && /session not found|sessionInvalidated|find session/i.test(message)) {
-          const needle = current.needle;
-          setFindState((state) => state && state.sessionId === sessionId
-            ? { ...state, status: "starting", recoveryAttempted: true, error: null }
-            : state);
-          await startFind(needle, generation, true);
+        if (recoverFindSession(error, sessionId, generation)) {
           return;
         }
         setFindState((state) => state && state.sessionId === sessionId
@@ -1952,7 +2135,7 @@ function App() {
           : state);
       }
     },
-    [clearFindPresentation, revealFindTarget, startFind],
+    [clearFindPresentation, recoverFindSession, revealFindTarget],
   );
 
   const handleFindInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -2028,23 +2211,17 @@ function App() {
         if (!active || findStateRef.current?.sessionId !== sessionId) {
           return;
         }
-        const message = String(error);
-        if (/session not found|sessionInvalidated|find session/i.test(message)) {
-          const current = findStateRef.current;
-          if (current && !current.recoveryAttempted && current.needle.trim()) {
-            setFindState({ ...current, status: "starting", recoveryAttempted: true, error: null });
-            void startFind(current.needle, current.generation, true);
-          } else {
-            setFindState((currentState) => currentState && currentState.sessionId === sessionId
-              ? { ...currentState, status: "error", error: "Find session expired. Change the Find text to retry." }
-              : currentState);
-          }
+        if (recoverFindSession(error, sessionId, findStateRef.current?.generation ?? 0)) {
+          return;
         }
+        setFindState((currentState) => currentState && currentState.sessionId === sessionId
+          ? { ...currentState, status: "error", error: "Find highlights are unavailable. Retry Find." }
+          : currentState);
       });
     return () => {
       active = false;
     };
-  }, [findState?.sessionId, findState?.active, findTargetItem?.id, history, startFind]);
+  }, [findState?.sessionId, findState?.active, findTargetItem?.id, history, recoverFindSession]);
 
   useEffect(() => {
     const appliedFingerprint = searchState.applied?.descriptor.fingerprint ?? null;
@@ -4929,8 +5106,13 @@ function App() {
     if (!lastVirtualRow) {
       return;
     }
+    if (remoteFindItemId !== null && lastVirtualRow.index >= history.length) {
+      return;
+    }
+    const lastLoadedIndex = Math.min(lastVirtualRow.index, history.length - 1);
     if (
-      lastVirtualRow.index >= history.length - HISTORY_PREFETCH_THRESHOLD &&
+      history.length > 0
+      && lastLoadedIndex >= history.length - HISTORY_PREFETCH_THRESHOLD &&
       hasNextHistoryPage &&
       !historyLoadingMore
     ) {
@@ -4941,6 +5123,7 @@ function App() {
     history.length,
     historyLoadingMore,
     loadNextHistoryPage,
+    remoteFindItemId,
     virtualRows,
   ]);
 
@@ -6102,6 +6285,7 @@ function App() {
             onKeyDown={handleFindInputKeyDown}
             onPrevious={() => void navigateFind("previous")}
             onNext={() => void navigateFind("next")}
+            onRetry={retryFind}
             onClose={() => void closeFind()}
           />
         ) : null}
@@ -8350,10 +8534,27 @@ function MarkdownPreview({
             </span>
           );
         }
+        const contentSegment = segments
+          .slice(0, index + 1)
+          .filter((candidate) => candidate.kind === "text").length - 1;
+        const contentSegmentMatches = contentMatches
+          ? {
+              ...contentMatches,
+              ranges: contentMatches.ranges.filter((range) => range.segment === contentSegment),
+              segments: contentMatches.segments.filter((candidate) => candidate.segment === contentSegment),
+              displayText: contentMatches.segments.find((candidate) => candidate.segment === contentSegment)?.displayText
+                ?? segment.text,
+            }
+          : null;
         return (
           <span className="markdown-text-preview" key={`text-${index}`}>
-            {segments.length === 1 && contentMatches
-              ? <FindHighlightedText matches={contentMatches} currentOrdinal={currentOrdinal ?? null} fallback={segment.text} />
+            {contentSegmentMatches
+              ? <FindHighlightedText
+                  matches={contentSegmentMatches}
+                  currentOrdinal={currentOrdinal ?? null}
+                  className="markdown-find-content"
+                  fallback={segment.text}
+                />
               : segment.text}
           </span>
         );
@@ -8363,41 +8564,28 @@ function MarkdownPreview({
 }
 
 function markdownSegments(text: string): MarkdownSegment[] {
-  const imageLinePattern = /^\s*!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)\s*$/;
   const segments: MarkdownSegment[] = [];
-  let textBuffer: string[] = [];
-
-  const flushText = () => {
-    if (textBuffer.length === 0) {
-      return;
+  const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  let cursor = 0;
+  for (const imageMatch of text.matchAll(imagePattern)) {
+    const raw = imageMatch[0] ?? "";
+    const start = imageMatch.index ?? cursor;
+    if (start > cursor) {
+      segments.push({ kind: "text", text: text.slice(cursor, start) });
     }
-
-    segments.push({
-      kind: "text",
-      text: textBuffer.join("\n"),
-    });
-    textBuffer = [];
-  };
-
-  for (const line of text.split("\n")) {
-    const imageMatch = line.match(imageLinePattern);
-    if (!imageMatch) {
-      textBuffer.push(line);
-      continue;
-    }
-
-    flushText();
     segments.push({
       kind: "image",
       image: {
         alt: imageMatch[1] ?? "",
         src: normalizeMarkdownImageSrc(imageMatch[2] ?? ""),
-        raw: imageMatch[0],
+        raw,
       },
     });
+    cursor = start + raw.length;
   }
-
-  flushText();
+  if (cursor < text.length) {
+    segments.push({ kind: "text", text: text.slice(cursor) });
+  }
   return segments;
 }
 

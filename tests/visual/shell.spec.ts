@@ -173,6 +173,34 @@ const syntheticMarkdownScrollHistory = Array.from({ length: 80 }, (_, index) => 
   normalized_hash: `synthetic-scroll-${index + 1}`,
 }));
 
+const findFixtureHistory = [
+  {
+    ...syntheticLongHistory[1],
+    id: 7001,
+    text: "before NEEDLE after NEEDLE",
+    normalized_hash: "find-fixture-1",
+  },
+  {
+    ...syntheticLongHistory[1],
+    id: 7002,
+    text: "NEEDLE middle",
+    normalized_hash: "find-fixture-2",
+  },
+  {
+    ...syntheticLongHistory[1],
+    id: 7003,
+    text: "anchor content",
+    title: "NEEDLE title",
+    normalized_hash: "find-fixture-3",
+  },
+  {
+    ...syntheticLongHistory[1],
+    id: 7004,
+    text: "mixed Invoice before ![receipt alt](copicu://receipt.png) after invoice",
+    normalized_hash: "find-fixture-markdown",
+  },
+];
+
 type MockTauriOptions = {
   historySearchDelayMs?: number;
   historySearchFailNext?: boolean;
@@ -189,6 +217,15 @@ type MockTauriOptions = {
   deferStructuredSearchUntilEnter?: boolean;
   searchTriggerUpdateDelayMs?: number;
   previewShortcut?: string;
+  findStartDelayMs?: number;
+  findNavigateDelayMs?: number;
+  findTargetDelayMs?: number;
+  findMatchesDelayMs?: number;
+  findStartInvalidations?: number;
+  findNavigateInvalidations?: number;
+  findTargetInvalidations?: number;
+  findMatchesInvalidations?: number;
+  findRemoteItem?: any;
   editorSettings?: Partial<{
     fontFamily: "systemMono" | "cascadiaMono" | "consolas" | "uiSans";
     fontSize: number;
@@ -237,6 +274,156 @@ async function mockTauriInvoke(
         pendingActivationItemId: snapshot.pendingActivationItemId ?? null,
       }),
     );
+    const findSessions = new Map<string, {
+      needle: string;
+      occurrences: any[];
+      matchesByItem: Map<number, any>;
+    }>();
+    let findSessionCounter = 0;
+    let findStartToken = 0;
+    let findActiveSessionId: string | null = null;
+    const syncFindState = () => {
+      (window as any).__copicuTestFindSessionIds = Array.from(findSessions.keys());
+      (window as any).__copicuTestFindActiveSessionId = findActiveSessionId;
+    };
+    (window as any).__copicuTestFindSessionIds = [];
+    (window as any).__copicuTestFindActiveSessionId = null;
+    const delayFind = async (delayMs: number | undefined) => {
+      if ((delayMs ?? 0) > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+    };
+    const consumeFindInvalidation = (key: string) => {
+      const current = Number((window as any).__copicuTestMockOptions?.[key] ?? 0);
+      if (current <= 0) {
+        return false;
+      }
+      (window as any).__copicuTestMockOptions[key] = current - 1;
+      return true;
+    };
+    const findRanges = (displayText: string, needle: string, ordinal: number, segment = 0) => {
+      const ranges: any[] = [];
+      const haystack = displayText.toLocaleLowerCase();
+      const query = needle.toLocaleLowerCase();
+      if (!query) {
+        return ranges;
+      }
+      let cursor = 0;
+      while (cursor <= haystack.length) {
+        const index = haystack.indexOf(query, cursor);
+        if (index < 0) {
+          break;
+        }
+        ranges.push({ ordinal, segment, startUtf16: index, endUtf16: index + query.length });
+        cursor = index + Math.max(1, query.length);
+      }
+      return ranges;
+    };
+    const findTextSegments = (displayText: string) => [{
+      segment: 0,
+      startUtf16: 0,
+      endUtf16: displayText.length,
+      displayText,
+    }];
+    const findFieldsForItem = (item: any, needle: string) => {
+      const fields: any[] = [];
+      const addPlainField = (field: string, displayText: string | null | undefined) => {
+        if (!displayText) {
+          return;
+        }
+        const ranges = findRanges(displayText, needle, 0, 0);
+        if (ranges.length > 0) {
+          fields.push({ field, ranges, displayText, segments: findTextSegments(displayText) });
+        }
+      };
+      const sourceText = String(item.text ?? "");
+      if (item.content_kind === "text" || item.content_kind === "html" || item.content_kind === "unknown" || !item.content_kind) {
+        const imageSegments: any[] = [];
+        const contentSegments: any[] = [];
+        const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+        let cursor = 0;
+        let contentText = "";
+        let contentSegment = 0;
+        let imageMatch: RegExpExecArray | null;
+        while ((imageMatch = imagePattern.exec(sourceText))) {
+          const before = sourceText.slice(cursor, imageMatch.index);
+          if (before) {
+            const startUtf16 = contentText.length;
+            contentText += before;
+            contentSegments.push({
+              segment: contentSegment,
+              startUtf16,
+              endUtf16: contentText.length,
+              displayText: before,
+            });
+            contentSegment += 1;
+          }
+          const imageAlt = imageMatch[1] ?? "";
+          imageSegments.push({
+            segment: imageSegments.length,
+            displayText: imageAlt,
+            ranges: findRanges(imageAlt, needle, 0, imageSegments.length),
+          });
+          cursor = imageMatch.index + imageMatch[0].length;
+        }
+        const after = sourceText.slice(cursor);
+        if (after) {
+          const startUtf16 = contentText.length;
+          contentText += after;
+          contentSegments.push({
+            segment: contentSegment,
+            startUtf16,
+            endUtf16: contentText.length,
+            displayText: after,
+          });
+        }
+        if (contentText) {
+          const ranges = findRanges(contentText, needle, 0, 0).filter((range: any) => {
+            return contentSegments.some(
+              (segment: any) => range.startUtf16 >= segment.startUtf16 && range.endUtf16 <= segment.endUtf16,
+            );
+          });
+          if (ranges.length > 0) {
+            fields.push({ field: "content", ranges, displayText: contentText, segments: contentSegments });
+          }
+        }
+        for (const image of imageSegments) {
+          if (image.ranges.length > 0) {
+            fields.push({
+              field: "imageAlt",
+              ranges: image.ranges,
+              displayText: image.displayText,
+              segments: [{
+                segment: image.segment,
+                startUtf16: 0,
+                endUtf16: image.displayText.length,
+                displayText: image.displayText,
+              }],
+            });
+          }
+        }
+      }
+      addPlainField("title", item.title);
+      addPlainField("tag", item.tags);
+      addPlainField("notes", item.notes);
+      return fields;
+    };
+    const findSourceItems = () => {
+      const source = [...((window as any).__copicuTestHistoryItems ?? items)];
+      const remote = (window as any).__copicuTestMockOptions?.findRemoteItem;
+      if (remote && !source.some((item: any) => item.id === remote.id)) {
+        source.push(remote);
+      }
+      return source;
+    };
+    const materializeFindItem = (item: any) => ({
+      id: item.id,
+      contentKind: item.content_kind ?? "text",
+      text: item.text ?? "",
+      title: item.title ?? null,
+      notes: item.notes ?? null,
+      tags: item.tags ?? null,
+    });
     const eventCallbacks = new Map<number, (event: unknown) => unknown>();
     const eventHandlers = new Map<string, number[]>();
     let nextCallbackId = 1;
@@ -625,6 +812,141 @@ async function mockTauriInvoke(
               file_count: null,
               formats: [],
             };
+          case "find_start": {
+            const request = args?.request ?? {};
+            const mockOptions = (window as any).__copicuTestMockOptions ?? {};
+            const startToken = ++findStartToken;
+            findActiveSessionId = null;
+            findSessions.clear();
+            syncFindState();
+            await delayFind(mockOptions.findStartDelayMs);
+            if (startToken !== findStartToken) {
+              throw new Error("find start superseded");
+            }
+            if (consumeFindInvalidation("findStartInvalidations")) {
+              throw new Error("sessionInvalidated");
+            }
+            const needle = String(request.needle ?? "").trim();
+            const occurrences: any[] = [];
+            const matchesByItem = new Map<number, any>();
+            for (const item of findSourceItems()) {
+              const fields = findFieldsForItem(item, needle).map((field: any) => ({
+                ...field,
+                ranges: field.ranges.map((range: any) => ({ ...range })),
+              }));
+              const itemMatches = { itemId: item.id, fields };
+              matchesByItem.set(item.id, itemMatches);
+              for (const field of fields) {
+                for (const range of field.ranges) {
+                  const ordinal = occurrences.length + 1;
+                  range.ordinal = ordinal;
+                  occurrences.push({
+                    ordinal,
+                    itemId: item.id,
+                    field: field.field,
+                    segment: range.segment ?? 0,
+                    startUtf16: range.startUtf16,
+                    endUtf16: range.endUtf16,
+                  });
+                }
+              }
+            }
+            const sessionId = "find-session-" + (++findSessionCounter);
+            findSessions.set(sessionId, { needle, occurrences, matchesByItem });
+            findActiveSessionId = sessionId;
+            syncFindState();
+            return {
+              sessionId,
+              ownerId: "main",
+              generation: Number(request.generation ?? 0),
+              total: occurrences.length,
+              firstTarget: occurrences[0] ?? null,
+            };
+          }
+          case "find_navigate": {
+            const request = args?.request ?? {};
+            const mockOptions = (window as any).__copicuTestMockOptions ?? {};
+            await delayFind(mockOptions.findNavigateDelayMs);
+            if (consumeFindInvalidation("findNavigateInvalidations")) {
+              throw new Error("sessionInvalidated");
+            }
+            const session = findSessions.get(request.sessionId);
+            if (!session) {
+              throw new Error("find session not found");
+            }
+            const total = session.occurrences.length;
+            if (total === 0) {
+              return { total: 0, target: null };
+            }
+            const current = Number(request.currentOrdinal ?? request.ordinal ?? 0);
+            const targetOrdinal = request.direction === "previous"
+              ? (current <= 1 ? total : current - 1)
+              : (current >= total ? 1 : current + 1);
+            return { total, target: session.occurrences[targetOrdinal - 1] ?? null };
+          }
+          case "find_target": {
+            const request = args?.request ?? {};
+            const mockOptions = (window as any).__copicuTestMockOptions ?? {};
+            await delayFind(mockOptions.findTargetDelayMs);
+            if (consumeFindInvalidation("findTargetInvalidations")) {
+              throw new Error("sessionInvalidated");
+            }
+            const session = findSessions.get(request.sessionId);
+            if (!session) {
+              throw new Error("find session not found");
+            }
+            const target = session.occurrences[Number(request.ordinal) - 1] ?? null;
+            const sourceItem = target ? findSourceItems().find((item: any) => item.id === target.itemId) : null;
+            return {
+              total: session.occurrences.length,
+              target,
+              materialized: target && sourceItem
+                ? {
+                    itemId: sourceItem.id,
+                    field: target.field,
+                    displayText: session.matchesByItem.get(sourceItem.id)?.fields.find(
+                      (field: any) => field.field === target.field,
+                    )?.displayText ?? sourceItem.text ?? "",
+                    item: materializeFindItem(sourceItem),
+                  }
+                : null,
+            };
+          }
+          case "find_matches_for_items": {
+            const request = args?.request ?? {};
+            const mockOptions = (window as any).__copicuTestMockOptions ?? {};
+            await delayFind(mockOptions.findMatchesDelayMs);
+            if (consumeFindInvalidation("findMatchesInvalidations")) {
+              throw new Error("sessionInvalidated");
+            }
+            const session = findSessions.get(request.sessionId);
+            if (!session) {
+              throw new Error("find session not found");
+            }
+            return {
+              items: (request.itemIds ?? []).map((itemId: number) => (
+                session.matchesByItem.get(itemId) ?? { itemId, fields: [] }
+              )),
+            };
+          }
+          case "find_close": {
+            const sessionId = args?.request?.sessionId;
+            if (sessionId) {
+              findSessions.delete(sessionId);
+              if (findActiveSessionId === sessionId) {
+                findActiveSessionId = null;
+              }
+              syncFindState();
+            }
+            return { closed: true };
+          }
+          case "find_cancel_owner": {
+            ++findStartToken;
+            findSessions.clear();
+            findActiveSessionId = null;
+            syncFindState();
+            return { cancelled: true };
+          }
           case "history_search":
           case "list_history_page": {
             const mockOptions = (window as any).__copicuTestMockOptions ?? {};
@@ -1041,9 +1363,31 @@ async function mockTauriInvoke(
           case "close_settings_window":
           case "close_metadata_window":
           case "activate_item":
-          case "update_history_item":
-          case "delete_history_item":
             return null;
+          case "update_history_item": {
+            const request = args?.request ?? {};
+            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
+            (window as any).__copicuTestHistoryItems = sourceItems.map((item: any) => (
+              item.id === request.id
+                ? {
+                    ...item,
+                    ...(request.text === undefined ? {} : { text: request.text }),
+                    ...(request.title === undefined ? {} : { title: request.title }),
+                    ...(request.notes === undefined ? {} : { notes: request.notes }),
+                    ...(request.tags === undefined ? {} : { tags: request.tags }),
+                    includes_content: true,
+                  }
+                : item
+            ));
+            return null;
+          }
+          case "delete_history_item": {
+            const id = args?.id;
+            (window as any).__copicuTestHistoryItems = (
+              (window as any).__copicuTestHistoryItems ?? items
+            ).filter((item: any) => item.id !== id);
+            return null;
+          }
           case "count_marked_history_items":
             return ((window as any).__copicuTestHistoryItems ?? items).filter(
               (item: any) => Boolean(item.is_marked),
@@ -1200,6 +1544,23 @@ async function selectLongSingleLineAndUnbroken(page: Page) {
   await expect(unbroken).toHaveClass(/is-multi-selected/);
 }
 
+async function openFind(page: Page, needle?: string) {
+  await page.keyboard.press("Control+f");
+  const findBar = page.getByTestId("find-bar");
+  await expect(findBar).toBeVisible();
+  const input = page.getByLabel("Find in results");
+  await expect(input).toBeFocused();
+  if (needle !== undefined) {
+    await input.fill(needle);
+  }
+  return { findBar, input };
+}
+
+async function waitForFindReady(page: Page, count: string) {
+  await expect(page.locator("#find-status")).toHaveText(count, { timeout: 5000 });
+  await expect(page.getByTestId("find-bar")).toHaveAttribute("data-find-status", "ready");
+}
+
 test("shell loads without horizontal overflow", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -1213,6 +1574,168 @@ test("shell loads without horizontal overflow", async ({ page }) => {
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   expect(hasHorizontalOverflow).toBe(false);
+});
+
+test("Find closes pending Start and supersedes stale starts without leaking sessions", async ({ page }) => {
+  await mockTauriInvoke(page, findFixtureHistory, null, { findStartDelayMs: 220 });
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+
+  const { findBar, input } = await openFind(page);
+  await input.fill("NEEDLE");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "find_start"),
+  );
+  await expect(findBar).toHaveAttribute("data-find-status", "starting");
+  await page.keyboard.press("Escape");
+  await expect(findBar).toBeHidden();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "find_cancel_owner"),
+  );
+  await page.waitForTimeout(280);
+  expect(await page.evaluate(() => (window as any).__copicuTestFindSessionIds)).toEqual([]);
+
+  const reopened = await openFind(page);
+  await reopened.input.fill("NEEDLE");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_start").length >= 2,
+  );
+  await reopened.input.fill("middle");
+  await expect(reopened.findBar).toHaveAttribute("data-find-status", "starting");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_start").length >= 3,
+  );
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestFindSessionIds.length === 1,
+    { timeout: 5000 },
+  );
+  expect(await page.evaluate(() => (window as any).__copicuTestFindSessionIds)).toHaveLength(1);
+  await page.keyboard.press("Escape");
+  await expect(reopened.findBar).toBeHidden();
+  await page.waitForTimeout(260);
+  expect(await page.evaluate(() => (window as any).__copicuTestFindSessionIds)).toEqual([]);
+});
+
+test("Find supports zero, multiple, wrap navigation, highlights, Escape and focus restoration", async ({ page }) => {
+  await mockTauriInvoke(page, findFixtureHistory);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+
+  const { findBar, input } = await openFind(page, "NEEDLE");
+  await waitForFindReady(page, "1 / 4");
+  await expect(page.locator(".find-highlight")).toHaveCount(4);
+  await input.press("Enter");
+  await expect(page.locator("#find-status")).toHaveText("2 / 4");
+  await input.press("Shift+Enter");
+  await expect(page.locator("#find-status")).toHaveText("1 / 4");
+  await findBar.getByRole("button", { name: "Previous match" }).click();
+  await expect(page.locator("#find-status")).toHaveText("4 / 4");
+  await findBar.getByRole("button", { name: "Next match" }).click();
+  await expect(page.locator("#find-status")).toHaveText("1 / 4");
+
+  await input.fill("NO_SUCH_FIND_TOKEN");
+  await expect(page.locator("#find-status")).toHaveText("0 / 0");
+  await expect(findBar).toHaveAttribute("data-find-status", "empty");
+  await page.keyboard.press("Escape");
+  await expect(findBar).toBeHidden();
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+});
+
+test("Find reveals a remote target without requesting another history page", async ({ page }) => {
+  const visibleItems = syntheticPagedHistory;
+  const remoteItem = {
+    ...syntheticPagedHistory[0],
+    id: 7999,
+    text: "REMOTE_FIND_NEEDLE",
+    normalized_hash: "remote-find-target",
+  };
+  await mockTauriInvoke(page, visibleItems, null, { findRemoteItem: remoteItem });
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestHistoryResponses.length >= 1,
+  );
+  const historyResponsesBefore = await page.evaluate(() =>
+    (window as any).__copicuTestHistoryResponses.length,
+  );
+
+  await openFind(page, "REMOTE_FIND_NEEDLE");
+  await waitForFindReady(page, "1 / 1");
+  await expect(page.locator("#history-item-7999")).toBeVisible();
+  await page.waitForTimeout(260);
+  const historyResponses = await page.evaluate(() => (window as any).__copicuTestHistoryResponses);
+  expect(historyResponses.length).toBe(historyResponsesBefore);
+  await page.keyboard.press("Escape");
+});
+
+test("Find recovers once from Target invalidation and exposes Retry after a second failure", async ({ page }) => {
+  await mockTauriInvoke(page, findFixtureHistory, null, { findTargetInvalidations: 2 });
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { findBar } = await openFind(page, "NEEDLE");
+  await expect(findBar.getByRole("button", { name: "Retry Find" })).toBeVisible({ timeout: 5000 });
+  await expect(findBar).toHaveAttribute("data-find-status", "error");
+  await findBar.getByRole("button", { name: "Retry Find" }).click();
+  await waitForFindReady(page, "1 / 4");
+});
+
+test("Find shares invalidation recovery across Navigate and Matches", async ({ page }) => {
+  await mockTauriInvoke(page, findFixtureHistory, null, { findNavigateInvalidations: 1 });
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { input } = await openFind(page, "NEEDLE");
+  await waitForFindReady(page, "1 / 4");
+  await input.press("Enter");
+  await waitForFindReady(page, "1 / 4");
+  await input.press("Enter");
+  await waitForFindReady(page, "2 / 4");
+  await page.keyboard.press("Escape");
+
+  await mockTauriInvoke(page, findFixtureHistory, null, { findMatchesInvalidations: 1 });
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  await openFind(page, "NEEDLE");
+  await waitForFindReady(page, "1 / 4");
+});
+
+test("Find keeps Markdown mixed text and inline alt highlights mapped to visible segments", async ({ page }) => {
+  await mockTauriInvoke(page, [findFixtureHistory[3]]);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { input } = await openFind(page, "receipt alt");
+  await waitForFindReady(page, "1 / 1");
+  await expect(page.locator(".markdown-image-alt .find-highlight")).toHaveCount(1);
+  await input.fill("invoice");
+  await waitForFindReady(page, "1 / 2");
+  await expect(page.locator(".markdown-find-content .find-highlight")).toHaveCount(2);
+});
+
+test("Find rebase keeps the nearest anchor through edit and advances on delete", async ({ page }) => {
+  await mockTauriInvoke(page, findFixtureHistory);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { input } = await openFind(page, "NEEDLE");
+  await waitForFindReady(page, "1 / 4");
+  await input.press("Enter");
+  await input.press("Enter");
+  await expect(page.locator("#find-status")).toHaveText("3 / 4");
+
+  const firstRow = page.locator("#history-item-7001");
+  await firstRow.hover();
+  await firstRow.getByRole("button", { name: "Quick edit item" }).click();
+  const firstEditor = firstRow.getByRole("textbox", { name: "Quick edit item 7001" });
+  await firstEditor.fill("NEEDLE");
+  await firstEditor.press("Control+Enter");
+  await expect(firstEditor).toBeHidden();
+  await waitForFindReady(page, "2 / 3");
+
+  const currentRow = page.locator("#history-item-7002");
+  await currentRow.hover();
+  await currentRow.getByRole("button", { name: "Delete item" }).click();
+  await waitForFindReady(page, "2 / 2");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(80);
+  expect(await page.evaluate(() => (window as any).__copicuTestFindSessionIds)).toEqual([]);
 });
 
 test("picker shell keeps semantic feed state and only mounts active context strips", async ({ page }) => {
