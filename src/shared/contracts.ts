@@ -6,11 +6,12 @@ export type FindOccurrence = {
   ordinal: number;
   itemId: number;
   field: FindField;
+  segment: number;
   startUtf16: number;
   endUtf16: number;
 };
 
-export type FindRange = Pick<FindOccurrence, "ordinal" | "startUtf16" | "endUtf16">;
+export type FindRange = Pick<FindOccurrence, "ordinal" | "segment" | "startUtf16" | "endUtf16">;
 
 export type FindFieldMatches = {
   field: FindField;
@@ -26,10 +27,12 @@ export type FindStartRequest = {
   appliedDescriptor: AppliedSearchDescriptor;
   needle: string;
   generation?: number;
+  ownerId?: string;
 };
 
 export type FindStartResponse = {
   sessionId: string;
+  ownerId: string;
   generation: number;
   total: number;
   firstTarget: FindOccurrence | null;
@@ -58,10 +61,19 @@ export type FindMatchesForItemsResponse = {
 
 export type FindCloseRequest = {
   sessionId: string;
+  ownerId?: string | null;
 };
 
 export type FindCloseResponse = {
   closed: boolean;
+};
+
+export type FindCancelOwnerRequest = {
+  ownerId: string;
+};
+
+export type FindCancelOwnerResponse = {
+  cancelled: boolean;
 };
 
 export type FindTargetRequest = {
@@ -72,6 +84,23 @@ export type FindTargetRequest = {
 export type FindTargetResponse = {
   total: number;
   target: FindOccurrence | null;
+  materialized: FindTargetMaterialization | null;
+};
+
+export type FindTargetMaterialization = {
+  itemId: number;
+  field: FindField;
+  displayText: string;
+  item: FindTargetItem;
+};
+
+export type FindTargetItem = {
+  id: number;
+  contentKind: string;
+  text: string;
+  title: string | null;
+  notes: string | null;
+  tags: string | null;
 };
 
 export type TagSummary = {

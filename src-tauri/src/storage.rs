@@ -9,7 +9,10 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 #[path = "storage/blobs.rs"]
@@ -62,6 +65,7 @@ pub struct AppStorage {
     conn: Arc<Mutex<Connection>>,
     db_path: PathBuf,
     app_data_dir: PathBuf,
+    mutation_epoch: Arc<AtomicU64>,
 }
 
 /// The small, non-sensitive row projection consumed by the ephemeral Find worker.
@@ -75,6 +79,7 @@ pub(crate) struct FindSourceItem {
     pub title: Option<String>,
     pub notes: Option<String>,
     pub tags: Option<String>,
+    pub tag_labels: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -943,11 +948,20 @@ impl AppStorage {
             conn: Arc::new(Mutex::new(conn)),
             db_path,
             app_data_dir: app_data_dir.to_path_buf(),
+            mutation_epoch: Arc::new(AtomicU64::new(0)),
         })
     }
 
     pub fn db_path(&self) -> &Path {
         &self.db_path
+    }
+
+    pub(crate) fn mutation_epoch(&self) -> Arc<AtomicU64> {
+        self.mutation_epoch.clone()
+    }
+
+    fn bump_mutation_epoch(&self) {
+        self.mutation_epoch.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Read the applied Search snapshot through a dedicated read-only WAL connection.
@@ -956,9 +970,22 @@ impl AppStorage {
     /// guarded by a mutex and is used by capture/write paths. Find can therefore scan
     /// a stable result set without retaining that mutex or a transaction after this
     /// method returns.
+    #[allow(dead_code)]
     pub(crate) fn read_find_items(
         &self,
         descriptor: &AppliedSearchDescriptor,
+    ) -> Result<Vec<FindSourceItem>, String> {
+        let cancelled = AtomicBool::new(false);
+        let epoch = self.mutation_epoch.load(Ordering::SeqCst);
+        self.read_find_items_cancelable(descriptor, &cancelled, &self.mutation_epoch, epoch)
+    }
+
+    pub(crate) fn read_find_items_cancelable(
+        &self,
+        descriptor: &AppliedSearchDescriptor,
+        cancelled: &AtomicBool,
+        mutation_epoch: &AtomicU64,
+        expected_epoch: u64,
     ) -> Result<Vec<FindSourceItem>, String> {
         descriptor.validate()?;
         let conn = Connection::open_with_flags(
@@ -970,11 +997,24 @@ impl AppStorage {
             .map_err(|error| format!("failed to configure Find sqlite busy timeout: {error}"))?;
 
         let compiled = compile_search_plan(&descriptor.plan)?;
+        let effective_limit = compiled
+            .limit
+            .unwrap_or(DEFAULT_HISTORY_PAGE_LIMIT)
+            .clamp(MIN_HISTORY_PAGE_LIMIT, MAX_HISTORY_PAGE_LIMIT);
         let sql = format!(
             "SELECT id, content_kind, text, title, notes, tags
+                    , (SELECT GROUP_CONCAT(label, char(31))
+                       FROM (
+                           SELECT tags.label AS label
+                           FROM clipboard_item_tags
+                           JOIN tags ON tags.id = clipboard_item_tags.tag_id
+                           WHERE clipboard_item_tags.item_id = clipboard_items.id
+                           ORDER BY tags.label COLLATE NOCASE ASC, tags.id ASC
+                       )) AS relation_tags
              FROM clipboard_items
              {}
-             ORDER BY {}",
+             ORDER BY {}
+             LIMIT ?",
             compiled.where_sql, compiled.order_sql
         );
         let transaction = conn
@@ -983,8 +1023,96 @@ impl AppStorage {
         let mut statement = transaction
             .prepare(&sql)
             .map_err(|error| format!("failed to prepare Find snapshot query: {error}"))?;
-        let rows = statement
-            .query_map(params_from_iter(compiled.params.iter()), |row| {
+        let mut query_params = compiled.params;
+        query_params.push(Value::Integer(effective_limit));
+        let mut rows = statement
+            .query(params_from_iter(query_params.iter()))
+            .map_err(|error| format!("failed to query Find snapshot: {error}"))?;
+        let mut items = Vec::new();
+        let mut row_index = 0usize;
+        while let Some(row) = rows
+            .next()
+            .map_err(|error| format!("failed to read Find snapshot row: {error}"))?
+        {
+            if row_index % 32 == 0 {
+                if cancelled.load(Ordering::SeqCst) {
+                    return Err("find start superseded".to_string());
+                }
+                if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
+                    return Err("find session invalidated".to_string());
+                }
+            }
+            let relation_tags = row
+                .get::<_, Option<String>>(6)
+                .map_err(|error| format!("failed to decode Find relation tags: {error}"))?;
+            let tag_labels = relation_tags
+                .as_deref()
+                .map(|value| value.split('\u{1f}').map(str::to_string).collect())
+                .unwrap_or_default();
+            items.push(FindSourceItem {
+                id: row
+                    .get(0)
+                    .map_err(|error| format!("failed to decode Find item id: {error}"))?,
+                content_kind: row
+                    .get(1)
+                    .map_err(|error| format!("failed to decode Find content kind: {error}"))?,
+                text: row
+                    .get(2)
+                    .map_err(|error| format!("failed to decode Find text: {error}"))?,
+                title: row
+                    .get(3)
+                    .map_err(|error| format!("failed to decode Find title: {error}"))?,
+                notes: row
+                    .get(4)
+                    .map_err(|error| format!("failed to decode Find notes: {error}"))?,
+                tags: row
+                    .get(5)
+                    .map_err(|error| format!("failed to decode Find tags: {error}"))?,
+                tag_labels,
+            });
+            row_index += 1;
+        }
+        if cancelled.load(Ordering::SeqCst) {
+            return Err("find start superseded".to_string());
+        }
+        if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
+            return Err("find session invalidated".to_string());
+        }
+        drop(rows);
+        drop(statement);
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to close Find sqlite snapshot: {error}"))?;
+        Ok(items)
+    }
+
+    pub(crate) fn read_find_item(&self, item_id: i64) -> Result<Option<FindSourceItem>, String> {
+        let conn = Connection::open_with_flags(
+            &self.db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|error| format!("failed to open Find target sqlite connection: {error}"))?;
+        conn.busy_timeout(Duration::from_millis(250))
+            .map_err(|error| format!("failed to configure Find target sqlite busy timeout: {error}"))?;
+        conn.query_row(
+            "SELECT id, content_kind, text, title, notes, tags,
+                    (SELECT GROUP_CONCAT(label, char(31))
+                     FROM (
+                         SELECT tags.label AS label
+                         FROM clipboard_item_tags
+                         JOIN tags ON tags.id = clipboard_item_tags.tag_id
+                         WHERE clipboard_item_tags.item_id = clipboard_items.id
+                         ORDER BY tags.label COLLATE NOCASE ASC, tags.id ASC
+                     )) AS relation_tags
+             FROM clipboard_items
+             WHERE id = ?1",
+            params![item_id],
+            |row| {
+                let relation_tags = row.get::<_, Option<String>>(6)?;
+                let tag_labels = relation_tags
+                    .as_deref()
+                    .map(|value| value.split('\u{1f}').map(str::to_string).collect())
+                    .unwrap_or_default();
                 Ok(FindSourceItem {
                     id: row.get(0)?,
                     content_kind: row.get(1)?,
@@ -992,17 +1120,12 @@ impl AppStorage {
                     title: row.get(3)?,
                     notes: row.get(4)?,
                     tags: row.get(5)?,
+                    tag_labels,
                 })
-            })
-            .map_err(|error| format!("failed to query Find snapshot: {error}"))?;
-        let items = rows
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| format!("failed to read Find snapshot row: {error}"))?;
-        drop(statement);
-        transaction
-            .commit()
-            .map_err(|error| format!("failed to close Find sqlite snapshot: {error}"))?;
-        Ok(items)
+            },
+        )
+        .optional()
+        .map_err(|error| format!("failed to read Find target item: {error}"))
     }
 
     pub fn insert_text(&self, text: &str, normalized_hash: &str) -> Result<i64, String> {
@@ -1709,6 +1832,7 @@ impl AppStorage {
         if updated == 0 {
             Err(format!("clipboard item not found: {id}"))
         } else {
+            self.bump_mutation_epoch();
             Ok(())
         }
     }
@@ -1736,6 +1860,7 @@ impl AppStorage {
         if updated == 0 {
             Err(format!("clipboard item not found: {id}"))
         } else {
+            self.bump_mutation_epoch();
             Ok(())
         }
     }
@@ -1781,6 +1906,7 @@ impl AppStorage {
         conn.execute(&sql, params_from_iter(query_params.iter()))
             .map_err(|error| format!("failed to update marked clipboard items: {error}"))?;
 
+        self.bump_mutation_epoch();
         Ok(())
     }
 
@@ -1834,6 +1960,7 @@ impl AppStorage {
         conn.execute(&sql, params_from_iter(query_params.iter()))
             .map_err(|error| format!("failed to update marked clipboard query: {error}"))?;
 
+        self.bump_mutation_epoch();
         Ok(())
     }
 
@@ -1851,6 +1978,7 @@ impl AppStorage {
         )
         .map_err(|error| format!("failed to clear marked clipboard items: {error}"))?;
 
+        self.bump_mutation_epoch();
         Ok(())
     }
 
@@ -1946,6 +2074,7 @@ impl AppStorage {
             Err(format!("clipboard item not found: {}", request.id))
         } else {
             sync_item_tags_from_legacy_string(&conn, request.id, next_tags.as_deref())?;
+            self.bump_mutation_epoch();
             Ok(())
         }
     }
@@ -1990,7 +2119,9 @@ impl AppStorage {
         )?;
         transaction
             .commit()
-            .map_err(|error| format!("failed to commit metadata update: {error}"))
+            .map_err(|error| format!("failed to commit metadata update: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(())
     }
 
     pub fn list_item_properties(&self, item_id: i64) -> Result<ScenarioProperties, String> {
@@ -2035,6 +2166,7 @@ impl AppStorage {
 
         drop(conn);
         self.remove_item_blobs(&item);
+        self.bump_mutation_epoch();
         Ok(())
     }
 
@@ -2506,9 +2638,11 @@ impl AppStorage {
         }
 
         sync_legacy_tags_for_tag(&conn, request.tag_id)?;
-        query_tag_summaries(&conn, Some(request.tag_id))?
+        let summary = query_tag_summaries(&conn, Some(request.tag_id))?
             .pop()
-            .ok_or_else(|| format!("tag not found after update: {}", request.tag_id))
+            .ok_or_else(|| format!("tag not found after update: {}", request.tag_id))?;
+        self.bump_mutation_epoch();
+        Ok(summary)
     }
 
     pub fn delete_tag(&self, tag_id: i64) -> Result<(), String> {
@@ -2599,7 +2733,9 @@ impl AppStorage {
             sync_legacy_tags_for_item(&tx, item_id)?;
         }
         tx.commit()
-            .map_err(|error| format!("failed to commit tag deletion: {error}"))
+            .map_err(|error| format!("failed to commit tag deletion: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(())
     }
 
     pub fn get_item_tags(&self, item_id: i64) -> Result<Vec<String>, String> {
@@ -2618,6 +2754,7 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         ensure_item_exists(&conn, request.item_id)?;
         set_item_tags_from_values(&conn, request.item_id, &request.tags)?;
+        self.bump_mutation_epoch();
         Ok(())
     }
 
@@ -2680,7 +2817,9 @@ impl AppStorage {
         }
 
         tx.commit()
-            .map_err(|error| format!("failed to commit item tag update: {error}"))
+            .map_err(|error| format!("failed to commit item tag update: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(())
     }
 
     pub fn apply_builtin_enrichment(
@@ -2715,6 +2854,7 @@ impl AppStorage {
         }
         if !applied.is_empty() {
             sync_legacy_tags_for_item(&conn, item_id)?;
+            self.bump_mutation_epoch();
         }
         Ok(applied)
     }
@@ -5262,6 +5402,7 @@ mod tests {
             conn: Arc::new(Mutex::new(conn)),
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
+            mutation_epoch: Arc::new(AtomicU64::new(0)),
         };
         let page = storage
             .list_page(HistoryPageRequest {
@@ -5326,6 +5467,7 @@ mod tests {
             conn: Arc::new(Mutex::new(conn)),
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
+            mutation_epoch: Arc::new(AtomicU64::new(0)),
         };
 
         let tags = storage.list_tags().expect("tags should list");
@@ -6576,6 +6718,7 @@ mod tests {
             conn: Arc::new(Mutex::new(conn)),
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
+            mutation_epoch: Arc::new(AtomicU64::new(0)),
         };
 
         let scenario = storage
@@ -6888,16 +7031,171 @@ mod tests {
         let operational_lock = storage.conn.lock().expect("operational lock should work");
         let worker_storage = storage.clone();
         let worker_descriptor = descriptor.clone();
-        let rows = std::thread::spawn(move || worker_storage.read_find_items(&worker_descriptor))
+        let read_worker = std::thread::spawn(move || {
+            worker_storage.read_find_items(&worker_descriptor)
+        });
+        let writer_storage = storage.clone();
+        let writer = std::thread::spawn(move || {
+            writer_storage.update_item(UpdateHistoryItemRequest {
+                id: 1,
+                text: "invoice snapshot writer".to_string(),
+                title: None,
+                notes: None,
+                tags: None,
+                mime_primary: Some("text/plain".to_string()),
+                marked: None,
+            })
+        });
+        let rows = read_worker
             .join()
             .expect("Find read worker should finish while the operational lock is held")
             .expect("Find read worker should read the snapshot");
         drop(operational_lock);
+        writer
+            .join()
+            .expect("writer should finish after the operational lock is released")
+            .expect("writer should update the item");
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].text, "invoice snapshot");
         drop(storage);
         let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
+    fn find_snapshot_reproduces_plan_limit_and_custom_sort_membership() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-limit-test-{}",
+            now_unix_ms()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        let first = storage
+            .insert_text("first invoice", &hash_text("first invoice"))
+            .expect("first item should insert");
+        let second = storage
+            .insert_text("second invoice", &hash_text("second invoice"))
+            .expect("second item should insert");
+        {
+            let conn = storage.conn.lock().expect("sqlite lock should work");
+            conn.execute(
+                "UPDATE clipboard_items SET created_at_unix_ms = ?1 WHERE id = ?2",
+                params![10_i64, first],
+            )
+            .expect("first timestamp should update");
+            conn.execute(
+                "UPDATE clipboard_items SET created_at_unix_ms = ?1 WHERE id = ?2",
+                params![20_i64, second],
+            )
+            .expect("second timestamp should update");
+        }
+        let descriptor = AppliedSearchDescriptor::new(
+            "invoice",
+            "invoice",
+            AppliedSearchMode::Structured,
+            SearchPlanV1 {
+                text: Some(SearchPlanTextV1 {
+                    all: vec!["invoice".to_string()],
+                    ..SearchPlanTextV1::default()
+                }),
+                sort: vec![SearchPlanSortV1 {
+                    field: SearchPlanSortFieldV1::Created,
+                    direction: SearchPlanSortDirectionV1::Asc,
+                }],
+                limit: Some(1),
+                ..SearchPlanV1::default()
+            },
+        )
+        .expect("limited descriptor should compile");
+        let rows = storage
+            .read_find_items(&descriptor)
+            .expect("Find snapshot should use the descriptor limit");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, first);
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
+    fn find_snapshot_cancellation_is_checked_while_rows_are_read() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-cancel-test-{}",
+            now_unix_ms()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        storage
+            .insert_text("cancel invoice", &hash_text("cancel invoice"))
+            .expect("test item should insert");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "all",
+            "",
+            AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+        let cancelled = AtomicBool::new(true);
+        let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        let error = storage
+            .read_find_items_cancelable(
+                &descriptor,
+                &cancelled,
+                &storage.mutation_epoch,
+                expected_epoch,
+            )
+            .unwrap_err();
+        assert_eq!(error, "find start superseded");
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
+    fn find_mutation_epoch_distinguishes_captures_from_operational_metadata_writes() {
+        let storage = test_storage_with_migrations();
+        let initial_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        let item_id = storage
+            .insert_text("epoch capture", &hash_text("epoch capture"))
+            .expect("capture should insert");
+        assert_eq!(
+            storage.mutation_epoch.load(Ordering::SeqCst),
+            initial_epoch,
+            "new captures must not invalidate Find"
+        );
+
+        storage
+            .update_item(UpdateHistoryItemRequest {
+                id: item_id,
+                text: "epoch edited".to_string(),
+                title: None,
+                notes: None,
+                tags: None,
+                mime_primary: Some("text/plain".to_string()),
+                marked: None,
+            })
+            .expect("edit should succeed");
+        let edited_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        assert!(edited_epoch > initial_epoch);
+
+        let recapture = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "epoch edited".to_string(),
+                title: Some("recapture".to_string()),
+                notes: None,
+                tags: None,
+                mime_primary: Some("text/plain".to_string()),
+            })
+            .expect("deduplicated recapture should succeed");
+        assert!(!recapture.created);
+        assert_eq!(
+            storage.mutation_epoch.load(Ordering::SeqCst),
+            edited_epoch,
+            "deduplicated recaptures must not invalidate Find"
+        );
+
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id,
+                tags: vec!["epoch".to_string()],
+            })
+            .expect("tag edit should succeed");
+        assert!(storage.mutation_epoch.load(Ordering::SeqCst) > edited_epoch);
     }
 
     fn test_storage() -> AppStorage {
@@ -6910,6 +7208,7 @@ mod tests {
             )),
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
+            mutation_epoch: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -6925,6 +7224,7 @@ mod tests {
             conn: Arc::new(Mutex::new(conn)),
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
+            mutation_epoch: Arc::new(AtomicU64::new(0)),
         }
     }
 

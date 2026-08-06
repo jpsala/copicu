@@ -1,11 +1,12 @@
 use crate::storage::{AppStorage, AppliedSearchDescriptor};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
+use unicode_normalization::{char::canonical_combining_class, UnicodeNormalization};
 
 /// The user-visible field that owns a Find occurrence.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
@@ -28,6 +29,8 @@ pub struct FindOccurrence {
     pub ordinal: u64,
     pub item_id: i64,
     pub field: FindField,
+    #[serde(default)]
+    pub segment: u32,
     pub start_utf16: u32,
     pub end_utf16: u32,
 }
@@ -36,6 +39,7 @@ impl FindOccurrence {
     fn range(&self) -> FindRange {
         FindRange {
             ordinal: self.ordinal,
+            segment: self.segment,
             start_utf16: self.start_utf16,
             end_utf16: self.end_utf16,
         }
@@ -46,6 +50,8 @@ impl FindOccurrence {
 #[serde(rename_all = "camelCase")]
 pub struct FindRange {
     pub ordinal: u64,
+    #[serde(default)]
+    pub segment: u32,
     pub start_utf16: u32,
     pub end_utf16: u32,
 }
@@ -72,12 +78,15 @@ pub struct FindStartRequest {
     pub needle: String,
     #[serde(default)]
     pub generation: u64,
+    #[serde(default = "default_find_owner", alias = "ownerId")]
+    pub owner_id: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FindStartResponse {
     pub session_id: String,
+    pub owner_id: String,
     pub generation: u64,
     pub total: u64,
     pub first_target: Option<FindOccurrence>,
@@ -125,12 +134,27 @@ pub struct FindMatchesForItemsResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FindCloseRequest {
     pub session_id: String,
+    #[serde(default, alias = "ownerId")]
+    pub owner_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FindCloseResponse {
     pub closed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindCancelOwnerRequest {
+    #[serde(alias = "ownerId")]
+    pub owner_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindCancelOwnerResponse {
+    pub cancelled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -145,6 +169,31 @@ pub struct FindTargetRequest {
 pub struct FindTargetResponse {
     pub total: u64,
     pub target: Option<FindOccurrence>,
+    pub materialized: Option<FindTargetMaterialization>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindTargetMaterialization {
+    pub item_id: i64,
+    pub field: FindField,
+    pub display_text: String,
+    pub item: FindTargetItem,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindTargetItem {
+    pub id: i64,
+    pub content_kind: String,
+    pub text: String,
+    pub title: Option<String>,
+    pub notes: Option<String>,
+    pub tags: Option<String>,
+}
+
+fn default_find_owner() -> String {
+    "main".to_string()
 }
 
 #[derive(Clone)]
@@ -163,23 +212,30 @@ impl Default for FindSessionStore {
 #[derive(Default)]
 struct FindState {
     next_id: u64,
-    active: Option<FindSession>,
-    active_job: Option<FindJob>,
-    invalidated_items: Vec<i64>,
+    jobs: HashMap<String, FindJob>,
+    sessions: HashMap<String, FindSession>,
 }
 
 struct FindJob {
     token: u64,
     session_id: String,
+    owner_id: String,
+    generation: u64,
+    expected_epoch: u64,
     cancelled: Arc<AtomicBool>,
 }
 
 #[allow(dead_code)]
 struct FindSession {
     id: String,
+    owner_id: String,
     search_fingerprint: String,
+    descriptor: AppliedSearchDescriptor,
     needle: String,
     generation: u64,
+    expected_epoch: u64,
+    mutation_epoch: Arc<std::sync::atomic::AtomicU64>,
+    manually_invalidated: bool,
     occurrences: Vec<FindOccurrence>,
     by_item: HashMap<i64, Vec<usize>>,
 }
@@ -193,14 +249,29 @@ impl FindSessionStore {
         request.applied_descriptor.validate()?;
 
         let needle = request.needle;
-        let (token, session_id, cancelled) = self.begin_job();
+        let owner_id = if request.owner_id.trim().is_empty() {
+            default_find_owner()
+        } else {
+            request.owner_id
+        };
+        let mutation_epoch = storage.mutation_epoch();
+        let expected_epoch = mutation_epoch.load(Ordering::SeqCst);
+        let (token, session_id, cancelled) =
+            self.begin_job(&owner_id, request.generation, expected_epoch);
         let store = self.clone();
         let descriptor = request.applied_descriptor;
         let generation = request.generation;
         let needle_for_worker = needle.clone();
+        let owner_for_worker = owner_id.clone();
+        let session_id_for_worker = session_id.clone();
 
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            let source = storage.read_find_items(&descriptor)?;
+        let worker_result = match tauri::async_runtime::spawn_blocking(move || {
+            let source = storage.read_find_items_cancelable(
+                &descriptor,
+                &cancelled,
+                &mutation_epoch,
+                expected_epoch,
+            )?;
             if cancelled.load(Ordering::SeqCst) {
                 return Err("find start superseded".to_string());
             }
@@ -215,36 +286,70 @@ impl FindSessionStore {
                 .inner
                 .lock()
                 .map_err(|_| "find session state lock poisoned".to_string())?;
-            if state.active_job.as_ref().map(|job| job.token) != Some(token)
+            let owns_job = state
+                .jobs
+                .get(&owner_for_worker)
+                .map(|job| {
+                    job.token == token
+                        && job.session_id == session_id_for_worker
+                        && job.owner_id == owner_for_worker
+                        && job.generation == generation
+                        && job.expected_epoch == expected_epoch
+                })
+                .unwrap_or(false);
+            if !owns_job
                 || cancelled.load(Ordering::SeqCst)
+                || mutation_epoch.load(Ordering::SeqCst) != expected_epoch
             {
                 return Err("find start superseded".to_string());
             }
 
             let first_target = occurrences.first().cloned();
             let total = occurrences.len() as u64;
-            state.active = Some(FindSession {
-                id: session_id.clone(),
-                search_fingerprint: descriptor.fingerprint,
-                needle: needle_for_worker,
-                generation,
-                occurrences,
-                by_item,
-            });
-            state.active_job = None;
-            state.invalidated_items.clear();
+            state.jobs.remove(&owner_for_worker);
+            state
+                .sessions
+                .retain(|_, session| session.owner_id != owner_for_worker);
+            state.sessions.insert(
+                session_id_for_worker.clone(),
+                FindSession {
+                    id: session_id_for_worker.clone(),
+                    owner_id: owner_for_worker.clone(),
+                    search_fingerprint: descriptor.fingerprint.clone(),
+                    descriptor,
+                    needle: needle_for_worker,
+                    generation,
+                    expected_epoch,
+                    mutation_epoch,
+                    manually_invalidated: false,
+                    occurrences,
+                    by_item,
+                },
+            );
 
             Ok(FindStartResponse {
-                session_id,
+                session_id: session_id_for_worker,
+                owner_id: owner_for_worker,
                 generation,
                 total,
                 first_target,
             })
         })
         .await
-        .map_err(|error| format!("find worker failed: {error}"))??;
-
-        Ok(result)
+        {
+            Ok(result) => result,
+            Err(error) => {
+                self.finish_job_if_current(&owner_id, token, &session_id);
+                return Err(format!("find worker failed: {error}"));
+            }
+        };
+        match worker_result {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                self.finish_job_if_current(&owner_id, token, &session_id);
+                Err(error)
+            }
+        }
     }
 
     pub fn navigate(&self, request: FindNavigateRequest) -> Result<FindNavigateResponse, String> {
@@ -253,11 +358,10 @@ impl FindSessionStore {
             .lock()
             .map_err(|_| "find session state lock poisoned".to_string())?;
         let session = state
-            .active
-            .as_ref()
-            .filter(|session| session.id == request.session_id)
+            .sessions
+            .get(&request.session_id)
             .ok_or_else(|| "find session not found".to_string())?;
-        ensure_session_is_valid(session, &state.invalidated_items)?;
+        ensure_session_is_valid(session)?;
 
         let total = session.occurrences.len() as u64;
         let Some(current) = request.ordinal.or(request.current_ordinal) else {
@@ -298,11 +402,10 @@ impl FindSessionStore {
             .lock()
             .map_err(|_| "find session state lock poisoned".to_string())?;
         let session = state
-            .active
-            .as_ref()
-            .filter(|session| session.id == request.session_id)
+            .sessions
+            .get(&request.session_id)
             .ok_or_else(|| "find session not found".to_string())?;
-        ensure_session_is_valid(session, &state.invalidated_items)?;
+        ensure_session_is_valid(session)?;
         let target = if request.ordinal == 0 {
             None
         } else {
@@ -314,6 +417,71 @@ impl FindSessionStore {
         Ok(FindTargetResponse {
             total: session.occurrences.len() as u64,
             target,
+            materialized: None,
+        })
+    }
+
+    pub fn target_materialized(
+        &self,
+        storage: &AppStorage,
+        request: FindTargetRequest,
+    ) -> Result<FindTargetResponse, String> {
+        let response = self.target(request.clone())?;
+        let Some(target) = response.target.clone() else {
+            return Ok(response);
+        };
+        let (expected_epoch, mutation_epoch, needle) = {
+            let state = self
+                .inner
+                .lock()
+                .map_err(|_| "find session state lock poisoned".to_string())?;
+            let session = state
+                .sessions
+                .get(&request.session_id)
+                .ok_or_else(|| "find session not found".to_string())?;
+            ensure_session_is_valid(session)?;
+            (
+                session.expected_epoch,
+                session.mutation_epoch.clone(),
+                canonical_casefold(&session.needle),
+            )
+        };
+        let source = storage
+            .read_find_item(target.item_id)?
+            .ok_or_else(|| "find target item not found".to_string())?;
+        if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
+            return Err("sessionInvalidated".to_string());
+        }
+        let display_text = project_item(&source)
+            .into_iter()
+            .find(|field| {
+                field.field == target.field
+                    && match_projected_field(field, &needle).iter().any(|span| {
+                        span.segment == target.segment
+                            && span.start_utf16 == target.start_utf16
+                            && span.end_utf16 == target.end_utf16
+                    })
+            })
+            .map(|field| field.text)
+            .ok_or_else(|| "find target display field not found".to_string())?;
+        if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
+            return Err("sessionInvalidated".to_string());
+        }
+        Ok(FindTargetResponse {
+            materialized: Some(FindTargetMaterialization {
+                item_id: target.item_id,
+                field: target.field,
+                display_text,
+                item: FindTargetItem {
+                    id: source.id,
+                    content_kind: source.content_kind,
+                    text: source.text,
+                    title: source.title,
+                    notes: source.notes,
+                    tags: source.tags,
+                },
+            }),
+            ..response
         })
     }
 
@@ -326,11 +494,10 @@ impl FindSessionStore {
             .lock()
             .map_err(|_| "find session state lock poisoned".to_string())?;
         let session = state
-            .active
-            .as_ref()
-            .filter(|session| session.id == request.session_id)
+            .sessions
+            .get(&request.session_id)
             .ok_or_else(|| "find session not found".to_string())?;
-        ensure_session_is_valid(session, &state.invalidated_items)?;
+        ensure_session_is_valid(session)?;
 
         let mut items = Vec::new();
         let mut seen_items = std::collections::HashSet::new();
@@ -366,63 +533,122 @@ impl FindSessionStore {
             .inner
             .lock()
             .map_err(|_| "find session state lock poisoned".to_string())?;
-        let active_matches = state
-            .active
-            .as_ref()
-            .map(|session| session.id == request.session_id)
-            .unwrap_or(false);
-        let job_matches = state
-            .active_job
-            .as_ref()
-            .map(|job| job.session_id == request.session_id)
-            .unwrap_or(false);
-        if active_matches {
-            state.active = None;
-            state.invalidated_items.clear();
+        let session_owner = state
+            .sessions
+            .get(&request.session_id)
+            .map(|session| session.owner_id.clone());
+        let owner_matches = request
+            .owner_id
+            .as_deref()
+            .map(|owner| session_owner.as_deref() == Some(owner))
+            .unwrap_or(true);
+        if owner_matches {
+            state.sessions.remove(&request.session_id);
         }
-        if job_matches {
-            if let Some(job) = state.active_job.take() {
-                job.cancelled.store(true, Ordering::SeqCst);
+        let matching_owner = state
+            .jobs
+            .iter()
+            .find(|(_, job)| job.session_id == request.session_id)
+            .map(|(owner, _)| owner.clone());
+        if let Some(owner) = matching_owner {
+            if request
+                .owner_id
+                .as_deref()
+                .map(|value| value == owner)
+                .unwrap_or(true)
+            {
+                if let Some(job) = state.jobs.remove(&owner) {
+                    job.cancelled.store(true, Ordering::SeqCst);
+                }
             }
         }
         Ok(FindCloseResponse { closed: true })
     }
 
+    pub fn cancel_owner(&self, owner_id: &str) -> FindCancelOwnerResponse {
+        let Ok(mut state) = self.inner.lock() else {
+            return FindCancelOwnerResponse { cancelled: false };
+        };
+        let mut cancelled = false;
+        if let Some(job) = state.jobs.remove(owner_id) {
+            job.cancelled.store(true, Ordering::SeqCst);
+            cancelled = true;
+        }
+        let before = state.sessions.len();
+        state
+            .sessions
+            .retain(|_, session| session.owner_id != owner_id);
+        cancelled |= state.sessions.len() != before;
+        FindCancelOwnerResponse { cancelled }
+    }
+
+    #[allow(dead_code)]
     pub fn invalidate_item(&self, item_id: i64) {
         if let Ok(mut state) = self.inner.lock() {
-            if state.active.is_some() && !state.invalidated_items.contains(&item_id) {
-                state.invalidated_items.push(item_id);
+            for session in state.sessions.values_mut() {
+                if session
+                    .occurrences
+                    .iter()
+                    .any(|occurrence| occurrence.item_id == item_id)
+                {
+                    session.manually_invalidated = true;
+                }
             }
         }
     }
 
-    fn begin_job(&self) -> (u64, String, Arc<AtomicBool>) {
+    fn begin_job(
+        &self,
+        owner_id: &str,
+        generation: u64,
+        expected_epoch: u64,
+    ) -> (u64, String, Arc<AtomicBool>) {
         let mut state = self.inner.lock().expect("find session state lock poisoned");
-        if let Some(previous) = state.active_job.take() {
+        if let Some(previous) = state.jobs.remove(owner_id) {
             previous.cancelled.store(true, Ordering::SeqCst);
         }
+        state
+            .sessions
+            .retain(|_, session| session.owner_id != owner_id);
         state.next_id = state.next_id.saturating_add(1);
         let token = state.next_id;
         let session_id = opaque_session_id(token);
         let cancelled = Arc::new(AtomicBool::new(false));
-        state.active = None;
-        state.invalidated_items.clear();
-        state.active_job = Some(FindJob {
-            token,
-            session_id: session_id.clone(),
-            cancelled: cancelled.clone(),
-        });
+        state.jobs.insert(
+            owner_id.to_string(),
+            FindJob {
+                token,
+                session_id: session_id.clone(),
+                owner_id: owner_id.to_string(),
+                generation,
+                expected_epoch,
+                cancelled: cancelled.clone(),
+            },
+        );
         (token, session_id, cancelled)
+    }
+
+    fn finish_job_if_current(&self, owner_id: &str, token: u64, session_id: &str) {
+        let Ok(mut state) = self.inner.lock() else {
+            return;
+        };
+        let is_current = state
+            .jobs
+            .get(owner_id)
+            .map(|job| job.token == token && job.session_id == session_id)
+            .unwrap_or(false);
+        if is_current {
+            if let Some(job) = state.jobs.remove(owner_id) {
+                job.cancelled.store(true, Ordering::SeqCst);
+            }
+        }
     }
 }
 
-fn ensure_session_is_valid(session: &FindSession, invalidated_items: &[i64]) -> Result<(), String> {
-    if invalidated_items.iter().any(|item_id| {
-        session
-            .occurrences
-            .iter()
-            .any(|occurrence| occurrence.item_id == *item_id)
-    }) {
+fn ensure_session_is_valid(session: &FindSession) -> Result<(), String> {
+    if session.manually_invalidated
+        || session.mutation_epoch.load(Ordering::SeqCst) != session.expected_epoch
+    {
         return Err("sessionInvalidated".to_string());
     }
     Ok(())
@@ -442,12 +668,14 @@ struct ProjectedField {
     field: FindField,
     text: String,
     spans: Vec<OffsetSpan>,
+    segment: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct OffsetSpan {
     start_utf16: u32,
     end_utf16: u32,
+    segment: u32,
 }
 
 fn build_occurrence_index(
@@ -456,7 +684,7 @@ fn build_occurrence_index(
     cancelled: &AtomicBool,
 ) -> Result<(Vec<FindOccurrence>, HashMap<i64, Vec<usize>>), String> {
     let mut occurrences = Vec::new();
-    let normalized_needle = lowercase_scalars(needle).0;
+    let normalized_needle = canonical_casefold(needle);
     if normalized_needle.is_empty() {
         return Ok((occurrences, HashMap::new()));
     }
@@ -474,6 +702,7 @@ fn build_occurrence_index(
                     ordinal,
                     item_id: item.id,
                     field: projected.field,
+                    segment: span.segment,
                     start_utf16: span.start_utf16,
                     end_utf16: span.end_utf16,
                 });
@@ -503,28 +732,37 @@ fn project_item(item: &crate::storage::FindSourceItem) -> Vec<ProjectedField> {
     if let Some(title) = item.title.as_deref().filter(|value| !value.is_empty()) {
         fields.push(project_plain_field(FindField::Title, title));
     }
-    let tags_value = item.tags.as_deref().unwrap_or_default();
-    for (_, start, end) in split_tag_fields(tags_value) {
-        fields.push(project_tag_field(FindField::Tag, tags_value, start, end));
+    if !item.tag_labels.is_empty() {
+        let mut tags = String::new();
+        for (index, label) in item.tag_labels.iter().enumerate() {
+            if index > 0 {
+                tags.push(' ');
+            }
+            tags.push('#');
+            tags.push_str(label);
+        }
+        if !tags.is_empty() {
+            fields.push(project_plain_field(FindField::Tag, &tags));
+        }
+    } else if let Some(tags) = item
+        .tags
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        fields.push(project_plain_field(FindField::Tag, tags.trim()));
     }
     if let Some(notes) = item.notes.as_deref().filter(|value| !value.is_empty()) {
-        let (notes_field, image_alts) = project_markdown(notes);
+        let notes_field = project_notes(notes, item);
         if !notes_field.text.is_empty() {
-            fields.push(ProjectedField {
-                field: FindField::Notes,
-                ..notes_field
-            });
-        }
-        for mut alt in image_alts {
-            alt.field = FindField::Notes;
-            fields.push(alt);
+            fields.push(notes_field);
         }
     }
     fields
 }
 
 fn should_project_content(content_kind: &str, text: &str) -> bool {
-    matches!(content_kind, "text" | "html" | "unknown") || contains_markdown_image(text)
+    let _ = text;
+    matches!(content_kind, "text" | "html" | "unknown")
 }
 
 fn project_plain_field(field: FindField, value: &str) -> ProjectedField {
@@ -543,104 +781,71 @@ fn project_plain_field(field: FindField, value: &str) -> ProjectedField {
         spans.push(OffsetSpan {
             start_utf16,
             end_utf16,
+            segment: 0,
         });
         utf16 = end_utf16;
     }
-    ProjectedField { field, text, spans }
-}
-
-fn project_tag_field(field: FindField, source: &str, start: usize, end: usize) -> ProjectedField {
-    let offsets = utf16_offsets(source);
-    let mut projected = ProjectedField {
+    ProjectedField {
         field,
-        text: String::new(),
-        spans: Vec::new(),
-    };
-    append_visible_range(&mut projected, source, start, end, &offsets);
-    projected
+        text,
+        spans,
+        segment: 0,
+    }
 }
 
 fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
-    let offsets = utf16_offsets(source);
     let mut content = ProjectedField {
         field: FindField::Content,
         text: String::new(),
         spans: Vec::new(),
+        segment: 0,
     };
+    let definitions = markdown_reference_definitions(source);
     let mut image_alts = Vec::new();
     let mut cursor = 0usize;
     let mut line_start = true;
     while cursor < source.len() {
-        if line_start && source[cursor..].starts_with('[') {
-            if let Some(line_end) = source[cursor..].find('\n') {
-                let line = &source[cursor..cursor + line_end];
-                if let Some(close_label) = line.find(']') {
-                    if line[close_label + 1..].trim_start().starts_with(':') {
-                        cursor += line_end;
-                        line_start = true;
-                        continue;
-                    }
-                }
+        if line_start {
+            if let Some(line_end) = markdown_reference_definition_end(source, cursor) {
+                break_projection(&mut content);
+                cursor = line_end;
+                line_start = true;
+                continue;
             }
         }
         if source[cursor..].starts_with("<!--") {
             if let Some(end) = source[cursor + 4..].find("-->") {
+                break_projection(&mut content);
                 cursor += 4 + end + 3;
                 line_start = false;
                 continue;
             }
         }
-        if source[cursor..].starts_with("![") {
-            if let Some(close_alt) = source[cursor + 2..].find(']') {
-                let alt_start = cursor + 2;
-                let alt_end = alt_start + close_alt;
-                let after_alt = alt_end + 1;
-                if source
-                    .get(after_alt..)
-                    .is_some_and(|tail| tail.starts_with('('))
-                {
-                    if let Some(close_url) = find_markdown_destination_end(source, after_alt + 1) {
-                        let alt = project_plain_range(
-                            FindField::ImageAlt,
-                            source,
-                            alt_start,
-                            alt_end,
-                            &offsets,
-                        );
-                        image_alts.push(alt);
-                        cursor = close_url + 1;
-                        line_start = false;
-                        continue;
-                    }
-                }
-            }
+        if let Some((alt_start, alt_end, end)) =
+            parse_markdown_construct(source, cursor, true, &definitions)
+        {
+            image_alts.push(project_plain_range(
+                FindField::ImageAlt,
+                source,
+                alt_start,
+                alt_end,
+            ));
+            break_projection(&mut content);
+            cursor = end;
+            line_start = false;
+            continue;
         }
-        if source[cursor..].starts_with('[') {
-            if let Some(close_label) = source[cursor + 1..].find(']') {
-                let label_start = cursor + 1;
-                let label_end = label_start + close_label;
-                let after_label = label_end + 1;
-                if source
-                    .get(after_label..)
-                    .is_some_and(|tail| tail.starts_with('('))
-                {
-                    if let Some(close_url) = find_markdown_destination_end(source, after_label + 1)
-                    {
-                        append_visible_range(
-                            &mut content,
-                            source,
-                            label_start,
-                            label_end,
-                            &offsets,
-                        );
-                        cursor = close_url + 1;
-                        line_start = false;
-                        continue;
-                    }
-                }
-            }
+        if let Some((label_start, label_end, end)) =
+            parse_markdown_construct(source, cursor, false, &definitions)
+        {
+            append_visible_range(&mut content, source, label_start, label_end);
+            break_projection(&mut content);
+            cursor = end;
+            line_start = false;
+            continue;
         }
         if source[cursor..].starts_with("```") {
+            break_projection(&mut content);
             cursor += 3;
             line_start = false;
             continue;
@@ -652,62 +857,65 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
         let next = cursor + ch.len_utf8();
         if ch == '<' {
             if let Some(end) = source[next..].find('>') {
+                break_projection(&mut content);
                 cursor = next + end + 1;
                 line_start = false;
                 continue;
             }
         }
-        let skip_marker = matches!(ch, '*' | '~' | '`')
-            || (line_start && matches!(ch, '#' | '>' | '-' | '+' | '*'));
-        if skip_marker {
+        if ch == '\\' {
+            if let Some(escaped) = source[next..].chars().next() {
+                append_projected_char(&mut content, escaped);
+                cursor = next + escaped.len_utf8();
+                line_start = false;
+                continue;
+            }
+        }
+        if matches!(ch, '*' | '~' | '`') {
+            break_projection(&mut content);
             cursor = next;
             line_start = false;
             continue;
         }
-        if ch == '\n' {
-            content.text.push(ch);
-            content.spans.push(OffsetSpan {
-                start_utf16: offsets[&cursor].0,
-                end_utf16: offsets[&cursor].1,
-            });
+        if line_start && matches!(ch, '#' | '>' | '-' | '+' | '*') {
+            break_projection(&mut content);
             cursor = next;
-            line_start = true;
+            while cursor < source.len() {
+                let Some(space) = source[cursor..].chars().next() else {
+                    break;
+                };
+                if !space.is_whitespace() || space == '\n' {
+                    break;
+                }
+                cursor += space.len_utf8();
+            }
+            line_start = false;
             continue;
         }
-        content.text.push(ch);
-        content.spans.push(OffsetSpan {
-            start_utf16: offsets[&cursor].0,
-            end_utf16: offsets[&cursor].1,
-        });
+        if ch == '\r' && source[next..].starts_with('\n') {
+            break_projection(&mut content);
+            cursor = next;
+            continue;
+        }
+        append_projected_char(&mut content, ch);
         cursor = next;
-        line_start = false;
+        line_start = ch == '\n';
     }
     (content, image_alts)
 }
 
-fn project_plain_range(
-    field: FindField,
-    source: &str,
-    start: usize,
-    end: usize,
-    offsets: &HashMap<usize, (u32, u32)>,
-) -> ProjectedField {
+fn project_plain_range(field: FindField, source: &str, start: usize, end: usize) -> ProjectedField {
     let mut projected = ProjectedField {
         field,
         text: String::new(),
         spans: Vec::new(),
+        segment: 0,
     };
-    append_visible_range(&mut projected, source, start, end, offsets);
+    append_visible_range(&mut projected, source, start, end);
     projected
 }
 
-fn append_visible_range(
-    destination: &mut ProjectedField,
-    source: &str,
-    start: usize,
-    end: usize,
-    offsets: &HashMap<usize, (u32, u32)>,
-) {
+fn append_visible_range(destination: &mut ProjectedField, source: &str, start: usize, end: usize) {
     let mut cursor = start;
     while cursor < end {
         let ch = source[cursor..end]
@@ -715,14 +923,17 @@ fn append_visible_range(
             .next()
             .expect("range is a char boundary");
         let next = cursor + ch.len_utf8();
-        if !matches!(ch, '*' | '~' | '`') {
-            destination.text.push(ch);
-            if let Some((start_utf16, end_utf16)) = offsets.get(&cursor) {
-                destination.spans.push(OffsetSpan {
-                    start_utf16: *start_utf16,
-                    end_utf16: *end_utf16,
-                });
+        if ch == '\\' {
+            if let Some(escaped) = source[next..end].chars().next() {
+                append_projected_char(destination, escaped);
+                cursor = next + escaped.len_utf8();
+                continue;
             }
+        }
+        if matches!(ch, '*' | '~' | '`') {
+            break_projection(destination);
+        } else {
+            append_projected_char(destination, ch);
         }
         cursor = next;
     }
@@ -733,6 +944,13 @@ fn find_markdown_destination_end(source: &str, start: usize) -> Option<usize> {
     let mut cursor = start;
     while cursor < source.len() {
         let ch = source[cursor..].chars().next()?;
+        if ch == '\\' {
+            cursor += ch.len_utf8();
+            if let Some(escaped) = source[cursor..].chars().next() {
+                cursor += escaped.len_utf8();
+            }
+            continue;
+        }
         if ch == '(' {
             depth = depth.saturating_add(1);
         } else if ch == ')' {
@@ -746,78 +964,240 @@ fn find_markdown_destination_end(source: &str, start: usize) -> Option<usize> {
     None
 }
 
-fn contains_markdown_image(value: &str) -> bool {
-    value.contains("![")
+fn append_projected_char(destination: &mut ProjectedField, ch: char) {
+    let start_utf16 = destination.text.encode_utf16().count() as u32;
+    destination.text.push(ch);
+    destination.spans.push(OffsetSpan {
+        start_utf16,
+        end_utf16: start_utf16 + ch.len_utf16() as u32,
+        segment: destination.segment,
+    });
 }
 
-fn split_tag_fields(value: &str) -> Vec<(&str, usize, usize)> {
-    let mut tags = Vec::new();
-    let mut cursor = 0usize;
-    while cursor < value.len() {
-        while cursor < value.len() {
-            let ch = value[cursor..]
-                .chars()
-                .next()
-                .expect("cursor is a char boundary");
-            if ch.is_whitespace() || ch == ',' {
-                cursor += ch.len_utf8();
-            } else {
-                break;
-            }
+fn break_projection(destination: &mut ProjectedField) {
+    if !destination.text.is_empty() {
+        destination.segment = destination.segment.saturating_add(1);
+    }
+}
+
+fn markdown_reference_definitions(source: &str) -> HashSet<String> {
+    let mut definitions = HashSet::new();
+    let mut line_start = 0usize;
+    while line_start < source.len() {
+        if let Some((label, _)) = markdown_definition_label(source, line_start) {
+            definitions.insert(normalize_reference_label(label));
         }
-        let start = cursor;
-        while cursor < value.len() {
-            let ch = value[cursor..]
-                .chars()
-                .next()
-                .expect("cursor is a char boundary");
-            if ch.is_whitespace() || ch == ',' {
+        let Some(line_end) = source[line_start..].find('\n') else {
+            break;
+        };
+        line_start += line_end + 1;
+    }
+    definitions
+}
+
+fn markdown_definition_label(source: &str, line_start: usize) -> Option<(&str, usize)> {
+    let mut cursor = line_start;
+    let mut indentation = 0usize;
+    while cursor < source.len() && indentation < 4 {
+        let ch = source[cursor..].chars().next()?;
+        if !matches!(ch, ' ' | '\t') {
+            break;
+        }
+        indentation += 1;
+        cursor += ch.len_utf8();
+    }
+    if indentation > 3 || !source[cursor..].starts_with('[') {
+        return None;
+    }
+    let close = find_closing_bracket(source, cursor + 1)?;
+    let after = close + 1;
+    if !source[after..].trim_start().starts_with(':') {
+        return None;
+    }
+    Some((&source[cursor + 1..close], close))
+}
+
+fn markdown_reference_definition_end(source: &str, line_start: usize) -> Option<usize> {
+    markdown_definition_label(source, line_start)?;
+    source[line_start..]
+        .find('\n')
+        .map(|end| line_start + end + 1)
+        .or(Some(source.len()))
+}
+
+fn parse_markdown_construct(
+    source: &str,
+    cursor: usize,
+    image: bool,
+    definitions: &HashSet<String>,
+) -> Option<(usize, usize, usize)> {
+    let label_start = if image {
+        source[cursor..].strip_prefix("![")?;
+        cursor + 2
+    } else {
+        source[cursor..].strip_prefix('[')?;
+        cursor + 1
+    };
+    let label_end = find_closing_bracket(source, label_start)?;
+    let after_label = label_end + 1;
+    if source[after_label..].starts_with('(') {
+        let destination_end = find_markdown_destination_end(source, after_label + 1)?;
+        return Some((label_start, label_end, destination_end + 1));
+    }
+    if source[after_label..].starts_with('[') {
+        let reference_end = find_closing_bracket(source, after_label + 1)?;
+        let reference = &source[after_label + 1..reference_end];
+        if reference.is_empty() || definitions.contains(&normalize_reference_label(reference)) {
+            return Some((label_start, label_end, reference_end + 1));
+        }
+    }
+    let label = &source[label_start..label_end];
+    if definitions.contains(&normalize_reference_label(label)) {
+        return Some((label_start, label_end, label_end + 1));
+    }
+    None
+}
+
+fn find_closing_bracket(source: &str, start: usize) -> Option<usize> {
+    let mut cursor = start;
+    while cursor < source.len() {
+        let ch = source[cursor..].chars().next()?;
+        if ch == '\\' {
+            cursor += ch.len_utf8();
+            if let Some(escaped) = source[cursor..].chars().next() {
+                cursor += escaped.len_utf8();
+            }
+            continue;
+        }
+        if ch == ']' {
+            return Some(cursor);
+        }
+        cursor += ch.len_utf8();
+    }
+    None
+}
+
+fn normalize_reference_label(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn project_notes(source: &str, item: &crate::storage::FindSourceItem) -> ProjectedField {
+    let mut removable_tags = HashSet::new();
+    for label in &item.tag_labels {
+        removable_tags.insert(format!("#{label}"));
+    }
+    if let Some(tags) = item.tags.as_deref() {
+        let mut cursor = 0usize;
+        while cursor < tags.len() {
+            let Some(ch) = tags[cursor..].chars().next() else {
                 break;
+            };
+            if ch == '#' {
+                let start = cursor;
+                cursor += ch.len_utf8();
+                while cursor < tags.len() {
+                    let next = tags[cursor..].chars().next().expect("tag cursor");
+                    if !(next.is_alphanumeric() || matches!(next, '_' | '-')) {
+                        break;
+                    }
+                    cursor += next.len_utf8();
+                }
+                if cursor > start + 1 {
+                    removable_tags.insert(tags[start..cursor].to_string());
+                }
+                continue;
             }
             cursor += ch.len_utf8();
         }
-        let end = cursor;
-        if start == end {
+    }
+
+    let mut visible = Vec::<(char, u32)>::new();
+    let mut cursor = 0usize;
+    let mut segment = 0u32;
+    while cursor < source.len() {
+        if source[cursor..].starts_with('#')
+            && (cursor == 0
+                || source[..cursor]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace))
+        {
+            let start = cursor;
+            cursor += '#'.len_utf8();
+            while cursor < source.len() {
+                let ch = source[cursor..].chars().next().expect("notes cursor");
+                if !(ch.is_alphanumeric() || matches!(ch, '_' | '-')) {
+                    break;
+                }
+                cursor += ch.len_utf8();
+            }
+            if cursor > start + 1 && removable_tags.contains(&source[start..cursor]) {
+                segment = segment.saturating_add(1);
+                continue;
+            }
+            for ch in source[start..cursor].chars() {
+                visible.push((ch, segment));
+            }
             continue;
         }
-        let label_start = if value[start..].starts_with('#') {
-            start + '#'.len_utf8()
-        } else {
-            start
-        };
-        if label_start < end {
-            tags.push((&value[label_start..end], label_start, end));
+        let ch = source[cursor..].chars().next().expect("notes cursor");
+        cursor += ch.len_utf8();
+        if ch == '\r' {
+            if source[cursor..].starts_with('\n') {
+                continue;
+            }
         }
+        visible.push((ch, segment));
     }
-    tags
+
+    let mut normalized = Vec::<(char, u32)>::new();
+    for (ch, source_segment) in visible {
+        if ch == '\n' {
+            while normalized
+                .last()
+                .is_some_and(|(previous, _)| matches!(previous, ' ' | '\t'))
+            {
+                normalized.pop();
+                segment = segment.saturating_add(1);
+            }
+            let newline_count = normalized
+                .iter()
+                .rev()
+                .take_while(|(value, _)| *value == '\n')
+                .count();
+            if newline_count >= 2 {
+                segment = segment.saturating_add(1);
+                continue;
+            }
+        }
+        normalized.push((ch, source_segment));
+    }
+    while normalized.first().is_some_and(|(ch, _)| ch.is_whitespace()) {
+        normalized.remove(0);
+    }
+    while normalized.last().is_some_and(|(ch, _)| ch.is_whitespace()) {
+        normalized.pop();
+    }
+
+    let mut projected = ProjectedField {
+        field: FindField::Notes,
+        text: String::new(),
+        spans: Vec::new(),
+        segment: 0,
+    };
+    for (ch, source_segment) in normalized {
+        projected.segment = source_segment;
+        append_projected_char(&mut projected, ch);
+    }
+    projected
 }
 
-fn utf16_offsets(source: &str) -> HashMap<usize, (u32, u32)> {
-    let mut offsets = HashMap::new();
-    let mut utf16 = 0u32;
-    for (byte_start, ch) in source.char_indices() {
-        let end_utf16 = utf16 + ch.len_utf16() as u32;
-        offsets.insert(byte_start, (utf16, end_utf16));
-        utf16 = end_utf16;
-    }
-    offsets
-}
-
-fn lowercase_scalars(value: &str) -> (Vec<char>, Vec<OffsetSpan>) {
-    let offsets = utf16_offsets(value);
-    let mut lowered = Vec::new();
-    let mut spans = Vec::new();
-    for (byte_start, ch) in value.char_indices() {
-        let (start_utf16, end_utf16) = offsets[&byte_start];
-        for lowered_ch in ch.to_lowercase() {
-            lowered.push(lowered_ch);
-            spans.push(OffsetSpan {
-                start_utf16,
-                end_utf16,
-            });
-        }
-    }
-    (lowered, spans)
+fn canonical_casefold(value: &str) -> Vec<char> {
+    value.nfc().flat_map(case_fold_char).collect()
 }
 
 fn match_projected_field(field: &ProjectedField, needle: &[char]) -> Vec<OffsetSpan> {
@@ -825,16 +1205,36 @@ fn match_projected_field(field: &ProjectedField, needle: &[char]) -> Vec<OffsetS
     if needle.is_empty() || lowered.len() < needle.len() {
         return Vec::new();
     }
-    let mut matches = Vec::new();
+    let mut matches = Vec::<OffsetSpan>::new();
     let mut cursor = 0usize;
     while cursor + needle.len() <= lowered.len() {
         if lowered[cursor..cursor + needle.len()] == *needle {
+            let segment = spans[cursor].segment;
+            if spans[cursor..cursor + needle.len()]
+                .iter()
+                .any(|span| span.segment != segment)
+            {
+                cursor += 1;
+                continue;
+            }
             let start = spans[cursor].start_utf16;
             let end = spans[cursor + needle.len() - 1].end_utf16;
-            matches.push(OffsetSpan {
+            let range = OffsetSpan {
                 start_utf16: start,
                 end_utf16: end,
-            });
+                segment,
+            };
+            // A folded expansion such as `ß -> ss` maps multiple search
+            // characters to one display grapheme. Do not emit duplicate
+            // occurrences for each folded code point when a one-character
+            // needle lands inside that expansion.
+            if !matches.last().is_some_and(|previous| {
+                previous.start_utf16 == range.start_utf16
+                    && previous.end_utf16 == range.end_utf16
+                    && previous.segment == range.segment
+            }) {
+                matches.push(range);
+            }
             cursor += needle.len();
         } else {
             cursor += 1;
@@ -846,23 +1246,56 @@ fn match_projected_field(field: &ProjectedField, needle: &[char]) -> Vec<OffsetS
 fn lowercase_projected_field(field: &ProjectedField) -> (Vec<char>, Vec<OffsetSpan>) {
     let mut lowered = Vec::new();
     let mut spans = Vec::new();
-    for (index, ch) in field.text.chars().enumerate() {
-        let source_span = field.spans.get(index).copied().unwrap_or(OffsetSpan {
-            start_utf16: 0,
-            end_utf16: 0,
-        });
-        for lowered_ch in ch.to_lowercase() {
-            lowered.push(lowered_ch);
-            spans.push(source_span);
+    let chars = field.text.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    while index < chars.len() {
+        let cluster_start = index;
+        index += 1;
+        while index < chars.len() && canonical_combining_class(chars[index]) != 0 {
+            index += 1;
+        }
+        let cluster = chars[cluster_start..index].iter().collect::<String>();
+        let normalized = cluster.nfc().collect::<String>();
+        let first_span = field
+            .spans
+            .get(cluster_start)
+            .copied()
+            .unwrap_or(OffsetSpan {
+                start_utf16: 0,
+                end_utf16: 0,
+                segment: 0,
+            });
+        let last_span = field.spans.get(index - 1).copied().unwrap_or(first_span);
+        let source_span = OffsetSpan {
+            start_utf16: first_span.start_utf16,
+            end_utf16: last_span.end_utf16,
+            segment: first_span.segment,
+        };
+        for normalized_ch in normalized.chars() {
+            for folded_ch in case_fold_char(normalized_ch) {
+                lowered.push(folded_ch);
+                spans.push(source_span);
+            }
         }
     }
     (lowered, spans)
 }
 
+fn case_fold_char(ch: char) -> Vec<char> {
+    match ch {
+        // Unicode default case folding maps both sigma forms to the ordinary
+        // sigma and expands German sharp s. Rust's lowercase iterator handles
+        // the remaining one-to-many lowercase mappings (for example U+0130).
+        '\u{03c2}' => vec!['\u{03c3}'],
+        '\u{00df}' | '\u{1e9e}' => vec!['s', 's'],
+        _ => ch.to_lowercase().collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::FindSourceItem;
+    use crate::storage::{AppStorage, FindSourceItem};
     use std::time::Instant;
 
     fn item(id: i64, content_kind: &str, text: &str) -> FindSourceItem {
@@ -873,6 +1306,7 @@ mod tests {
             title: None,
             notes: None,
             tags: None,
+            tag_labels: Vec::new(),
         }
     }
 
@@ -922,7 +1356,7 @@ mod tests {
         let (visible, _) = build_occurrence_index(&source, "invoice", &cancelled).unwrap();
         assert_eq!(visible.len(), 1);
         assert_eq!(visible[0].field, FindField::Content);
-        assert_eq!((visible[0].start_utf16, visible[0].end_utf16), (2, 9));
+        assert_eq!((visible[0].start_utf16, visible[0].end_utf16), (0, 7));
     }
 
     #[test]
@@ -956,6 +1390,182 @@ mod tests {
     }
 
     #[test]
+    fn markdown_references_are_private_at_eof_and_when_indented() {
+        let source = vec![item(
+            1,
+            "text",
+            "![receipt][img]\n   [img]: https://secret.example/account",
+        )];
+        let cancelled = AtomicBool::new(false);
+        let (secret, _) = build_occurrence_index(&source, "secret.example", &cancelled).unwrap();
+        assert!(secret.is_empty());
+        let (alt, _) = build_occurrence_index(&source, "receipt", &cancelled).unwrap();
+        assert_eq!(alt.len(), 1);
+        assert_eq!(alt[0].field, FindField::ImageAlt);
+    }
+
+    #[test]
+    fn display_ranges_do_not_cross_invisible_markdown_segments() {
+        let source = vec![item(1, "text", "in[visible](https://secret.example)voice")];
+        let cancelled = AtomicBool::new(false);
+        let (crossing, _) = build_occurrence_index(&source, "invisiblevoice", &cancelled).unwrap();
+        assert!(crossing.is_empty());
+        let (label, _) = build_occurrence_index(&source, "visible", &cancelled).unwrap();
+        assert_eq!(label.len(), 1);
+        assert_eq!((label[0].start_utf16, label[0].end_utf16), (2, 9));
+    }
+
+    #[test]
+    fn notes_ranges_follow_the_picker_metadata_display() {
+        let mut source_item = item(2, "text", "body");
+        source_item.tags = Some("#work".to_string());
+        source_item.tag_labels = vec!["work".to_string()];
+        source_item.notes = Some("#work\nInvoice\n\n\n".to_string());
+        let cancelled = AtomicBool::new(false);
+        let (invoice, _) =
+            build_occurrence_index(&[source_item.clone()], "invoice", &cancelled).unwrap();
+        let note = invoice
+            .iter()
+            .find(|occurrence| occurrence.field == FindField::Notes)
+            .expect("invoice should be in the canonical notes display");
+        assert_eq!((note.start_utf16, note.end_utf16), (0, 7));
+        let (work, _) = build_occurrence_index(&[source_item], "work", &cancelled).unwrap();
+        assert!(work
+            .iter()
+            .all(|occurrence| occurrence.field != FindField::Notes));
+    }
+
+    #[test]
+    fn relation_tags_keep_multi_word_labels_and_unicode_offsets() {
+        let mut source_item = item(3, "text", "body");
+        source_item.tag_labels = vec!["Project Alpha".to_string()];
+        let cancelled = AtomicBool::new(false);
+        let (matches, _) =
+            build_occurrence_index(&[source_item], "project alpha", &cancelled).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].field, FindField::Tag);
+        assert_eq!((matches[0].start_utf16, matches[0].end_utf16), (1, 14));
+    }
+
+    #[test]
+    fn canonical_casefold_is_nfc_accent_sensitive_and_handles_sigma_and_expansion() {
+        let source = vec![item(4, "text", "Cafe\u{301} ΟΣ Straße")];
+        let cancelled = AtomicBool::new(false);
+        let (accented, _) = build_occurrence_index(&source, "CAFÉ", &cancelled).unwrap();
+        assert_eq!(accented.len(), 1);
+        assert_eq!((accented[0].start_utf16, accented[0].end_utf16), (0, 5));
+        let (sigma, _) = build_occurrence_index(&source, "ος", &cancelled).unwrap();
+        assert_eq!(sigma.len(), 1);
+        let (expanded, _) = build_occurrence_index(&source, "STRASSE", &cancelled).unwrap();
+        assert_eq!(expanded.len(), 1);
+        let (single_expansion, _) =
+            build_occurrence_index(&[item(5, "text", "ß")], "s", &cancelled).unwrap();
+        assert_eq!(single_expansion.len(), 1);
+    }
+
+    #[test]
+    fn non_text_payloads_never_promote_markdown_like_technical_text() {
+        let source = vec![item(
+            5,
+            "file",
+            "![secret](https://secret.example/file) technical placeholder",
+        )];
+        let cancelled = AtomicBool::new(false);
+        let (matches, _) = build_occurrence_index(&source, "secret", &cancelled).unwrap();
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn pending_jobs_are_cancelable_by_owner_without_touching_other_owners() {
+        let store = FindSessionStore::default();
+        let (_, owner_a_session, first_cancelled) = store.begin_job("owner-a", 1, 0);
+        let (_, _, superseded_cancelled) = store.begin_job("owner-a", 2, 0);
+        assert!(first_cancelled.load(Ordering::SeqCst));
+        assert!(!superseded_cancelled.load(Ordering::SeqCst));
+        let (_, owner_b_session, _) = store.begin_job("owner-b", 1, 0);
+        assert!(store.cancel_owner("owner-a").cancelled);
+        {
+            let state = store.inner.lock().unwrap();
+            assert!(!state.jobs.contains_key("owner-a"));
+            assert!(state.jobs.contains_key("owner-b"));
+        }
+        assert!(
+            store
+                .close(FindCloseRequest {
+                    session_id: owner_b_session,
+                    owner_id: Some("owner-b".to_string()),
+                })
+                .unwrap()
+                .closed
+        );
+        assert!(!store.cancel_owner("owner-b").cancelled);
+        let (_, pending_close_session, pending_close_cancelled) =
+            store.begin_job("owner-c", 1, 0);
+        assert!(
+            store
+                .close(FindCloseRequest {
+                    session_id: pending_close_session,
+                    owner_id: Some("owner-c".to_string()),
+                })
+                .unwrap()
+                .closed
+        );
+        assert!(pending_close_cancelled.load(Ordering::SeqCst));
+        assert!(!owner_a_session.is_empty());
+    }
+
+    #[test]
+    fn failed_pending_job_is_removed_only_if_it_is_still_current() {
+        let store = FindSessionStore::default();
+        let (token, session_id, cancelled) = store.begin_job("owner-a", 1, 0);
+        store.finish_job_if_current("owner-a", token, &session_id);
+        assert!(cancelled.load(Ordering::SeqCst));
+        let state = store.inner.lock().expect("find state lock should work");
+        assert!(!state.jobs.contains_key("owner-a"));
+    }
+
+    #[test]
+    fn mutation_epoch_invalidates_sessions_even_when_item_had_no_match() {
+        let store = FindSessionStore::default();
+        let mutation_epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "",
+            "",
+            crate::storage::AppliedSearchMode::Structured,
+        )
+        .unwrap();
+        {
+            let mut state = store.inner.lock().unwrap();
+            state.sessions.insert(
+                "epoch-test".to_string(),
+                FindSession {
+                    id: "epoch-test".to_string(),
+                    owner_id: "main".to_string(),
+                    search_fingerprint: descriptor.fingerprint.clone(),
+                    descriptor,
+                    needle: "invoice".to_string(),
+                    generation: 1,
+                    expected_epoch: 0,
+                    mutation_epoch: mutation_epoch.clone(),
+                    manually_invalidated: false,
+                    occurrences: Vec::new(),
+                    by_item: HashMap::new(),
+                },
+            );
+        }
+        mutation_epoch.fetch_add(1, Ordering::SeqCst);
+        let error = store
+            .navigate(FindNavigateRequest {
+                session_id: "epoch-test".to_string(),
+                ordinal: None,
+                current_ordinal: None,
+                direction: FindNavigationDirection::Next,
+            })
+            .unwrap_err();
+        assert_eq!(error, "sessionInvalidated");
+    }
+
+    #[test]
     fn matches_group_by_item_and_field_and_navigation_wraps() {
         let source = vec![item(1, "text", "one one")];
         let cancelled = AtomicBool::new(false);
@@ -963,16 +1573,30 @@ mod tests {
         assert_eq!(occurrences.len(), 2);
         assert_eq!(by_item.get(&1).map(Vec::len), Some(2));
         let store = FindSessionStore::default();
+        let mutation_epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
         {
             let mut state = store.inner.lock().unwrap();
-            state.active = Some(FindSession {
-                id: "find-test".to_string(),
-                search_fingerprint: "fingerprint".to_string(),
-                needle: "one".to_string(),
-                generation: 1,
-                occurrences,
-                by_item,
-            });
+            state.sessions.insert(
+                "find-test".to_string(),
+                FindSession {
+                    id: "find-test".to_string(),
+                    owner_id: "main".to_string(),
+                    search_fingerprint: "fingerprint".to_string(),
+                    descriptor: AppliedSearchDescriptor::for_query(
+                        "",
+                        "",
+                        crate::storage::AppliedSearchMode::Structured,
+                    )
+                    .unwrap(),
+                    needle: "one".to_string(),
+                    generation: 1,
+                    expected_epoch: 0,
+                    mutation_epoch,
+                    manually_invalidated: false,
+                    occurrences,
+                    by_item,
+                },
+            );
         }
         let next = store
             .navigate(FindNavigateRequest {
@@ -996,22 +1620,37 @@ mod tests {
     #[test]
     fn invalidated_item_rejects_navigation_and_close_is_idempotent() {
         let store = FindSessionStore::default();
+        let mutation_epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
         {
             let mut state = store.inner.lock().unwrap();
-            state.active = Some(FindSession {
-                id: "find-test".to_string(),
-                search_fingerprint: "fingerprint".to_string(),
-                needle: "one".to_string(),
-                generation: 1,
-                occurrences: vec![FindOccurrence {
-                    ordinal: 1,
-                    item_id: 1,
-                    field: FindField::Content,
-                    start_utf16: 0,
-                    end_utf16: 3,
-                }],
-                by_item: HashMap::from([(1, vec![0])]),
-            });
+            state.sessions.insert(
+                "find-test".to_string(),
+                FindSession {
+                    id: "find-test".to_string(),
+                    owner_id: "main".to_string(),
+                    search_fingerprint: "fingerprint".to_string(),
+                    descriptor: AppliedSearchDescriptor::for_query(
+                        "",
+                        "",
+                        crate::storage::AppliedSearchMode::Structured,
+                    )
+                    .unwrap(),
+                    needle: "one".to_string(),
+                    generation: 1,
+                    expected_epoch: 0,
+                    mutation_epoch,
+                    manually_invalidated: false,
+                    occurrences: vec![FindOccurrence {
+                        ordinal: 1,
+                        item_id: 1,
+                        field: FindField::Content,
+                        segment: 0,
+                        start_utf16: 0,
+                        end_utf16: 3,
+                    }],
+                    by_item: HashMap::from([(1, vec![0])]),
+                },
+            );
         }
         store.invalidate_item(1);
         let error = store
@@ -1025,6 +1664,7 @@ mod tests {
             store
                 .close(FindCloseRequest {
                     session_id: "find-test".to_string(),
+                    owner_id: None,
                 })
                 .unwrap()
                 .closed
@@ -1033,10 +1673,84 @@ mod tests {
             store
                 .close(FindCloseRequest {
                     session_id: "find-test".to_string(),
+                    owner_id: None,
                 })
                 .unwrap()
                 .closed
         );
+    }
+
+    #[test]
+    fn target_materialization_returns_the_canonical_display_field_and_item() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-target-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after epoch")
+                .as_nanos()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        let item_id = storage
+            .insert_text("**Invoice**", "find-target-materialization-hash")
+            .expect("target item should insert");
+        let source = storage
+            .read_find_item(item_id)
+            .expect("target item should be readable")
+            .expect("target item should exist");
+        let cancelled = AtomicBool::new(false);
+        let (occurrences, by_item) =
+            build_occurrence_index(&[source], "invoice", &cancelled).expect("index should build");
+        let target = occurrences
+            .first()
+            .cloned()
+            .expect("target occurrence should exist");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "",
+            "",
+            crate::storage::AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+        let store = FindSessionStore::default();
+        let mutation_epoch = storage.mutation_epoch();
+        let expected_epoch = mutation_epoch.load(Ordering::SeqCst);
+        {
+            let mut state = store.inner.lock().expect("find state lock should work");
+            state.sessions.insert(
+                "target-session".to_string(),
+                FindSession {
+                    id: "target-session".to_string(),
+                    owner_id: "main".to_string(),
+                    search_fingerprint: descriptor.fingerprint.clone(),
+                    descriptor,
+                    needle: "invoice".to_string(),
+                    generation: 1,
+                    expected_epoch,
+                    mutation_epoch,
+                    manually_invalidated: false,
+                    occurrences,
+                    by_item,
+                },
+            );
+        }
+
+        let response = store
+            .target_materialized(
+                &storage,
+                FindTargetRequest {
+                    session_id: "target-session".to_string(),
+                    ordinal: target.ordinal,
+                },
+            )
+            .expect("target should materialize");
+        let materialized = response
+            .materialized
+            .expect("target should include materialized item");
+        assert_eq!(materialized.item_id, item_id);
+        assert_eq!(materialized.display_text, "Invoice");
+        assert_eq!(materialized.item.id, item_id);
+        assert_eq!(materialized.item.text, "**Invoice**");
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
     }
 
     #[test]
@@ -1045,11 +1759,13 @@ mod tests {
             ordinal: 2,
             item_id: 9,
             field: FindField::ImageAlt,
+            segment: 0,
             start_utf16: 4,
             end_utf16: 10,
         };
         let encoded = serde_json::to_value(FindStartResponse {
             session_id: "find-test".to_string(),
+            owner_id: "main".to_string(),
             generation: 3,
             total: 7,
             first_target: Some(occurrence.clone()),
@@ -1071,11 +1787,14 @@ mod tests {
         let (occurrences, by_item) =
             build_occurrence_index(&source, "invoice", &cancelled).unwrap();
         eprintln!(
-            "synthetic_50k_find_index elapsed_ms={} occurrences={} items={}",
+            "synthetic_50k_find_index elapsed_ms={} occurrences={} items={} estimated_range_bytes={} source_text_bytes={}",
             started.elapsed().as_millis(),
             occurrences.len(),
-            by_item.len()
+            by_item.len(),
+            occurrences.len() * std::mem::size_of::<FindOccurrence>(),
+            source.iter().map(|item| item.text.len()).sum::<usize>()
         );
+        assert!(occurrences.len() * std::mem::size_of::<FindOccurrence>() < 8 * 1024 * 1024);
         assert_eq!(occurrences.len(), 50_000);
         assert_eq!(by_item.len(), 50_000);
         assert_eq!(occurrences[49_999].ordinal, 50_000);

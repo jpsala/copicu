@@ -411,6 +411,7 @@ impl PickerFocusPolicy {
                 if let Some(session) = reset_app.try_state::<PickerSessionController>() {
                     session.mark_transient_hidden();
                 }
+                cancel_find_owner(&reset_app, MAIN_WINDOW_LABEL);
                 if let Err(error) = window.hide() {
                     eprintln!("window delayed hide on focus lost failed: {error}");
                 } else {
@@ -782,10 +783,13 @@ fn history_search(
 #[cfg(not(test))]
 #[tauri::command]
 async fn find_start(
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     sessions: State<'_, find::FindSessionStore>,
-    request: find::FindStartRequest,
+    mut request: find::FindStartRequest,
 ) -> Result<find::FindStartResponse, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "find_start")?;
+    request.owner_id = window.label().to_string();
     sessions.start(storage.inner().clone(), request).await
 }
 
@@ -810,19 +814,33 @@ fn find_matches_for_items(
 #[cfg(not(test))]
 #[tauri::command]
 fn find_target(
+    storage: State<'_, storage::AppStorage>,
     sessions: State<'_, find::FindSessionStore>,
     request: find::FindTargetRequest,
 ) -> Result<find::FindTargetResponse, String> {
-    sessions.target(request)
+    sessions.target_materialized(storage.inner(), request)
 }
 
 #[cfg(not(test))]
 #[tauri::command]
 fn find_close(
+    window: tauri::WebviewWindow,
     sessions: State<'_, find::FindSessionStore>,
-    request: find::FindCloseRequest,
+    mut request: find::FindCloseRequest,
 ) -> Result<find::FindCloseResponse, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "find_close")?;
+    request.owner_id = Some(window.label().to_string());
     sessions.close(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn find_cancel_owner(
+    window: tauri::WebviewWindow,
+    sessions: State<'_, find::FindSessionStore>,
+) -> Result<find::FindCancelOwnerResponse, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "find_cancel_owner")?;
+    Ok(sessions.cancel_owner(window.label()))
 }
 
 #[cfg(not(test))]
@@ -1153,9 +1171,20 @@ fn show_picker(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
-fn hide_picker(window: tauri::WebviewWindow) -> Result<(), String> {
+fn hide_picker(
+    window: tauri::WebviewWindow,
+    sessions: State<'_, find::FindSessionStore>,
+) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "hide_picker")?;
+    sessions.cancel_owner(window.label());
     host::hide_picker(&window)
+}
+
+#[cfg(not(test))]
+fn cancel_find_owner<R: tauri::Runtime>(app: &tauri::AppHandle<R>, owner_id: &str) {
+    if let Some(sessions) = app.try_state::<find::FindSessionStore>() {
+        sessions.cancel_owner(owner_id);
+    }
 }
 
 #[cfg(not(test))]
@@ -1677,7 +1706,6 @@ fn count_marked_history_items(storage: State<'_, storage::AppStorage>) -> Result
 fn update_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
-    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::UpdateHistoryItemRequest,
 ) -> Result<(), String> {
     require_surface_window(
@@ -1685,12 +1713,7 @@ fn update_history_item(
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "update_history_item",
     )?;
-    let item_id = request.id;
-    let result = storage.update_item(request);
-    if result.is_ok() {
-        find_sessions.invalidate_item(item_id);
-    }
-    result
+    storage.update_item(request)
 }
 
 #[cfg(not(test))]
@@ -1698,7 +1721,6 @@ fn update_history_item(
 fn update_item_metadata(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
-    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::UpdateItemMetadataRequest,
 ) -> Result<(), String> {
     require_surface_window(
@@ -1706,12 +1728,7 @@ fn update_item_metadata(
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "update_item_metadata",
     )?;
-    let item_id = request.id;
-    let result = storage.update_item_metadata(request);
-    if result.is_ok() {
-        find_sessions.invalidate_item(item_id);
-    }
-    result
+    storage.update_item_metadata(request)
 }
 
 #[cfg(not(test))]
@@ -1720,14 +1737,10 @@ fn create_history_item(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
-    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::CreateHistoryItemRequest,
 ) -> Result<storage::CreateHistoryItemResult, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_history_item")?;
     let result = storage.create_text_item(request)?;
-    if !result.created {
-        find_sessions.invalidate_item(result.id);
-    }
     if let Err(error) = app.emit(
         HISTORY_CHANGED_EVENT,
         serde_json::json!({
@@ -1745,15 +1758,10 @@ fn create_history_item(
 fn delete_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
-    find_sessions: State<'_, find::FindSessionStore>,
     id: i64,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "delete_history_item")?;
-    let result = storage.delete_item(id);
-    if result.is_ok() {
-        find_sessions.invalidate_item(id);
-    }
-    result
+    storage.delete_item(id)
 }
 
 #[cfg(not(test))]
@@ -2322,16 +2330,10 @@ fn get_item_tags(
 fn set_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
-    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::SetItemTagsRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_item_tags")?;
-    let item_id = request.item_id;
-    let result = storage.set_item_tags(request);
-    if result.is_ok() {
-        find_sessions.invalidate_item(item_id);
-    }
-    result
+    storage.set_item_tags(request)
 }
 
 #[cfg(not(test))]
@@ -2339,18 +2341,10 @@ fn set_item_tags(
 fn apply_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
-    find_sessions: State<'_, find::FindSessionStore>,
     request: storage::ApplyItemTagsRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "apply_item_tags")?;
-    let item_ids = request.item_ids.clone();
-    let result = storage.apply_item_tags(request);
-    if result.is_ok() {
-        for item_id in item_ids {
-            find_sessions.invalidate_item(item_id);
-        }
-    }
-    result
+    storage.apply_item_tags(request)
 }
 
 #[cfg(not(test))]
@@ -2794,6 +2788,7 @@ pub fn run() {
             find_matches_for_items,
             find_target,
             find_close,
+            find_cancel_owner,
             show_picker,
             hide_picker,
             quit_app,
@@ -3716,6 +3711,7 @@ fn hide_cached_surface_on_close<R: tauri::Runtime>(window: &tauri::Window<R>) {
         if let Some(session) = window.app_handle().try_state::<PickerSessionController>() {
             session.mark_transient_hidden();
         }
+        cancel_find_owner(window.app_handle(), MAIN_WINDOW_LABEL);
     }
     if let Err(error) = window_focus::hide_tauri_window(window) {
         eprintln!("{} window hide on close failed: {error}", window.label());
@@ -3910,6 +3906,7 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<()
         format!("visible={}", window.is_visible().unwrap_or(false)),
     );
     if window.is_visible().unwrap_or(false) {
+        cancel_find_owner(app, MAIN_WINDOW_LABEL);
         host::hide_picker(&window)?;
         eprintln!("main window toggle ok: hidden");
         diag_log("window.toggle", "hidden");
@@ -3952,6 +3949,7 @@ fn toggle_main_window_without_focus<R: tauri::Runtime>(
             return show_main_window_with_focus(app, true, true);
         }
 
+        cancel_find_owner(app, MAIN_WINDOW_LABEL);
         host::hide_picker(&window)?;
         eprintln!("main window no-focus toggle ok: hidden");
         diag_log(
