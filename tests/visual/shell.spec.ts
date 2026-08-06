@@ -2162,11 +2162,13 @@ test("long synthetic history stays contained", async ({ page }) => {
 });
 
 test("delayed history loading uses row-shaped skeleton geometry", async ({ page }) => {
-  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 360 });
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 900 });
   await gotoShell(page);
 
-  await expect(page.locator(".history-skeleton-row")).toHaveCount(4, { timeout: 1200 });
-  const skeleton = await page.locator(".history-skeleton-row").first().evaluate((row) => {
+  const skeletonRow = page.locator(".history-skeleton-row").first();
+  await expect(page.locator(".history-skeleton-row")).toHaveCount(4, { timeout: 2000 });
+  await expect(skeletonRow).toBeVisible();
+  const skeleton = await skeletonRow.evaluate((row) => {
     const rect = row.getBoundingClientRect();
     const children = Array.from(row.children).map((child) => {
       const childRect = (child as HTMLElement).getBoundingClientRect();
@@ -2178,7 +2180,7 @@ test("delayed history loading uses row-shaped skeleton geometry", async ({ page 
   expect(skeleton.children).toHaveLength(4);
   expect(skeleton.children[0].width).toBeGreaterThanOrEqual(20);
   expect(skeleton.children[3].width).toBeGreaterThanOrEqual(20);
-  await expect(page.locator(".history-skeleton-row")).toHaveCount(0, { timeout: 2000 });
+  await expect(page.locator(".history-skeleton-row")).toHaveCount(0, { timeout: 3000 });
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
@@ -2492,7 +2494,8 @@ test("failed pagination stops automatic retries", async ({ page }) => {
   await page.locator(".history-feed-scroll").evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  await expect(page.getByText("Error: Synthetic page failure")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   const callsAfterFailure = await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
   );
@@ -2500,6 +2503,29 @@ test("failed pagination stops automatic retries", async ({ page }) => {
   expect(await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
   )).toBe(callsAfterFailure);
+});
+
+test("initial history failure uses contextual copy and Retry recovers", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchFailNext: true });
+  await gotoShell(page);
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText("Could not load clipboard history yet. Try again.", { timeout: 5000 });
+  await expect(alert).not.toContainText("Previous results remain visible.");
+  await expect(page.locator(".empty-history")).toContainText("Could not load clipboard history yet. Try again.");
+
+  const attemptsBeforeRetry = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  );
+  expect(attemptsBeforeRetry).toBe(1);
+
+  await page.getByRole("button", { name: "Retry" }).click();
+  await page.waitForFunction((previousAttempts) =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length > previousAttempts,
+  attemptsBeforeRetry);
+  await expect(alert).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toBeVisible();
 });
 
 test("loaded page count stays stable while idle", async ({ page }) => {

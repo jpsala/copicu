@@ -1076,6 +1076,7 @@ function App() {
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyLoadingDelayed, setHistoryLoadingDelayed] = useState(false);
   const [historyNextCursor, setHistoryNextCursor] = useState<HistoryPageCursor | null>(null);
+  const [historyPaginationBlocked, setHistoryPaginationBlocked] = useState(false);
   const [historyTotalCount, setHistoryTotalCount] = useState<number | null>(null);
   const [historyFilteredCount, setHistoryFilteredCount] = useState<number | null>(null);
   // Search snapshot/generation transitions live here; legacy item state remains
@@ -1139,6 +1140,7 @@ function App() {
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
   const historyLoadMoreSeqRef = useRef(0);
+  const historyPaginationBlockedRef = useRef(false);
   const searchIntentGenerationRef = useRef(0);
   const appliedSnapshotGenerationRef = useRef(0);
   const appliedDescriptorRef = useRef<AppliedSearchDescriptor | null>(null);
@@ -1222,7 +1224,7 @@ function App() {
   );
   const allVisibleSelected = history.length > 0 && selectedVisibleCount === history.length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
-  const hasNextHistoryPage = historyNextCursor !== null;
+  const hasNextHistoryPage = historyNextCursor !== null && !historyPaginationBlocked;
   const searchTriggerMode = settings.picker.searchTriggerMode;
   const scenarioCommandQuery = aiComposerMode ? null : scenarioCommandSearch(query);
   const scenarioCommandOptions = useMemo(() => {
@@ -2357,6 +2359,8 @@ function App() {
       historyRef.current = page.items;
       setHistory(page.items);
       setHistoryNextCursor(page.nextCursor);
+      historyPaginationBlockedRef.current = false;
+      setHistoryPaginationBlocked(false);
       if (typeof page.totalCount === "number") {
         setHistoryTotalCount(page.totalCount);
       }
@@ -2694,7 +2698,7 @@ function App() {
   }, [focusSearch, refreshHistory]);
 
   const loadNextHistoryPage = useCallback(async () => {
-    if (!historyNextCursor || historyLoadingMore) {
+    if (!historyNextCursor || historyLoadingMore || historyPaginationBlockedRef.current) {
       return;
     }
 
@@ -2774,6 +2778,8 @@ function App() {
       setHistoryError(null);
     } catch (error) {
       if (loadSeq === historyLoadMoreSeqRef.current) {
+        historyPaginationBlockedRef.current = true;
+        setHistoryPaginationBlocked(true);
         setHistoryError(String(error));
         dispatchSearch({
           type: "pageFailed",
