@@ -1141,6 +1141,7 @@ function App() {
   const autocompleteCommittedQueryRef = useRef<string | null>(null);
   const foregroundSearchInFlightRef = useRef(false);
   const [deferredAppliedRefresh, setDeferredAppliedRefresh] = useState<SearchReplayToken | null>(null);
+  const deferredAppliedRefreshRef = useRef<SearchReplayToken | null>(null);
   const lastSearchFailureRef = useRef<SearchFailureReplay | null>(null);
   const pendingFilterLockRef = useRef<PendingFilterLock | null>(null);
   const clearSearchPendingRef = useRef(false);
@@ -1163,6 +1164,11 @@ function App() {
   const updateClearSearchPending = useCallback((pending: boolean) => {
     clearSearchPendingRef.current = pending;
     setClearSearchPending(pending);
+  }, []);
+
+  const updateDeferredAppliedRefresh = useCallback((token: SearchReplayToken | null) => {
+    deferredAppliedRefreshRef.current = token;
+    setDeferredAppliedRefresh(token);
   }, []);
 
   const supersedeSearchIntent = useCallback(
@@ -2112,13 +2118,13 @@ function App() {
         if (!foreground) {
           return;
         }
-        setDeferredAppliedRefresh(null);
+        updateDeferredAppliedRefresh(null);
         if (clearSearchPendingRef.current) {
           updateClearSearchPending(false);
         }
       };
       if (source === "background" && foregroundSearchInFlightRef.current) {
-        setDeferredAppliedRefresh({
+        updateDeferredAppliedRefresh({
           query: queryRef.current.trim(),
           intentGeneration,
           appliedGeneration: appliedSnapshotGenerationRef.current,
@@ -2472,6 +2478,7 @@ function App() {
       refreshMarkedCount,
       searchInterpretation,
       searchState.applied,
+      updateDeferredAppliedRefresh,
       updateClearSearchPending,
     ],
   );
@@ -2533,7 +2540,7 @@ function App() {
         && appliedSnapshotGenerationRef.current === 0
         && !lastSearchFailureRef.current
       ) {
-        setDeferredAppliedRefresh({
+        updateDeferredAppliedRefresh({
           query: draft,
           intentGeneration: searchIntentGenerationRef.current,
           appliedGeneration: appliedSnapshotGenerationRef.current,
@@ -2546,7 +2553,7 @@ function App() {
         draft !== applied &&
         !structuredHold
       ) {
-        setDeferredAppliedRefresh({
+        updateDeferredAppliedRefresh({
           query: draft,
           intentGeneration: searchIntentGenerationRef.current,
           appliedGeneration: appliedSnapshotGenerationRef.current,
@@ -2554,7 +2561,7 @@ function App() {
         });
         return;
       }
-      setDeferredAppliedRefresh(null);
+      updateDeferredAppliedRefresh(null);
       await refreshHistory({
         ...options,
         queryOverride: appliedDescriptor?.effectiveQuery ?? applied,
@@ -2563,12 +2570,12 @@ function App() {
         descriptorOverride: appliedDescriptor,
       });
     },
-    [autocompleteOpen, refreshHistory, scenarioCommandOpen],
+    [autocompleteOpen, refreshHistory, scenarioCommandOpen, updateDeferredAppliedRefresh],
   );
 
   useEffect(() => {
     const deferredRefresh = deferredAppliedRefresh;
-    if (!deferredRefresh) {
+    if (!deferredRefresh || deferredAppliedRefreshRef.current !== deferredRefresh) {
       return;
     }
     if (foregroundSearchInFlight || historyPending) {
@@ -2582,7 +2589,7 @@ function App() {
         && deferredRefresh.reason !== "foreground"
       )
     ) {
-      setDeferredAppliedRefresh(null);
+      updateDeferredAppliedRefresh(null);
       return;
     }
     const appliedDescriptor = appliedDescriptorRef.current;
@@ -2590,10 +2597,10 @@ function App() {
       return;
     }
     if (deferredRefresh.reason === "draft") {
-      setDeferredAppliedRefresh(null);
+      updateDeferredAppliedRefresh(null);
       return;
     }
-    setDeferredAppliedRefresh(null);
+    updateDeferredAppliedRefresh(null);
     void refreshHistory({
       showPending: false,
       allowAi: false,
@@ -2601,7 +2608,7 @@ function App() {
       queryOverride: appliedDescriptor?.effectiveQuery ?? historyInputQueryRef.current,
       descriptorOverride: appliedDescriptor,
     });
-  }, [deferredAppliedRefresh, foregroundSearchInFlight, historyPending, refreshHistory]);
+  }, [deferredAppliedRefresh, foregroundSearchInFlight, historyPending, refreshHistory, updateDeferredAppliedRefresh]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
