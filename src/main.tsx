@@ -3898,6 +3898,20 @@ function App() {
         };
       }
     }
+    const foregroundFailure = lastSearchFailureRef.current;
+    if (
+      foregroundFailure?.source === "foreground"
+      && foregroundFailure.query === trimmedQuery
+      && foregroundFailure.intentGeneration === searchIntentGenerationRef.current
+    ) {
+      if (searchDebounceTimerRef.current !== null) {
+        window.clearTimeout(searchDebounceTimerRef.current);
+        searchDebounceTimerRef.current = null;
+      }
+      return () => {
+        active = false;
+      };
+    }
     const queryChanged = trimmedQuery !== historyInputQuery;
     const searchInput = historySearchInput(trimmedQuery, aiComposerMode);
     if (isScenarioCommand(trimmedQuery) || searchInput.mode === "ai" || effectiveSearchTriggerMode !== "realtime") {
