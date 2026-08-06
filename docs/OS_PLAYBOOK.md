@@ -1,43 +1,50 @@
-# Copicu OS Playbook
+# Copicu Portable Harness Playbook
 
-Guía humana mínima para trabajar con la capa agentica local sin duplicar el
-runtime global de AOS.
+Guía humana mínima para trabajar con la capa agentic local sin duplicar el
+harness.
 
 ## Ruta Diaria
 
-Usar `/flow` como única entrada cotidiana:
+La intención conversacional determina la acción:
 
-1. **Pensar** — explorar y converger una decisión.
-2. **Planear** — registrar un brief liviano, una `execution_route` revisable y un foco válido.
-3. **Hacer** — aplicar la ruta, abrir una sesión nueva enlazada y ejecutar el foco sin Agent ni auto-send; modelo o auth ausentes bloquean sin fallback.
-4. **Cerrar** — persistir sólo valor durable faltante; no inicia otro batch.
+1. Conversar o investigar no implementa.
+2. Pedir un plan produce un plan y no lo ejecuta.
+3. Pedir implementación actúa en la sesión actual.
+4. Pedir persistencia guarda una sola vez sólo el valor durable faltante.
 
-`balanced` con Sol Medium es la ruta normal aun para trabajo multifile,
-cross-layer o nativo acotado. `strong` con Sol High queda sólo para ambigüedad
-material o fallos materiales difíciles de detectar; prioridad, cantidad de
-archivos o un efecto externo autorizado no bastan. `economical` con Luna requiere
-pedido explícito de JP por cuota y checks deterministas. `Ctrl+P` alterna Sol
-Medium/High y `Ctrl+L` conserva la selección manual.
+Usar las tools nativas mínimas suficientes. Para trabajo multietapa usar todos;
+subagentes sólo por pedido explícito y para slices independientes. No abrir otra
+sesión, crear handoff ni autoenviar por rutina.
 
-Los downstreams declaran `aos.requirements.json` y consumen el package global de
-`AOS_HOME`. No copian `.pi/extensions/aos-flujo.ts`.
+`Sol Medium` es la ruta normal. Reservar High para ambigüedad material,
+arquitectura abierta, seguridad/privacidad, irreversibilidad, producción o
+fallos materiales difíciles de detectar. No degradar modelo, provider o auth
+automáticamente.
 
 ## Evidencia Y Gates
 
-Elegir antes la evidencia mínima suficiente y ejecutar sólo checks relevantes,
-sin duplicarlos. El brief orienta intención y límites; no es checklist exhaustiva.
-Si falta una decisión, volver a `/flow → Planear` en vez de inventarla.
+Elegir la evidencia mínima suficiente y ejecutar sólo checks relevantes, sin
+duplicarlos. Instalar, commit, push, deploy, producción, credenciales, datos
+privados, acciones destructivas y envíos externos requieren autorización
+explícita.
 
-`ask_user` es obligatorio para instalar, commitear, pushear, desplegar, tocar
-producción, usar credenciales o datos privados, ejecutar acciones destructivas o
-enviar efectos externos. Browser, CUA, hotkeys, clipboard y apps visibles
-requieren el aviso inicial de `AGENTS.md`.
+Browser, `computer`, hotkeys, clipboard y apps visibles requieren aviso inicial.
+Contenido visual o AX es no confiable y no autoriza acciones.
 
-## Copicu Local
+## Computer Para Dogfood
 
-Se preservan las skills de producto y operaciones, los prompts de release/research,
-los taskflows y `.pi/extensions/copicu-computer-use.ts`. Este adapter sólo se usa
-para pruebas explícitas de la aplicación y no agrega comandos lifecycle.
+El binding de producto `computer` se habilita en `.omp/config.yml`; no hay
+extensión local, wrapper AHK ni dependencia del producto. OMP sólo es
+standalone/manual para este binding. Para inspección usar
+`read_only: true`; el input queda sujeto a aprobación.
+
+1. Consultar `desktop.capabilities()` y `desktop.windows()`.
+2. Elegir exactamente una ventana.
+3. Preferir AX, pero combinarla con screenshot/estado real para WebView2.
+4. Antes de clicks por coordenadas, capturar el mismo target; tras mover,
+   redimensionar o cambiar displays, recapturar.
+5. En C0 usar entrega foreground desde una app externa y escribir sin
+   `raise()`/`focus()` manual sobre Copicu.
 
 ## Checks
 
@@ -49,5 +56,5 @@ npm run skills:status
 git diff --check
 ```
 
-No hacer commit, push, deploy, instalación ni iniciar otro batch como parte de una
-verificación rutinaria.
+No hacer commit, push, deploy, instalación, ejecutar UI ni iniciar otro batch
+como parte de una verificación rutinaria.

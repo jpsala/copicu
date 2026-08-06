@@ -13,10 +13,11 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 
 | Si el usuario pide o menciona | Abrir primero |
 | --- | --- |
+| Traycer, harness nativo, OMP manual, handoff, worktrees | [portable-multiharness-contract](topics/portable-multiharness-contract.md) |
 | Producto, MVP, CopyQ, alcance, roadmap | [product-direction](topics/product-direction.md), [product-ambition](topics/product-ambition.md), [copyq-technical-baseline](topics/copyq-technical-baseline.md) |
 | Product register, personalidad visual, anti-referencias | [product-register](topics/product-register.md) |
 | Open source, GitHub publico, launch, Show HN | [open-source-github](topics/open-source-github.md), [013-open-source-growth](tracks/013-open-source-growth.md), [018-public-launch-readiness](tracks/018-public-launch-readiness.md) |
-| Performance, memoria, idle, benchmarks, Pi lento en repo | [performance-and-memory](topics/performance-and-memory.md), [014-performance-memory](tracks/014-performance-memory.md), [pi-agentic-os](topics/pi-agentic-os.md) |
+| Performance, memoria, idle, benchmarks, agente lento en repo | [performance-and-memory](topics/performance-and-memory.md), [014-performance-memory](tracks/014-performance-memory.md), [omp-agentic-os](topics/omp-agentic-os.md) |
 | Filtering, query syntax, SearchPlan, FTS, busqueda AI | [filtering-and-query-syntax](topics/filtering-and-query-syntax.md), [search-plan-engine](topics/search-plan-engine.md), [ai-search-and-actions](topics/ai-search-and-actions.md) |
 | Actions, scripts, plugins, debug de scripts | [actions-and-scripting-api](topics/actions-and-scripting-api.md), [004-actions-scripting](tracks/004-actions-scripting.md), [017-actions-modularization](tracks/017-actions-modularization.md) |
 | Markdown output, summaries, reportes | [markdown-output-surface](topics/markdown-output-surface.md) |
@@ -29,7 +30,7 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 | Instalador, release Windows, updater | [windows-installer](topics/windows-installer.md) |
 | macOS port | [macos-portability-research-unindexed](topics/macos-portability-research-unindexed.md), [015-macos-port-spike](tracks/015-macos-port-spike.md) |
 | CopyQ feature inventory/import | [copyq-feature-inventory](reference/copyq-feature-inventory.md), [007-copyq-import](tracks/007-copyq-import.md) |
-| Sistema agentico, AOS, `/flow`, docs y routing | [docs-knowledge-system](topics/docs-knowledge-system.md), [pi-agentic-os](topics/pi-agentic-os.md), [agentic-os-operations](topics/agentic-os-operations.md), [agent-tool-routing](topics/agent-tool-routing.md), [os-quality](topics/os-quality.md), [local-codex-skills](topics/local-codex-skills.md) |
+| Sistema agentic, OMP, computer, docs y routing | [docs-knowledge-system](topics/docs-knowledge-system.md), [omp-agentic-os](topics/omp-agentic-os.md), [agentic-os-operations](topics/agentic-os-operations.md), [agent-tool-routing](topics/agent-tool-routing.md), [os-quality](topics/os-quality.md), [local-codex-skills](topics/local-codex-skills.md) |
 | Research tecnico, librerias, dependencias | [technical-research-process](topics/technical-research-process.md) |
 | Ponytail, implementacion minima, YAGNI, over-engineering, diff minimo, dependencias innecesarias | [minimal-implementation](topics/minimal-implementation.md) |
 | Guia de usuario, scripts para usuarios | [user/README.md](user/README.md), [user/scripts.md](user/scripts.md) |
@@ -37,8 +38,7 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 | Stack, arquitectura, desarrollo | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Preguntas abiertas, decisiones | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md), [DECISIONS.md](DECISIONS.md) |
 | Feature grande, milestone, spike | `specs/` |
-
-| Pi tools, web research, taskflow, advisor, lens, paquetes Pi | [Pi Extension Stack](topics/pi-extension-stack.md) | Elegir tools Pi sin copiar inventario global ni instalar paquetes sin permiso. |
+| Tools del harness, computer, web research, todos y subagentes | [Agent Tool Routing](topics/agent-tool-routing.md), [portable-multiharness-contract](topics/portable-multiharness-contract.md) |
 ## Documentos Raiz
 
 | Documento | Rol |
@@ -53,7 +53,8 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 | `docs/OPEN_QUESTIONS.md` | Preguntas abiertas. |
 | `docs/GLOSSARY.md` | Alias y terminos recurrentes. |
 | `docs/skills/` | Skills locales portables; fuente canonica. |
-| `.pi/` | Prompts/extensiones Pi locales. |
+| `.omp/config.yml` | Configuración agentic project-local del `computer` built-in. |
+| `.omp/commands/research.md` | Único comando OMP project-local; adapter fino del topic de research. |
 | `docs/reference/` | Historia/contexto profundo no caliente. |
 | `docs/tracks/` | Trabajos vivos retomables. |
 | `specs/` | Specs de features grandes. |
@@ -62,4 +63,4 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 
 - `AGENTS.md`, `WORKING_MEMORY.md`, `TOPICS.md` y tracks activos no deben convertirse en transcript ni lectura obligatoria amplia.
 - Archivos preexistentes de contexto no deben quedar sueltos: integrar, indexar, archivar con estado claro o preguntar antes de borrar.
-- En Pi, preferir `map/search` scoped (`src`, `src-tauri/src`, `docs/topics`) antes que repo completo; abrir `docs/skills/impeccable/` solo para trabajos UI/impeccable.
+- Preferir búsquedas scoped (`src`, `src-tauri/src`, `docs/topics`) antes que repo completo; abrir `docs/skills/impeccable/` sólo para trabajos UI/impeccable.

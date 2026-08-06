@@ -2,7 +2,7 @@
 
 Copicu es un clipboard manager inspirado en CopyQ, con Tauri 2, TypeScript, Rust y SQLite.
 
-Es downstream de AOS: recibe una capa agentica local adaptada, no el metasistema completo de `C:\dev\os`. No copiar registry global, tracks/decisiones del kit, inventarios ni docs que lo hagan parecer upstream canonico.
+Es downstream de AOS: recibe una capa agentica local adaptada, no el metasistema completo del manager upstream. No copiar registry global, tracks/decisiones del kit, inventarios ni docs que lo hagan parecer upstream canonico.
 
 ## Lectura Inicial
 
@@ -14,13 +14,13 @@ Antes de trabajar en este proyecto, usar una ruta liviana:
 4. Consultar `docs/TOPICS.md` o buscar por triggers para elegir topic.
 5. Abrir solo el topic, track, spec o codigo puntual segun el pedido.
 
-No abrir por defecto docs largos (`PROJECT`, `ASSISTANT_RULES`, `DEVELOPMENT`, specs completas, referencias). En Pi, preferir `map/search` scoped (`src`, `src-tauri/src`, `docs/topics`); `docs/skills/impeccable/` es solo para UI/impeccable.
-
-Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con estado claro o preguntar antes de borrarlos.
+No abrir por defecto docs largos (`PROJECT`, `ASSISTANT_RULES`, `DEVELOPMENT`, specs completas, referencias). En OMP, preferir búsquedas scoped (`src`, `src-tauri/src`, `docs/topics`); `docs/skills/impeccable/` es solo para UI/impeccable.
 
 ## Reglas Generales
 
 - Usar web/internet libremente por defecto cuando conocimiento externo o cambiante evite adivinar: docs oficiales, releases, issues/source, metadata de paquetes, errores, APIs y comparativas. No enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos.
+- Browser visible/desatendido usa la capacidad nativa del harness activo; AXI, adapters y Lavish quedan como fallback manual de OMP únicamente. Vivaldi personal sólo si JP lo pide.
+- No usar OMP Browser Relay/`app.relay`; login nuevo y efectos externos sensibles conservan los gates locales. Referencia local: `docs/topics/agent-tool-routing.md`.
 - Si evidencia online contradice el repo local, docs del proyecto o comportamiento observado, consultar a JP antes de decidir; presentar ambas evidencias, fuentes e impacto practico.
 - Antes de instalar dependencias, CLIs globales, paquetes de sistema, herramientas de package-manager o binarios/scripts remotos, pedir autorizacion explicita con comando exacto, alcance, motivo, riesgos, alternativa, cambios esperados y rollback. Tratar `curl | sh`/scripts remotos como alto riesgo y preferir alternativas auditables.
 - Respetar el stack objetivo salvo decision explicita en contrario: Tauri 2, TypeScript, frontend React/Vite o Solid, Rust y SQLite.
@@ -35,15 +35,17 @@ Si aparecen archivos de contexto nuevos, integrarlos, moverlos, archivarlos con 
 - Tras cambios de codigo/config/assets/frontend/backend, reiniciar o recargar la instancia dev segun corresponda; no dejar una app vieja corriendo.
 - No dejar que la capa agentica se convierta en transcript, backlog historico o lectura obligatoria amplia. Si crece, compactar, archivar o mover a referencia profunda.
 
-## Comandos De Sistema
+## Control plane portable
 
-- `/flow` es la única entrada Pi cotidiana: `Pensar | Planear | Hacer | Cerrar`; Copicu exige `aos.flow-first@1.1.0`, un comando global `user/package` y foco documental válido.
-- Planear usa `balanced` con Sol Medium como ruta normal, incluso para trabajo multifile/cross-layer/nativo acotado. `strong` con Sol High queda sólo para ambigüedad material, arquitectura abierta, seguridad/auth/privacidad, irreversibilidad, alto impacto productivo o fallos materiales difíciles de detectar. `economical` con Luna requiere pedido explícito de JP por cuota y checks deterministas. Hacer bloquea sin fallback si falta modelo o auth.
-- `Ctrl+P` alterna Sol Medium/High; `Ctrl+L` conserva la selección manual de modelo.
-- `/flow → Hacer` abre una única sesión nueva enlazada con handoff revisable y ejecuta allí sin Agent ni auto-send.
-- En `WORKING_MEMORY.md`, cada campo de control de `Foco Único De Ejecución` debe ocupar una sola línea física; no envolver `Plan`, `Próximo batch`, `Referencia`, `Bloqueo`, `Gate` ni `Siguiente acción`, aunque MD013 sugiera hacerlo.
-- `aos-realinear-os` / `realinear os`: abrir `docs/topics/agentic-os-operations.md` y reparar solo la capa agentica salvo pedido explícito.
-- Las capacidades propias permanecen en `docs/skills/`, `.pi/extensions/copicu-computer-use.ts`, prompts de producto y taskflows; no crear aliases locales para pensar, planear, implementar, continuar o cerrar.
+- Traycer con el harness nativo activo es la ruta cotidiana: conversar no implementa, planear no ejecuta e implementar actúa en esta sesión.
+- OMP queda standalone/manual para compatibilidad de producto; Traycer no lo invoca automáticamente y Pi sólo aplica a producto/laboratorio si un gate local lo permite.
+- El repo no depende de `.traycer` ni de artifacts del manager. El owner mantiene la rama/worktree; simultaneidad exige aislamiento y el handoff bajo demanda contiene objetivo, rama/worktree, decisiones, archivos/cambios, checks y siguiente gate.
+- Usar tools mínimas; todos para trabajo multietapa y subagentes sólo por pedido de JP en slices independientes.
+- Default `Sol Medium`; High sólo por ambigüedad/riesgo material, seguridad, irreversibilidad o producción. Sin fallback de modelo/provider/auth.
+- Sin sesión nueva, handoff ni auto-send rutinarios; persistir una vez sólo valor durable. Campos de control del foco en `WORKING_MEMORY.md` ocupan una línea física.
+- `aos-realinear-os` / `realinear os` es operación manager: abrir `docs/topics/agentic-os-operations.md`; no crear prompt.
+- `computer` built-in vive sólo en `.omp/config.yml`: avisar UI visible, inspeccionar `read_only`, AX no basta para WebView2 y C0 exige app externa -> hotkey foreground -> type global sin targetear Copicu -> token visible.
+- Capacidades en `docs/skills/`, discovery en `.agents/skills` y único comando local `.omp/commands/research.md`; cero superficie activa `.pi`.
 - App instalada: si JP pide promover dev a instalada/crear instalador/instalar current, ejecutar `npm run install:current`; toca procesos Copicu instalados, asi que avisar y verificar evidencia.
 
 ## Persistencia

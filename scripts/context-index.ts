@@ -153,19 +153,16 @@ if (skillDirs.length) {
 }
 lines.push("");
 
-lines.push("## Pi Resources");
+lines.push("## Portable harness");
 lines.push("");
-const piPrompts = markdownFiles(".pi/prompts").map((path) => path.replace(".pi/prompts/", "").replace(/\.md$/, ""));
-const piExtensions = exists(".pi/extensions")
-  ? readdirSync(join(root, ".pi", "extensions"), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
-    .map((entry) => entry.name)
-    .sort()
-  : [];
-if (piPrompts.length) lines.push(`- Prompts: ${piPrompts.length} in [.pi/prompts/](../../.pi/prompts/)`);
-if (piExtensions.length) lines.push(`- Extensions: ${piExtensions.join(", ")}`);
-if (!piPrompts.length && !piExtensions.length) lines.push("- No project Pi resources found.");
-lines.push("- Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)");
+lines.push("- Daily control plane: Traycer with the active native harness.");
+lines.push("- OMP remains standalone/manual for product bindings and explicit fallback.");
+lines.push("- Computer: built-in enabled by [.omp/config.yml](../../.omp/config.yml); no local wrapper.");
+lines.push("- Commands: [research](../../.omp/commands/research.md); release stays in its canonical script/docs.");
+lines.push("- Gates: read-only inspection; approval before visible input.");
+lines.push("- Oracle C0: external app -> foreground hotkey -> global type without targeting Copicu -> visible token.");
+lines.push("- Skills: `.agents/skills` preserves OMP discovery for `docs/skills/`.");
+lines.push("- Guidance: [omp-agentic-os](../topics/omp-agentic-os.md)");
 lines.push("");
 
 lines.push("## Aliases");

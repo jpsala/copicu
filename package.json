@@ -37,7 +37,7 @@
     "skills:on": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 on",
     "skills:off": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 off",
     "skills:toggle": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 toggle",
-    "check": "bun run context:audit && bun run skills:status",
+    "check": "bun run context:audit && bun run routing:check && bun run skills:status",
     "check:ci": "bun scripts/agent-context-audit.ts"
   },
   "dependencies": {

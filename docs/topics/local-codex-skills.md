@@ -19,10 +19,10 @@ primary_refs:
   - scripts/agent-context-audit.ts
 ---
 
-# Skills Locales De Codex
+# Skills Locales OMP
 
-`docs/skills/` es la fuente canónica; `.agents/skills` es sólo el junction de
-compatibilidad para discovery. No duplicar una skill en dos carpetas reales.
+`docs/skills/` es la fuente canónica; `.agents/skills` es el junction estable
+para discovery OMP. No duplicar una skill en dos carpetas reales.
 
 ## Qué Es Skill
 
@@ -31,9 +31,9 @@ procedimiento durable puede vivir en un topic o script; el `SKILL.md` mantiene
 metadata y guardrails suficientes. Reglas globales de seguridad, conocimiento de
 producto y estado vivo pertenecen a `AGENTS.md`, topics o tracks.
 
-`/flow` no se implementa como skill local: es la única entrada cotidiana y vive
-en el package global AOS. No crear skills que compitan para pensar, planear,
-implementar, continuar o cerrar.
+La intención cotidiana pertenece a OMP nativo y no se implementa como skill
+local. No crear skills ceremoniales para pensar, planear, implementar, continuar
+o cerrar.
 
 ## Capacidades Preservadas
 
@@ -43,9 +43,9 @@ implementar, continuar o cerrar.
 - `speckit-*/`: workflow de specs grandes.
 - `impeccable/`: UI/frontend.
 
-Prompts de research/release, taskflows de producto y
-`.pi/extensions/copicu-computer-use.ts` son adapters Pi locales, no skills del
-lifecycle.
+El research con consumidor real vive como `.omp/commands/research.md`; release
+usa su script/doc canónico y los taskflows Pi quedaron sólo en backup.
+`computer` es built-in OMP, no una skill ni un adapter local.
 
 ## Validación
 

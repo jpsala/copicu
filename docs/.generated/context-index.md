@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-07-31T20:37:16.069Z
+Generated: 2026-08-06T20:02:49.196Z
 
 ## Topics
 
@@ -23,12 +23,12 @@ Generated: 2026-07-31T20:37:16.069Z
 - active: [mantine-ui-system](../topics/mantine-ui-system.md)
 - active: [markdown-output-surface](../topics/markdown-output-surface.md)
 - active: [minimal-implementation](../topics/minimal-implementation.md)
+- active: [omp-agentic-os](../topics/omp-agentic-os.md)
 - active: [open-source-github](../topics/open-source-github.md)
 - active: [os-quality](../topics/os-quality.md)
 - active: [performance-and-memory](../topics/performance-and-memory.md)
-- active: [pi-agentic-os](../topics/pi-agentic-os.md)
-- active: [pi-extension-stack](../topics/pi-extension-stack.md)
 - active: [picker-interaction](../topics/picker-interaction.md)
+- reference: [portable-multiharness-contract](../topics/portable-multiharness-contract.md)
 - active: [product-ambition](../topics/product-ambition.md)
 - active: [product-direction](../topics/product-direction.md)
 - active: [product-register](../topics/product-register.md)
@@ -46,8 +46,7 @@ Generated: 2026-07-31T20:37:16.069Z
 
 ## Tracks
 
-- ready: [033 Picker Compact Previews And Inline Edit](../tracks/033-picker-compact-previews-inline-edit.md)
-- Other tracks are omitted from the hot index; search `docs/tracks/` on demand.
+- No focused track. Search `docs/tracks/` on demand.
 
 ## Specs
 
@@ -66,11 +65,16 @@ Generated: 2026-07-31T20:37:16.069Z
 - Canon: [docs/skills/](../skills/)
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
-## Pi Resources
+## Portable harness
 
-- Prompts: 3 in [.pi/prompts/](../../.pi/prompts/)
-- Extensions: copicu-computer-use.ts
-- Guidance: [pi-agentic-os](../topics/pi-agentic-os.md)
+- Daily control plane: Traycer with the active native harness.
+- OMP remains standalone/manual for product bindings and explicit fallback.
+- Computer: built-in enabled by [.omp/config.yml](../../.omp/config.yml); no local wrapper.
+- Commands: [research](../../.omp/commands/research.md); release stays in its canonical script/docs.
+- Gates: read-only inspection; approval before visible input.
+- Oracle C0: external app -> foreground hotkey -> global type without targeting Copicu -> visible token.
+- Skills: `.agents/skills` preserves OMP discovery for `docs/skills/`.
+- Guidance: [omp-agentic-os](../topics/omp-agentic-os.md)
 
 ## Aliases
 

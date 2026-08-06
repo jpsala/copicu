@@ -1,57 +1,98 @@
-# AOS flow-first routing policy for Copicu
-version: 1
+# Portable routing policy for Copicu
+version: 14
+scope: copicu-agentic
+policy: traycer_native_intent_first
 
-flow:
-  daily_entry: /flow
-  contract: aos.flow-first@1.1.0
-  source: user/package global AOS_HOME
-  phases: [Pensar, Planear, Hacer, Cerrar]
-  handoff: new linked session, documentary and reviewable
-  auto_send: false
-  agent: explicit user request only
-  max_batches: 1
-  plan_role: scope guidance, not exhaustive checklist
-  focus_states: [needs_planning, ready, blocked, complete, waiting_gate]
-  model_routing:
-    source: selected_plan_frontmatter
-    field: execution_route
-    default: balanced
-    economical: openai-codex/gpt-5.6-luna@high
-    balanced: openai-codex/gpt-5.6-sol@medium
-    strong: openai-codex/gpt-5.6-sol@high
-    semantics:
-      economical: explicit_quota_saving_with_deterministic_checks
-      balanced: normal_time_first_default_for_bounded_work
-      strong: exceptional_ambiguity_or_hard_to_detect_material_failure
-    non_escalators:
-      - priority
-      - file_count
-      - native_stack
-      - contract_or_review
-      - complex_planning
-      - authorized_external_effect
-    manual_controls:
-      ctrl_p: toggle_sol_medium_high
-      ctrl_l: model_selector
-    application: replacement_session_reload_before_handoff
-    visibility: prompt_and_notification
-    unavailable: fail_closed_without_fallback
-    classifier: none
-    terra: excluded_until_local_evidence
+runtime:
+  control_plane: traycer
+  harness: codex
+  fallback_harness: omp
+  fallback_mode: manual_only
+  daily_entry: conversation
+  package_extension: none
+  prompts: none
+  lifecycle_prompt: none
+  current_session: true
 
-local_adapters:
+intent:
+  discuss:
+    action: answer_or_investigate
+    edits: false
+  plan:
+    action: produce_plan
+    execute: false
+  implement:
+    action: current_session_direct
+  persist:
+    action: durable_value_once
+
+execution:
+  default_model: codex_medium
+  high_only_for:
+    - material_ambiguity
+    - open_architecture
+    - security_or_privacy
+    - irreversibility
+    - production
+    - hard_to_detect_material_failure
+  unavailable: fail_closed_without_fallback
+  automatic_fallback: false
+  automatic_new_session: false
+  automatic_send: false
+
+coordination:
+  agents: explicit_user_request_only
+  todos: multistep_work
+  subagents: explicit_user_request_and_independent_slices_only
+  handoff: demand_only
+  worktrees: isolated_for_concurrency_only
+
+workflow:
+  implementation:
+    tools: native_harness
+
+approval:
+  mode: single_batch_envelope
+  local_reversible: proceed
+  require_for:
+    - install
+    - commit
+    - push
+    - deploy
+    - production
+    - credentials
+    - private_data
+    - destructive
+    - external_send
+    - visible_ui_input
+
+computer:
+  tool: omp_builtin
+  config: omp_config
+  product_dependency: none
+  inspection: read_only
+  input: approval_required
+  target: exactly_one_window
+  accessibility: preferred_but_not_sole_webview_oracle
+  coordinates: latest_screenshot_same_target
+  focus_oracle_c0:
+    sequence: external_foreground_type_visible_token
+    manual_focus_before_type: forbidden
+
+local_resources:
   allowed:
-    - .pi/extensions/copicu-computer-use.ts
-    - .pi/prompts/release-windows.md
-    - .pi/prompts/research.md
-    - docs/skills/
-    - .pi/taskflows/
-  flow_copy: forbidden
+    - omp_config
+    - docs_skills
+    - agents_skills
+    - research_command
+  wrappers:
+    computer: forbidden
+    flow: forbidden
 
 checks:
   minimum_sufficient: true
   nonduplicated: true
-  routing_command: bun run routing:check
+  routing_command: routing_check
 
 gates:
   human_confirmation:
@@ -64,3 +105,4 @@ gates:
     - private_data
     - destructive
     - external_send
+    - visible_ui_input

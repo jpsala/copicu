@@ -1,7 +1,7 @@
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import type { Stats } from "node:fs";
 import { join, relative } from "node:path";
-import { pathToFileURL } from "node:url";
+import { validateTraycerRoutingPolicy } from "./traycer-routing-contract.ts";
 
 type Finding = {
   level: "error" | "warn";
@@ -10,41 +10,23 @@ type Finding = {
 
 const root = process.cwd();
 const findings: Finding[] = [];
-const aosHome = process.env.AOS_HOME?.trim() ||
-  (process.platform === "win32"
-    ? "C:\\dev\\os"
-    : join(process.env.HOME ?? "", "dev", "os"));
-let globalAosCheck: { ok: boolean; reason?: string } = {
-  ok: false,
-  reason: "AOS_HOME doctor could not be loaded",
-};
-let globalFlowFocusError: string | undefined =
-  "Global /flow focus validator could not be loaded";
-try {
-  const aosHomeModule = await import(
-    pathToFileURL(join(aosHome, "scripts", "aos-home.ts")).href
-  );
-  const configDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-  globalAosCheck = aosHomeModule.checkAosHome(
-    aosHome,
-    false,
-    join(configDir, "settings.json"),
-  );
-  const flowModule = await import(
-    pathToFileURL(join(aosHome, "runtime", "aos-flujo.ts")).href
-  );
-  globalFlowFocusError = flowModule.validateFlowFocus(root);
-} catch {
-  // Report the global contract failure below.
-}
-
-const supersededLifecyclePrompts = [
-  "aos-checkpoint.md",
-  "aos-cerrar.md",
-  "aos-continuar.md",
-  "aos-gol.md",
-  "aos-guardar-sesion.md",
-  "aos-sigamos.md",
+const retiredAgenticPaths = [
+  ".pi",
+  "aos.requirements.json",
+  "docs/topics/pi-agentic-os.md",
+  "docs/topics/pi-extension-stack.md",
+  "docs/reference/pi-agentic-os-command-surface.md",
+];
+const retiredHotTokens = [
+  "/flow",
+  "AOS_HOME",
+  "aos.requirements.json",
+  "runtime/aos-flujo",
+  ".pi/extensions/copicu-computer-use.ts",
+  "copicu_computer_use",
+  "C:/Program Files/AutoHotkey",
+  ".codex-run/tools/ahk-mcp",
+  "AHK_MCP_DIR",
 ];
 const supersededLifecycleSkills = [
   "aos-gol-lite",
@@ -176,14 +158,6 @@ function walkMarkdownFiles(dir: string): string[] {
   });
 }
 
-function listFileNames(path: string, extension?: string) {
-  const fullPath = join(root, path);
-  if (!existsSync(fullPath)) return [];
-  return readdirSync(fullPath, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && (!extension || entry.name.endsWith(extension)))
-    .map((entry) => entry.name)
-    .sort();
-}
 
 for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md", "docs/TOPICS.md"]) {
   if (!exists(path)) add("error", `Missing ${path}`);
@@ -194,7 +168,7 @@ if (exists("docs/WORKING_MEMORY.md")) {
   if (wrappedField) {
     add(
       "error",
-      `Foco Único De Ejecución: ${wrappedField} debe ocupar una sola línea física para compatibilidad con /flow`,
+      `Foco Único De Ejecución: ${wrappedField} debe ocupar una sola línea física para mantener el router agentic legible`,
     );
   }
 }
@@ -265,8 +239,8 @@ if (exists("docs/topics/docs-knowledge-system.md") && !topicsIndex.includes("top
   add("warn", "docs/topics/docs-knowledge-system.md exists but is not linked from docs/TOPICS.md");
 }
 
-if (exists("docs/topics/pi-agentic-os.md") && !topicsIndex.includes("topics/pi-agentic-os.md")) {
-  add("warn", "docs/topics/pi-agentic-os.md exists but is not linked from docs/TOPICS.md");
+if (exists("docs/topics/omp-agentic-os.md") && !topicsIndex.includes("topics/omp-agentic-os.md")) {
+  add("warn", "docs/topics/omp-agentic-os.md exists but is not linked from docs/TOPICS.md");
 }
 
 const topicFiles = exists("docs/topics")
@@ -361,72 +335,92 @@ if (exists("docs/skills")) {
   }
 }
 
-if (exists(".pi/prompts")) {
-  for (const file of walkMarkdownFiles(join(root, ".pi", "prompts"))) {
-    const promptPath = relative(root, file).replaceAll("\\", "/");
-    const fm = frontmatter(read(promptPath));
-    if (fm) warnIfFrontmatterYamlLooksUnsafe(promptPath, fm);
+
+for (const path of retiredAgenticPaths) {
+  if (exists(path)) add("error", `${path} is retired by the OMP-native cutover`);
+}
+
+const agenticHotFiles = [
+  "AGENTS.md",
+  "docs/README.md",
+  "docs/OS_PLAYBOOK.md",
+  "docs/USER_GUIDE.md",
+  "docs/WORKING_MEMORY.md",
+  "docs/TOPICS.md",
+  "docs/topics/agent-tool-routing.md",
+  "docs/topics/docs-knowledge-system.md",
+  "docs/topics/omp-agentic-os.md",
+  "docs/reference/omp-agentic-os-command-surface.md",
+  "docs/reference/tool-routing.yaml",
+  "tests/manual/dogfood/COMPUTER_USE_BATTERY.md",
+  "tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md",
+  "tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md",
+].filter(exists);
+for (const path of agenticHotFiles) {
+  const content = read(path);
+  for (const token of retiredHotTokens) {
+    if (content.includes(token)) add("error", `${path} contains retired agentic token ${token}`);
   }
 }
 
-if (!globalAosCheck.ok) {
-  add(
-    "error",
-    `Global AOS package does not satisfy the /flow contract: ${globalAosCheck.reason ?? "unknown doctor failure"}`,
-  );
-}
-if (globalFlowFocusError) add("error", globalFlowFocusError);
-
-try {
-  const requirements = JSON.parse(read("aos.requirements.json"));
-  const flow = requirements?.commands?.flow;
-  if (
-    requirements?.schemaVersion !== 1 ||
-    flow?.contract !== "aos.flow-first" ||
-    flow?.minVersion !== "1.1.0" ||
-    flow?.scope !== "user" ||
-    flow?.cardinality !== 1
-  ) {
-    add(
-      "error",
-      "aos.requirements.json must require exactly one user/package aos.flow-first /flow at version 1.1.0",
-    );
+if (!exists(".omp/config.yml")) {
+  add("error", "Missing .omp/config.yml for the project-required native computer tool");
+} else {
+  const ompConfig = read(".omp/config.yml");
+  if (!ompConfig.includes("computer:\n  enabled: true")) {
+    add("error", ".omp/config.yml must enable the native computer tool");
   }
-} catch {
-  add("error", "Missing or invalid aos.requirements.json global /flow declaration");
-}
-
-if (exists(".pi/extensions/aos-flujo.ts")) {
-  add("error", ".pi/extensions/aos-flujo.ts is an unauthorized local copy of global /flow");
-}
-
-if (exists(".pi/prompts")) {
-  const promptNames = new Set(listFileNames(".pi/prompts", ".md"));
-  for (const prompt of supersededLifecyclePrompts) {
-    if (promptNames.has(prompt)) {
-      add("error", `.pi/prompts/${prompt} competes with the global /flow lifecycle`);
-    }
+  if (!ompConfig.includes("tools:\n  approvalMode: write")) {
+    add("error", ".omp/config.yml must preserve read-only inspection and approval for input");
   }
 }
+if (!exists(".omp/commands/research.md")) {
+  add("error", "Missing .omp/commands/research.md for the documented research command");
+}
+
 
 for (const skill of supersededLifecycleSkills) {
   if (exists(`docs/skills/${skill}`)) {
-    add("error", `docs/skills/${skill} competes with the global /flow lifecycle`);
+    add("error", `docs/skills/${skill} duplicates OMP-native conversational intent`);
   }
 }
 
-if (!exists(".agents/skills")) {
-  // Allowed for repos without skills discovery; repos using this convention keep the compatibility path stable.
-} else if (exists("docs/skills")) {
-  const stats = lstatSync(join(root, ".agents/skills"));
-  if (!(stats.isSymbolicLink() || stats.isDirectory())) {
-    add("warn", ".agents/skills exists but is not a directory-like link");
+const skillsCompatPath = join(root, ".agents", "skills");
+let skillsCompatStats: Stats | undefined;
+try {
+  skillsCompatStats = lstatSync(skillsCompatPath);
+} catch {
+  add("error", "Missing or unreadable .agents/skills OMP discovery path");
+}
+if (skillsCompatStats) {
+  if (!(skillsCompatStats.isSymbolicLink() || skillsCompatStats.isDirectory())) {
+    add("error", ".agents/skills must be a directory-like link");
   }
 
-  const compatPath = realpathSync(join(root, ".agents/skills"));
-  const canonicalPath = realpathSync(join(root, "docs/skills"));
-  if (compatPath !== canonicalPath) {
-    add("warn", ".agents/skills does not resolve to docs/skills");
+  let compatPath: string | undefined;
+  try {
+    compatPath = realpathSync(skillsCompatPath);
+  } catch {
+    if (process.platform === "win32" && skillsCompatStats.isSymbolicLink()) {
+      try {
+        compatPath = readlinkSync(skillsCompatPath);
+      } catch {
+        // Report the unresolved target below.
+      }
+    }
+  }
+
+  if (!compatPath) {
+    add("error", ".agents/skills target cannot be resolved");
+  } else {
+    try {
+      const canonicalPath = realpathSync(join(root, "docs", "skills"));
+      if (compatPath.toLowerCase() !== canonicalPath.toLowerCase()) {
+        add("error", ".agents/skills does not resolve to docs/skills");
+      }
+    } catch {
+      add("error", "docs/skills canonical path cannot be resolved");
+    }
   }
 }
 
@@ -489,14 +483,8 @@ if (!exists("docs/.generated/context-index.md")) {
     "docs/OS_PROJECTS.md",
     "docs/skills/README.md",
     "docs/tracks/README.md",
-    ...walkMarkdownFiles(join(root, ".pi", "prompts")).map((path) => relative(root, path).replaceAll("\\", "/")),
-    ...(
-      exists(".pi/extensions")
-        ? readdirSync(join(root, ".pi", "extensions"), { withFileTypes: true })
-          .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
-          .map((entry) => `.pi/extensions/${entry.name}`)
-        : []
-    ),
+    ".omp/config.yml",
+    ".omp/commands/research.md",
     ...topicFiles.map((file) => `docs/topics/${file}`),
     ...walkMarkdownFiles(join(root, "docs", "skills")).map((path) => relative(root, path).replaceAll("\\", "/")),
     ...trackMarkdown,
@@ -509,6 +497,12 @@ if (!exists("docs/.generated/context-index.md")) {
     }
   }
 }
+
+const routingPolicy = exists("docs/reference/tool-routing.yaml") ? read("docs/reference/tool-routing.yaml") : "";
+const portableContract = exists("docs/topics/portable-multiharness-contract.md")
+  ? read("docs/topics/portable-multiharness-contract.md")
+  : "";
+for (const error of validateTraycerRoutingPolicy(routingPolicy, portableContract)) add("error", error);
 
 const errors = findings.filter((finding) => finding.level === "error");
 const warnings = findings.filter((finding) => finding.level === "warn");
