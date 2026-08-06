@@ -16,6 +16,15 @@ export type FindRange = Pick<FindOccurrence, "ordinal" | "segment" | "startUtf16
 export type FindFieldMatches = {
   field: FindField;
   ranges: FindRange[];
+  displayText: string;
+  segments: FindDisplaySegment[];
+};
+
+export type FindDisplaySegment = {
+  segment: number;
+  startUtf16: number;
+  endUtf16: number;
+  displayText: string;
 };
 
 export type FindItemMatches = {

@@ -60,6 +60,42 @@ const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Shift+,";
 const MIN_RETENTION_COUNT: i64 = 100;
 const MAX_RETENTION_COUNT: i64 = 100_000;
 
+#[cfg(test)]
+struct FindScanGate {
+    db_path: PathBuf,
+    reached: std::sync::Barrier,
+    release: std::sync::Barrier,
+}
+
+#[cfg(test)]
+static FIND_SCAN_BEFORE_FIRST_ROW_GATE:
+    std::sync::OnceLock<Mutex<Option<Arc<FindScanGate>>>> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+fn install_find_before_first_row_gate(gate: Arc<FindScanGate>) {
+    let slot = FIND_SCAN_BEFORE_FIRST_ROW_GATE.get_or_init(|| Mutex::new(None));
+    *slot.lock().expect("Find scan gate lock should work") = Some(gate);
+}
+
+#[cfg(test)]
+fn wait_for_find_before_first_row_gate(db_path: &Path) {
+    let Some(slot) = FIND_SCAN_BEFORE_FIRST_ROW_GATE.get() else {
+        return;
+    };
+    let gate = {
+        let mut guard = slot.lock().expect("Find scan gate lock should work");
+        if guard.as_ref().is_some_and(|gate| gate.db_path == db_path) {
+            guard.take()
+        } else {
+            None
+        }
+    };
+    if let Some(gate) = gate {
+        gate.reached.wait();
+        gate.release.wait();
+    }
+}
+
 #[derive(Clone)]
 pub struct AppStorage {
     conn: Arc<Mutex<Connection>>,
@@ -975,16 +1011,21 @@ impl AppStorage {
         &self,
         descriptor: &AppliedSearchDescriptor,
     ) -> Result<Vec<FindSourceItem>, String> {
-        let cancelled = AtomicBool::new(false);
+        let cancelled = Arc::new(AtomicBool::new(false));
         let epoch = self.mutation_epoch.load(Ordering::SeqCst);
-        self.read_find_items_cancelable(descriptor, &cancelled, &self.mutation_epoch, epoch)
+        self.read_find_items_cancelable(
+            descriptor,
+            cancelled,
+            self.mutation_epoch.clone(),
+            epoch,
+        )
     }
 
     pub(crate) fn read_find_items_cancelable(
         &self,
         descriptor: &AppliedSearchDescriptor,
-        cancelled: &AtomicBool,
-        mutation_epoch: &AtomicU64,
+        cancelled: Arc<AtomicBool>,
+        mutation_epoch: Arc<AtomicU64>,
         expected_epoch: u64,
     ) -> Result<Vec<FindSourceItem>, String> {
         descriptor.validate()?;
@@ -997,11 +1038,8 @@ impl AppStorage {
             .map_err(|error| format!("failed to configure Find sqlite busy timeout: {error}"))?;
 
         let compiled = compile_search_plan(&descriptor.plan)?;
-        let effective_limit = compiled
-            .limit
-            .unwrap_or(DEFAULT_HISTORY_PAGE_LIMIT)
-            .clamp(MIN_HISTORY_PAGE_LIMIT, MAX_HISTORY_PAGE_LIMIT);
-        let sql = format!(
+        let limit = compiled.limit;
+        let mut sql = format!(
             "SELECT id, content_kind, text, title, notes, tags
                     , (SELECT GROUP_CONCAT(label, char(31))
                        FROM (
@@ -1013,10 +1051,17 @@ impl AppStorage {
                        )) AS relation_tags
              FROM clipboard_items
              {}
-             ORDER BY {}
-             LIMIT ?",
+             ORDER BY {}",
             compiled.where_sql, compiled.order_sql
         );
+        if limit.is_some() {
+            sql.push_str(" LIMIT ?");
+        }
+
+        // Find's None limit is intentionally a complete snapshot: the shared
+        // history page default must not silently truncate global navigation.
+        let interrupt_handle = conn.get_interrupt_handle();
+        let interrupt_watcher = conn.get_interrupt_handle();
         let transaction = conn
             .unchecked_transaction()
             .map_err(|error| format!("failed to start Find sqlite snapshot: {error}"))?;
@@ -1024,61 +1069,93 @@ impl AppStorage {
             .prepare(&sql)
             .map_err(|error| format!("failed to prepare Find snapshot query: {error}"))?;
         let mut query_params = compiled.params;
-        query_params.push(Value::Integer(effective_limit));
-        let mut rows = statement
-            .query(params_from_iter(query_params.iter()))
-            .map_err(|error| format!("failed to query Find snapshot: {error}"))?;
-        let mut items = Vec::new();
-        let mut row_index = 0usize;
-        while let Some(row) = rows
-            .next()
-            .map_err(|error| format!("failed to read Find snapshot row: {error}"))?
-        {
-            if row_index % 32 == 0 {
-                if cancelled.load(Ordering::SeqCst) {
-                    return Err("find start superseded".to_string());
-                }
-                if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
-                    return Err("find session invalidated".to_string());
-                }
-            }
-            let relation_tags = row
-                .get::<_, Option<String>>(6)
-                .map_err(|error| format!("failed to decode Find relation tags: {error}"))?;
-            let tag_labels = relation_tags
-                .as_deref()
-                .map(|value| value.split('\u{1f}').map(str::to_string).collect())
-                .unwrap_or_default();
-            items.push(FindSourceItem {
-                id: row
-                    .get(0)
-                    .map_err(|error| format!("failed to decode Find item id: {error}"))?,
-                content_kind: row
-                    .get(1)
-                    .map_err(|error| format!("failed to decode Find content kind: {error}"))?,
-                text: row
-                    .get(2)
-                    .map_err(|error| format!("failed to decode Find text: {error}"))?,
-                title: row
-                    .get(3)
-                    .map_err(|error| format!("failed to decode Find title: {error}"))?,
-                notes: row
-                    .get(4)
-                    .map_err(|error| format!("failed to decode Find notes: {error}"))?,
-                tags: row
-                    .get(5)
-                    .map_err(|error| format!("failed to decode Find tags: {error}"))?,
-                tag_labels,
-            });
-            row_index += 1;
+        if let Some(limit) = limit {
+            query_params.push(Value::Integer(limit));
         }
+        if cancelled.load(Ordering::SeqCst)
+            || mutation_epoch.load(Ordering::SeqCst) != expected_epoch
+        {
+            interrupt_handle.interrupt();
+        }
+        let stop_watcher = Arc::new(AtomicBool::new(false));
+        let stop_watcher_thread = stop_watcher.clone();
+        let cancelled_watcher = cancelled.clone();
+        let mutation_epoch_watcher = mutation_epoch.clone();
+        let watcher = std::thread::spawn(move || {
+            while !stop_watcher_thread.load(Ordering::SeqCst) {
+                if cancelled_watcher.load(Ordering::SeqCst)
+                    || mutation_epoch_watcher.load(Ordering::SeqCst) != expected_epoch
+                {
+                    interrupt_watcher.interrupt();
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        let scan_result = (|| {
+            let mut rows = statement
+                .query(params_from_iter(query_params.iter()))
+                .map_err(|error| format!("failed to query Find snapshot: {error}"))?;
+
+            #[cfg(test)]
+            wait_for_find_before_first_row_gate(&self.db_path);
+
+            let mut items = Vec::new();
+            let mut row_index = 0usize;
+            while let Some(row) = rows
+                .next()
+                .map_err(|error| format!("failed to read Find snapshot row: {error}"))?
+            {
+                if row_index % 32 == 0 {
+                    if cancelled.load(Ordering::SeqCst) {
+                        return Err("find start superseded".to_string());
+                    }
+                    if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
+                        return Err("find session invalidated".to_string());
+                    }
+                }
+                let relation_tags = row
+                    .get::<_, Option<String>>(6)
+                    .map_err(|error| format!("failed to decode Find relation tags: {error}"))?;
+                let tag_labels = relation_tags
+                    .as_deref()
+                    .map(|value| value.split('\u{1f}').map(str::to_string).collect())
+                    .unwrap_or_default();
+                items.push(FindSourceItem {
+                    id: row
+                        .get(0)
+                        .map_err(|error| format!("failed to decode Find item id: {error}"))?,
+                    content_kind: row
+                        .get(1)
+                        .map_err(|error| format!("failed to decode Find content kind: {error}"))?,
+                    text: row
+                        .get(2)
+                        .map_err(|error| format!("failed to decode Find text: {error}"))?,
+                    title: row
+                        .get(3)
+                        .map_err(|error| format!("failed to decode Find title: {error}"))?,
+                    notes: row
+                        .get(4)
+                        .map_err(|error| format!("failed to decode Find notes: {error}"))?,
+                    tags: row
+                        .get(5)
+                        .map_err(|error| format!("failed to decode Find tags: {error}"))?,
+                    tag_labels,
+                });
+                row_index += 1;
+            }
+            Ok(items)
+        })();
+
+        stop_watcher.store(true, Ordering::SeqCst);
+        let _ = watcher.join();
         if cancelled.load(Ordering::SeqCst) {
             return Err("find start superseded".to_string());
         }
         if mutation_epoch.load(Ordering::SeqCst) != expected_epoch {
             return Err("find session invalidated".to_string());
         }
-        drop(rows);
+        let items = scan_result?;
         drop(statement);
         transaction
             .commit()
@@ -1128,6 +1205,39 @@ impl AppStorage {
         .map_err(|error| format!("failed to read Find target item: {error}"))
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_find_benchmark_items(&self, count: i64) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("failed to start Find benchmark insert: {error}"))?;
+        let mut statement = tx
+            .prepare(
+                "INSERT INTO clipboard_items (
+                    content_kind,
+                    text,
+                    normalized_hash,
+                    created_at_unix_ms,
+                    last_used_at_unix_ms,
+                    last_copied_at_unix_ms,
+                    copy_count
+                 ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1)",
+            )
+            .map_err(|error| format!("failed to prepare Find benchmark insert: {error}"))?;
+        for id in 1..=count {
+            let text = format!("invoice body with a stable token {id}");
+            statement
+                .execute(params![text, format!("find-benchmark-hash-{id}"), id])
+                .map_err(|error| format!("failed to insert Find benchmark item: {error}"))?;
+        }
+        drop(statement);
+        tx.commit()
+            .map_err(|error| format!("failed to commit Find benchmark insert: {error}"))
+    }
+
     pub fn insert_text(&self, text: &str, normalized_hash: &str) -> Result<i64, String> {
         self.insert_text_with_context(text, normalized_hash, None, &[])
     }
@@ -1161,7 +1271,7 @@ impl AppStorage {
         let text_char_count = text.chars().count() as i64;
         let line_count = text.lines().count().max(1) as i64;
         let domain = first_url_domain(text);
-        let (item_id, pruned_blobs) = {
+        let (item_id, prune_outcome, projection_changed) = {
             let mut conn = self
                 .conn
                 .lock()
@@ -1170,12 +1280,15 @@ impl AppStorage {
                 .transaction()
                 .map_err(|error| format!("failed to start clipboard text capture: {error}"))?;
 
-            let item_id =
-                if let Some(existing_id) = bump_existing_capture(&tx, normalized_hash, now)? {
-                    existing_id
-                } else {
-                    tx.execute(
-                        "INSERT INTO clipboard_items (
+            let existing_id = bump_existing_capture(&tx, normalized_hash, now)?;
+            let before_projection = existing_id
+                .map(|id| item_projection_signature(&tx, id))
+                .transpose()?;
+            let item_id = if let Some(existing_id) = existing_id {
+                existing_id
+            } else {
+                tx.execute(
+                    "INSERT INTO clipboard_items (
                         content_kind,
                         text,
                         normalized_hash,
@@ -1184,12 +1297,12 @@ impl AppStorage {
                         last_copied_at_unix_ms,
                         copy_count
                     ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1)",
-                        params![text, normalized_hash, now],
-                    )
-                    .map_err(|error| format!("failed to insert clipboard text item: {error}"))?;
+                    params![text, normalized_hash, now],
+                )
+                .map_err(|error| format!("failed to insert clipboard text item: {error}"))?;
 
-                    tx.last_insert_rowid()
-                };
+                tx.last_insert_rowid()
+            };
 
             for (slug, label) in &normalized_capture_tags {
                 add_item_tag_relation(&tx, item_id, slug, label, "context", None)?;
@@ -1213,13 +1326,20 @@ impl AppStorage {
                 capture_context.as_ref(),
                 active_scenario.as_ref(),
             )?;
-            let pruned_blobs = prune_history_from_conn(&tx)?;
+            let after_projection = existing_id
+                .map(|id| item_projection_signature(&tx, id))
+                .transpose()?;
+            let projection_changed = before_projection != after_projection;
+            let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard text capture: {error}"))?;
-            (item_id, pruned_blobs)
+            (item_id, prune_outcome, projection_changed)
         };
 
-        self.remove_blob_paths(pruned_blobs);
+        if projection_changed || prune_outcome.removed_items > 0 {
+            self.bump_mutation_epoch();
+        }
+        self.remove_blob_paths(prune_outcome.blob_paths);
         Ok(item_id)
     }
 
@@ -1318,7 +1438,7 @@ impl AppStorage {
             ..CaptureContext::default()
         };
         let now = now_unix_ms();
-        let (result, pruned_blobs) = {
+        let (result, prune_outcome, projection_changed) = {
             let conn = self
                 .conn
                 .lock()
@@ -1351,10 +1471,13 @@ impl AppStorage {
                 existing_mime,
             )) = existing
             {
-                let next_title = title.or(existing_title);
-                let next_notes = append_optional_notes(existing_notes, notes);
-                let next_tags = merge_optional_tags(existing_tags, tags);
-                let next_mime = mime_primary.or(existing_mime);
+                let next_title = title.or(existing_title.clone());
+                let next_notes = append_optional_notes(existing_notes.clone(), notes);
+                let next_tags = merge_optional_tags(existing_tags.clone(), tags);
+                let next_mime = mime_primary.or(existing_mime.clone());
+                let projection_changed = existing_title != next_title
+                    || existing_notes != next_notes
+                    || existing_tags != next_tags;
                 let event_mime = next_mime.clone();
                 conn.execute(
                     "UPDATE clipboard_items
@@ -1389,13 +1512,14 @@ impl AppStorage {
                     Some(&manual_context),
                     None,
                 )?;
-                let pruned_blobs = prune_history_from_conn(&conn)?;
+                let prune_outcome = prune_history_from_conn(&conn)?;
                 (
                     CreateHistoryItemResult {
                         id: existing_id,
                         created: false,
                     },
-                    pruned_blobs,
+                    prune_outcome,
+                    projection_changed,
                 )
             } else {
                 conn.execute(
@@ -1430,18 +1554,22 @@ impl AppStorage {
                     Some(&manual_context),
                     None,
                 )?;
-                let pruned_blobs = prune_history_from_conn(&conn)?;
+                let prune_outcome = prune_history_from_conn(&conn)?;
                 (
                     CreateHistoryItemResult {
                         id: item_id,
                         created: true,
                     },
-                    pruned_blobs,
+                    prune_outcome,
+                    false,
                 )
             }
         };
 
-        self.remove_blob_paths(pruned_blobs);
+        if projection_changed || prune_outcome.removed_items > 0 {
+            self.bump_mutation_epoch();
+        }
+        self.remove_blob_paths(prune_outcome.blob_paths);
         Ok(result)
     }
 
@@ -1478,7 +1606,7 @@ impl AppStorage {
         );
         let image_path = self.app_data_dir.join(&image_relative_path);
         let thumbnail_path = self.app_data_dir.join(&thumbnail_relative_path);
-        let (item_id, pruned_blobs) = {
+        let (item_id, prune_outcome, projection_changed) = {
             let mut conn = self
                 .conn
                 .lock()
@@ -1487,9 +1615,11 @@ impl AppStorage {
                 .transaction()
                 .map_err(|error| format!("failed to start clipboard image capture: {error}"))?;
 
-            let item_id = if let Some(existing_id) =
-                bump_existing_capture(&tx, &image.normalized_hash, now)?
-            {
+            let existing_id = bump_existing_capture(&tx, &image.normalized_hash, now)?;
+            let before_projection = existing_id
+                .map(|id| item_projection_signature(&tx, id))
+                .transpose()?;
+            let item_id = if let Some(existing_id) = existing_id {
                 existing_id
             } else {
                 write_blob(&image_path, &image.png_bytes)?;
@@ -1548,13 +1678,20 @@ impl AppStorage {
                 capture_context.as_ref(),
                 active_scenario.as_ref(),
             )?;
-            let pruned_blobs = prune_history_from_conn(&tx)?;
+            let after_projection = existing_id
+                .map(|id| item_projection_signature(&tx, id))
+                .transpose()?;
+            let projection_changed = before_projection != after_projection;
+            let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard image capture: {error}"))?;
-            (item_id, pruned_blobs)
+            (item_id, prune_outcome, projection_changed)
         };
 
-        self.remove_blob_paths(pruned_blobs);
+        if projection_changed || prune_outcome.removed_items > 0 {
+            self.bump_mutation_epoch();
+        }
+        self.remove_blob_paths(prune_outcome.blob_paths);
         Ok(item_id)
     }
 
@@ -3134,6 +3271,46 @@ struct ItemBlobPaths {
     thumbnail_path: Option<String>,
 }
 
+struct PruneOutcome {
+    blob_paths: Vec<ItemBlobPaths>,
+    removed_items: usize,
+}
+
+#[derive(PartialEq, Eq)]
+struct ItemProjectionSignature {
+    title: Option<String>,
+    notes: Option<String>,
+    tags: Option<String>,
+    relation_labels: Vec<String>,
+}
+
+fn item_projection_signature(
+    conn: &Connection,
+    item_id: i64,
+) -> Result<ItemProjectionSignature, String> {
+    // Capture recency and event history are intentionally absent: a pure
+    // recapture keeps Find stable, while visible metadata/tag changes do not.
+    let (title, notes, tags) = conn
+        .query_row(
+            "SELECT title, notes, tags FROM clipboard_items WHERE id = ?1",
+            params![item_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .map_err(|error| format!("failed to read Find projection signature: {error}"))?;
+    Ok(ItemProjectionSignature {
+        title,
+        notes,
+        tags,
+        relation_labels: item_tag_labels(conn, item_id)?,
+    })
+}
+
 fn query_items<P>(conn: &Connection, sql: &str, params: P) -> Result<Vec<HistoryItem>, String>
 where
     P: rusqlite::Params,
@@ -4235,12 +4412,28 @@ fn retention_limit_from_conn(conn: &Connection) -> i64 {
         .unwrap_or(UNLIMITED_HISTORY_LIMIT)
 }
 
-fn prune_history_from_conn(conn: &Connection) -> Result<Vec<ItemBlobPaths>, String> {
+fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
     let limit = retention_limit_from_conn(conn);
     if limit == UNLIMITED_HISTORY_LIMIT {
-        return Ok(Vec::new());
+        return Ok(PruneOutcome {
+            blob_paths: Vec::new(),
+            removed_items: 0,
+        });
     }
 
+    let removed_items = conn
+        .query_row(
+            "SELECT COUNT(*) FROM clipboard_items
+             WHERE id NOT IN (
+                SELECT id FROM clipboard_items
+                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                LIMIT ?1
+             )",
+            params![limit],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| format!("failed to count pruned clipboard history: {error}"))?
+        as usize;
     let pruned_blobs = pruned_blob_paths_from_conn(conn, limit)?;
 
     conn.execute(
@@ -4265,7 +4458,10 @@ fn prune_history_from_conn(conn: &Connection) -> Result<Vec<ItemBlobPaths>, Stri
     )
     .map_err(|error| format!("failed to prune clipboard history: {error}"))?;
 
-    Ok(pruned_blobs)
+    Ok(PruneOutcome {
+        blob_paths: pruned_blobs,
+        removed_items,
+    })
 }
 
 fn pruned_blob_paths_from_conn(
@@ -7093,6 +7289,7 @@ mod tests {
             "invoice",
             AppliedSearchMode::Structured,
             SearchPlanV1 {
+                schema_version: 1,
                 text: Some(SearchPlanTextV1 {
                     all: vec!["invoice".to_string()],
                     ..SearchPlanTextV1::default()
@@ -7116,6 +7313,47 @@ mod tests {
     }
 
     #[test]
+    fn find_snapshot_none_is_unbounded_while_some_is_exact() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-unbounded-test-{}",
+            now_unix_ms()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        storage
+            .insert_find_benchmark_items(75)
+            .expect("benchmark rows should insert");
+
+        let unbounded = AppliedSearchDescriptor::for_query(
+            "all",
+            "",
+            AppliedSearchMode::Structured,
+        )
+        .expect("unbounded descriptor should compile");
+        let rows = storage
+            .read_find_items(&unbounded)
+            .expect("unbounded Find snapshot should load");
+        assert_eq!(rows.len(), 75);
+
+        let limited = AppliedSearchDescriptor::new(
+            "all",
+            "",
+            AppliedSearchMode::Structured,
+            SearchPlanV1 {
+                schema_version: 1,
+                limit: Some(7),
+                ..SearchPlanV1::default()
+            },
+        )
+        .expect("limited descriptor should compile");
+        let limited_rows = storage
+            .read_find_items(&limited)
+            .expect("limited Find snapshot should load");
+        assert_eq!(limited_rows.len(), 7);
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
     fn find_snapshot_cancellation_is_checked_while_rows_are_read() {
         let app_data_dir = std::env::temp_dir().join(format!(
             "copicu-find-cancel-test-{}",
@@ -7131,17 +7369,129 @@ mod tests {
             AppliedSearchMode::Structured,
         )
         .expect("descriptor should compile");
-        let cancelled = AtomicBool::new(true);
+        let cancelled = Arc::new(AtomicBool::new(true));
         let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let error = storage
             .read_find_items_cancelable(
                 &descriptor,
-                &cancelled,
-                &storage.mutation_epoch,
+                cancelled,
+                storage.mutation_epoch.clone(),
                 expected_epoch,
             )
             .unwrap_err();
         assert_eq!(error, "find start superseded");
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
+    fn find_snapshot_cancellation_interrupts_before_first_row() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-cancel-before-row-test-{}",
+            now_unix_ms()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        storage
+            .insert_find_benchmark_items(50_000)
+            .expect("benchmark rows should insert");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "all",
+            "",
+            AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        let gate = Arc::new(FindScanGate {
+            db_path: storage.db_path.clone(),
+            reached: std::sync::Barrier::new(2),
+            release: std::sync::Barrier::new(2),
+        });
+        let test_gate = gate.clone();
+        install_find_before_first_row_gate(gate);
+        let worker_storage = storage.clone();
+        let worker_cancelled = cancelled.clone();
+        let worker_epoch = storage.mutation_epoch.clone();
+        let worker = std::thread::spawn(move || {
+            worker_storage.read_find_items_cancelable(
+                &descriptor,
+                worker_cancelled,
+                worker_epoch,
+                expected_epoch,
+            )
+        });
+        test_gate.reached.wait();
+        cancelled.store(true, Ordering::SeqCst);
+        test_gate.release.wait();
+        let error = worker
+            .join()
+            .expect("Find cancellation worker should join")
+            .expect_err("cancelled scan should not publish rows");
+        assert_eq!(error, "find start superseded");
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
+    fn find_snapshot_writer_finishes_while_read_connection_is_scanning() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-writer-concurrent-test-{}",
+            now_unix_ms()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        storage
+            .insert_find_benchmark_items(50_000)
+            .expect("benchmark rows should insert");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "all",
+            "",
+            AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        let gate = Arc::new(FindScanGate {
+            db_path: storage.db_path.clone(),
+            reached: std::sync::Barrier::new(2),
+            release: std::sync::Barrier::new(2),
+        });
+        let test_gate = gate.clone();
+        install_find_before_first_row_gate(gate);
+        let worker_storage = storage.clone();
+        let worker_cancelled = cancelled.clone();
+        let worker_epoch = storage.mutation_epoch.clone();
+        let worker = std::thread::spawn(move || {
+            worker_storage.read_find_items_cancelable(
+                &descriptor,
+                worker_cancelled,
+                worker_epoch,
+                expected_epoch,
+            )
+        });
+        test_gate.reached.wait();
+
+        let writer_storage = storage.clone();
+        let writer = std::thread::spawn(move || {
+            writer_storage.update_item(UpdateHistoryItemRequest {
+                id: 1,
+                text: "writer completed during Find scan".to_string(),
+                title: None,
+                notes: None,
+                tags: None,
+                mime_primary: Some("text/plain".to_string()),
+                marked: None,
+            })
+        });
+        writer
+            .join()
+            .expect("writer should join while Find holds read transaction")
+            .expect("writer should complete operationally");
+        test_gate.release.wait();
+        let error = worker
+            .join()
+            .expect("Find writer concurrency worker should join")
+            .expect_err("epoch-changing writer should invalidate the scan");
+        assert_eq!(error, "find session invalidated");
         drop(storage);
         let _ = std::fs::remove_dir_all(app_data_dir);
     }
@@ -7183,10 +7533,26 @@ mod tests {
             })
             .expect("deduplicated recapture should succeed");
         assert!(!recapture.created);
+        let recapture_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        assert!(
+            recapture_epoch > edited_epoch,
+            "metadata-changing deduplicated recaptures must invalidate Find"
+        );
+
+        let inert_recapture = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "epoch edited".to_string(),
+                title: None,
+                notes: None,
+                tags: None,
+                mime_primary: Some("text/plain".to_string()),
+            })
+            .expect("inert deduplicated recapture should succeed");
+        assert!(!inert_recapture.created);
         assert_eq!(
             storage.mutation_epoch.load(Ordering::SeqCst),
-            edited_epoch,
-            "deduplicated recaptures must not invalidate Find"
+            recapture_epoch,
+            "recaptures without projection changes must preserve Find"
         );
 
         storage
@@ -7196,6 +7562,41 @@ mod tests {
             })
             .expect("tag edit should succeed");
         assert!(storage.mutation_epoch.load(Ordering::SeqCst) > edited_epoch);
+    }
+
+    #[test]
+    fn capture_pruning_advances_find_epoch_when_it_removes_snapshot_items() {
+        let storage = test_storage_with_migrations();
+        let target_id = storage
+            .insert_text("prunable invoice", &hash_text("prunable invoice"))
+            .expect("target capture should succeed");
+        let initial_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        let settings = AppSettings {
+            history: HistorySettings {
+                retention_count: 1,
+                ..AppSettings::default().history
+            },
+            ..AppSettings::default()
+        };
+        {
+            let conn = storage.conn.lock().expect("sqlite lock should work");
+            conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at_unix_ms)
+                 VALUES (?1, ?2, 1)
+                 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                params![
+                    APP_SETTINGS_KEY,
+                    serde_json::to_string(&settings).expect("settings should serialize")
+                ],
+            )
+            .expect("retention settings should persist");
+        }
+
+        storage
+            .insert_text("new invoice", &hash_text("new invoice"))
+            .expect("pruning capture should succeed");
+        assert!(storage.mutation_epoch.load(Ordering::SeqCst) > initial_epoch);
+        assert!(storage.get_item(target_id).is_err());
     }
 
     fn test_storage() -> AppStorage {

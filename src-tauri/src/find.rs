@@ -61,6 +61,17 @@ pub struct FindRange {
 pub struct FindFieldMatches {
     pub field: FindField,
     pub ranges: Vec<FindRange>,
+    pub display_text: String,
+    pub segments: Vec<FindDisplaySegment>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FindDisplaySegment {
+    pub segment: u32,
+    pub start_utf16: u32,
+    pub end_utf16: u32,
+    pub display_text: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -268,8 +279,8 @@ impl FindSessionStore {
         let worker_result = match tauri::async_runtime::spawn_blocking(move || {
             let source = storage.read_find_items_cancelable(
                 &descriptor,
-                &cancelled,
-                &mutation_epoch,
+                cancelled.clone(),
+                mutation_epoch.clone(),
                 expected_epoch,
             )?;
             if cancelled.load(Ordering::SeqCst) {
@@ -485,8 +496,25 @@ impl FindSessionStore {
         })
     }
 
+    #[allow(dead_code)]
     pub fn matches_for_items(
         &self,
+        request: FindMatchesForItemsRequest,
+    ) -> Result<FindMatchesForItemsResponse, String> {
+        self.matches_for_items_with_storage(None, request)
+    }
+
+    pub fn matches_for_items_materialized(
+        &self,
+        storage: &AppStorage,
+        request: FindMatchesForItemsRequest,
+    ) -> Result<FindMatchesForItemsResponse, String> {
+        self.matches_for_items_with_storage(Some(storage), request)
+    }
+
+    fn matches_for_items_with_storage(
+        &self,
+        storage: Option<&AppStorage>,
         request: FindMatchesForItemsRequest,
     ) -> Result<FindMatchesForItemsResponse, String> {
         let state = self
@@ -517,14 +545,46 @@ impl FindSessionStore {
                         .push(occurrence.range());
                 }
             }
+            let projections = if let Some(storage) = storage {
+                let source = storage
+                    .read_find_item(item_id)?
+                    .ok_or_else(|| "sessionInvalidated".to_string())?;
+                ensure_session_is_valid(session)?;
+                Some(project_item(&source))
+            } else {
+                None
+            };
             items.push(FindItemMatches {
                 item_id,
                 fields: fields
                     .into_iter()
-                    .map(|(field, ranges)| FindFieldMatches { field, ranges })
+                    .map(|(field, ranges)| {
+                        let matching_fields = projections
+                            .as_ref()
+                            .into_iter()
+                            .flat_map(|fields| fields.iter())
+                            .filter(|projected| projected.field == field)
+                            .collect::<Vec<_>>();
+                        let display_text = if matching_fields.len() == 1 {
+                            matching_fields[0].text.clone()
+                        } else {
+                            String::new()
+                        };
+                        let segments = matching_fields
+                            .into_iter()
+                            .flat_map(projection_segments)
+                            .collect();
+                        FindFieldMatches {
+                            field,
+                            ranges,
+                            display_text,
+                            segments,
+                        }
+                    })
                     .collect(),
             });
         }
+        ensure_session_is_valid(session)?;
         Ok(FindMatchesForItemsResponse { items })
     }
 
@@ -669,6 +729,7 @@ struct ProjectedField {
     text: String,
     spans: Vec<OffsetSpan>,
     segment: u32,
+    utf16_len: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -724,7 +785,14 @@ fn project_item(item: &crate::storage::FindSourceItem) -> Vec<ProjectedField> {
         if !content.text.is_empty() {
             fields.push(content);
         }
-        fields.extend(image_alts);
+        for (segment, mut image_alt) in image_alts.into_iter().enumerate() {
+            let segment = segment as u32;
+            image_alt.segment = segment;
+            for span in &mut image_alt.spans {
+                span.segment = segment;
+            }
+            fields.push(image_alt);
+        }
     } else if !item.text.is_empty() {
         // Image/file payload placeholders are technical metadata, not Find content.
         let _ = &item.text;
@@ -766,31 +834,17 @@ fn should_project_content(content_kind: &str, text: &str) -> bool {
 }
 
 fn project_plain_field(field: FindField, value: &str) -> ProjectedField {
-    let mut text = String::new();
-    let mut spans = Vec::new();
-    let mut utf16 = 0u32;
-    for (byte_start, ch) in value.char_indices() {
-        debug_assert_eq!(
-            utf16,
-            value[..byte_start].encode_utf16().count() as u32,
-            "plain field UTF-16 offset should follow the source cursor"
-        );
-        let start_utf16 = utf16;
-        let end_utf16 = start_utf16 + ch.len_utf16() as u32;
-        text.push(ch);
-        spans.push(OffsetSpan {
-            start_utf16,
-            end_utf16,
-            segment: 0,
-        });
-        utf16 = end_utf16;
-    }
-    ProjectedField {
+    let mut projected = ProjectedField {
         field,
-        text,
-        spans,
+        text: String::new(),
+        spans: Vec::new(),
         segment: 0,
+        utf16_len: 0,
+    };
+    for ch in value.chars() {
+        append_projected_char(&mut projected, ch);
     }
+    projected
 }
 
 fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
@@ -799,6 +853,7 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
         text: String::new(),
         spans: Vec::new(),
         segment: 0,
+        utf16_len: 0,
     };
     let definitions = markdown_reference_definitions(source);
     let mut image_alts = Vec::new();
@@ -820,6 +875,8 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
                 line_start = false;
                 continue;
             }
+            break_projection(&mut content);
+            return (content, image_alts);
         }
         if let Some((alt_start, alt_end, end)) =
             parse_markdown_construct(source, cursor, true, &definitions)
@@ -844,9 +901,16 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
             line_start = false;
             continue;
         }
+        if source[cursor..].starts_with("![") || source[cursor..].starts_with('[') {
+            break_projection(&mut content);
+            return (content, image_alts);
+        }
         if source[cursor..].starts_with("```") {
             break_projection(&mut content);
-            cursor += 3;
+            let Some(end) = source[cursor + 3..].find("```") else {
+                return (content, image_alts);
+            };
+            cursor += 3 + end + 3;
             line_start = false;
             continue;
         }
@@ -862,6 +926,8 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
                 line_start = false;
                 continue;
             }
+            break_projection(&mut content);
+            return (content, image_alts);
         }
         if ch == '\\' {
             if let Some(escaped) = source[next..].chars().next() {
@@ -910,9 +976,44 @@ fn project_plain_range(field: FindField, source: &str, start: usize, end: usize)
         text: String::new(),
         spans: Vec::new(),
         segment: 0,
+        utf16_len: 0,
     };
     append_visible_range(&mut projected, source, start, end);
     projected
+}
+
+fn projection_segments(projected: &ProjectedField) -> Vec<FindDisplaySegment> {
+    if projected.text.is_empty() || projected.spans.is_empty() {
+        return Vec::new();
+    }
+    let chars = projected.text.char_indices().collect::<Vec<_>>();
+    let mut segments = Vec::new();
+    let mut segment_start = 0usize;
+    let mut segment = projected.spans[0].segment;
+    for index in 1..=projected.spans.len() {
+        let changed = index == projected.spans.len()
+            || projected.spans[index].segment != segment;
+        if !changed {
+            continue;
+        }
+        let byte_start = chars[segment_start].0;
+        let byte_end = if index < chars.len() {
+            chars[index].0
+        } else {
+            projected.text.len()
+        };
+        segments.push(FindDisplaySegment {
+            segment,
+            start_utf16: projected.spans[segment_start].start_utf16,
+            end_utf16: projected.spans[index - 1].end_utf16,
+            display_text: projected.text[byte_start..byte_end].to_string(),
+        });
+        if index < projected.spans.len() {
+            segment_start = index;
+            segment = projected.spans[index].segment;
+        }
+    }
+    segments
 }
 
 fn append_visible_range(destination: &mut ProjectedField, source: &str, start: usize, end: usize) {
@@ -965,13 +1066,14 @@ fn find_markdown_destination_end(source: &str, start: usize) -> Option<usize> {
 }
 
 fn append_projected_char(destination: &mut ProjectedField, ch: char) {
-    let start_utf16 = destination.text.encode_utf16().count() as u32;
+    let start_utf16 = destination.utf16_len;
     destination.text.push(ch);
     destination.spans.push(OffsetSpan {
         start_utf16,
         end_utf16: start_utf16 + ch.len_utf16() as u32,
         segment: destination.segment,
     });
+    destination.utf16_len = start_utf16 + ch.len_utf16() as u32;
 }
 
 fn break_projection(destination: &mut ProjectedField) {
@@ -1059,6 +1161,7 @@ fn parse_markdown_construct(
 }
 
 fn find_closing_bracket(source: &str, start: usize) -> Option<usize> {
+    let mut depth = 0usize;
     let mut cursor = start;
     while cursor < source.len() {
         let ch = source[cursor..].chars().next()?;
@@ -1069,8 +1172,13 @@ fn find_closing_bracket(source: &str, start: usize) -> Option<usize> {
             }
             continue;
         }
-        if ch == ']' {
-            return Some(cursor);
+        if ch == '[' {
+            depth = depth.saturating_add(1);
+        } else if ch == ']' {
+            if depth == 0 {
+                return Some(cursor);
+            }
+            depth -= 1;
         }
         cursor += ch.len_utf8();
     }
@@ -1188,6 +1296,7 @@ fn project_notes(source: &str, item: &crate::storage::FindSourceItem) -> Project
         text: String::new(),
         spans: Vec::new(),
         segment: 0,
+        utf16_len: 0,
     };
     for (ch, source_segment) in normalized {
         projected.segment = source_segment;
@@ -1283,11 +1392,20 @@ fn lowercase_projected_field(field: &ProjectedField) -> (Vec<char>, Vec<OffsetSp
 
 fn case_fold_char(ch: char) -> Vec<char> {
     match ch {
-        // Unicode default case folding maps both sigma forms to the ordinary
-        // sigma and expands German sharp s. Rust's lowercase iterator handles
-        // the remaining one-to-many lowercase mappings (for example U+0130).
+        // Full Unicode case folding includes compatibility-like singleton and
+        // ligature expansions that Rust's lowercase iterator does not expose.
         '\u{03c2}' => vec!['\u{03c3}'],
+        '\u{017f}' => vec!['s'],
+        '\u{00b5}' => vec!['\u{03bc}'],
         '\u{00df}' | '\u{1e9e}' => vec!['s', 's'],
+        '\u{0132}' | '\u{0133}' => vec!['i', 'j'],
+        '\u{0149}' => vec!['\u{02bc}', 'n'],
+        '\u{fb00}' => vec!['f', 'f'],
+        '\u{fb01}' => vec!['f', 'i'],
+        '\u{fb02}' => vec!['f', 'l'],
+        '\u{fb03}' => vec!['f', 'f', 'i'],
+        '\u{fb04}' => vec!['f', 'f', 'l'],
+        '\u{fb05}' | '\u{fb06}' => vec!['s', 't'],
         _ => ch.to_lowercase().collect(),
     }
 }
@@ -1327,6 +1445,8 @@ mod tests {
 
         let (accented, _) = build_occurrence_index(&source, "café", &cancelled).unwrap();
         assert_eq!(accented.len(), 1);
+        let (unaccented, _) = build_occurrence_index(&source, "cafe", &cancelled).unwrap();
+        assert_eq!(unaccented.len(), 1);
     }
 
     #[test]
@@ -1449,7 +1569,7 @@ mod tests {
 
     #[test]
     fn canonical_casefold_is_nfc_accent_sensitive_and_handles_sigma_and_expansion() {
-        let source = vec![item(4, "text", "Cafe\u{301} ΟΣ Straße")];
+        let source = vec![item(4, "text", "Cafe\u{301} ΟΣ Straße ſ µ ﬁ ﬃ")];
         let cancelled = AtomicBool::new(false);
         let (accented, _) = build_occurrence_index(&source, "CAFÉ", &cancelled).unwrap();
         assert_eq!(accented.len(), 1);
@@ -1458,6 +1578,14 @@ mod tests {
         assert_eq!(sigma.len(), 1);
         let (expanded, _) = build_occurrence_index(&source, "STRASSE", &cancelled).unwrap();
         assert_eq!(expanded.len(), 1);
+        let (long_s, _) = build_occurrence_index(&source, "s", &cancelled).unwrap();
+        assert!(long_s.len() >= 2);
+        let (micro, _) = build_occurrence_index(&source, "μ", &cancelled).unwrap();
+        assert_eq!(micro.len(), 1);
+        let (ligature, _) = build_occurrence_index(&source, "fi", &cancelled).unwrap();
+        assert!(ligature.len() >= 1);
+        let (triple_ligature, _) = build_occurrence_index(&source, "ffi", &cancelled).unwrap();
+        assert!(triple_ligature.len() >= 1);
         let (single_expansion, _) =
             build_occurrence_index(&[item(5, "text", "ß")], "s", &cancelled).unwrap();
         assert_eq!(single_expansion.len(), 1);
@@ -1473,6 +1601,41 @@ mod tests {
         let cancelled = AtomicBool::new(false);
         let (matches, _) = build_occurrence_index(&source, "secret", &cancelled).unwrap();
         assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn malformed_nested_markdown_and_open_comments_fail_closed() {
+        let source = vec![item(
+            6,
+            "text",
+            "Invoice ![outer [nested]](https://secret.example/a) <!-- open secret.example/b",
+        )];
+        let cancelled = AtomicBool::new(false);
+        let (secret, _) = build_occurrence_index(&source, "secret.example", &cancelled).unwrap();
+        assert!(secret.is_empty());
+        let (nested_alt, _) = build_occurrence_index(&source, "outer [nested]", &cancelled).unwrap();
+        assert_eq!(nested_alt.len(), 1);
+
+        let fenced = vec![item(7, "text", "Invoice ```secret.example/no-close")];
+        let (fenced_secret, _) = build_occurrence_index(&fenced, "secret.example", &cancelled)
+            .unwrap();
+        assert!(fenced_secret.is_empty());
+    }
+
+    #[test]
+    fn repeated_image_alts_receive_stable_segment_identity() {
+        let source = vec![item(
+            8,
+            "text",
+            "![same](https://one.example) and ![same](https://two.example)",
+        )];
+        let cancelled = AtomicBool::new(false);
+        let (matches, _) = build_occurrence_index(&source, "same", &cancelled).unwrap();
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].field, FindField::ImageAlt);
+        assert_eq!(matches[1].field, FindField::ImageAlt);
+        assert_eq!(matches[0].segment, 0);
+        assert_eq!(matches[1].segment, 1);
     }
 
     #[test]
@@ -1749,6 +1912,101 @@ mod tests {
         assert_eq!(materialized.display_text, "Invoice");
         assert_eq!(materialized.item.id, item_id);
         assert_eq!(materialized.item.text, "**Invoice**");
+        storage
+            .update_item(crate::storage::UpdateHistoryItemRequest {
+                id: item_id,
+                text: "**Changed**".to_string(),
+                title: None,
+                notes: None,
+                tags: None,
+                mime_primary: Some("text/plain".to_string()),
+                marked: None,
+            })
+            .expect("target mutation should succeed");
+        let invalidated = store
+            .target_materialized(
+                &storage,
+                FindTargetRequest {
+                    session_id: "target-session".to_string(),
+                    ordinal: target.ordinal,
+                },
+            )
+            .expect_err("live target mutation must invalidate the session");
+        assert_eq!(invalidated, "sessionInvalidated");
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
+    }
+
+    #[test]
+    fn matches_contract_carries_canonical_display_segments_for_repeated_alts() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-segment-contract-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after epoch")
+                .as_nanos()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        let item_id = storage
+            .insert_text(
+                "![same](https://one.example) and ![same](https://two.example)",
+                "find-segment-contract-hash",
+            )
+            .expect("segment item should insert");
+        let source = storage
+            .read_find_item(item_id)
+            .expect("segment item should be readable")
+            .expect("segment item should exist");
+        let cancelled = AtomicBool::new(false);
+        let (occurrences, by_item) =
+            build_occurrence_index(&[source], "same", &cancelled).expect("index should build");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "",
+            "",
+            crate::storage::AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+        let store = FindSessionStore::default();
+        let mutation_epoch = storage.mutation_epoch();
+        {
+            let mut state = store.inner.lock().expect("Find state lock should work");
+            state.sessions.insert(
+                "segment-contract-session".to_string(),
+                FindSession {
+                    id: "segment-contract-session".to_string(),
+                    owner_id: "main".to_string(),
+                    search_fingerprint: descriptor.fingerprint.clone(),
+                    descriptor,
+                    needle: "same".to_string(),
+                    generation: 1,
+                    expected_epoch: mutation_epoch.load(Ordering::SeqCst),
+                    mutation_epoch,
+                    manually_invalidated: false,
+                    occurrences,
+                    by_item,
+                },
+            );
+        }
+        let response = store
+            .matches_for_items_materialized(
+                &storage,
+                FindMatchesForItemsRequest {
+                    session_id: "segment-contract-session".to_string(),
+                    item_ids: vec![item_id],
+                },
+            )
+            .expect("segment matches should materialize");
+        let image_matches = response.items[0]
+            .fields
+            .iter()
+            .find(|field| field.field == FindField::ImageAlt)
+            .expect("image alt matches should be grouped");
+        assert_eq!(image_matches.ranges.len(), 2);
+        assert_eq!(image_matches.segments.len(), 2);
+        assert_eq!(image_matches.segments[0].segment, 0);
+        assert_eq!(image_matches.segments[1].segment, 1);
+        assert_eq!(image_matches.segments[0].display_text, "same");
+        assert_eq!(image_matches.segments[1].display_text, "same");
         drop(storage);
         let _ = std::fs::remove_dir_all(app_data_dir);
     }
@@ -1778,28 +2036,62 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_50k_find_index_stays_bounded_to_ranges() {
-        let source = (1..=50_000)
-            .map(|id| item(id, "text", "invoice body with a stable token"))
-            .collect::<Vec<_>>();
+    fn real_50k_find_scan_and_projection_stay_within_memory_budget() {
+        let app_data_dir = std::env::temp_dir().join(format!(
+            "copicu-find-real-50k-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after epoch")
+                .as_nanos()
+        ));
+        let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
+        storage
+            .insert_find_benchmark_items(50_000)
+            .expect("benchmark rows should insert");
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "all",
+            "",
+            crate::storage::AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
         let cancelled = AtomicBool::new(false);
         let started = Instant::now();
-        let (occurrences, by_item) =
-            build_occurrence_index(&source, "invoice", &cancelled).unwrap();
+        let source = storage
+            .read_find_items(&descriptor)
+            .expect("real Find scan should load all rows");
+        assert_eq!(source.len(), 50_000);
+        let (occurrences, by_item) = build_occurrence_index(&source, "invoice", &cancelled)
+            .expect("real Find projection should build");
+        let source_text_bytes = source.iter().map(|item| item.text.len()).sum::<usize>();
+        let source_struct_bytes = source.len() * std::mem::size_of::<FindSourceItem>();
+        let range_bytes = occurrences.len() * std::mem::size_of::<FindOccurrence>();
+        let by_item_bytes = by_item.len()
+            * (std::mem::size_of::<i64>()
+                + std::mem::size_of::<Vec<usize>>()
+                + std::mem::size_of::<usize>());
+        let estimated_peak_bytes = source_text_bytes
+            + source_struct_bytes
+            + range_bytes
+            + by_item_bytes;
         eprintln!(
-            "synthetic_50k_find_index elapsed_ms={} occurrences={} items={} estimated_range_bytes={} source_text_bytes={}",
+            "real_50k_find_scan_and_projection elapsed_ms={} occurrences={} items={} estimated_peak_bytes={} source_text_bytes={} source_struct_bytes={} range_bytes={} by_item_bytes={}",
             started.elapsed().as_millis(),
             occurrences.len(),
             by_item.len(),
-            occurrences.len() * std::mem::size_of::<FindOccurrence>(),
-            source.iter().map(|item| item.text.len()).sum::<usize>()
+            estimated_peak_bytes,
+            source_text_bytes,
+            source_struct_bytes,
+            range_bytes,
+            by_item_bytes,
         );
-        assert!(occurrences.len() * std::mem::size_of::<FindOccurrence>() < 8 * 1024 * 1024);
+        assert!(estimated_peak_bytes < 64 * 1024 * 1024);
         assert_eq!(occurrences.len(), 50_000);
         assert_eq!(by_item.len(), 50_000);
         assert_eq!(occurrences[49_999].ordinal, 50_000);
         assert_eq!(occurrences[49_999].start_utf16, 0);
         assert_eq!(occurrences[49_999].end_utf16, 7);
+        drop(storage);
+        let _ = std::fs::remove_dir_all(app_data_dir);
     }
 
     #[test]

@@ -805,10 +805,11 @@ fn find_navigate(
 #[cfg(not(test))]
 #[tauri::command]
 fn find_matches_for_items(
+    storage: State<'_, storage::AppStorage>,
     sessions: State<'_, find::FindSessionStore>,
     request: find::FindMatchesForItemsRequest,
 ) -> Result<find::FindMatchesForItemsResponse, String> {
-    sessions.matches_for_items(request)
+    sessions.matches_for_items_materialized(storage.inner(), request)
 }
 
 #[cfg(not(test))]
