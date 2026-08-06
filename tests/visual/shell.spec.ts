@@ -3111,7 +3111,7 @@ test("foreground Retry recovers a pending Filter Lock after a focus failure", as
       (call: any) => call.args.request.query,
     ),
   )).toEqual(["unbroken"]);
-  await expect(lock).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Unlock persistent filter" })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("copicu.filter-lock.v1"))).toBe("unbroken");
 });
 
