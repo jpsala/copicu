@@ -1224,6 +1224,12 @@ function App() {
   const autocompleteOpen = autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
   const scenarioCommandOpen = scenarioCommandOptions.length > 0 && dismissedAutocompleteQuery !== query;
   const searchSuggestionsOpen = autocompleteOpen || scenarioCommandOpen;
+  const activeSearchSuggestionCount = scenarioCommandOpen
+    ? scenarioCommandOptions.length
+    : autocompleteSuggestions.length;
+  const activeSearchSuggestionIndex = activeSearchSuggestionCount > 0
+    ? Math.min(Math.max(activeSearchSuggestion, 0), activeSearchSuggestionCount - 1)
+    : 0;
   const structuredSearchDraft = useMemo(
     () => classifyStructuredSearchDraft(query),
     [query],
@@ -2489,6 +2495,7 @@ function App() {
       const draft = queryRef.current.trim();
       const applied = historyInputQueryRef.current;
       const pickerSearch = pickerSearchSettingsRef.current;
+      const appliedDescriptor = appliedDescriptorRef.current;
       const structuredHold = shouldHoldStructuredSearchDraft(
         classifyStructuredSearchDraft(draft),
         {
@@ -2499,6 +2506,16 @@ function App() {
           autocompleteCommitted: autocompleteCommittedQueryRef.current?.trim() === draft,
         },
       );
+      if (foregroundSearchInFlightRef.current) {
+        await refreshHistory({
+          ...options,
+          queryOverride: appliedDescriptor?.effectiveQuery ?? applied,
+          allowAi: false,
+          source: "background",
+          descriptorOverride: appliedDescriptor,
+        });
+        return;
+      }
       if (
         pickerSearch.searchTriggerMode === "realtime" &&
         draft !== applied &&
@@ -2513,7 +2530,6 @@ function App() {
         return;
       }
       setDeferredAppliedRefresh(null);
-      const appliedDescriptor = appliedDescriptorRef.current;
       await refreshHistory({
         ...options,
         queryOverride: appliedDescriptor?.effectiveQuery ?? applied,
@@ -2536,7 +2552,10 @@ function App() {
     if (
       deferredRefresh.intentGeneration !== searchIntentGenerationRef.current
       || deferredRefresh.query !== queryRef.current.trim()
-      || deferredRefresh.appliedGeneration !== appliedSnapshotGenerationRef.current
+      || (
+        deferredRefresh.appliedGeneration !== appliedSnapshotGenerationRef.current
+        && deferredRefresh.reason !== "foreground"
+      )
     ) {
       setDeferredAppliedRefresh(null);
       return;
@@ -2546,8 +2565,15 @@ function App() {
       return;
     }
     setDeferredAppliedRefresh(null);
-    void refreshAppliedHistory({ showPending: false });
-  }, [deferredAppliedRefresh, foregroundSearchInFlight, historyPending, refreshAppliedHistory]);
+    const appliedDescriptor = appliedDescriptorRef.current;
+    void refreshHistory({
+      showPending: false,
+      allowAi: false,
+      source: "background",
+      queryOverride: appliedDescriptor?.effectiveQuery ?? historyInputQueryRef.current,
+      descriptorOverride: appliedDescriptor,
+    });
+  }, [deferredAppliedRefresh, foregroundSearchInFlight, historyPending, refreshHistory]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -4334,7 +4360,7 @@ function App() {
     supersedeSearchIntent(appliedQuery, "idle");
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [supersedeSearchIntent]);
-  const acceptSearchSuggestion = useCallback((index = activeSearchSuggestion) => {
+  const acceptSearchSuggestion = useCallback((index = activeSearchSuggestionIndex) => {
     if (scenarioCommandOpen) {
       const scenario = scenarioCommandOptions[index];
       if (scenario) void activateScenarioFromPicker(scenario.id);
@@ -4366,7 +4392,7 @@ function App() {
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
   }, [
-    activeSearchSuggestion,
+    activeSearchSuggestionIndex,
     autocompleteSuggestions,
     leaveOpenedSavedView,
     openedSavedView,
@@ -4387,7 +4413,7 @@ function App() {
     "aria-controls": !aiComposerMode && searchSuggestionsOpen ? "search-autocomplete" : undefined,
     "aria-expanded": !aiComposerMode && searchSuggestionsOpen ? true : undefined,
     "aria-activedescendant": !aiComposerMode && searchSuggestionsOpen
-      ? `search-suggestion-${activeSearchSuggestion}`
+      ? `search-suggestion-${activeSearchSuggestionIndex}`
       : undefined,
     value: query,
     placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — meta:work, #tag, ai:find invoices',
@@ -4981,7 +5007,7 @@ function App() {
                       type="button"
                       className="search-autocomplete-option"
                       role="option"
-                      aria-selected={index === activeSearchSuggestion}
+                      aria-selected={index === activeSearchSuggestionIndex}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setActiveSearchSuggestion(index)}
                       onClick={() => void activateScenarioFromPicker(scenario.id)}
@@ -4996,7 +5022,7 @@ function App() {
                       type="button"
                       className="search-autocomplete-option"
                       role="option"
-                      aria-selected={index === activeSearchSuggestion}
+                      aria-selected={index === activeSearchSuggestionIndex}
                       onMouseDown={(event) => event.preventDefault()}
                       onMouseEnter={() => setActiveSearchSuggestion(index)}
                       onClick={() => acceptSearchSuggestion(index)}

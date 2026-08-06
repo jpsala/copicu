@@ -1440,6 +1440,46 @@ test("Apply stays inside the two-row primary band at 420 px", async ({ page }) =
   expect(layout.bands.some((center) => Math.abs(center - layout.applyCenter!) <= 20)).toBe(true);
 });
 
+test("AI composer keeps six narrow grid columns and two rows at 420 px", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 640 });
+  await mockTauriInvoke(page, syntheticLongHistory);
+  await gotoShell(page);
+
+  await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
+  const row = page.locator(".search-row.is-ai-mode");
+  await expect(row).toBeVisible();
+  const layout = await row.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const areas = [...style.gridTemplateAreas.matchAll(/"([^"]+)"/g)]
+      .map((match) => match[1].trim().split(/\s+/));
+    const search = element.querySelector<HTMLElement>(".search-field")?.getBoundingClientRect();
+    const newItem = element.querySelector<HTMLElement>(".new-item-button")?.getBoundingClientRect();
+    return {
+      columns: style.gridTemplateColumns.trim().split(/\s+/),
+      rows: style.gridTemplateRows.trim().split(/\s+/),
+      areas,
+      searchTop: search?.top ?? null,
+      searchWidth: search?.width ?? null,
+      newTop: newItem?.top ?? null,
+      newWidth: newItem?.width ?? null,
+      scrollWidth: document.documentElement.scrollWidth,
+    };
+  });
+  expect(layout.columns).toHaveLength(6);
+  expect(layout.rows).toHaveLength(2);
+  expect(layout.areas).toEqual([
+    ["selection", "context", "search", "search", "search", "menu"],
+    ["selection", "context", "new", "composer", "trigger", "apply"],
+  ]);
+  expect(layout.searchTop).not.toBeNull();
+  expect(layout.newTop).not.toBeNull();
+  expect(layout.searchTop!).toBeLessThan(layout.newTop!);
+  expect(layout.searchWidth).not.toBeNull();
+  expect(layout.newWidth).not.toBeNull();
+  expect(layout.searchWidth!).toBeGreaterThan(layout.newWidth! * 2);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(420);
+});
+
 test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=settings");
@@ -2558,8 +2598,9 @@ test("malformed structured filters show a diagnostic without activating stale re
     (window as any).__copicuTestInvocations = [];
   });
   await search.fill("kind:");
-  await expect(page.getByText("Add a value after `kind:`.")).toBeVisible();
-  await expect(page.locator("[title='Result count']")).toHaveText("0 / 4 matches");
+  await expect(page.getByText("Choose or type a value after `kind:`.")).toBeVisible();
+  await expect(page.locator("[title='Result count']")).toHaveText("Complete the structured filter");
+  await expect(page.locator(".feed-item")).toHaveCount(4);
 
   await page.keyboard.press("Enter");
   await page.waitForTimeout(180);
@@ -2614,6 +2655,12 @@ test("search autocomplete accepts keyboard and click selections and dismisses Es
   await expect(suggestions.getByRole("option", { name: "#work" })).toHaveAttribute("aria-selected", "true");
   await search.press("ArrowDown");
   await expect(suggestions.getByRole("option", { name: "#backend" })).toHaveAttribute("aria-selected", "true");
+  await search.fill("ki");
+  const kindSuggestion = suggestions.getByRole("option", { name: "kind:" });
+  await expect(kindSuggestion).toBeVisible();
+  await expect(kindSuggestion).toHaveAttribute("aria-selected", "true");
+  await expect(search).toHaveAttribute("aria-activedescendant", "search-suggestion-0");
+  await search.fill("#");
   await search.press("Shift+Tab");
   await expect(search).toHaveValue("#");
   await expect(suggestions).toBeVisible();
@@ -2882,14 +2929,23 @@ test("background refresh deferred during realtime search is replayed", async ({ 
     (window as any).__copicuTestInvocations = [];
   });
   await page.getByLabel("Search clipboard history").fill("unbroken");
-  await page.waitForTimeout(140);
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ),
+  );
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.filter(
       (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
-    ).length >= 2,
+    ).length === 2,
   );
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ).length,
+  )).toBe(2);
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
 });
 
