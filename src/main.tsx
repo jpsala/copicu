@@ -131,6 +131,13 @@ import { ToastStack } from "./ui/ToastStack";
 import { ScenarioCreator } from "./ui/ScenarioSwitcher";
 import { SavedViewCreator } from "./ui/SavedViewCreator";
 import { TagEditor, type TagEditorMode } from "./ui/TagEditor";
+import {
+  PickerContextStrip,
+  PickerFeed,
+  PickerHeader,
+  PickerSelectionBar,
+  PickerStatusAnnouncer,
+} from "./ui/PickerShell";
 import { CustomWindowFrame } from "./ui/window/CustomWindowFrame";
 import { recordWindowChromeEvent } from "./ui/window/windowChrome";
 import "@mantine/core/styles.css";
@@ -1067,6 +1074,7 @@ function App() {
   const [foregroundSearchInFlight, setForegroundSearchInFlight] = useState(false);
   const [aiPlanning, setAiPlanning] = useState(false);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyLoadingDelayed, setHistoryLoadingDelayed] = useState(false);
   const [historyNextCursor, setHistoryNextCursor] = useState<HistoryPageCursor | null>(null);
   const [historyTotalCount, setHistoryTotalCount] = useState<number | null>(null);
   const [historyFilteredCount, setHistoryFilteredCount] = useState<number | null>(null);
@@ -1125,6 +1133,7 @@ function App() {
   const searchRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const editTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditTextRef = useRef<HTMLTextAreaElement>(null);
+  const itemMenuRef = useRef<HTMLDivElement>(null);
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
@@ -2781,6 +2790,7 @@ function App() {
   const historyMatchesQuery = historyInputQuery === query.trim() && !historyPending;
   const aiDraftActive = historySearchInput(query.trim(), aiComposerMode).mode === "ai" && !historyMatchesQuery;
   const visibleSearchInterpretation = historyMatchesQuery ? searchInterpretation : null;
+  const hasActivePickerContext = Boolean(activeScenarioSession || openedSavedView);
 
   const setSingleSelection = useCallback((index: number) => {
     selectionInteractionSeqRef.current += 1;
@@ -4171,11 +4181,39 @@ function App() {
   ]);
 
   const isFilteringHistory = effectiveSearchTriggerMode === "realtime" && !historyMatchesQuery && !aiDraftActive;
+  const feedLoading = isFilteringHistory || historyPending || historyLoadingMore || aiPlanning;
+
+  useEffect(() => {
+    if (!feedLoading) {
+      setHistoryLoadingDelayed(false);
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setHistoryLoadingDelayed(true), 180);
+    return () => window.clearTimeout(timer);
+  }, [feedLoading]);
+
+  useLayoutEffect(() => {
+    if (!openItemMenu) {
+      return;
+    }
+    const firstMenuItem = itemMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    firstMenuItem?.focus();
+  }, [openItemMenu]);
+
+  const selectionAnnouncement = selectedItems.length > 1
+    ? `${selectedItems.length} clips selected.`
+    : selectedItem
+      ? `Current clip ${selectedItem.id} selected.`
+      : history.length > 0
+        ? "No clip selected."
+        : "No clips available.";
   const structuredSearchFeedback = !historyMatchesQuery
     && structuredSearchDraft.structured
     && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")
     ? structuredSearchDraft.message
     : null;
+  const hasSearchContext = Boolean(structuredSearchFeedback || visibleSearchInterpretation);
   const searchStatus = useMemo(() => {
     if (historyError) {
       return "Could not update results";
@@ -4745,6 +4783,7 @@ function App() {
           </Suspense>
         ) : (
         <>
+        <PickerHeader>
         <div className={`search-row${aiComposerMode ? " is-ai-mode" : ""}`}>
           <div className="selection-controls">
             <UiTooltip label={allVisibleSelected ? "Clear visible selection" : "Select all visible"}>
@@ -5246,6 +5285,8 @@ function App() {
           </Menu>
         </div>
 
+        {hasActivePickerContext || hasSearchContext ? (
+          <PickerContextStrip>
         {activeScenarioSession ? (
           <div
             className="scenario-session-bar"
@@ -5383,9 +5424,11 @@ function App() {
             ))}
           </div>
         ) : null}
+          </PickerContextStrip>
+        ) : null}
 
         {selectedItems.length > 0 ? (
-          <div className="selection-action-bar" aria-label={`${selectedItems.length} selected`} aria-live="polite">
+          <PickerSelectionBar ariaLabel={`${selectedItems.length} selected`}>
             <strong>{selectedItems.length} selected</strong>
             <div className="selection-action-buttons">
               <UiButton type="button" size="xs" variant="subtle" onClick={() => void beginTagEdit(selectedItems)}>
@@ -5420,11 +5463,11 @@ function App() {
                 <span>Clear</span>
               </UiButton>
             </div>
-          </div>
+          </PickerSelectionBar>
         ) : null}
 
         {historyError ? (
-          <UiAlert className="error-text" color="red" variant="light">
+          <UiAlert className="error-text" color="red" variant="light" role="alert" aria-live="assertive">
             <span>Could not update the applied results. Previous results are still visible.</span>
             <UiButton
               type="button"
@@ -5436,9 +5479,14 @@ function App() {
             </UiButton>
           </UiAlert>
         ) : null}
-        {actionError ? <UiAlert className="error-text" color="red" variant="light">{actionError}</UiAlert> : null}
+        {actionError ? <UiAlert className="error-text" color="red" variant="light" role="alert" aria-live="assertive">{actionError}</UiAlert> : null}
 
-        <section className="feed-panel" aria-label="Clipboard picker">
+        <PickerStatusAnnouncer>
+          {selectionAnnouncement}
+        </PickerStatusAnnouncer>
+        </PickerHeader>
+
+        <PickerFeed>
           <div ref={historyScrollRef} className="history-feed-scroll">
             <ol
               id="clipboard-feed"
@@ -5448,15 +5496,26 @@ function App() {
             >
             {history.length === 0 ? (
               <li className="empty-history">
-                {isFilteringHistory || historyPending ? (
-                  <span className="empty-loading">
-                    <span>{searchStatus}</span>
-                  </span>
+                {feedLoading ? (
+                  historyLoadingDelayed ? (
+                    <span className="empty-loading history-skeleton-state" role="status" aria-live="polite">
+                      <span className="history-skeleton" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      <span>{searchStatus}</span>
+                    </span>
+                  ) : (
+                    <span className="empty-loading" role="status" aria-live="polite">
+                      <span>{searchStatus}</span>
+                    </span>
+                  )
                 ) : !historyMatchesQuery
                   ? "Finish the current filter to update results."
                   : query.trim()
                     ? "No clips match this search. Edit Search or clear the filter."
-                    : "Copy something to populate Copicu."}
+                    : "No clips yet. Copy something to populate Copicu."}
               </li>
             ) : (
               virtualRows.map((virtualRow) => {
@@ -5492,6 +5551,8 @@ function App() {
                   key={item.id}
                   id={`history-item-${item.id}`}
                   data-index={virtualRow.index}
+                  aria-posinset={index + 1}
+                  aria-setsize={historyFilteredCount ?? history.length}
                   ref={rowVirtualizer.measureElement}
                   style={{
                     transform: `translateY(${Math.ceil(virtualRow.start) + (virtualRow.index > 0 ? 1 : 0)}px)`,
@@ -5551,7 +5612,6 @@ function App() {
                     role="button"
                     tabIndex={-1}
                     aria-current={itemIsSelected ? "true" : undefined}
-                    aria-pressed={itemIsMultiSelected}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={(event) => {
                       const imageWasClicked = event.target instanceof Element
@@ -5739,27 +5799,41 @@ function App() {
                       showItemMenu(item, index, event);
                     }}
                   >
-                    <MoreVertical size={15} strokeWidth={2.4} />
+                    <MoreVertical size={15} strokeWidth={2.4} aria-hidden="true" />
                   </UiIconButton>
                   {openItemMenu?.itemId === item.id ? createPortal(
-                    <UiPaper
+                    <div
                       className="item-menu"
                       role="menu"
                       aria-label="Item actions"
+                      ref={itemMenuRef}
                       style={{ left: openItemMenu.x, top: openItemMenu.y }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Escape") {
+                          return;
+                        }
+                        event.preventDefault();
+                        setOpenItemMenu(null);
+                        window.setTimeout(() => searchRef.current?.focus(), 0);
+                      }}
                     >
                       {hasMultiSelection ? (
-                        renderBatchItemActions({
-                          items: effectiveSelection,
-                          noun: "selected",
-                          onClear: () => {
-                            setOpenItemMenu(null);
-                            setSingleSelection(index);
-                            focusSearch();
-                          },
-                        })
+                        <div className="item-menu-group" role="group" aria-label="Principal">
+                          <span className="item-menu-group-label">Principal</span>
+                          {renderBatchItemActions({
+                            items: effectiveSelection,
+                            noun: "selected",
+                            onClear: () => {
+                              setOpenItemMenu(null);
+                              setSingleSelection(index);
+                              focusSearch();
+                            },
+                          })}
+                        </div>
                       ) : (
                         <>
+                          <div className="item-menu-group" role="group" aria-label="Principal">
+                            <span className="item-menu-group-label">Principal</span>
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
@@ -5808,6 +5882,9 @@ function App() {
                               <span>Open URL</span>
                             </UiUnstyledButton>
                           ) : null}
+                          </div>
+                          <div className="item-menu-group" role="group" aria-label="Más">
+                            <span className="item-menu-group-label">Más</span>
                           {itemMenuScriptActions(actionDefinitions, [item], item).map((action) => (
                             <UiUnstyledButton
                               key={action.id}
@@ -5836,6 +5913,9 @@ function App() {
                             <span>Preview</span>
                             <ShortcutBadge shortcut={settings.picker.previewShortcut} />
                           </UiUnstyledButton>
+                          </div>
+                          <div className="item-menu-group" role="group" aria-label="Editar">
+                            <span className="item-menu-group-label">Editar</span>
                           {item.content_kind === "text" ? (
                             <>
                               <UiUnstyledButton
@@ -5879,9 +5959,10 @@ function App() {
                             <span>Edit metadata</span>
                             <ShortcutBadge shortcut="Shift+F2" />
                           </UiUnstyledButton>
+                          </div>
                         </>
                       )}
-                    </UiPaper>,
+                    </div>,
                     document.body,
                   ) : null}
                   </li>
@@ -5890,7 +5971,7 @@ function App() {
             )}
             </ol>
           </div>
-        </section>
+        </PickerFeed>
         {commandPalette ? (
           <CommandPalette
             query={commandPalette.query}

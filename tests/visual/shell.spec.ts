@@ -1190,6 +1190,52 @@ test("shell loads without horizontal overflow", async ({ page }) => {
   expect(hasHorizontalOverflow).toBe(false);
 });
 
+test("picker shell keeps semantic feed state and only mounts active context strips", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await expect(page.locator(".picker-header")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Clipboard history results" })).toBeVisible();
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("Current clip 100 selected");
+  await expect(page.locator(".context-strip")).toHaveCount(0);
+
+  await page.locator(".feed-item").first().click();
+  await expect(page.getByRole("status", { name: "Picker status" })).toContainText("Current clip 100 selected");
+
+  await page.getByRole("button", { name: "Open saved views" }).click();
+  await page.getByRole("menu", { name: "Saved views" }).getByRole("menuitem", { name: /Work clips/ }).click();
+  await expect(page.locator(".context-strip")).toHaveCount(1);
+  await expect(page.getByTestId("saved-view-bar")).toContainText("Work clips");
+});
+
+test("picker row kebab and grouped menu stay keyboard reachable at 420 px", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 640 });
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const row = page.locator(".history-feed.has-items > li").first();
+  const kebab = row.getByRole("button", { name: "Open item actions" });
+  await expect(kebab).toHaveCSS("pointer-events", "auto");
+  await kebab.click();
+
+  const menu = page.getByRole("menu", { name: "Item actions" });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Principal" })).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Editar" })).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Más" })).toBeVisible();
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+
+  const fitsViewport = await menu.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 && rect.bottom <= window.innerHeight;
+  });
+  expect(fitsViewport).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+});
+
 test("picker menu renders compact shortcut keycaps including configured Settings hotkey", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -3475,7 +3521,9 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await expect(menu.getByRole("menuitem", { name: "Open URL" })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "copy-current-title" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Principal" })).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Editar" })).toBeVisible();
+  await expect(menu.getByRole("group", { name: "Más" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit tags" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
 
@@ -3515,13 +3563,15 @@ test("item hover actions appear only while hovering row", async ({ page }) => {
   const hoverActions = [menuButton, previewButton, editButton, deleteButton];
 
   await page.mouse.move(1, 1);
-  for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "0");
+  await expect(menuButton).toHaveCSS("opacity", /0\.7/);
+  for (const action of [previewButton, editButton, deleteButton]) await expect(action).toHaveCSS("opacity", "0");
 
   await firstRow.hover();
   for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "1");
 
   await page.mouse.move(1, 1);
-  for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "0");
+  await expect(menuButton).toHaveCSS("opacity", /0\.7/);
+  for (const action of [previewButton, editButton, deleteButton]) await expect(action).toHaveCSS("opacity", "0");
 });
 
 test("dots menu uses pointer position too", async ({ page }) => {
