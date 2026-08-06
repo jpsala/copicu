@@ -2666,7 +2666,8 @@ test("search autocomplete accepts keyboard and click selections and dismisses Es
   await expect(suggestions).toBeVisible();
   await search.focus();
   await search.press("Tab");
-  await expect(search).toHaveValue("#backend");
+  await expect(search).toHaveValue("#work");
+  await expect(search).toBeFocused();
   await expect(suggestions).toHaveCount(0);
 
   await search.fill("tag:");
@@ -2947,6 +2948,171 @@ test("background refresh deferred during realtime search is replayed", async ({ 
     ).length,
   )).toBe(2);
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+});
+
+test("focus refresh during first load waits for an applied descriptor", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 250 });
+  await gotoShell(page);
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "",
+    ),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.filter(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "",
+    ).length === 2,
+  );
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+});
+
+test("foreground search failure survives a focus refresh and retries the exact draft", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 250 });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  const search = page.getByLabel("Search clipboard history");
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+    (window as any).__copicuTestMockOptions.historySearchFailNext = true;
+  });
+  await search.fill("unbroken");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("[title='Result count']")).toHaveText("Could not update results");
+  await expect(search).toBeFocused();
+  await page.waitForTimeout(180);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ).length,
+  )).toBe(1);
+
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await page.getByRole("button", { name: "Retry" }).click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ),
+  );
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").map(
+      (call: any) => call.args.request.query,
+    ),
+  )).toEqual(["unbroken"]);
+  await expect(search).toHaveValue("unbroken");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+});
+
+test("failed foreground clear exits Clearing pending across focus and retries the exact clear", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    historySearchDelayMs: 250,
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("long");
+  await search.press("Enter");
+  await expect(page.locator("[title='Result count']")).toHaveText("2 / 4 matches", { timeout: 5000 });
+
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+    (window as any).__copicuTestMockOptions.historySearchFailNext = true;
+  });
+  await page.getByRole("button", { name: "Clear filter" }).click();
+  await expect(search).toHaveValue("");
+  await expect(page.locator("[title='Result count']")).toHaveText("Clearing filter");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "",
+    ),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 5000 });
+  await expect(page.locator("[title='Result count']")).toHaveText("Could not update results");
+  await expect(search).toBeFocused();
+  await page.waitForTimeout(180);
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "",
+    ).length,
+  )).toBe(1);
+
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await page.getByRole("button", { name: "Retry" }).click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "",
+    ),
+  );
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").map(
+      (call: any) => call.args.request.query,
+    ),
+  )).toEqual([""]);
+  await expect(search).toHaveValue("");
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+});
+
+test("foreground Retry recovers a pending Filter Lock after a focus failure", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    historySearchDelayMs: 250,
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
+  const search = page.getByLabel("Search clipboard history");
+  const lock = page.getByRole("button", { name: "Lock filter across picker closes" });
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+    (window as any).__copicuTestMockOptions.historySearchFailNext = true;
+  });
+  await search.fill("unbroken");
+  await expect(lock).toBeEnabled();
+  await lock.click();
+  await expect(lock).toHaveAttribute("aria-pressed", "false");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ),
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible({ timeout: 5000 });
+  await expect(lock).toHaveAttribute("aria-pressed", "false");
+  await expect(search).toBeFocused();
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+  });
+  await page.getByRole("button", { name: "Retry" }).click();
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ),
+  );
+  expect(await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").map(
+      (call: any) => call.args.request.query,
+    ),
+  )).toEqual(["unbroken"]);
+  await expect(lock).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("copicu.filter-lock.v1"))).toBe("unbroken");
 });
 
 test("focus refreshes the applied snapshot while autocomplete keeps a draft held", async ({ page }) => {

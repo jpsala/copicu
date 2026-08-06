@@ -2108,16 +2108,15 @@ function App() {
             : null,
         };
       };
-      if (source === "background" && !isAppliedSearchDescriptor(appliedDescriptorForRequest)) {
-        return;
-      }
-      if (!allowAi && searchInput.mode === "ai") {
-        if (historyInputQuery === trimmed && historyQuery.trim()) {
-          searchInput = { query: historyQuery, mode: "structured" };
-        } else {
+      const settleForegroundFailure = () => {
+        if (!foreground) {
           return;
         }
-      }
+        setDeferredAppliedRefresh(null);
+        if (clearSearchPendingRef.current) {
+          updateClearSearchPending(false);
+        }
+      };
       if (source === "background" && foregroundSearchInFlightRef.current) {
         setDeferredAppliedRefresh({
           query: queryRef.current.trim(),
@@ -2126,6 +2125,23 @@ function App() {
           reason: "foreground",
         });
         return;
+      }
+      if (source === "background" && !isAppliedSearchDescriptor(appliedDescriptorForRequest)) {
+        return;
+      }
+      if (
+        source === "background"
+        && lastSearchFailureRef.current?.source === "foreground"
+        && lastSearchFailureRef.current.intentGeneration === intentGeneration
+      ) {
+        return;
+      }
+      if (!allowAi && searchInput.mode === "ai") {
+        if (historyInputQuery === trimmed && historyQuery.trim()) {
+          searchInput = { query: historyQuery, mode: "structured" };
+        } else {
+          return;
+        }
       }
       lastSearchFailureRef.current = null;
       if (foreground) {
@@ -2183,9 +2199,7 @@ function App() {
           && (!foreground || intentGeneration === searchIntentGenerationRef.current);
         if (requestIsCurrent) {
           rememberFailure();
-          if (foreground && pendingFilterLockRef.current?.intentGeneration === intentGeneration) {
-            pendingFilterLockRef.current = null;
-          }
+          settleForegroundFailure();
           if (foreground) {
             setHistoryPending(false);
             setAiPlanning(false);
@@ -2250,9 +2264,7 @@ function App() {
           setHistoryPending(false);
           setAiPlanning(false);
         }
-        if (foreground && pendingFilterLockRef.current?.intentGeneration === intentGeneration) {
-          pendingFilterLockRef.current = null;
-        }
+        settleForegroundFailure();
         rememberFailure();
         setHistoryError(descriptorError);
         dispatchSearch({
@@ -2517,6 +2529,19 @@ function App() {
         return;
       }
       if (
+        !isAppliedSearchDescriptor(appliedDescriptor)
+        && appliedSnapshotGenerationRef.current === 0
+        && !lastSearchFailureRef.current
+      ) {
+        setDeferredAppliedRefresh({
+          query: draft,
+          intentGeneration: searchIntentGenerationRef.current,
+          appliedGeneration: appliedSnapshotGenerationRef.current,
+          reason: "foreground",
+        });
+        return;
+      }
+      if (
         pickerSearch.searchTriggerMode === "realtime" &&
         draft !== applied &&
         !structuredHold
@@ -2560,12 +2585,15 @@ function App() {
       setDeferredAppliedRefresh(null);
       return;
     }
+    const appliedDescriptor = appliedDescriptorRef.current;
+    if (!isAppliedSearchDescriptor(appliedDescriptor)) {
+      return;
+    }
     if (deferredRefresh.reason === "draft") {
       setDeferredAppliedRefresh(null);
       return;
     }
     setDeferredAppliedRefresh(null);
-    const appliedDescriptor = appliedDescriptorRef.current;
     void refreshHistory({
       showPending: false,
       allowAi: false,
