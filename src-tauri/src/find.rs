@@ -941,17 +941,13 @@ fn project_markdown(source: &str) -> (ProjectedField, Vec<ProjectedField>) {
             .expect("cursor is a char boundary");
         let next = cursor + ch.len_utf8();
         if ch == '<' {
-            if let Some(end) = source[next..].find('>') {
-                break_projection(&mut content);
-                cursor = next + end + 1;
-                line_start = false;
-                continue;
-            }
-            if source[next..]
-                .chars()
-                .next()
-                .is_some_and(is_probable_html_tag_start)
-            {
+            if is_probable_html_construct(source, next) {
+                if let Some(end) = source[next..].find('>') {
+                    break_projection(&mut content);
+                    cursor = next + end + 1;
+                    line_start = false;
+                    continue;
+                }
                 // An unfinished tag-like construct is ambiguous; fail closed
                 // for the remainder rather than exposing possible markup data.
                 break_projection(&mut content);
@@ -1083,6 +1079,13 @@ fn append_raw_range(destination: &mut ProjectedField, source: &str, start: usize
 
 fn is_probable_html_tag_start(ch: char) -> bool {
     ch.is_ascii_alphabetic() || matches!(ch, '/' | '!' | '?')
+}
+
+fn is_probable_html_construct(source: &str, after_open: usize) -> bool {
+    source[after_open..]
+        .chars()
+        .next()
+        .is_some_and(is_probable_html_tag_start)
 }
 
 fn fenced_body_range(source: &str, cursor: usize) -> Option<(usize, usize, usize)> {
@@ -1432,37 +1435,89 @@ fn match_projected_field(field: &ProjectedField, needle: &[char]) -> Vec<OffsetS
 fn lowercase_projected_field(field: &ProjectedField) -> (Vec<char>, Vec<OffsetSpan>) {
     let mut lowered = Vec::new();
     let mut spans = Vec::new();
-    let chars = field.text.chars().collect::<Vec<_>>();
+    let normalized = nfc_projected_field(field);
     let mut index = 0usize;
-    while index < chars.len() {
+    while index < normalized.len() {
         let cluster_start = index;
         index += 1;
-        while index < chars.len() && canonical_combining_class(chars[index]) != 0 {
+        while index < normalized.len()
+            && canonical_combining_class(normalized[index].0) != 0
+        {
             index += 1;
         }
-        let cluster = chars[cluster_start..index].iter().collect::<String>();
-        let normalized = cluster.nfc().collect::<String>();
-        let first_span = field
-            .spans
-            .get(cluster_start)
-            .copied()
-            .unwrap_or(OffsetSpan {
-                start_utf16: 0,
-                end_utf16: 0,
-                segment: 0,
-            });
-        let last_span = field.spans.get(index - 1).copied().unwrap_or(first_span);
+        let cluster = normalized[cluster_start..index]
+            .iter()
+            .map(|(ch, _)| *ch)
+            .collect::<String>();
+        let first_span = normalized[cluster_start].1;
+        let last_span = normalized[index - 1].1;
         let source_span = OffsetSpan {
             start_utf16: first_span.start_utf16,
             end_utf16: last_span.end_utf16,
             segment: first_span.segment,
         };
-        for folded_ch in normalized.chars().default_case_fold() {
+        for folded_ch in cluster.chars().default_case_fold() {
             lowered.push(folded_ch);
             spans.push(source_span);
         }
     }
     (lowered, spans)
+}
+
+fn nfc_projected_field(field: &ProjectedField) -> Vec<(char, OffsetSpan)> {
+    let chars = field.text.chars().collect::<Vec<_>>();
+    let mut normalized = Vec::with_capacity(chars.len());
+    let mut run_start = 0usize;
+    while run_start < chars.len() {
+        let segment = field.spans[run_start].segment;
+        let mut run_end = run_start + 1;
+        while run_end < chars.len() && field.spans[run_end].segment == segment {
+            run_end += 1;
+        }
+
+        let source = chars[run_start..run_end].iter().collect::<String>();
+        let source_decomposed = chars[run_start..run_end]
+            .iter()
+            .zip(&field.spans[run_start..run_end])
+            .flat_map(|(ch, span)| ch.nfd().map(move |decomposed| (decomposed, *span)))
+            .collect::<Vec<_>>();
+        let normalized_run = source.nfc().collect::<Vec<_>>();
+        let mut source_cursor = 0usize;
+        for normalized_char in normalized_run {
+            let decomposition = normalized_char.nfd().collect::<Vec<_>>();
+            let matching_start = (source_cursor..source_decomposed.len())
+                .find(|candidate| {
+                    source_decomposed[*candidate..]
+                        .iter()
+                        .map(|(ch, _)| *ch)
+                        .take(decomposition.len())
+                        .eq(decomposition.iter().copied())
+                });
+            let source_start = matching_start.unwrap_or(source_cursor);
+            let source_end = source_start
+                .saturating_add(decomposition.len().max(1))
+                .min(source_decomposed.len());
+            let first_span = source_decomposed
+                .get(source_start)
+                .map(|(_, span)| *span)
+                .unwrap_or(field.spans[run_start]);
+            let last_span = source_decomposed
+                .get(source_end.saturating_sub(1))
+                .map(|(_, span)| *span)
+                .unwrap_or(first_span);
+            normalized.push((
+                normalized_char,
+                OffsetSpan {
+                    start_utf16: first_span.start_utf16,
+                    end_utf16: last_span.end_utf16,
+                    segment,
+                },
+            ));
+            source_cursor = source_end.max(source_cursor.saturating_add(1));
+        }
+        run_start = run_end;
+    }
+    normalized
 }
 
 #[cfg(test)]
@@ -1737,17 +1792,49 @@ mod tests {
     #[test]
     fn unfinished_tag_like_markup_fails_closed_but_less_than_literal_stays_visible() {
         let cancelled = AtomicBool::new(false);
-        let literal = vec![item(11, "text", "one < two three")];
-        let three = build_occurrence_index(&literal, "three", &cancelled)
+        let literal = vec![item(11, "text", "one < two > invoice")];
+        let two = build_occurrence_index(&literal, "two", &cancelled)
             .unwrap()
             .0;
-        assert_eq!(three.len(), 1);
+        assert_eq!(
+            two.len(),
+            1,
+            "a literal angle bracket must not hide following text"
+        );
+        let invoice = build_occurrence_index(&literal, "invoice", &cancelled)
+            .unwrap()
+            .0;
+        assert_eq!(invoice.len(), 1);
 
         let ambiguous = vec![item(12, "text", "one <script secret.example after")];
         let secret = build_occurrence_index(&ambiguous, "secret.example", &cancelled)
             .unwrap()
             .0;
         assert!(secret.is_empty());
+
+        let html = vec![item(
+            13,
+            "html",
+            r#"<a href="https://secret.example">visible</a>"#,
+        )];
+        let secret_attribute = build_occurrence_index(&html, "secret.example", &cancelled)
+            .unwrap()
+            .0;
+        assert!(secret_attribute.is_empty(), "HTML attributes must remain private");
+        let visible = build_occurrence_index(&html, "visible", &cancelled)
+            .unwrap()
+            .0;
+        assert_eq!(visible.len(), 1, "HTML body text remains searchable");
+    }
+
+    #[test]
+    fn nfc_composition_maps_hangul_jamo_to_original_utf16_range() {
+        let source = vec![item(14, "text", "가")];
+        let cancelled = AtomicBool::new(false);
+        let (matches, _) = build_occurrence_index(&source, "가", &cancelled).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].field, FindField::Content);
+        assert_eq!((matches[0].start_utf16, matches[0].end_utf16), (0, 2));
     }
 
     #[test]
