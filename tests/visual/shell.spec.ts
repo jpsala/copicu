@@ -1893,6 +1893,12 @@ test("Find consumes canonical Markdown segments for emphasis, links, comments, f
   await expect(page.locator(".markdown-find-content .find-highlight")).toHaveCount(4);
   await expect(page.locator(".markdown-find-content .find-highlight[aria-current='true']")).toHaveCount(1);
   await expect(page.locator(".markdown-image-alt .find-highlight")).toHaveCount(2);
+  for (const segment of ["0", "2", "5", "8"]) {
+    await expect(page.locator(`[data-find-field="content"] .find-highlight[data-find-segment="${segment}"]`)).toHaveCount(1);
+  }
+  for (const segment of ["0", "1"]) {
+    await expect(page.locator(`[data-find-field="imageAlt"] .find-highlight[data-find-segment="${segment}"]`)).toHaveCount(1);
+  }
   await page.keyboard.press("Escape");
   await expect(input).toBeHidden();
 });

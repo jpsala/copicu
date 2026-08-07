@@ -8578,6 +8578,7 @@ function markdownSegments(
       continue;
     }
     const assigned: MarkdownSegment[] = [];
+    const projectedText = projectMarkdownDisplayText(segment.text);
     let searchCursor = 0;
     while (canonicalIndex < canonicalSegments.length) {
       const canonical = canonicalSegments[canonicalIndex];
@@ -8585,7 +8586,7 @@ function markdownSegments(
         canonicalIndex += 1;
         continue;
       }
-      const matchIndex = segment.text.indexOf(canonical.displayText, searchCursor);
+      const matchIndex = projectedText.indexOf(canonical.displayText, searchCursor);
       if (matchIndex < 0) {
         break;
       }
@@ -8604,6 +8605,196 @@ function markdownSegments(
     }
   }
   return mappedSegments;
+}
+
+function projectMarkdownDisplayText(source: string): string {
+  let visible = "";
+  let cursor = 0;
+  let lineStart = true;
+
+  while (cursor < source.length) {
+    if (source.startsWith("<!--", cursor)) {
+      const end = source.indexOf("-->", cursor + 4);
+      if (end < 0) {
+        break;
+      }
+      cursor = end + 3;
+      lineStart = false;
+      continue;
+    }
+
+    if (source.startsWith("```", cursor)) {
+      const closeOffset = source.indexOf("```", cursor + 3);
+      if (closeOffset < 0) {
+        break;
+      }
+      const afterOpen = cursor + 3;
+      const newline = source.indexOf("\n", afterOpen);
+      const bodyStart = newline >= 0 && newline < closeOffset ? newline + 1 : afterOpen;
+      visible += source.slice(bodyStart, closeOffset);
+      cursor = closeOffset + 3;
+      lineStart = false;
+      continue;
+    }
+
+    if (source.startsWith("![", cursor)) {
+      const imageEnd = markdownConstructEnd(source, cursor + 2);
+      if (imageEnd !== null) {
+        cursor = imageEnd;
+        lineStart = false;
+        continue;
+      }
+    }
+
+    if (source[cursor] === "[") {
+      const link = markdownLinkProjection(source, cursor);
+      if (link) {
+        visible += projectMarkdownDisplayText(source.slice(link.labelStart, link.labelEnd));
+        cursor = link.end;
+        lineStart = false;
+        continue;
+      }
+    }
+
+    const codePoint = source.codePointAt(cursor);
+    if (codePoint === undefined) {
+      break;
+    }
+    const character = String.fromCodePoint(codePoint);
+    const next = cursor + character.length;
+
+    if (character === "<" && /^[a-zA-Z/!?]/.test(source[next] ?? "")) {
+      const tagEnd = source.indexOf(">", next);
+      if (tagEnd < 0) {
+        break;
+      }
+      cursor = tagEnd + 1;
+      lineStart = false;
+      continue;
+    }
+    if (character === "\\" && next < source.length) {
+      const escapedCodePoint = source.codePointAt(next);
+      if (escapedCodePoint !== undefined) {
+        const escaped = String.fromCodePoint(escapedCodePoint);
+        visible += escaped;
+        cursor = next + escaped.length;
+        lineStart = false;
+        continue;
+      }
+    }
+    if (character === "*" || character === "~" || character === "`") {
+      cursor = next;
+      lineStart = false;
+      continue;
+    }
+    if (lineStart && (character === "#" || character === ">" || character === "-" || character === "+")) {
+      cursor = next;
+      while (cursor < source.length && /[ \t]/.test(source[cursor] ?? "")) {
+        cursor += 1;
+      }
+      lineStart = false;
+      continue;
+    }
+    if (character === "\r" && source[next] === "\n") {
+      cursor = next;
+      continue;
+    }
+    visible += character;
+    cursor = next;
+    lineStart = character === "\n";
+  }
+
+  return visible;
+}
+
+function markdownConstructEnd(source: string, labelStart: number): number | null {
+  const labelEnd = markdownClosingBracket(source, labelStart);
+  if (labelEnd === null) {
+    return null;
+  }
+  const afterLabel = labelEnd + 1;
+  if (source[afterLabel] === "(") {
+    const destinationEnd = markdownDestinationEnd(source, afterLabel + 1);
+    return destinationEnd === null ? null : destinationEnd + 1;
+  }
+  return null;
+}
+
+function markdownLinkProjection(source: string, cursor: number) {
+  const labelStart = cursor + 1;
+  const labelEnd = markdownClosingBracket(source, labelStart);
+  if (labelEnd === null) {
+    return null;
+  }
+  const afterLabel = labelEnd + 1;
+  if (source[afterLabel] !== "(") {
+    return null;
+  }
+  const destinationEnd = markdownDestinationEnd(source, afterLabel + 1);
+  if (destinationEnd === null) {
+    return null;
+  }
+  return { labelStart, labelEnd, end: destinationEnd + 1 };
+}
+
+function markdownClosingBracket(source: string, start: number): number | null {
+  let depth = 0;
+  let cursor = start;
+  while (cursor < source.length) {
+    const codePoint = source.codePointAt(cursor);
+    if (codePoint === undefined) {
+      return null;
+    }
+    const character = String.fromCodePoint(codePoint);
+    const next = cursor + character.length;
+    if (character === "\\" && next < source.length) {
+      const escapedCodePoint = source.codePointAt(next);
+      cursor = escapedCodePoint === undefined
+        ? next
+        : next + String.fromCodePoint(escapedCodePoint).length;
+      continue;
+    }
+    if (character === "[") {
+      depth += 1;
+    } else if (character === "]") {
+      if (depth === 0) {
+        return cursor;
+      }
+      depth -= 1;
+    }
+    cursor = next;
+  }
+  return null;
+}
+
+function markdownDestinationEnd(source: string, start: number): number | null {
+  let depth = 0;
+  let cursor = start;
+  while (cursor < source.length) {
+    const codePoint = source.codePointAt(cursor);
+    if (codePoint === undefined) {
+      return null;
+    }
+    const character = String.fromCodePoint(codePoint);
+    const next = cursor + character.length;
+    if (character === "\\" && next < source.length) {
+      const escapedCodePoint = source.codePointAt(next);
+      cursor = escapedCodePoint === undefined
+        ? next
+        : next + String.fromCodePoint(escapedCodePoint).length;
+      continue;
+    }
+    if (character === "(") {
+      depth += 1;
+    } else if (character === ")") {
+      if (depth === 0) {
+        return cursor;
+      }
+      depth -= 1;
+    }
+    cursor = next;
+  }
+  return null;
 }
 
 const rootElement = document.getElementById("root")!;

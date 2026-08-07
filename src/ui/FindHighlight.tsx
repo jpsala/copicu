@@ -56,6 +56,7 @@ function highlightedSegment(
           key={`${keyPrefix}:hit:${range.ordinal}:${index}`}
           className={`find-highlight${current ? " is-current" : ""}`}
           data-find-ordinal={range.ordinal}
+          data-find-segment={segment.segment}
           aria-current={current ? "true" : undefined}
         >
           {segment.displayText.slice(start, end)}
