@@ -163,3 +163,25 @@ test("structured hold keeps incomplete drafts permanent and defers only complete
     true,
   );
 });
+
+test("quoted structured values keep parity with the Rust tokenizer", () => {
+  const focalCases = [
+    { query: '"tag:work"', kind: "complete", structured: true },
+    { query: 'kind:"text","image"', kind: "complete", structured: true },
+    { query: 'ki"nd":text', kind: "complete", structured: true },
+    { query: '-"kind":text', kind: "complete", structured: true },
+    { query: 'title:"a\\"b"', kind: "complete", structured: true },
+    { query: 'title:"a\\\\b"', kind: "complete", structured: true },
+    { query: '"plain phrase"', kind: "plain", structured: false },
+    { query: '"tag:"', kind: "incomplete", structured: true, operator: "tag" },
+  ];
+
+  for (const expected of focalCases) {
+    const actual = classifyStructuredSearchDraft(expected.query);
+    assert.equal(actual.kind, expected.kind, expected.query);
+    assert.equal(actual.structured, expected.structured, expected.query);
+    if (expected.operator) {
+      assert.equal(actual.operator, expected.operator, expected.query);
+    }
+  }
+});

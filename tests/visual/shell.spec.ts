@@ -336,6 +336,7 @@ const previousJsDescriptorFixtureFingerprint = "e1fa8cbd5b370ac2344d5ed9e92f262b
 
 type MockTauriOptions = {
   historySearchDelayMs?: number;
+  historySearchDelaySequenceMs?: number[];
   historySearchFailNext?: boolean;
   historySearchFailMessage?: string;
   historySearchFailOnCursor?: boolean;
@@ -1545,7 +1546,10 @@ async function mockTauriInvoke(
           case "history_search":
           case "list_history_page": {
             const mockOptions = (window as any).__copicuTestMockOptions ?? {};
-            const delayMs = mockOptions.historySearchDelayMs ?? 0;
+            const delayMs = Array.isArray(mockOptions.historySearchDelaySequenceMs)
+              && mockOptions.historySearchDelaySequenceMs.length > 0
+              ? Number(mockOptions.historySearchDelaySequenceMs.shift() ?? 0)
+              : mockOptions.historySearchDelayMs ?? 0;
             if (delayMs > 0) {
               await new Promise((resolve) => window.setTimeout(resolve, delayMs));
             }
@@ -3030,12 +3034,154 @@ test("AI composer keeps Search primary in one compact band at 420 px", async ({ 
       scrollWidth: document.documentElement.scrollWidth,
     };
   });
-  expect(layout.columns).toHaveLength(4);
+  expect(layout.columns).toHaveLength(6);
   expect(layout.rows).toHaveLength(1);
   expect(layout.searchTop).not.toBeNull();
   expect(layout.searchWidth).not.toBeNull();
   expect(layout.searchWidth!).toBeGreaterThan(180);
   expect(layout.scrollWidth).toBeLessThanOrEqual(420);
+});
+
+test("search controls keep disjoint geometry and keyboard access across picker widths", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("tag:work");
+  const apply = page.getByRole("button", { name: "Apply search" });
+  await expect(apply).toBeVisible();
+  await expect(apply).toBeEnabled();
+
+  const boxes = await page.locator(".search-row").evaluate((row) => {
+    const selectors = {
+      selection: ".selection-controls",
+      composer: ".composer-mode-button",
+      trigger: ".search-trigger-button",
+      search: ".search-field",
+      apply: ".composer-run-button",
+      menu: ".picker-menu-button",
+    } as const;
+    const readRect = (selector: string) => {
+      const element = row.querySelector<HTMLElement>(selector);
+      if (!element) {
+        return null;
+      }
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    return {
+      row: (() => {
+        const rect = row.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      })(),
+      controls: Object.fromEntries(
+        Object.entries(selectors).map(([name, selector]) => [name, readRect(selector)]),
+      ),
+    } as {
+      row: { left: number; right: number; top: number; bottom: number };
+      controls: Record<string, {
+        left: number;
+        right: number;
+        top: number;
+        bottom: number;
+        width: number;
+        height: number;
+      } | null>;
+    };
+  });
+  const visibleBoxes = Object.entries(boxes.controls)
+    .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => entry[1] !== null && entry[1].width > 0)
+    .sort(([, left], [, right]) => left.left - right.left);
+  expect(visibleBoxes.map(([name]) => name)).toEqual(
+    expect.arrayContaining(["selection", "composer", "trigger", "search", "apply", "menu"]),
+  );
+  for (const [, box] of visibleBoxes) {
+    expect(box.left).toBeGreaterThanOrEqual(boxes.row.left - 1);
+    expect(box.right).toBeLessThanOrEqual(boxes.row.right + 1);
+  }
+  for (let index = 0; index < visibleBoxes.length; index += 1) {
+    for (let nextIndex = index + 1; nextIndex < visibleBoxes.length; nextIndex += 1) {
+      const current = visibleBoxes[index][1];
+      const next = visibleBoxes[nextIndex][1];
+      const intersects = current.left < next.right
+        && current.right > next.left
+        && current.top < next.bottom
+        && current.bottom > next.top;
+      expect(intersects, visibleBoxes[index][0] + " overlaps " + visibleBoxes[nextIndex][0]).toBe(false);
+    }
+  }
+
+  for (const locator of [
+    page.locator(".selection-master-checkbox input"),
+    page.locator(".composer-mode-button"),
+    page.locator(".search-trigger-button"),
+    search,
+    apply,
+    page.getByRole("button", { name: "Open picker menu" }),
+  ]) {
+    await locator.focus();
+    await expect(locator).toBeFocused();
+  }
+
+  const mode = page.locator(".composer-mode-button");
+  await mode.focus();
+  await page.keyboard.press("Enter");
+  await expect(mode).toHaveAttribute("data-mode", "ai");
+  await mode.focus();
+  await page.keyboard.press("Enter");
+  await expect(mode).toHaveAttribute("data-mode", "search");
+
+  const menuButton = page.getByRole("button", { name: "Open picker menu" });
+  await menuButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+});
+
+test("delayed initial cannot steal foreground ownership or replay a stale query", async ({ page }) => {
+  test.slow();
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    historySearchDelaySequenceMs: [500, 800, 0],
+  });
+  await gotoShell(page);
+
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "",
+    ),
+  );
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("unbroken");
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "history_search" && call.args.request.query === "unbroken",
+    ),
+  );
+  await page.waitForFunction(() => (window as any).__copicuTestHistoryResponses.length >= 1);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
+  await expect.poll(() => page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+  )).toBeGreaterThanOrEqual(2);
+  const requestQueries = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "history_search")
+      .map((call: any) => call.args.request.query),
+  );
+  expect(requestQueries.filter((query: string) => query === "").length).toBe(1);
+  expect(requestQueries.filter((query: string) => query === "unbroken").length).toBeGreaterThanOrEqual(2);
+  expect(requestQueries.at(-1)).toBe("unbroken");
+  await expect(search).toHaveValue("unbroken");
 });
 
 test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {

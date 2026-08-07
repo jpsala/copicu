@@ -71,6 +71,41 @@ test("draft changes supersede an in-flight first page, including held drafts", (
   assert.equal(staleSuccess.applied, null);
 });
 
+test("the initial snapshot can settle behind a held draft without replacing it", () => {
+  const initial = createPickerSearchState("");
+  const applying = pickerSearchReducer(initial, {
+    type: "applyStarted",
+    generation: 0,
+    intentGeneration: 0,
+    query: "",
+  });
+  const heldDraft = pickerSearchReducer(applying, {
+    type: "draftChanged",
+    query: "kind:",
+    status: "held",
+  });
+  const initialSnapshot = pickerSearchReducer(heldDraft, {
+    type: "applySucceeded",
+    generation: 1,
+    intentGeneration: 0,
+    descriptor: {
+      ...descriptor,
+      displayQuery: "",
+      effectiveQuery: "",
+      mode: "structured",
+      fingerprint: "fingerprint-initial",
+    },
+    page: page([{ id: 10 }, { id: 11 }]),
+    allowStaleInitial: true,
+  });
+
+  assert.notEqual(initialSnapshot.applied, null);
+  assert.deepEqual(initialSnapshot.applied.items, [{ id: 10 }, { id: 11 }]);
+  assert.equal(initialSnapshot.draftQuery, "kind:");
+  assert.equal(initialSnapshot.filterStatus, "held");
+  assert.equal(initialSnapshot.intentGeneration, heldDraft.intentGeneration);
+});
+
 test("an applied page remains pageable while a newer draft is held", () => {
   const applied = pickerSearchReducer(
     pickerSearchReducer(createPickerSearchState(""), {

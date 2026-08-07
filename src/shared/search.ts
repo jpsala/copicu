@@ -161,6 +161,31 @@ function activeToken(query: string) {
   return query.slice(query.lastIndexOf(" ") + 1);
 }
 
+function normalizeTokenValue(value: string) {
+  // Keep this in lockstep with storage::search::tokenize_query: quotes group
+  // and disappear, while backslashes escape only inside quoted values.
+  let normalized = "";
+  let inQuote = false;
+  let escaped = false;
+  for (const char of value) {
+    if (escaped) {
+      normalized += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inQuote) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    normalized += char;
+  }
+  return normalized;
+}
+
 function draftTokens(query: string): DraftToken[] {
   const tokens: DraftToken[] = [];
   let start = -1;
@@ -242,15 +267,16 @@ export function classifyStructuredSearchDraft(
   let invalidOperator: string | null = null;
 
   for (const token of tokens) {
-    const negated = token.value.startsWith("-") && token.value.length > 1;
-    const rawToken = negated ? token.value.slice(1) : token.value;
+    const normalizedToken = normalizeTokenValue(token.value);
+    const negated = normalizedToken.startsWith("-") && normalizedToken.length > 1;
+    const rawToken = negated ? normalizedToken.slice(1) : normalizedToken;
     if (negated) {
       structured = true;
     }
     if (rawToken.startsWith("#")) {
       structured = true;
       const value = rawToken.slice(1).trim();
-      const normalizedValue = value.replace(/^"|"$/g, "").trim();
+      const normalizedValue = value.trim();
       if (token.hasUnclosedQuote || !normalizedValue) {
         incompleteToken ??= token.value;
         incompleteOperator ??= "#";
@@ -280,7 +306,7 @@ export function classifyStructuredSearchDraft(
     }
     structured = true;
     const value = rawToken.slice(separator + 1).trim();
-    const normalizedValue = value.replace(/^"|"$/g, "").trim();
+    const normalizedValue = value.trim();
     if (token.hasUnclosedQuote || !normalizedValue) {
       incompleteToken ??= token.value;
       incompleteOperator ??= operator;

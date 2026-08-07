@@ -5564,8 +5564,9 @@ kbd {
   }
 
   .search-row {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    grid-template-areas: "selection search apply menu";
+    position: relative;
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "selection composer trigger search apply menu";
     gap: 5px;
     padding: 6px 7px;
   }
@@ -5578,6 +5579,14 @@ kbd {
     grid-area: search;
   }
 
+  .search-row .composer-mode-button {
+    grid-area: composer;
+  }
+
+  .search-row .search-trigger-button {
+    grid-area: trigger;
+  }
+
   .search-row .composer-run-button {
     grid-area: apply;
   }
@@ -5587,10 +5596,19 @@ kbd {
   }
 
   .search-row .new-item-button,
-  .search-row .composer-mode-button,
-  .search-row .search-trigger-button,
   .search-row .search-help-button {
     display: none;
+  }
+
+  .search-row .composer-mode-button,
+  .search-row .search-trigger-button {
+    z-index: 3;
+    display: inline-flex;
+  }
+
+  .search-row input,
+  .search-row textarea {
+    padding-left: 0;
   }
 
   .scenario-create-properties {
@@ -5617,8 +5635,8 @@ kbd {
   }
 
   .search-row.is-ai-mode {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    grid-template-areas: "selection search apply menu";
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "selection composer trigger search apply menu";
   }
 
   .find-bar {

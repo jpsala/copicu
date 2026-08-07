@@ -76,6 +76,12 @@ export type PickerSearchAction<Item, Cursor = unknown> =
       page: AppliedSearchPage<Item, Cursor>;
       source?: PickerSearchApplySource;
       intentGeneration?: number;
+      /**
+       * The initial unfiltered load may finish after a draft was typed. It is
+       * safe to publish that first snapshot because no applied feed exists;
+       * preserve the newer draft and its held/applying status.
+       */
+      allowStaleInitial?: boolean;
     }
   | {
       type: "applyFailed";
@@ -225,7 +231,13 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
             error: null,
           };
         }
-        if (intentGenerationForAction(action) !== state.intentGeneration) {
+        const allowStaleInitial = action.allowStaleInitial === true
+          && state.applied === null
+          && action.generation > state.generation;
+        if (
+          intentGenerationForAction(action) !== state.intentGeneration
+          && !allowStaleInitial
+        ) {
           return state;
         }
         const snapshotGeneration = snapshotGenerationForAction(action);
@@ -235,9 +247,9 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
         return {
           ...state,
           applied: snapshotFromPage(action.descriptor, action.page, snapshotGeneration),
-          draftQuery: action.descriptor.displayQuery,
+          draftQuery: allowStaleInitial ? state.draftQuery : action.descriptor.displayQuery,
           generation: snapshotGeneration,
-          filterStatus: "idle",
+          filterStatus: allowStaleInitial ? state.filterStatus : "idle",
           error: null,
         };
       }

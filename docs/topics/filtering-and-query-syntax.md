@@ -115,6 +115,12 @@ El picker soporta `Settings > Picker > Search trigger`:
 
 El boton `Search` aplica explicitamente desde ambos modos. El control rapido con icono y tooltip alterna solo entre los dos modos persistentes.
 
+## Hardening De Query 2026-08-06
+
+- El clasificador del draft comparte la semantica del tokenizer Rust: valores estructurados entre comillas se clasifican por su contenido (`"tag:work"` es un filtro completo), mientras un operador sin valor (`"tag:"`) permanece incompleto y no dispara una busqueda parcial.
+- La respuesta inicial sin filtro puede llegar despues de que el usuario haya escrito un draft retenido; solo se acepta para publicar el snapshot inicial cuando no hay un resultado aplicado. Las respuestas stale de consultas posteriores se descartan por secuencia/generacion.
+- El benchmark de Find usa historial sintetico y mide el escaneo acotado a 50k items bajo escrituras concurrentes; no habilita FTS ni envia contenido a servicios externos.
+
 ## Filter Lock
 
 El icono de candado dentro del search, o `Ctrl+Shift+L`, fija el filtro aplicado actual. Mientras esta activo:

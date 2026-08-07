@@ -38,6 +38,7 @@ fn main() -> Result<(), String> {
         let started = Instant::now();
         let page = storage.history_search(HistorySearchRequest {
             query: query.to_string(),
+            display_query: None,
             cursor: None,
             limit: Some(60),
             plan: None::<SearchPlanV1>,
@@ -46,6 +47,7 @@ fn main() -> Result<(), String> {
             include_counts,
             explain: false,
             ai_context: None,
+            applied_descriptor: None,
         })?;
         let duration = started.elapsed();
         let json_bytes = serde_json::to_vec(&page)

@@ -1237,6 +1237,7 @@ function App() {
   const skipNextRealtimeSearchRef = useRef<SearchReplayToken | null>(null);
   const autocompleteCommittedQueryRef = useRef<string | null>(null);
   const foregroundSearchInFlightRef = useRef(false);
+  const foregroundSearchOwnerSeqRef = useRef<number | null>(null);
   const [deferredAppliedRefresh, setDeferredAppliedRefresh] = useState<SearchReplayToken | null>(null);
   const deferredAppliedRefreshRef = useRef<SearchReplayToken | null>(null);
   const lastSearchFailureRef = useRef<SearchFailureReplay | null>(null);
@@ -1280,6 +1281,7 @@ function App() {
   const supersedeSearchIntent = useCallback(
     (draftQuery: string, status: "idle" | "held" | "applying") => {
       const intentGeneration = ++searchIntentGenerationRef.current;
+      foregroundSearchOwnerSeqRef.current = null;
       foregroundSearchInFlightRef.current = false;
       setForegroundSearchInFlight(false);
       setAiPlanning(false);
@@ -2959,6 +2961,16 @@ function App() {
       descriptorOverride?: AppliedSearchDescriptor | null;
     } = {}) => {
       const trimmed = (queryOverride ?? query).trim();
+      if (
+        source === "foreground"
+        && !aiComposerMode
+        && (() => {
+          const classification = classifyStructuredSearchDraft(trimmed);
+          return classification.kind === "incomplete" || classification.kind === "invalid";
+        })()
+      ) {
+        return;
+      }
       const originalSearchInput = historySearchInput(trimmed, aiComposerMode);
       let searchInput = originalSearchInput;
       const appliedDescriptorForRequest = descriptorOverride
@@ -3013,11 +3025,12 @@ function App() {
         }
       }
       lastSearchFailureRef.current = null;
+      const requestSeq = ++historyRequestSeqRef.current;
       if (foreground) {
+        foregroundSearchOwnerSeqRef.current = requestSeq;
         foregroundSearchInFlightRef.current = true;
         setForegroundSearchInFlight(true);
       }
-      const requestSeq = ++historyRequestSeqRef.current;
       historyLoadMoreSeqRef.current += 1;
       setHistoryLoadingMore(false);
       const selectionInteractionSeq = selectionInteractionSeqRef.current;
@@ -3074,8 +3087,11 @@ function App() {
             setAiPlanning(false);
           }
           if (foreground) {
-            foregroundSearchInFlightRef.current = false;
-            setForegroundSearchInFlight(false);
+            if (foregroundSearchOwnerSeqRef.current === requestSeq) {
+              foregroundSearchOwnerSeqRef.current = null;
+              foregroundSearchInFlightRef.current = false;
+              setForegroundSearchInFlight(false);
+            }
           }
           setHistoryError(String(error));
           dispatchSearch({
@@ -3105,15 +3121,24 @@ function App() {
         return;
       }
 
+      const allowStaleInitial = foreground
+        && appliedDescriptorRef.current === null
+        && appliedSnapshotGenerationRef.current === 0
+        && intentGeneration !== searchIntentGenerationRef.current
+        && trimmed === ""
+        && page.appliedDescriptor?.displayQuery?.trim() === "";
       if (
         requestSeq !== historyRequestSeqRef.current
-        || (foreground && intentGeneration !== searchIntentGenerationRef.current)
+        || (foreground && intentGeneration !== searchIntentGenerationRef.current && !allowStaleInitial)
       ) {
         return;
       }
       if (foreground) {
-        foregroundSearchInFlightRef.current = false;
-        setForegroundSearchInFlight(false);
+        if (foregroundSearchOwnerSeqRef.current === requestSeq) {
+          foregroundSearchOwnerSeqRef.current = null;
+          foregroundSearchInFlightRef.current = false;
+          setForegroundSearchInFlight(false);
+        }
       }
 
       const appliedDescriptor = isAppliedSearchDescriptor(page.appliedDescriptor)
@@ -3317,6 +3342,7 @@ function App() {
         page: page as AppliedSearchPage<HistoryItem, HistoryPageCursor>,
         source,
         intentGeneration,
+        allowStaleInitial,
       });
       const canResetSelection = resetScroll && selectionInteractionSeq === selectionInteractionSeqRef.current;
       setSelectedIds((current) => {
@@ -4838,6 +4864,27 @@ function App() {
             setHistoryError(String(error));
           }
         });
+      } else if (
+        !aiComposerMode
+        && searchInput.mode === "structured"
+        && historyTotalCount === null
+        && historyInputQuery === ""
+        && trimmedQuery !== ""
+        && historyRef.current.length === 0
+        && appliedSnapshotGenerationRef.current === 0
+      ) {
+        // A held draft can be typed before the first unfiltered snapshot settles.
+        // Prime that snapshot explicitly so the held draft never leaves an empty feed.
+        refreshHistory({
+          resetScroll: false,
+          showPending: false,
+          allowAi: false,
+          queryOverride: "",
+        }).catch((error) => {
+          if (active) {
+            setHistoryError(String(error));
+          }
+        });
       }
       return () => {
         active = false;
@@ -6017,7 +6064,7 @@ function App() {
               type="button"
               className="composer-run-button"
               variant="filled"
-              aria-label={aiComposerMode ? "Run AI search" : "Apply search"}
+              aria-label={aiComposerMode ? "Search" : "Apply search"}
               disabled={scenarioCommandQuery !== null || historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
               onMouseDown={(event) => event.preventDefault()}
               onClick={runSearchNow}
