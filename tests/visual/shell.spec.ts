@@ -238,6 +238,23 @@ const findCanonicalMarkdownFixture = {
   },
 };
 
+const findReferenceMarkdownFixture = {
+  ...syntheticLongHistory[1],
+  id: 7200,
+  text: `![receipt][img] and ![receipt][img]\n   [img]: <https://secret.example/account> "private title"`,
+  normalized_hash: "find-reference-markdown",
+  __findCanonicalFields: {
+    content: makeFindDisplaySegments([
+      [0, " and "],
+      [1, "\n"],
+    ]),
+    imageAlt: [
+      { segment: 0, startUtf16: 0, endUtf16: 7, displayText: "receipt" },
+      { segment: 1, startUtf16: 0, endUtf16: 7, displayText: "receipt" },
+    ],
+  },
+};
+
 const findLargeRebaseHistory = Array.from({ length: 2_000 }, (_, index) => ({
   ...syntheticLongHistory[1],
   id: 8_000 + index,
@@ -270,6 +287,7 @@ type MockTauriOptions = {
   findTargetInvalidations?: number;
   findMatchesInvalidations?: number;
   findRemoteItem?: any;
+  findAppliedDescriptor?: any;
   editorSettings?: Partial<{
     fontFamily: "systemMono" | "cascadiaMono" | "consolas" | "uiSans";
     fontSize: number;
@@ -336,6 +354,7 @@ async function mockTauriInvoke(
     (window as any).__copicuTestFindActiveSessionId = null;
     (window as any).__copicuTestFindTargets = [];
     (window as any).__copicuTestFindResolveCalls = [];
+    (window as any).__copicuTestFindMembershipIds = [];
     (window as any).__copicuTestAppliedDescriptor = null;
     const delayFind = async (delayMs: number | undefined) => {
       if ((delayMs ?? 0) > 0) {
@@ -498,6 +517,152 @@ async function mockTauriInvoke(
         source.push(remote);
       }
       return source;
+    };
+    const hasOnlyKeys = (value: any, keys: string[]) =>
+      value && typeof value === "object" && !Array.isArray(value)
+      && Object.keys(value).every((key) => keys.includes(key));
+    const valueToComparable = (value: unknown) => String(value ?? "").trim().toLocaleLowerCase();
+    const itemSearchText = (item: any) => [
+      item.text,
+      item.title,
+      item.notes,
+      item.tags,
+      item.mime_primary,
+      item.content_kind,
+      item.context_search_text,
+    ].map((value) => String(value ?? "")).join(" ").toLocaleLowerCase();
+    const itemMetadataText = (item: any) => [
+      item.title,
+      item.notes,
+      item.tags,
+    ].map((value) => String(value ?? "")).join(" ").toLocaleLowerCase();
+    const itemHasValue = (item: any, field: string) => {
+      switch (field) {
+        case "text":
+          return Boolean(String(item.text ?? ""));
+        case "title":
+          return Boolean(String(item.title ?? "").trim());
+        case "notes":
+          return Boolean(String(item.notes ?? "").trim());
+        case "tags":
+          return Boolean(String(item.tags ?? "").trim());
+        case "metadata":
+          return Boolean(String(item.title ?? "").trim() || String(item.notes ?? "").trim() || String(item.tags ?? "").trim());
+        case "mime":
+          return Boolean(String(item.mime_primary ?? "").trim());
+        case "image":
+          return item.content_kind === "image";
+        case "blob":
+          return Boolean(item.blob_path || item.thumbnail_path || item.thumbnail_data_url);
+        default:
+          return false;
+      }
+    };
+    const descriptorMembership = (descriptor: any, sourceOverride: any[] | null = null) => {
+      const plan = descriptor?.plan;
+      if (
+        !descriptor
+        || descriptor.schemaVersion !== 1
+        || !hasOnlyKeys(plan, ["schemaVersion", "text", "filters", "sort", "limit"])
+        || plan.schemaVersion !== 1
+        || (plan.text !== undefined && !hasOnlyKeys(plan.text, ["all", "any", "phrases", "exclude"]))
+        || (plan.filters !== undefined && !hasOnlyKeys(plan.filters, [
+          "kind", "notKind", "mime", "notMime", "tags", "notTags", "has", "missing", "marked",
+          "title", "notTitle", "notes", "notNotes", "metadata", "notMetadata",
+        ]))
+        || (plan.sort !== undefined && (!Array.isArray(plan.sort) || plan.sort.some((sort: any) =>
+          !hasOnlyKeys(sort, ["field", "direction"])
+          || !["created", "lastUsed", "lastCopied"].includes(sort.field)
+          || !["asc", "desc"].includes(sort.direction),
+        )))
+        || (plan.limit !== undefined && plan.limit !== null && (!Number.isFinite(Number(plan.limit)) || Number(plan.limit) < 1))
+      ) {
+        return { supported: false, items: [] };
+      }
+      const text = plan.text ?? {};
+      const filters = plan.filters ?? {};
+      const arrays = [
+        text.all, text.any, text.phrases, text.exclude,
+        filters.kind, filters.notKind, filters.mime, filters.notMime,
+        filters.tags, filters.notTags, filters.has, filters.missing,
+        filters.title, filters.notTitle, filters.notes, filters.notNotes,
+        filters.metadata, filters.notMetadata,
+      ];
+      if (arrays.some((value) => value !== undefined && !Array.isArray(value))) {
+        return { supported: false, items: [] };
+      }
+      const knownKinds = ["text", "image", "html", "file", "unknown"];
+      const knownHas = ["text", "title", "notes", "tags", "metadata", "mime", "blob", "image"];
+      const knownMissing = ["title", "notes", "tags", "metadata", "mime", "blob"];
+      if (
+        (filters.kind ?? []).some((kind: any) => !knownKinds.includes(valueToComparable(kind)))
+        || (filters.notKind ?? []).some((kind: any) => !knownKinds.includes(valueToComparable(kind)))
+        || (filters.has ?? []).some((kind: any) => !knownHas.includes(valueToComparable(kind)))
+        || (filters.missing ?? []).some((kind: any) => !knownMissing.includes(valueToComparable(kind)))
+      ) {
+        return { supported: false, items: [] };
+      }
+      const matchesText = (item: any) => {
+        const haystack = itemSearchText(item);
+        const all = (text.all ?? []).map(valueToComparable);
+        const any = (text.any ?? []).map(valueToComparable);
+        const phrases = (text.phrases ?? []).map(valueToComparable);
+        const exclude = (text.exclude ?? []).map(valueToComparable);
+        return all.every((term: string) => haystack.includes(term))
+          && (any.length === 0 || any.some((term: string) => haystack.includes(term)))
+          && phrases.every((term: string) => haystack.includes(term))
+          && exclude.every((term: string) => !haystack.includes(term));
+      };
+      const matchesField = (item: any, field: string, terms: unknown[], negate = false) => {
+        if (terms.length === 0) {
+          return true;
+        }
+        const value = valueToComparable(
+          field === "title" ? item.title
+            : field === "notes" ? item.notes
+              : field === "metadata" ? itemMetadataText(item)
+                : item.tags,
+        );
+        const matches = terms.every((term) => value.includes(valueToComparable(term)));
+        return negate ? !matches : matches;
+      };
+      const source = (sourceOverride ?? findSourceItems()).filter((item: any) => {
+        const kind = valueToComparable(item.content_kind);
+        const mime = valueToComparable(item.mime_primary);
+        const marked = Boolean(item.is_marked ?? item.marked);
+        return matchesText(item)
+          && (filters.kind ?? []).every((candidate: any) => kind === valueToComparable(candidate))
+          && (filters.notKind ?? []).every((candidate: any) => kind !== valueToComparable(candidate))
+          && (filters.mime ?? []).every((candidate: any) => mime === valueToComparable(candidate))
+          && (filters.notMime ?? []).every((candidate: any) => mime !== valueToComparable(candidate))
+          && matchesField(item, "tags", filters.tags ?? [])
+          && matchesField(item, "tags", filters.notTags ?? [], true)
+          && matchesField(item, "title", filters.title ?? [])
+          && matchesField(item, "title", filters.notTitle ?? [], true)
+          && matchesField(item, "notes", filters.notes ?? [])
+          && matchesField(item, "notes", filters.notNotes ?? [], true)
+          && matchesField(item, "metadata", filters.metadata ?? [])
+          && matchesField(item, "metadata", filters.notMetadata ?? [], true)
+          && (filters.marked === undefined || marked === Boolean(filters.marked))
+          && (filters.has ?? []).every((field: any) => itemHasValue(item, valueToComparable(field)))
+          && (filters.missing ?? []).every((field: any) => !itemHasValue(item, valueToComparable(field)));
+      });
+      const sorted = [...source];
+      for (const sort of [...(plan.sort ?? [])].reverse()) {
+        const field = sort.field === "created"
+          ? "created_at_unix_ms"
+          : sort.field === "lastUsed"
+            ? "last_used_at_unix_ms"
+            : "last_copied_at_unix_ms";
+        const direction = sort.direction === "asc" ? 1 : -1;
+        sorted.sort((left: any, right: any) =>
+          (Number(left[field] ?? 0) - Number(right[field] ?? 0)) * direction,
+        );
+      }
+      const limit = plan.limit === undefined || plan.limit === null
+        ? null
+        : Math.min(Math.max(Math.round(Number(plan.limit)), 1), 100);
+      return { supported: true, items: limit === null ? sorted : sorted.slice(0, limit) };
     };
     const materializeFindItem = (item: any) => ({
       id: item.id,
@@ -923,9 +1088,14 @@ async function mockTauriInvoke(
               throw new Error("sessionInvalidated");
             }
             const needle = String(request.needle ?? "").trim();
+            const membership = descriptorMembership(descriptor);
+            if (!membership.supported) {
+              throw new Error("Find mock cannot evaluate the appliedDescriptor plan");
+            }
+            (window as any).__copicuTestFindMembershipIds = membership.items.map((item: any) => item.id);
             const occurrences: any[] = [];
             const matchesByItem = new Map<number, any>();
-            for (const item of findSourceItems()) {
+            for (const item of membership.items) {
               const fields = findFieldsForItem(item, needle).map((field: any) => ({
                 ...field,
                 ranges: field.ranges.map((range: any) => ({ ...range })),
@@ -1133,7 +1303,7 @@ async function mockTauriInvoke(
             }
             const aiMode = request.mode === "ai";
             const displayQuery = request.displayQuery ?? request.query ?? "";
-            const appliedDescriptor = request.appliedDescriptor ?? {
+            const appliedDescriptor = mockOptions.findAppliedDescriptor ?? request.appliedDescriptor ?? {
               schemaVersion: 1,
               displayQuery,
               effectiveQuery: request.query ?? "",
@@ -1144,6 +1314,12 @@ async function mockTauriInvoke(
             const includeCounts = request.includeCounts !== false;
             const interpretedQuery = aiMode ? "long" : request.query ?? "";
             const requestQuery = (aiMode ? interpretedQuery : request.query?.toLocaleLowerCase()) ?? query;
+            const descriptorResult = mockOptions.findAppliedDescriptor
+              ? descriptorMembership(appliedDescriptor, sourceItems)
+              : { supported: true, items: sourceItems };
+            if (!descriptorResult.supported) {
+              throw new Error("history mock cannot evaluate the appliedDescriptor plan");
+            }
             const queryTokens = (request.query ?? "").trim().split(/\s+/).filter(Boolean);
             const knownChip = (token: string) => /^(?:-?(?:tag|tags|kind|type|is|mime|has|meta|metadata|title|note|notes|ctx|context|app|program|process|window|domain|site|source|format|fmt|after|since|before|until|on):.+|#.+)$/i.test(token);
             const diagnostics = queryTokens.includes("kind:")
@@ -1165,6 +1341,8 @@ async function mockTauriInvoke(
             const includeContent = Boolean(request.includeContent);
             const filteredItems = diagnostics.length > 0
               ? []
+              : mockOptions.findAppliedDescriptor
+              ? descriptorResult.items
               : requestQuery
               ? sourceItems.filter((item: any) => {
                   if (requestQuery === "is:marked") {
@@ -1901,6 +2079,60 @@ test("Find consumes canonical Markdown segments for emphasis, links, comments, f
   }
   await page.keyboard.press("Escape");
   await expect(input).toBeHidden();
+});
+
+test("Find renders repeated reference Markdown alts without exposing definition URLs", async ({ page }) => {
+  await mockTauriInvoke(page, [findReferenceMarkdownFixture]);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { input } = await openFind(page, "receipt");
+  await waitForFindReady(page, "1 / 2");
+  await expect(page.locator(".markdown-image-frame")).toHaveCount(2);
+  await expect(page.locator(".markdown-image-alt .find-highlight")).toHaveCount(2);
+  await expect(page.locator(".markdown-image-alt .find-highlight[aria-current='true']")).toHaveCount(1);
+  await expect(page.locator(`[data-find-field="imageAlt"] .find-highlight[data-find-segment="0"]`)).toHaveCount(1);
+  await expect(page.locator(`[data-find-field="imageAlt"] .find-highlight[data-find-segment="1"]`)).toHaveCount(1);
+  await expect(page.locator(".markdown-preview")).not.toContainText("secret.example");
+  await expect(page.locator(".markdown-preview")).not.toContainText("[img]:");
+  await input.fill("secret.example");
+  await expect(page.locator("#find-status")).toHaveText("0 / 0");
+  await expect(page.getByTestId("find-bar")).toHaveAttribute("data-find-status", "empty");
+});
+
+test("Find uses the applied descriptor membership and limit before numbering matches", async ({ page }) => {
+  const remoteItem = {
+    ...findFixtureHistory[1],
+    id: 7998,
+    text: "invoice remote outside limit",
+    normalized_hash: "find-remote-outside-limit",
+  };
+  const appliedDescriptor = {
+    schemaVersion: 1,
+    displayQuery: "invoice",
+    effectiveQuery: "invoice",
+    mode: "structured",
+    plan: {
+      schemaVersion: 1,
+      text: { all: ["invoice"], any: [], phrases: [], exclude: [] },
+      filters: { kind: ["text"] },
+      sort: [],
+      limit: 1,
+    },
+    fingerprint: "find-filter-limit-fixture",
+  };
+  await mockTauriInvoke(page, findFixtureHistory, null, {
+    findRemoteItem: remoteItem,
+    findAppliedDescriptor: appliedDescriptor,
+  });
+  await gotoShell(page);
+  await expect(page.locator("#history-item-7004")).toBeVisible();
+  await expect(page.locator("#history-item-7998")).toHaveCount(0);
+  const { input } = await openFind(page, "invoice");
+  await waitForFindReady(page, "1 / 2");
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestFindMembershipIds)).toEqual([7004]);
+  await input.press("Enter");
+  await expect(page.locator("#find-status")).toHaveText("2 / 2");
+  expect(await page.evaluate(() => (window as any).__copicuTestFindTargets.at(-1)?.target?.itemId)).toBe(7004);
 });
 
 test("Find rebase keeps the nearest anchor through edit and advances on delete", async ({ page }) => {

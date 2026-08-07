@@ -1818,14 +1818,18 @@ mod tests {
         let source = vec![item(
             1,
             "text",
-            "![receipt][img]\n   [img]: https://secret.example/account",
+            "![receipt][img] and ![receipt][img]\n   [img]: <https://secret.example/account> \"private title\"",
         )];
         let cancelled = AtomicBool::new(false);
         let (secret, _) = build_occurrence_index(&source, "secret.example", &cancelled).unwrap();
         assert!(secret.is_empty());
         let (alt, _) = build_occurrence_index(&source, "receipt", &cancelled).unwrap();
-        assert_eq!(alt.len(), 1);
-        assert_eq!(alt[0].field, FindField::ImageAlt);
+        assert_eq!(alt.len(), 2);
+        assert!(alt
+            .iter()
+            .all(|occurrence| occurrence.field == FindField::ImageAlt));
+        assert_eq!(alt[0].segment, 0);
+        assert_eq!(alt[1].segment, 1);
     }
 
     #[test]

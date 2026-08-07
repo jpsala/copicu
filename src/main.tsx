@@ -8335,12 +8335,10 @@ function hasMetadata(item: HistoryItem) {
 }
 
 function markdownImages(text: string): MarkdownImage[] {
-  const matches = text.matchAll(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g);
-  return Array.from(matches, (match) => ({
-    alt: match[1] ?? "",
-    src: normalizeMarkdownImageSrc(match[2] ?? ""),
-    raw: match[0],
-  })).filter((image) => image.src.length > 0);
+  return markdownSegments(text)
+    .filter((segment): segment is Extract<MarkdownSegment, { kind: "image" }> => segment.kind === "image")
+    .map((segment) => segment.image)
+    .filter((image) => image.src.length > 0);
 }
 
 function normalizeMarkdownImageSrc(src: string) {
@@ -8540,26 +8538,39 @@ function markdownSegments(
   canonicalImageSegments: FindFieldMatches["segments"] = [],
 ): MarkdownSegment[] {
   const rawSegments: MarkdownSegment[] = [];
-  const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const definitions = markdownReferenceDefinitionsForUi(text);
   let cursor = 0;
-  for (const imageMatch of text.matchAll(imagePattern)) {
-    const raw = imageMatch[0] ?? "";
-    const start = imageMatch.index ?? cursor;
-    if (start > cursor) {
-      rawSegments.push({ kind: "text", text: text.slice(cursor, start) });
+  let textStart = 0;
+  while (cursor < text.length) {
+    const definition = markdownReferenceDefinitionAt(text, cursor);
+    if (definition) {
+      if (cursor > textStart) {
+        rawSegments.push({ kind: "text", text: text.slice(textStart, cursor) });
+      }
+      cursor = definition.end;
+      textStart = cursor;
+      continue;
     }
-    rawSegments.push({
-      kind: "image",
-      image: {
-        alt: imageMatch[1] ?? "",
-        src: normalizeMarkdownImageSrc(imageMatch[2] ?? ""),
-        raw,
-      },
-    });
-    cursor = start + raw.length;
+
+    const image = markdownImageAt(text, cursor, definitions);
+    if (image) {
+      if (cursor > textStart) {
+        rawSegments.push({ kind: "text", text: text.slice(textStart, cursor) });
+      }
+      rawSegments.push({ kind: "image", image: image.image });
+      cursor = image.end;
+      textStart = cursor;
+      continue;
+    }
+
+    const codePoint = text.codePointAt(cursor);
+    if (codePoint === undefined) {
+      break;
+    }
+    cursor += String.fromCodePoint(codePoint).length;
   }
-  if (cursor < text.length) {
-    rawSegments.push({ kind: "text", text: text.slice(cursor) });
+  if (textStart < text.length) {
+    rawSegments.push({ kind: "text", text: text.slice(textStart) });
   }
   if (canonicalSegments.length === 0 && canonicalImageSegments.length === 0) {
     return rawSegments;
@@ -8605,6 +8616,132 @@ function markdownSegments(
     }
   }
   return mappedSegments;
+}
+
+type MarkdownReferenceDefinition = {
+  label: string;
+  src: string;
+  end: number;
+};
+
+type MarkdownImageProjection = {
+  image: MarkdownImage;
+  end: number;
+};
+
+function markdownReferenceDefinitionsForUi(source: string) {
+  const definitions = new Map<string, string>();
+  let cursor = 0;
+  while (cursor < source.length) {
+    const definition = markdownReferenceDefinitionAt(source, cursor);
+    if (definition) {
+      definitions.set(markdownReferenceLabelKey(definition.label), definition.src);
+      cursor = definition.end;
+      continue;
+    }
+    const newline = source.indexOf("\n", cursor);
+    cursor = newline < 0 ? source.length : newline + 1;
+  }
+  return definitions;
+}
+
+function markdownReferenceDefinitionAt(source: string, cursor: number): MarkdownReferenceDefinition | null {
+  if (cursor > 0 && source[cursor - 1] !== "\n") {
+    return null;
+  }
+  let labelStart = cursor;
+  let indentation = 0;
+  while (labelStart < source.length && indentation < 4 && (source[labelStart] === " " || source[labelStart] === "\t")) {
+    labelStart += 1;
+    indentation += 1;
+  }
+  if (indentation > 3 || source[labelStart] !== "[") {
+    return null;
+  }
+  const labelEnd = markdownClosingBracket(source, labelStart + 1);
+  if (labelEnd === null) {
+    return null;
+  }
+  let colon = labelEnd + 1;
+  while (colon < source.length && /\s/.test(source[colon] ?? "")) {
+    colon += 1;
+  }
+  if (source[colon] !== ":") {
+    return null;
+  }
+  const newline = source.indexOf("\n", colon + 1);
+  const lineEnd = newline < 0 ? source.length : newline;
+  const rawDestination = source.slice(colon + 1, lineEnd).trim();
+  return {
+    label: source.slice(labelStart + 1, labelEnd),
+    src: markdownReferenceDestination(rawDestination),
+    end: newline < 0 ? source.length : newline + 1,
+  };
+}
+
+function markdownReferenceDestination(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.startsWith("<")) {
+    const close = trimmed.indexOf(">");
+    return normalizeMarkdownImageSrc(close < 0 ? trimmed : trimmed.slice(1, close));
+  }
+  return normalizeMarkdownImageSrc(trimmed.split(/\s+/, 1)[0] ?? "");
+}
+
+function markdownReferenceLabelKey(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+}
+
+function markdownImageAt(
+  source: string,
+  cursor: number,
+  definitions: Map<string, string>,
+): MarkdownImageProjection | null {
+  if (!source.startsWith("![", cursor)) {
+    return null;
+  }
+  const labelStart = cursor + 2;
+  const labelEnd = markdownClosingBracket(source, labelStart);
+  if (labelEnd === null) {
+    return null;
+  }
+  const alt = source.slice(labelStart, labelEnd);
+  const afterLabel = labelEnd + 1;
+  let end = afterLabel;
+  let src = "";
+  if (source[afterLabel] === "(") {
+    const destinationEnd = markdownDestinationEnd(source, afterLabel + 1);
+    if (destinationEnd === null) {
+      return null;
+    }
+    src = markdownReferenceDestination(source.slice(afterLabel + 1, destinationEnd));
+    end = destinationEnd + 1;
+  } else if (source[afterLabel] === "[") {
+    const referenceEnd = markdownClosingBracket(source, afterLabel + 1);
+    if (referenceEnd === null) {
+      return null;
+    }
+    const reference = source.slice(afterLabel + 1, referenceEnd);
+    src = definitions.get(markdownReferenceLabelKey(reference || alt)) ?? "";
+    end = referenceEnd + 1;
+  } else {
+    src = definitions.get(markdownReferenceLabelKey(alt)) ?? "";
+    end = labelEnd + 1;
+  }
+  if (!src) {
+    return null;
+  }
+  return {
+    image: {
+      alt,
+      src,
+      raw: source.slice(cursor, end),
+    },
+    end,
+  };
 }
 
 function projectMarkdownDisplayText(source: string): string {
