@@ -178,12 +178,16 @@ const findFixtureHistory = [
     ...syntheticLongHistory[1],
     id: 7001,
     text: "before NEEDLE after NEEDLE",
+    created_at_unix_ms: 1_800_000_000_004,
+    last_copied_at_unix_ms: 1_800_000_000_004,
     normalized_hash: "find-fixture-1",
   },
   {
     ...syntheticLongHistory[1],
     id: 7002,
     text: "NEEDLE middle",
+    created_at_unix_ms: 1_800_000_000_003,
+    last_copied_at_unix_ms: 1_800_000_000_003,
     normalized_hash: "find-fixture-2",
   },
   {
@@ -191,12 +195,16 @@ const findFixtureHistory = [
     id: 7003,
     text: "anchor content",
     title: "NEEDLE title",
+    created_at_unix_ms: 1_800_000_000_002,
+    last_copied_at_unix_ms: 1_800_000_000_002,
     normalized_hash: "find-fixture-3",
   },
   {
     ...syntheticLongHistory[1],
     id: 7004,
     text: "mixed Invoice before ![receipt alt](copicu://receipt.png) after invoice",
+    created_at_unix_ms: 1_800_000_000_001,
+    last_copied_at_unix_ms: 1_800_000_000_001,
     normalized_hash: "find-fixture-markdown",
   },
 ];
@@ -259,8 +267,69 @@ const findLargeRebaseHistory = Array.from({ length: 2_000 }, (_, index) => ({
   ...syntheticLongHistory[1],
   id: 8_000 + index,
   text: `NEEDLE large fixture ${index}`,
+  created_at_unix_ms: 1_800_000_010_000 - index,
+  last_copied_at_unix_ms: 1_800_000_010_000 - index,
   normalized_hash: `find-large-rebase-${index}`,
 }));
+
+const makeCanonicalSearchPlan = (overrides: {
+  text?: Partial<{ all: string[]; any: string[]; phrases: string[]; exclude: string[] }> | null;
+  filters?: Partial<Record<string, unknown>> | null;
+  sort?: Array<{ field: "created" | "lastUsed" | "lastCopied"; direction: "asc" | "desc" }>;
+  limit?: number | null;
+} = { }) => ({
+  schemaVersion: 1,
+  text: overrides.text === null
+    ? null
+    : {
+        all: [],
+        any: [],
+        phrases: [],
+        exclude: [],
+        ...overrides.text,
+      },
+  filters: overrides.filters === null
+    ? null
+    : {
+        kind: [],
+        notKind: [],
+        mime: [],
+        notMime: [],
+        tags: [],
+        notTags: [],
+        has: [],
+        missing: [],
+        marked: null,
+        date: [],
+        sourceApp: [],
+        notSourceApp: [],
+        windowTitle: [],
+        notWindowTitle: [],
+        domain: [],
+        notDomain: [],
+        sourceKind: [],
+        clipboardFormat: [],
+        metadata: [],
+        notMetadata: [],
+        title: [],
+        notTitle: [],
+        notes: [],
+        notNotes: [],
+        context: [],
+        notContext: [],
+        ...overrides.filters,
+      },
+  sort: overrides.sort ?? [],
+  limit: overrides.limit ?? null,
+});
+
+const sha256Hex = async (value: string) => {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
+const descriptorFingerprint = (mode: "structured" | "ai", plan: unknown) =>
+  sha256Hex(JSON.stringify({ schemaVersion: 1, mode, plan }));
 
 type MockTauriOptions = {
   historySearchDelayMs?: number;
@@ -558,47 +627,210 @@ async function mockTauriInvoke(
           return false;
       }
     };
+    const searchPlanFilterKeys = [
+      "kind", "notKind", "mime", "notMime", "tags", "notTags", "has", "missing", "marked", "date",
+      "sourceApp", "notSourceApp", "windowTitle", "notWindowTitle", "domain", "notDomain", "sourceKind",
+      "clipboardFormat", "metadata", "notMetadata", "title", "notTitle", "notes", "notNotes", "context",
+      "notContext",
+    ];
+    const searchPlanFilterArrayKeys = searchPlanFilterKeys.filter((key) => key !== "marked" && key !== "date");
+    const unsupportedFindFilterKeys = [
+      "date", "sourceApp", "notSourceApp", "windowTitle", "notWindowTitle", "domain", "notDomain",
+      "sourceKind", "clipboardFormat", "context", "notContext",
+    ];
+    const searchPlanDateFields = ["created", "lastUsed", "lastCopied"];
+    const searchPlanDateOps = ["after", "before", "on", "between"];
+    const searchPlanRelativeUnits = ["minute", "hour", "day", "week", "month"];
+    const normalizeStringArray = (value: any, fallback: string[] = []) => {
+      const source = value === undefined ? fallback : value;
+      return Array.isArray(source) && source.every((entry) => typeof entry === "string")
+        ? [...source]
+        : null;
+    };
+    const normalizeDateFilter = (value: any) => {
+      if (!hasOnlyKeys(value, ["field", "op", "value", "endValue", "relative"])
+        || !searchPlanDateFields.includes(value.field)
+        || !searchPlanDateOps.includes(value.op)
+        || (value.value !== undefined && value.value !== null && typeof value.value !== "string")
+        || (value.endValue !== undefined && value.endValue !== null && typeof value.endValue !== "string")
+      ) {
+        return null;
+      }
+      let relative = null;
+      if (value.relative !== undefined && value.relative !== null) {
+        if (!hasOnlyKeys(value.relative, ["amount", "unit"])
+          || !Number.isInteger(value.relative.amount)
+          || !searchPlanRelativeUnits.includes(value.relative.unit)
+        ) {
+          return null;
+        }
+        relative = { amount: value.relative.amount, unit: value.relative.unit };
+      }
+      return {
+        field: value.field,
+        op: value.op,
+        value: value.value ?? null,
+        endValue: value.endValue ?? null,
+        relative,
+      };
+    };
+    const normalizeSearchPlan = (rawPlan: any) => {
+      if (!hasOnlyKeys(rawPlan, ["schemaVersion", "text", "filters", "sort", "limit"])
+        || rawPlan.schemaVersion !== 1
+      ) {
+        return null;
+      }
+      let text = null;
+      if (rawPlan.text !== undefined && rawPlan.text !== null) {
+        if (!hasOnlyKeys(rawPlan.text, ["all", "any", "phrases", "exclude"])) {
+          return null;
+        }
+        const all = normalizeStringArray(rawPlan.text.all);
+        const any = normalizeStringArray(rawPlan.text.any);
+        const phrases = normalizeStringArray(rawPlan.text.phrases);
+        const exclude = normalizeStringArray(rawPlan.text.exclude);
+        if (!all || !any || !phrases || !exclude) {
+          return null;
+        }
+        text = { all, any, phrases, exclude };
+      }
+
+      let filters = null;
+      if (rawPlan.filters !== undefined && rawPlan.filters !== null) {
+        if (!hasOnlyKeys(rawPlan.filters, searchPlanFilterKeys)) {
+          return null;
+        }
+        const normalizedArrays = Object.fromEntries(searchPlanFilterArrayKeys.map((key) => {
+          const value = normalizeStringArray(rawPlan.filters[key]);
+          return [key, value];
+        }));
+        if (Object.values(normalizedArrays).some((value) => !value)) {
+          return null;
+        }
+        let marked = null;
+        if (rawPlan.filters.marked !== undefined && rawPlan.filters.marked !== null) {
+          if (typeof rawPlan.filters.marked !== "boolean") {
+            return null;
+          }
+          marked = rawPlan.filters.marked;
+        }
+        const dateSource = rawPlan.filters.date === undefined ? [] : rawPlan.filters.date;
+        if (!Array.isArray(dateSource)) {
+          return null;
+        }
+        const date = dateSource.map(normalizeDateFilter);
+        if (date.some((value) => !value)) {
+          return null;
+        }
+        filters = {
+          kind: normalizedArrays.kind,
+          notKind: normalizedArrays.notKind,
+          mime: normalizedArrays.mime,
+          notMime: normalizedArrays.notMime,
+          tags: normalizedArrays.tags,
+          notTags: normalizedArrays.notTags,
+          has: normalizedArrays.has,
+          missing: normalizedArrays.missing,
+          marked,
+          date,
+          sourceApp: normalizedArrays.sourceApp,
+          notSourceApp: normalizedArrays.notSourceApp,
+          windowTitle: normalizedArrays.windowTitle,
+          notWindowTitle: normalizedArrays.notWindowTitle,
+          domain: normalizedArrays.domain,
+          notDomain: normalizedArrays.notDomain,
+          sourceKind: normalizedArrays.sourceKind,
+          clipboardFormat: normalizedArrays.clipboardFormat,
+          metadata: normalizedArrays.metadata,
+          notMetadata: normalizedArrays.notMetadata,
+          title: normalizedArrays.title,
+          notTitle: normalizedArrays.notTitle,
+          notes: normalizedArrays.notes,
+          notNotes: normalizedArrays.notNotes,
+          context: normalizedArrays.context,
+          notContext: normalizedArrays.notContext,
+        };
+      }
+
+      const sortSource = rawPlan.sort === undefined ? [] : rawPlan.sort;
+      if (!Array.isArray(sortSource)) {
+        return null;
+      }
+      const sort = sortSource.map((entry: any) => {
+        if (!hasOnlyKeys(entry, ["field", "direction"])
+          || !["created", "lastUsed", "lastCopied"].includes(entry.field)
+          || !["asc", "desc"].includes(entry.direction)
+        ) {
+          return null;
+        }
+        return { field: entry.field, direction: entry.direction };
+      });
+      if (sort.some((entry) => !entry)) {
+        return null;
+      }
+      const limit = rawPlan.limit === undefined || rawPlan.limit === null ? null : rawPlan.limit;
+      if (limit !== null && (!Number.isInteger(limit) || limit < 1)) {
+        return null;
+      }
+      return { schemaVersion: 1, text, filters, sort, limit };
+    };
+    const canonicalDescriptorFingerprint = async (descriptor: any, plan: any) => {
+      const basis = JSON.stringify({
+        schemaVersion: descriptor.schemaVersion,
+        mode: descriptor.mode,
+        plan,
+      });
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(basis));
+      return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    };
+    const canonicalizeDescriptor = async (descriptor: any) => {
+      if (!hasOnlyKeys(descriptor, ["schemaVersion", "displayQuery", "effectiveQuery", "mode", "plan", "fingerprint"])
+        || descriptor.schemaVersion !== 1
+        || typeof descriptor.displayQuery !== "string"
+        || typeof descriptor.effectiveQuery !== "string"
+        || !["structured", "ai"].includes(descriptor.mode)
+        || typeof descriptor.fingerprint !== "string"
+      ) {
+        return { supported: false, descriptor: null };
+      }
+      const plan = normalizeSearchPlan(descriptor.plan);
+      if (!plan) {
+        return { supported: false, descriptor: null };
+      }
+      const fingerprint = await canonicalDescriptorFingerprint(descriptor, plan);
+      if (descriptor.fingerprint !== fingerprint) {
+        return { supported: false, descriptor: null };
+      }
+      return {
+        supported: true,
+        descriptor: { ...descriptor, plan, fingerprint },
+      };
+    };
     const descriptorMembership = (descriptor: any, sourceOverride: any[] | null = null) => {
-      const plan = descriptor?.plan;
+      const plan = normalizeSearchPlan(descriptor?.plan);
       if (
         !descriptor
         || descriptor.schemaVersion !== 1
-        || !hasOnlyKeys(plan, ["schemaVersion", "text", "filters", "sort", "limit"])
-        || plan.schemaVersion !== 1
-        || (plan.text !== undefined && !hasOnlyKeys(plan.text, ["all", "any", "phrases", "exclude"]))
-        || (plan.filters !== undefined && !hasOnlyKeys(plan.filters, [
-          "kind", "notKind", "mime", "notMime", "tags", "notTags", "has", "missing", "marked",
-          "title", "notTitle", "notes", "notNotes", "metadata", "notMetadata",
-        ]))
-        || (plan.sort !== undefined && (!Array.isArray(plan.sort) || plan.sort.some((sort: any) =>
-          !hasOnlyKeys(sort, ["field", "direction"])
-          || !["created", "lastUsed", "lastCopied"].includes(sort.field)
-          || !["asc", "desc"].includes(sort.direction),
-        )))
-        || (plan.limit !== undefined && plan.limit !== null && (!Number.isFinite(Number(plan.limit)) || Number(plan.limit) < 1))
+        || !plan
       ) {
         return { supported: false, items: [] };
       }
-      const text = plan.text ?? {};
-      const filters = plan.filters ?? {};
-      const arrays = [
-        text.all, text.any, text.phrases, text.exclude,
-        filters.kind, filters.notKind, filters.mime, filters.notMime,
-        filters.tags, filters.notTags, filters.has, filters.missing,
-        filters.title, filters.notTitle, filters.notes, filters.notNotes,
-        filters.metadata, filters.notMetadata,
-      ];
-      if (arrays.some((value) => value !== undefined && !Array.isArray(value))) {
+      const text = plan.text ?? { all: [], any: [], phrases: [], exclude: [] };
+      const filters = plan.filters ?? null;
+      if (filters && unsupportedFindFilterKeys.some((key) => {
+        const value = filters[key];
+        return Array.isArray(value) ? value.length > 0 : value !== null && value !== undefined;
+      })) {
         return { supported: false, items: [] };
       }
       const knownKinds = ["text", "image", "html", "file", "unknown"];
       const knownHas = ["text", "title", "notes", "tags", "metadata", "mime", "blob", "image"];
       const knownMissing = ["title", "notes", "tags", "metadata", "mime", "blob"];
       if (
-        (filters.kind ?? []).some((kind: any) => !knownKinds.includes(valueToComparable(kind)))
-        || (filters.notKind ?? []).some((kind: any) => !knownKinds.includes(valueToComparable(kind)))
-        || (filters.has ?? []).some((kind: any) => !knownHas.includes(valueToComparable(kind)))
-        || (filters.missing ?? []).some((kind: any) => !knownMissing.includes(valueToComparable(kind)))
+        (filters?.kind ?? []).some((kind: any) => !knownKinds.includes(valueToComparable(kind)))
+        || (filters?.notKind ?? []).some((kind: any) => !knownKinds.includes(valueToComparable(kind)))
+        || (filters?.has ?? []).some((kind: any) => !knownHas.includes(valueToComparable(kind)))
+        || (filters?.missing ?? []).some((kind: any) => !knownMissing.includes(valueToComparable(kind)))
       ) {
         return { supported: false, items: [] };
       }
@@ -624,46 +856,62 @@ async function mockTauriInvoke(
                 : item.tags,
         );
         const matches = terms.every((term) => value.includes(valueToComparable(term)));
-        return negate ? !matches : matches;
+        return negate
+          ? terms.every((term) => !value.includes(valueToComparable(term)))
+          : matches;
+      };
+      const matchesMime = (actual: string, expected: unknown) => {
+        const candidate = valueToComparable(expected);
+        return candidate.endsWith("/*")
+          ? actual.startsWith(candidate.slice(0, -1))
+          : actual === candidate;
       };
       const source = (sourceOverride ?? findSourceItems()).filter((item: any) => {
         const kind = valueToComparable(item.content_kind);
         const mime = valueToComparable(item.mime_primary);
         const marked = Boolean(item.is_marked ?? item.marked);
         return matchesText(item)
-          && (filters.kind ?? []).every((candidate: any) => kind === valueToComparable(candidate))
-          && (filters.notKind ?? []).every((candidate: any) => kind !== valueToComparable(candidate))
-          && (filters.mime ?? []).every((candidate: any) => mime === valueToComparable(candidate))
-          && (filters.notMime ?? []).every((candidate: any) => mime !== valueToComparable(candidate))
-          && matchesField(item, "tags", filters.tags ?? [])
-          && matchesField(item, "tags", filters.notTags ?? [], true)
-          && matchesField(item, "title", filters.title ?? [])
-          && matchesField(item, "title", filters.notTitle ?? [], true)
-          && matchesField(item, "notes", filters.notes ?? [])
-          && matchesField(item, "notes", filters.notNotes ?? [], true)
-          && matchesField(item, "metadata", filters.metadata ?? [])
-          && matchesField(item, "metadata", filters.notMetadata ?? [], true)
-          && (filters.marked === undefined || marked === Boolean(filters.marked))
-          && (filters.has ?? []).every((field: any) => itemHasValue(item, valueToComparable(field)))
-          && (filters.missing ?? []).every((field: any) => !itemHasValue(item, valueToComparable(field)));
+          && (filters?.kind ?? []).every((candidate: any) => kind === valueToComparable(candidate))
+          && (filters?.notKind ?? []).every((candidate: any) => kind !== valueToComparable(candidate))
+          && (filters?.mime ?? []).every((candidate: any) => matchesMime(mime, candidate))
+          && (filters?.notMime ?? []).every((candidate: any) => !matchesMime(mime, candidate))
+          && matchesField(item, "tags", filters?.tags ?? [])
+          && matchesField(item, "tags", filters?.notTags ?? [], true)
+          && matchesField(item, "title", filters?.title ?? [])
+          && matchesField(item, "title", filters?.notTitle ?? [], true)
+          && matchesField(item, "notes", filters?.notes ?? [])
+          && matchesField(item, "notes", filters?.notNotes ?? [], true)
+          && matchesField(item, "metadata", filters?.metadata ?? [])
+          && matchesField(item, "metadata", filters?.notMetadata ?? [], true)
+          && (filters?.marked === null || filters?.marked === undefined || marked === Boolean(filters.marked))
+          && (filters?.has ?? []).every((field: any) => itemHasValue(item, valueToComparable(field)))
+          && (filters?.missing ?? []).every((field: any) => !itemHasValue(item, valueToComparable(field)));
       });
       const sorted = [...source];
-      for (const sort of [...(plan.sort ?? [])].reverse()) {
-        const field = sort.field === "created"
-          ? "created_at_unix_ms"
-          : sort.field === "lastUsed"
-            ? "last_used_at_unix_ms"
-            : "last_copied_at_unix_ms";
+      const sorts = plan.sort.length > 0
+        ? plan.sort
+        : [{ field: "lastCopied", direction: "desc" }];
+      const sortValue = (item: any, field: string) => Number(
+        field === "created"
+          ? item.created_at_unix_ms ?? 0
+          : field === "lastUsed"
+            ? item.last_used_at_unix_ms ?? 0
+            : item.last_copied_at_unix_ms ?? item.created_at_unix_ms ?? 0,
+      );
+      for (const sort of [...sorts].reverse()) {
         const direction = sort.direction === "asc" ? 1 : -1;
-        sorted.sort((left: any, right: any) =>
-          (Number(left[field] ?? 0) - Number(right[field] ?? 0)) * direction,
-        );
+        sorted.sort((left: any, right: any) => {
+          const difference = (sortValue(left, sort.field) - sortValue(right, sort.field)) * direction;
+          return difference !== 0 ? difference : Number(right.id ?? 0) - Number(left.id ?? 0);
+        });
       }
-      const limit = plan.limit === undefined || plan.limit === null
+      const limit = plan.limit === null
         ? null
-        : Math.min(Math.max(Math.round(Number(plan.limit)), 1), 100);
+        : Math.min(Math.max(plan.limit, 1), 100);
       return { supported: true, items: limit === null ? sorted : sorted.slice(0, limit) };
     };
+    (window as any).__copicuTestDescriptorMembership = (descriptor: any, source?: any[]) =>
+      descriptorMembership(descriptor, source ?? null);
     const materializeFindItem = (item: any) => ({
       id: item.id,
       contentKind: item.content_kind ?? "text",
@@ -1065,9 +1313,13 @@ async function mockTauriInvoke(
             const mockOptions = (window as any).__copicuTestMockOptions ?? {};
             const expectedDescriptor = (window as any).__copicuTestAppliedDescriptor;
             const descriptor = request.appliedDescriptor;
+            const canonicalDescriptor = descriptor ? await canonicalizeDescriptor(descriptor) : null;
             if (
               !descriptor
               || !expectedDescriptor
+              || !canonicalDescriptor?.supported
+              || !canonicalDescriptor.descriptor
+              || JSON.stringify(descriptor.plan) !== JSON.stringify(canonicalDescriptor.descriptor.plan)
               || descriptor.schemaVersion !== expectedDescriptor.schemaVersion
               || descriptor.fingerprint !== expectedDescriptor.fingerprint
               || descriptor.effectiveQuery !== expectedDescriptor.effectiveQuery
@@ -1303,14 +1555,33 @@ async function mockTauriInvoke(
             }
             const aiMode = request.mode === "ai";
             const displayQuery = request.displayQuery ?? request.query ?? "";
-            const appliedDescriptor = mockOptions.findAppliedDescriptor ?? request.appliedDescriptor ?? {
-              schemaVersion: 1,
-              displayQuery,
-              effectiveQuery: request.query ?? "",
-              mode: aiMode ? "ai" : "structured",
-              plan: request.plan ?? { schemaVersion: 1, filters: {} },
-              fingerprint: `synthetic:${aiMode ? "ai" : "structured"}:${displayQuery}:${request.query ?? ""}`,
-            };
+            let descriptorInput = mockOptions.findAppliedDescriptor ?? request.appliedDescriptor;
+            if (!descriptorInput) {
+              const fallbackPlan = normalizeSearchPlan(request.plan ?? {
+                schemaVersion: 1,
+                text: null,
+                filters: null,
+                sort: [],
+                limit: null,
+              });
+              if (!fallbackPlan) {
+                throw new Error("history mock cannot evaluate the appliedDescriptor plan");
+              }
+              descriptorInput = {
+                schemaVersion: 1,
+                displayQuery,
+                effectiveQuery: request.query ?? "",
+                mode: aiMode ? "ai" : "structured",
+                plan: fallbackPlan,
+                fingerprint: "",
+              };
+              descriptorInput.fingerprint = await canonicalDescriptorFingerprint(descriptorInput, fallbackPlan);
+            }
+            const canonicalDescriptor = await canonicalizeDescriptor(descriptorInput);
+            if (!canonicalDescriptor.supported || !canonicalDescriptor.descriptor) {
+              throw new Error("history mock cannot evaluate the appliedDescriptor plan");
+            }
+            const appliedDescriptor = canonicalDescriptor.descriptor;
             const includeCounts = request.includeCounts !== false;
             const interpretedQuery = aiMode ? "long" : request.query ?? "";
             const requestQuery = (aiMode ? interpretedQuery : request.query?.toLocaleLowerCase()) ?? query;
@@ -2104,21 +2375,22 @@ test("Find uses the applied descriptor membership and limit before numbering mat
     ...findFixtureHistory[1],
     id: 7998,
     text: "invoice remote outside limit",
+    created_at_unix_ms: 1_800_000_000_000,
+    last_copied_at_unix_ms: 1_800_000_000_000,
     normalized_hash: "find-remote-outside-limit",
   };
+  const plan = makeCanonicalSearchPlan({
+    text: { all: ["invoice"] },
+    filters: { kind: ["text"] },
+    limit: 1,
+  });
   const appliedDescriptor = {
     schemaVersion: 1,
     displayQuery: "invoice",
     effectiveQuery: "invoice",
     mode: "structured",
-    plan: {
-      schemaVersion: 1,
-      text: { all: ["invoice"], any: [], phrases: [], exclude: [] },
-      filters: { kind: ["text"] },
-      sort: [],
-      limit: 1,
-    },
-    fingerprint: "find-filter-limit-fixture",
+    plan,
+    fingerprint: await descriptorFingerprint("structured", plan),
   };
   await mockTauriInvoke(page, findFixtureHistory, null, {
     findRemoteItem: remoteItem,
@@ -2126,6 +2398,9 @@ test("Find uses the applied descriptor membership and limit before numbering mat
   });
   await gotoShell(page);
   await expect(page.locator("#history-item-7004")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuTestAppliedDescriptor.fingerprint))
+    .toBe(appliedDescriptor.fingerprint);
+  expect(appliedDescriptor.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   await expect(page.locator("#history-item-7998")).toHaveCount(0);
   const { input } = await openFind(page, "invoice");
   await waitForFindReady(page, "1 / 2");
@@ -2133,6 +2408,101 @@ test("Find uses the applied descriptor membership and limit before numbering mat
   await input.press("Enter");
   await expect(page.locator("#find-status")).toHaveText("2 / 2");
   expect(await page.evaluate(() => (window as any).__copicuTestFindTargets.at(-1)?.target?.itemId)).toBe(7004);
+});
+
+test("descriptor mock supports wildcard MIME and conjunctive exact negations", async ({ page }) => {
+  const descriptorItems = [
+    {
+      ...findFixtureHistory[1],
+      id: 8301,
+      text: "invoice image tied low id",
+      mime_primary: "image/png",
+      created_at_unix_ms: 1_900_000_000_002,
+      last_copied_at_unix_ms: 1_900_000_000_002,
+    },
+    {
+      ...findFixtureHistory[1],
+      id: 8302,
+      text: "invoice excluded svg",
+      mime_primary: "image/svg+xml",
+      created_at_unix_ms: 1_900_000_000_003,
+      last_copied_at_unix_ms: 1_900_000_000_003,
+    },
+    {
+      ...findFixtureHistory[1],
+      id: 8303,
+      text: "invoice image tied high id",
+      mime_primary: "image/jpeg",
+      created_at_unix_ms: 1_900_000_000_002,
+      last_copied_at_unix_ms: 1_900_000_000_002,
+    },
+    {
+      ...findFixtureHistory[1],
+      id: 8304,
+      text: "invoice plain text",
+      mime_primary: "text/plain",
+      created_at_unix_ms: 1_900_000_000_001,
+      last_copied_at_unix_ms: 1_900_000_000_001,
+    },
+  ];
+  const plan = makeCanonicalSearchPlan({
+    text: { all: ["invoice"] },
+    filters: {
+      mime: ["image/*"],
+      notMime: ["image/svg+xml", "image/gif"],
+    },
+    limit: 2,
+  });
+  const appliedDescriptor = {
+    schemaVersion: 1,
+    displayQuery: "invoice",
+    effectiveQuery: "invoice",
+    mode: "structured",
+    plan,
+    fingerprint: await descriptorFingerprint("structured", plan),
+  };
+  await mockTauriInvoke(page, descriptorItems, null, { findAppliedDescriptor: appliedDescriptor });
+  await gotoShell(page);
+  await expect(page.locator("#history-item-8301")).toBeVisible();
+  await expect(page.locator("#history-item-8303")).toBeVisible();
+  await expect(page.locator("#history-item-8302")).toHaveCount(0);
+  await expect(page.locator("#history-item-8304")).toHaveCount(0);
+  const { input } = await openFind(page, "invoice");
+  await waitForFindReady(page, "1 / 2");
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestFindMembershipIds)).toEqual([8303, 8301]);
+  await expect(input).toBeVisible();
+});
+
+test("descriptor mock fails closed for unmodeled filter shapes", async ({ page }) => {
+  await mockTauriInvoke(page, [findFixtureHistory[1]]);
+  await gotoShell(page);
+  const results = await page.evaluate(() => {
+    const membership = (window as any).__copicuTestDescriptorMembership;
+    return {
+      unknown: membership({
+        schemaVersion: 1,
+        plan: {
+          schemaVersion: 1,
+          filters: { futureOperator: ["invoice"] },
+          sort: [],
+          limit: null,
+        },
+      }),
+      date: membership({
+        schemaVersion: 1,
+        plan: {
+          schemaVersion: 1,
+          filters: {
+            date: [{ field: "created", op: "after", value: "2026-01-01T00:00:00Z" }],
+          },
+          sort: [],
+          limit: null,
+        },
+      }),
+    };
+  });
+  expect(results.unknown.supported).toBe(false);
+  expect(results.date.supported).toBe(false);
 });
 
 test("Find rebase keeps the nearest anchor through edit and advances on delete", async ({ page }) => {
