@@ -329,7 +329,10 @@ const sha256Hex = async (value: string) => {
 };
 
 const descriptorFingerprint = (mode: "structured" | "ai", plan: unknown) =>
-  sha256Hex(JSON.stringify({ schemaVersion: 1, mode, plan }));
+  sha256Hex(JSON.stringify({ mode, plan, schemaVersion: 1 }));
+
+const rustDescriptorFixtureFingerprint = "932107f14527a8018daa9439df22cd5cccda872f2302d240fb35bb2223d4b110";
+const previousJsDescriptorFixtureFingerprint = "e1fa8cbd5b370ac2344d5ed9e92f262b238cd69ab7c30a076665ebe8a1877af0";
 
 type MockTauriOptions = {
   historySearchDelayMs?: number;
@@ -776,9 +779,9 @@ async function mockTauriInvoke(
     };
     const canonicalDescriptorFingerprint = async (descriptor: any, plan: any) => {
       const basis = JSON.stringify({
-        schemaVersion: descriptor.schemaVersion,
         mode: descriptor.mode,
         plan,
+        schemaVersion: descriptor.schemaVersion,
       });
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(basis));
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -889,7 +892,7 @@ async function mockTauriInvoke(
       });
       const sorted = [...source];
       const sorts = plan.sort.length > 0
-        ? plan.sort
+        ? plan.sort.slice(0, 3)
         : [{ field: "lastCopied", direction: "desc" }];
       const sortValue = (item: any, field: string) => Number(
         field === "created"
@@ -898,13 +901,16 @@ async function mockTauriInvoke(
             ? item.last_used_at_unix_ms ?? 0
             : item.last_copied_at_unix_ms ?? item.created_at_unix_ms ?? 0,
       );
-      for (const sort of [...sorts].reverse()) {
-        const direction = sort.direction === "asc" ? 1 : -1;
-        sorted.sort((left: any, right: any) => {
+      sorted.sort((left: any, right: any) => {
+        for (const sort of sorts) {
+          const direction = sort.direction === "asc" ? 1 : -1;
           const difference = (sortValue(left, sort.field) - sortValue(right, sort.field)) * direction;
-          return difference !== 0 ? difference : Number(right.id ?? 0) - Number(left.id ?? 0);
-        });
-      }
+          if (difference !== 0) {
+            return difference;
+          }
+        }
+        return Number(right.id ?? 0) - Number(left.id ?? 0);
+      });
       const limit = plan.limit === null
         ? null
         : Math.min(Math.max(plan.limit, 1), 100);
@@ -2390,8 +2396,10 @@ test("Find uses the applied descriptor membership and limit before numbering mat
     effectiveQuery: "invoice",
     mode: "structured",
     plan,
-    fingerprint: await descriptorFingerprint("structured", plan),
+    fingerprint: rustDescriptorFixtureFingerprint,
   };
+  expect(await descriptorFingerprint("structured", plan)).toBe(rustDescriptorFixtureFingerprint);
+  expect(rustDescriptorFixtureFingerprint).not.toBe(previousJsDescriptorFixtureFingerprint);
   await mockTauriInvoke(page, findFixtureHistory, null, {
     findRemoteItem: remoteItem,
     findAppliedDescriptor: appliedDescriptor,
@@ -2471,6 +2479,61 @@ test("descriptor mock supports wildcard MIME and conjunctive exact negations", a
   await waitForFindReady(page, "1 / 2");
   await expect.poll(() => page.evaluate(() => (window as any).__copicuTestFindMembershipIds)).toEqual([8303, 8301]);
   await expect(input).toBeVisible();
+});
+
+test("descriptor mock preserves compound sort priority and final ID tie-break", async ({ page }) => {
+  const sortItems = [
+    {
+      ...findFixtureHistory[1],
+      id: 10,
+      text: "sort fixture ten",
+      created_at_unix_ms: 1_910_000_000_002,
+      last_used_at_unix_ms: 1_910_000_000_001,
+      last_copied_at_unix_ms: 1_910_000_000_009,
+    },
+    {
+      ...findFixtureHistory[1],
+      id: 30,
+      text: "sort fixture thirty",
+      created_at_unix_ms: 1_910_000_000_001,
+      last_used_at_unix_ms: 1_910_000_000_004,
+      last_copied_at_unix_ms: 1_910_000_000_003,
+    },
+    {
+      ...findFixtureHistory[1],
+      id: 20,
+      text: "sort fixture twenty",
+      created_at_unix_ms: 1_910_000_000_001,
+      last_used_at_unix_ms: 1_910_000_000_004,
+      last_copied_at_unix_ms: 1_910_000_000_002,
+    },
+  ];
+  const plan = makeCanonicalSearchPlan({
+    text: { all: ["sort fixture"] },
+    filters: null,
+    sort: [
+      { field: "created", direction: "asc" },
+      { field: "lastUsed", direction: "desc" },
+      { field: "lastCopied", direction: "asc" },
+      { field: "lastUsed", direction: "asc" },
+    ],
+  });
+  const appliedDescriptor = {
+    schemaVersion: 1,
+    displayQuery: "sort fixture",
+    effectiveQuery: "sort fixture",
+    mode: "structured",
+    plan,
+    fingerprint: await descriptorFingerprint("structured", plan),
+  };
+  await mockTauriInvoke(page, sortItems, null, { findAppliedDescriptor: appliedDescriptor });
+  await gotoShell(page);
+  await expect(page.locator("#history-item-20")).toBeVisible();
+  const orderedIds = await page.evaluate(() => {
+    const descriptor = (window as any).__copicuTestAppliedDescriptor;
+    return (window as any).__copicuTestDescriptorMembership(descriptor).items.map((item: any) => item.id);
+  });
+  expect(orderedIds).toEqual([20, 30, 10]);
 });
 
 test("descriptor mock fails closed for unmodeled filter shapes", async ({ page }) => {
