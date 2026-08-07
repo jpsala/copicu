@@ -288,6 +288,7 @@ async function mockTauriInvoke(
     };
     (window as any).__copicuTestFindSessionIds = [];
     (window as any).__copicuTestFindActiveSessionId = null;
+    (window as any).__copicuTestFindTargets = [];
     const delayFind = async (delayMs: number | undefined) => {
       if ((delayMs ?? 0) > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, delayMs));
@@ -883,7 +884,13 @@ async function mockTauriInvoke(
             const targetOrdinal = request.direction === "previous"
               ? (current <= 1 ? total : current - 1)
               : (current >= total ? 1 : current + 1);
-            return { total, target: session.occurrences[targetOrdinal - 1] ?? null };
+            const target = session.occurrences[targetOrdinal - 1] ?? null;
+            (window as any).__copicuTestFindTargets.push({
+              command: "find_navigate",
+              request: { ...request },
+              target: target ? { ...target } : null,
+            });
+            return { total, target };
           }
           case "find_target": {
             const request = args?.request ?? {};
@@ -897,6 +904,11 @@ async function mockTauriInvoke(
               throw new Error("find session not found");
             }
             const target = session.occurrences[Number(request.ordinal) - 1] ?? null;
+            (window as any).__copicuTestFindTargets.push({
+              command: "find_target",
+              request: { ...request },
+              target: target ? { ...target } : null,
+            });
             const sourceItem = target ? findSourceItems().find((item: any) => item.id === target.itemId) : null;
             return {
               total: session.occurrences.length,
@@ -1723,11 +1735,23 @@ test("Find rebase keeps the nearest anchor through edit and advances on delete",
   await expect(page.locator(".feed-item").first()).toBeVisible();
   const { input } = await openFind(page, "NEEDLE");
   await waitForFindReady(page, "1 / 4");
+  await page.evaluate(() => {
+    (window as any).__copicuTestFindTargets = [];
+  });
   await input.press("Enter");
+  await expect(page.locator("#find-status")).toHaveText("2 / 4");
   await input.press("Enter");
   await expect(page.locator("#find-status")).toHaveText("3 / 4");
+  expect(await page.evaluate(() => (window as any).__copicuTestFindTargets.at(-1)?.target)).toMatchObject({
+    itemId: 7002,
+    field: "content",
+    segment: 0,
+  });
 
   const firstRow = page.locator("#history-item-7001");
+  await page.evaluate(() => {
+    (window as any).__copicuTestFindTargets = [];
+  });
   await firstRow.hover();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   const firstMenu = page.getByRole("menu", { name: "Item actions" });
@@ -1736,7 +1760,13 @@ test("Find rebase keeps the nearest anchor through edit and advances on delete",
   await firstEditor.fill("NEEDLE");
   await firstEditor.press("Control+Enter");
   await expect(firstEditor).toBeHidden();
-  await waitForFindReady(page, "2 / 3");
+  await expect(page.locator("#find-status")).toHaveText(/^[1-3] \/ 3$/);
+  expect(await page.evaluate(() => (window as any).__copicuTestFindTargets.at(-1)?.target)).toMatchObject({
+    itemId: 7002,
+    field: "content",
+    segment: 0,
+  });
+  await expect(page.locator("#find-status")).toHaveText("2 / 3");
 
   const currentRow = page.locator("#history-item-7002");
   await currentRow.hover();

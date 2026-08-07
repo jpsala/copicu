@@ -1846,6 +1846,7 @@ function App() {
           }
           let fallbackTarget = target;
           let fallbackSet = false;
+          let anchorTarget: FindOccurrence | null = null;
           for (const ordinal of candidateOrdinals) {
             const candidateResponse = ordinal === target.ordinal
               ? { target }
@@ -1862,13 +1863,17 @@ function App() {
               && candidate.field === preferredTarget.field
               && candidate.segment === preferredTarget.segment,
             );
-            if (!preferredTarget || sameAnchor || candidateOrdinals.length === 1) {
+            if (sameAnchor) {
+              anchorTarget = candidate;
+              break;
+            }
+            if (!preferredTarget || candidateOrdinals.length === 1) {
               target = candidate ?? target;
               break;
             }
           }
           if (preferredTarget) {
-            target = fallbackTarget;
+            target = anchorTarget ?? fallbackTarget;
           }
           if (
             requestSeq !== findRequestSeqRef.current
