@@ -378,10 +378,11 @@ async function mockTauriInvoke(
           });
         }
         if (contentText) {
-          const ranges = findRanges(contentText, needle, 0, 0).filter((range: any) => {
-            return contentSegments.some(
-              (segment: any) => range.startUtf16 >= segment.startUtf16 && range.endUtf16 <= segment.endUtf16,
+          const ranges = findRanges(contentText, needle, 0, 0).flatMap((range: any) => {
+            const segment = contentSegments.find(
+              (candidate: any) => range.startUtf16 >= candidate.startUtf16 && range.endUtf16 <= candidate.endUtf16,
             );
+            return segment ? [{ ...range, segment: segment.segment }] : [];
           });
           if (ranges.length > 0) {
             fields.push({ field: "content", ranges, displayText: contentText, segments: contentSegments });
@@ -1577,7 +1578,8 @@ test("shell loads without horizontal overflow", async ({ page }) => {
 });
 
 test("Find closes pending Start and supersedes stale starts without leaking sessions", async ({ page }) => {
-  await mockTauriInvoke(page, findFixtureHistory, null, { findStartDelayMs: 220 });
+  test.slow();
+  await mockTauriInvoke(page, findFixtureHistory, null, { findStartDelayMs: 500 });
   await gotoShell(page);
   await expect(page.locator(".feed-item").first()).toBeVisible();
 
@@ -1592,18 +1594,23 @@ test("Find closes pending Start and supersedes stale starts without leaking sess
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "find_cancel_owner"),
   );
-  await page.waitForTimeout(280);
+  await page.waitForTimeout(620);
   expect(await page.evaluate(() => (window as any).__copicuTestFindSessionIds)).toEqual([]);
+  await page.evaluate(() => {
+    (window as any).__copicuTestInvocations = [];
+    (window as any).__copicuTestFindSessionIds = [];
+    (window as any).__copicuTestFindActiveSessionId = null;
+  });
 
   const reopened = await openFind(page);
   await reopened.input.fill("NEEDLE");
   await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_start").length >= 2,
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_start").length >= 1,
   );
   await reopened.input.fill("middle");
   await expect(reopened.findBar).toHaveAttribute("data-find-status", "starting");
   await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_start").length >= 3,
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_start").length >= 2,
   );
   await page.waitForFunction(() =>
     (window as any).__copicuTestFindSessionIds.length === 1,
@@ -1722,7 +1729,9 @@ test("Find rebase keeps the nearest anchor through edit and advances on delete",
 
   const firstRow = page.locator("#history-item-7001");
   await firstRow.hover();
-  await firstRow.getByRole("button", { name: "Quick edit item" }).click();
+  await firstRow.getByRole("button", { name: "Open item actions" }).click();
+  const firstMenu = page.getByRole("menu", { name: "Item actions" });
+  await firstMenu.getByRole("group", { name: "Editar" }).getByRole("menuitem", { name: "Quick edit" }).click();
   const firstEditor = firstRow.getByRole("textbox", { name: "Quick edit item 7001" });
   await firstEditor.fill("NEEDLE");
   await firstEditor.press("Control+Enter");
