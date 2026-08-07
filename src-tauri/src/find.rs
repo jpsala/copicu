@@ -176,6 +176,23 @@ pub struct FindTargetRequest {
     pub ordinal: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindResolveAnchorRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub preferred_ordinal: Option<u64>,
+    #[serde(default)]
+    pub preferred_target: Option<FindOccurrence>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FindResolveAnchorResponse {
+    pub total: u64,
+    pub target: Option<FindOccurrence>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FindTargetResponse {
@@ -226,6 +243,29 @@ struct FindState {
     next_id: u64,
     jobs: HashMap<String, FindJob>,
     sessions: HashMap<String, FindSession>,
+    anchor_indexes: HashMap<String, FindAnchorIndex>,
+}
+
+#[derive(Default)]
+struct FindAnchorIndex {
+    exact: HashMap<FindAnchorKey, usize>,
+    by_segment: HashMap<FindSegmentKey, Vec<usize>>,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct FindAnchorKey {
+    item_id: i64,
+    field: FindField,
+    segment: u32,
+    start_utf16: u32,
+    end_utf16: u32,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+struct FindSegmentKey {
+    item_id: i64,
+    field: FindField,
+    segment: u32,
 }
 
 struct FindJob {
@@ -318,10 +358,15 @@ impl FindSessionStore {
 
             let first_target = occurrences.first().cloned();
             let total = occurrences.len() as u64;
+            let anchor_index = build_anchor_index(&occurrences);
             state.jobs.remove(&owner_for_worker);
             state
                 .sessions
                 .retain(|_, session| session.owner_id != owner_for_worker);
+            let live_session_ids = state.sessions.keys().cloned().collect::<HashSet<_>>();
+            state
+                .anchor_indexes
+                .retain(|session_id, _| live_session_ids.contains(session_id));
             state.sessions.insert(
                 session_id_for_worker.clone(),
                 FindSession {
@@ -338,6 +383,9 @@ impl FindSessionStore {
                     by_item,
                 },
             );
+            state
+                .anchor_indexes
+                .insert(session_id_for_worker.clone(), anchor_index);
 
             Ok(FindStartResponse {
                 session_id: session_id_for_worker,
@@ -405,6 +453,75 @@ impl FindSessionStore {
         Ok(FindNavigateResponse {
             total,
             target: session.occurrences.get(next).cloned(),
+        })
+    }
+
+    pub fn resolve_anchor(
+        &self,
+        request: FindResolveAnchorRequest,
+    ) -> Result<FindResolveAnchorResponse, String> {
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|_| "find session state lock poisoned".to_string())?;
+        {
+            let session = state
+                .sessions
+                .get(&request.session_id)
+                .ok_or_else(|| "find session not found".to_string())?;
+            ensure_session_is_valid(session)?;
+        }
+        if !state.anchor_indexes.contains_key(&request.session_id) {
+            let occurrences = state
+                .sessions
+                .get(&request.session_id)
+                .map(|session| session.occurrences.clone())
+                .ok_or_else(|| "find session not found".to_string())?;
+            state
+                .anchor_indexes
+                .insert(request.session_id.clone(), build_anchor_index(&occurrences));
+        }
+        let session = state
+            .sessions
+            .get(&request.session_id)
+            .ok_or_else(|| "find session not found".to_string())?;
+        let total = session.occurrences.len() as u64;
+        if total == 0 {
+            return Ok(FindResolveAnchorResponse { total, target: None });
+        }
+        let index = state
+            .anchor_indexes
+            .get(&request.session_id)
+            .and_then(|anchor_index| {
+                request.preferred_target.as_ref().and_then(|target| {
+                    anchor_index
+                        .exact
+                        .get(&FindAnchorKey::from(target))
+                        .copied()
+                        .or_else(|| {
+                            let key = FindSegmentKey::from(target);
+                            let preferred = request
+                                .preferred_ordinal
+                                .or(Some(target.ordinal))
+                                .unwrap_or(1);
+                            anchor_index
+                                .by_segment
+                                .get(&key)
+                                .and_then(|indices| nearest_occurrence_index(indices, preferred))
+                        })
+                })
+            })
+            .or_else(|| {
+                let preferred = request
+                    .preferred_ordinal
+                    .or_else(|| request.preferred_target.as_ref().map(|target| target.ordinal))
+                    .unwrap_or(1)
+                    .clamp(1, total);
+                Some(preferred as usize - 1)
+            });
+        Ok(FindResolveAnchorResponse {
+            total,
+            target: index.and_then(|index| session.occurrences.get(index).cloned()),
         })
     }
 
@@ -605,6 +722,7 @@ impl FindSessionStore {
             .unwrap_or(true);
         if owner_matches {
             state.sessions.remove(&request.session_id);
+            state.anchor_indexes.remove(&request.session_id);
         }
         let matching_owner = state
             .jobs
@@ -639,6 +757,10 @@ impl FindSessionStore {
         state
             .sessions
             .retain(|_, session| session.owner_id != owner_id);
+        let live_session_ids = state.sessions.keys().cloned().collect::<HashSet<_>>();
+        state
+            .anchor_indexes
+            .retain(|session_id, _| live_session_ids.contains(session_id));
         cancelled |= state.sessions.len() != before;
         FindCancelOwnerResponse { cancelled }
     }
@@ -671,6 +793,10 @@ impl FindSessionStore {
         state
             .sessions
             .retain(|_, session| session.owner_id != owner_id);
+        let live_session_ids = state.sessions.keys().cloned().collect::<HashSet<_>>();
+        state
+            .anchor_indexes
+            .retain(|session_id, _| live_session_ids.contains(session_id));
         state.next_id = state.next_id.saturating_add(1);
         let token = state.next_id;
         let session_id = opaque_session_id(token);
@@ -722,6 +848,74 @@ fn opaque_session_id(counter: u64) -> String {
         .unwrap_or_default();
     let mixed = now ^ (counter as u128).wrapping_mul(0x9e3779b97f4a7c15);
     format!("find-{:016x}-{:016x}", counter, mixed as u64)
+}
+
+impl From<&FindOccurrence> for FindAnchorKey {
+    fn from(occurrence: &FindOccurrence) -> Self {
+        Self {
+            item_id: occurrence.item_id,
+            field: occurrence.field,
+            segment: occurrence.segment,
+            start_utf16: occurrence.start_utf16,
+            end_utf16: occurrence.end_utf16,
+        }
+    }
+}
+
+impl From<&FindOccurrence> for FindSegmentKey {
+    fn from(occurrence: &FindOccurrence) -> Self {
+        Self {
+            item_id: occurrence.item_id,
+            field: occurrence.field,
+            segment: occurrence.segment,
+        }
+    }
+}
+
+fn build_anchor_index(occurrences: &[FindOccurrence]) -> FindAnchorIndex {
+    let mut index = FindAnchorIndex {
+        exact: HashMap::with_capacity(occurrences.len()),
+        by_segment: HashMap::new(),
+    };
+    for (occurrence_index, occurrence) in occurrences.iter().enumerate() {
+        index
+            .exact
+            .insert(FindAnchorKey::from(occurrence), occurrence_index);
+        index
+            .by_segment
+            .entry(FindSegmentKey::from(occurrence))
+            .or_default()
+            .push(occurrence_index);
+    }
+    index
+}
+
+fn nearest_occurrence_index(indices: &[usize], preferred_ordinal: u64) -> Option<usize> {
+    if indices.is_empty() {
+        return None;
+    }
+    let preferred_index = preferred_ordinal.saturating_sub(1) as usize;
+    match indices.binary_search(&preferred_index) {
+        Ok(position) => indices.get(position).copied(),
+        Err(position) => {
+            let before = position.checked_sub(1).and_then(|index| indices.get(index));
+            let after = indices.get(position);
+            match (before, after) {
+                (Some(before), Some(after)) => {
+                    let before_distance = before.abs_diff(preferred_index);
+                    let after_distance = after.abs_diff(preferred_index);
+                    Some(if before_distance <= after_distance {
+                        *before
+                    } else {
+                        *after
+                    })
+                }
+                (Some(before), None) => Some(*before),
+                (None, Some(after)) => Some(*after),
+                (None, None) => None,
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1624,14 +1818,18 @@ mod tests {
         let source = vec![item(
             1,
             "text",
-            "![receipt][img]\n   [img]: https://secret.example/account",
+            "![receipt][img] and ![receipt][img]\n   [img]: <https://secret.example/account> \"private title\"",
         )];
         let cancelled = AtomicBool::new(false);
         let (secret, _) = build_occurrence_index(&source, "secret.example", &cancelled).unwrap();
         assert!(secret.is_empty());
         let (alt, _) = build_occurrence_index(&source, "receipt", &cancelled).unwrap();
-        assert_eq!(alt.len(), 1);
-        assert_eq!(alt[0].field, FindField::ImageAlt);
+        assert_eq!(alt.len(), 2);
+        assert!(alt
+            .iter()
+            .all(|occurrence| occurrence.field == FindField::ImageAlt));
+        assert_eq!(alt[0].segment, 0);
+        assert_eq!(alt[1].segment, 1);
     }
 
     #[test]
@@ -1854,6 +2052,46 @@ mod tests {
     }
 
     #[test]
+    fn canonical_markdown_segments_cover_mixed_visible_constructs() {
+        let source = item(
+            15,
+            "text",
+            "**Invoice** [Invoice link](copicu://invoice) <!-- Invoice comment -->\n```md\nInvoice fence\n```\n![Invoice alt](copicu://one.png) and ![Invoice alt](copicu://two.png) tail Invoice",
+        );
+        let fields = project_item(&source);
+        let content = fields
+            .iter()
+            .find(|field| field.field == FindField::Content)
+            .expect("mixed Markdown should expose content");
+        let content_segments = projection_segments(content);
+        assert_eq!(
+            content_segments
+                .iter()
+                .map(|segment| (segment.segment, segment.display_text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (0, "Invoice"),
+                (2, " Invoice link"),
+                (3, " "),
+                (4, "\n"),
+                (5, "Invoice fence\n"),
+                (6, "\n"),
+                (7, " and "),
+                (8, " tail Invoice"),
+            ],
+        );
+        let image_alts = fields
+            .iter()
+            .filter(|field| field.field == FindField::ImageAlt)
+            .collect::<Vec<_>>();
+        assert_eq!(image_alts.len(), 2);
+        assert_eq!(image_alts[0].segment, 0);
+        assert_eq!(image_alts[1].segment, 1);
+        assert_eq!(image_alts[0].text, "Invoice alt");
+        assert_eq!(image_alts[1].text, "Invoice alt");
+    }
+
+    #[test]
     fn pending_jobs_are_cancelable_by_owner_without_touching_other_owners() {
         let store = FindSessionStore::default();
         let (_, owner_a_session, first_cancelled) = store.begin_job("owner-a", 1, 0);
@@ -1993,6 +2231,84 @@ mod tests {
             .unwrap();
         assert_eq!(grouped.items.len(), 1);
         assert_eq!(grouped.items[0].fields[0].ranges.len(), 2);
+    }
+
+    #[test]
+    fn resolve_anchor_is_bounded_for_large_sessions() {
+        let count = 50_000usize;
+        let occurrences = (0..count)
+            .map(|index| FindOccurrence {
+                ordinal: index as u64 + 1,
+                item_id: 1,
+                field: FindField::Content,
+                segment: 0,
+                start_utf16: index as u32 * 8,
+                end_utf16: index as u32 * 8 + 7,
+            })
+            .collect::<Vec<_>>();
+        let by_item = HashMap::from([(1, (0..count).collect::<Vec<_>>())]);
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "",
+            "",
+            crate::storage::AppliedSearchMode::Structured,
+        )
+        .expect("descriptor should compile");
+        let store = FindSessionStore::default();
+        let mutation_epoch = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let anchor_index = build_anchor_index(&occurrences);
+        {
+            let mut state = store.inner.lock().unwrap();
+            state.sessions.insert(
+                "large-resolve-session".to_string(),
+                FindSession {
+                    id: "large-resolve-session".to_string(),
+                    owner_id: "main".to_string(),
+                    search_fingerprint: descriptor.fingerprint.clone(),
+                    descriptor,
+                    needle: "invoice".to_string(),
+                    generation: 1,
+                    expected_epoch: 0,
+                    mutation_epoch,
+                    manually_invalidated: false,
+                    occurrences,
+                    by_item,
+                },
+            );
+            state
+                .anchor_indexes
+                .insert("large-resolve-session".to_string(), anchor_index);
+        }
+        let started = Instant::now();
+        let response = store
+            .resolve_anchor(FindResolveAnchorRequest {
+                session_id: "large-resolve-session".to_string(),
+                preferred_ordinal: Some(40_000),
+                preferred_target: Some(FindOccurrence {
+                    ordinal: 40_000,
+                    item_id: 1,
+                    field: FindField::Content,
+                    segment: 0,
+                    start_utf16: u32::MAX,
+                    end_utf16: u32::MAX,
+                }),
+            })
+            .expect("large anchor should resolve");
+        eprintln!(
+            "resolve_anchor_large elapsed_us={} total={}",
+            started.elapsed().as_micros(),
+            response.total
+        );
+        assert_eq!(response.total, count as u64);
+        assert_eq!(response.target.as_ref().map(|target| target.ordinal), Some(40_000));
+
+        let exact = store
+            .resolve_anchor(FindResolveAnchorRequest {
+                session_id: "large-resolve-session".to_string(),
+                preferred_ordinal: Some(1),
+                preferred_target: response.target,
+            })
+            .expect("exact large anchor should resolve");
+        assert_eq!(exact.target.as_ref().map(|target| target.ordinal), Some(40_000));
     }
 
     #[test]
@@ -2248,6 +2564,16 @@ mod tests {
         assert_eq!(encoded["firstTarget"]["itemId"], 9);
         assert_eq!(encoded["firstTarget"]["startUtf16"], 4);
         assert_eq!(encoded["firstTarget"]["field"], "imageAlt");
+
+        let resolve_request = serde_json::to_value(FindResolveAnchorRequest {
+            session_id: "find-test".to_string(),
+            preferred_ordinal: Some(7),
+            preferred_target: Some(occurrence),
+        })
+        .unwrap();
+        assert_eq!(resolve_request["sessionId"], "find-test");
+        assert_eq!(resolve_request["preferredOrdinal"], 7);
+        assert_eq!(resolve_request["preferredTarget"]["itemId"], 9);
     }
 
     #[test]
