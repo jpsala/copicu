@@ -84,6 +84,8 @@ import type {
   FindNavigateRequest,
   FindNavigateResponse,
   FindOccurrence,
+  FindResolveAnchorRequest,
+  FindResolveAnchorResponse,
   FindStartRequest,
   FindStartResponse,
   FindTargetRequest,
@@ -431,8 +433,8 @@ type MarkdownImage = {
 };
 
 type MarkdownSegment =
-  | { kind: "text"; text: string }
-  | { kind: "image"; image: MarkdownImage };
+  | { kind: "text"; text: string; canonicalSegment?: number }
+  | { kind: "image"; image: MarkdownImage; canonicalSegment?: number };
 
 type ItemMenuAnchor = {
   itemId: number;
@@ -666,6 +668,10 @@ function findMatchesForItems(request: FindMatchesForItemsRequest) {
 
 function findTarget(request: FindTargetRequest) {
   return invoke<FindTargetResponse>("find_target", { request });
+}
+
+function findResolveAnchor(request: FindResolveAnchorRequest) {
+  return invoke<FindResolveAnchorResponse>("find_resolve_anchor", { request });
 }
 
 function findClose(request: FindCloseRequest) {
@@ -1827,54 +1833,12 @@ function App() {
           setFindState(startedState);
         }
         if (target && response.total > 0 && (preferredOrdinal !== null || preferredTarget)) {
-          const anchorOrdinal = Math.min(
-            Math.max(preferredOrdinal ?? preferredTarget?.ordinal ?? target.ordinal, 1),
-            response.total,
-          );
-          const candidateOrdinals: number[] = [];
-          const seenOrdinals = new Set<number>();
-          for (let distance = 0; distance < response.total; distance += 1) {
-            const candidates = distance === 0
-              ? [anchorOrdinal]
-              : [anchorOrdinal - distance, anchorOrdinal + distance];
-            for (const candidate of candidates) {
-              if (candidate >= 1 && candidate <= response.total && !seenOrdinals.has(candidate)) {
-                seenOrdinals.add(candidate);
-                candidateOrdinals.push(candidate);
-              }
-            }
-          }
-          let fallbackTarget = target;
-          let fallbackSet = false;
-          let anchorTarget: FindOccurrence | null = null;
-          for (const ordinal of candidateOrdinals) {
-            const candidateResponse = ordinal === target.ordinal
-              ? { target }
-              : await findTarget({ sessionId: response.sessionId, ordinal });
-            const candidate = candidateResponse.target;
-            if (candidate && !fallbackSet) {
-              fallbackTarget = candidate;
-              fallbackSet = true;
-            }
-            const sameAnchor = Boolean(
-              candidate
-              && preferredTarget
-              && candidate.itemId === preferredTarget.itemId
-              && candidate.field === preferredTarget.field
-              && candidate.segment === preferredTarget.segment,
-            );
-            if (sameAnchor) {
-              anchorTarget = candidate;
-              break;
-            }
-            if (!preferredTarget || candidateOrdinals.length === 1) {
-              target = candidate ?? target;
-              break;
-            }
-          }
-          if (preferredTarget) {
-            target = anchorTarget ?? fallbackTarget;
-          }
+          const resolved = await findResolveAnchor({
+            sessionId: response.sessionId,
+            preferredOrdinal,
+            preferredTarget,
+          });
+          target = resolved.target ?? target;
           if (
             requestSeq !== findRequestSeqRef.current
             || findStateRef.current?.generation !== generation
@@ -8499,16 +8463,19 @@ function MarkdownPreview({
   currentOrdinal?: number | null;
   onImageLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
 }) {
-  const segments = markdownSegments(text);
+  const segments = markdownSegments(
+    text,
+    contentMatches?.segments ?? [],
+    imageAltMatches?.segments ?? [],
+  );
 
   return (
     <span className="markdown-preview">
       {segments.map((segment, index) => {
         if (segment.kind === "image") {
-          const imageSegment = segments
-            .slice(0, index + 1)
-            .filter((candidate) => candidate.kind === "image").length - 1;
+          const imageSegment = segment.canonicalSegment ?? null;
           const altMatches = imageAltMatches
+            && imageSegment !== null
             ? {
                 ...imageAltMatches,
                 ranges: imageAltMatches.ranges.filter((range) => range.segment === imageSegment),
@@ -8539,10 +8506,9 @@ function MarkdownPreview({
             </span>
           );
         }
-        const contentSegment = segments
-          .slice(0, index + 1)
-          .filter((candidate) => candidate.kind === "text").length - 1;
+        const contentSegment = segment.canonicalSegment ?? null;
         const contentSegmentMatches = contentMatches
+          && contentSegment !== null
           ? {
               ...contentMatches,
               ranges: contentMatches.ranges.filter((range) => range.segment === contentSegment),
@@ -8568,17 +8534,21 @@ function MarkdownPreview({
   );
 }
 
-function markdownSegments(text: string): MarkdownSegment[] {
-  const segments: MarkdownSegment[] = [];
+function markdownSegments(
+  text: string,
+  canonicalSegments: FindFieldMatches["segments"] = [],
+  canonicalImageSegments: FindFieldMatches["segments"] = [],
+): MarkdownSegment[] {
+  const rawSegments: MarkdownSegment[] = [];
   const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
   let cursor = 0;
   for (const imageMatch of text.matchAll(imagePattern)) {
     const raw = imageMatch[0] ?? "";
     const start = imageMatch.index ?? cursor;
     if (start > cursor) {
-      segments.push({ kind: "text", text: text.slice(cursor, start) });
+      rawSegments.push({ kind: "text", text: text.slice(cursor, start) });
     }
-    segments.push({
+    rawSegments.push({
       kind: "image",
       image: {
         alt: imageMatch[1] ?? "",
@@ -8589,9 +8559,51 @@ function markdownSegments(text: string): MarkdownSegment[] {
     cursor = start + raw.length;
   }
   if (cursor < text.length) {
-    segments.push({ kind: "text", text: text.slice(cursor) });
+    rawSegments.push({ kind: "text", text: text.slice(cursor) });
   }
-  return segments;
+  if (canonicalSegments.length === 0 && canonicalImageSegments.length === 0) {
+    return rawSegments;
+  }
+
+  const mappedSegments: MarkdownSegment[] = [];
+  let canonicalIndex = 0;
+  let canonicalImageIndex = 0;
+  for (const segment of rawSegments) {
+    if (segment.kind === "image") {
+      mappedSegments.push({
+        ...segment,
+        canonicalSegment: canonicalImageSegments[canonicalImageIndex]?.segment,
+      });
+      canonicalImageIndex += 1;
+      continue;
+    }
+    const assigned: MarkdownSegment[] = [];
+    let searchCursor = 0;
+    while (canonicalIndex < canonicalSegments.length) {
+      const canonical = canonicalSegments[canonicalIndex];
+      if (!canonical.displayText) {
+        canonicalIndex += 1;
+        continue;
+      }
+      const matchIndex = segment.text.indexOf(canonical.displayText, searchCursor);
+      if (matchIndex < 0) {
+        break;
+      }
+      assigned.push({
+        kind: "text",
+        text: canonical.displayText,
+        canonicalSegment: canonical.segment,
+      });
+      canonicalIndex += 1;
+      searchCursor = matchIndex + canonical.displayText.length;
+    }
+    if (assigned.length > 0) {
+      mappedSegments.push(...assigned);
+    } else {
+      mappedSegments.push(segment);
+    }
+  }
+  return mappedSegments;
 }
 
 const rootElement = document.getElementById("root")!;

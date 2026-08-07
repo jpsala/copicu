@@ -824,6 +824,15 @@ fn find_target(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn find_resolve_anchor(
+    sessions: State<'_, find::FindSessionStore>,
+    request: find::FindResolveAnchorRequest,
+) -> Result<find::FindResolveAnchorResponse, String> {
+    sessions.resolve_anchor(request)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn find_close(
     window: tauri::WebviewWindow,
     sessions: State<'_, find::FindSessionStore>,
@@ -2788,6 +2797,7 @@ pub fn run() {
             find_navigate,
             find_matches_for_items,
             find_target,
+            find_resolve_anchor,
             find_close,
             find_cancel_owner,
             show_picker,

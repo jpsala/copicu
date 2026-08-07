@@ -201,6 +201,50 @@ const findFixtureHistory = [
   },
 ];
 
+const makeFindDisplaySegments = (parts: Array<[number, string]>) => {
+  let cursor = 0;
+  return parts.map(([segment, displayText]) => {
+    const next = {
+      segment,
+      startUtf16: cursor,
+      endUtf16: cursor + displayText.length,
+      displayText,
+    };
+    cursor += displayText.length;
+    return next;
+  });
+};
+
+const findCanonicalMarkdownFixture = {
+  ...syntheticLongHistory[1],
+  id: 7100,
+  text: "**Invoice** [Invoice link](copicu://invoice) <!-- Invoice comment -->\n```md\nInvoice fence\n```\n![Invoice alt](copicu://one.png) and ![Invoice alt](copicu://two.png) tail Invoice",
+  normalized_hash: "find-canonical-markdown",
+  __findCanonicalFields: {
+    content: makeFindDisplaySegments([
+      [0, "Invoice"],
+      [2, " Invoice link"],
+      [3, " "],
+      [4, "\n"],
+      [5, "Invoice fence\n"],
+      [6, "\n"],
+      [7, " and "],
+      [8, " tail Invoice"],
+    ]),
+    imageAlt: [
+      { segment: 0, startUtf16: 0, endUtf16: 11, displayText: "Invoice alt" },
+      { segment: 1, startUtf16: 0, endUtf16: 11, displayText: "Invoice alt" },
+    ],
+  },
+};
+
+const findLargeRebaseHistory = Array.from({ length: 2_000 }, (_, index) => ({
+  ...syntheticLongHistory[1],
+  id: 8_000 + index,
+  text: `NEEDLE large fixture ${index}`,
+  normalized_hash: `find-large-rebase-${index}`,
+}));
+
 type MockTauriOptions = {
   historySearchDelayMs?: number;
   historySearchFailNext?: boolean;
@@ -278,6 +322,8 @@ async function mockTauriInvoke(
       needle: string;
       occurrences: any[];
       matchesByItem: Map<number, any>;
+      exactTargets: Map<string, any>;
+      segmentTargets: Map<string, any[]>;
     }>();
     let findSessionCounter = 0;
     let findStartToken = 0;
@@ -289,6 +335,8 @@ async function mockTauriInvoke(
     (window as any).__copicuTestFindSessionIds = [];
     (window as any).__copicuTestFindActiveSessionId = null;
     (window as any).__copicuTestFindTargets = [];
+    (window as any).__copicuTestFindResolveCalls = [];
+    (window as any).__copicuTestAppliedDescriptor = null;
     const delayFind = async (delayMs: number | undefined) => {
       if ((delayMs ?? 0) > 0) {
         await new Promise((resolve) => window.setTimeout(resolve, delayMs));
@@ -320,6 +368,12 @@ async function mockTauriInvoke(
       }
       return ranges;
     };
+    const findAnchorKey = (target: any, includeRange = true) => [
+      target?.itemId,
+      target?.field,
+      target?.segment ?? 0,
+      ...(includeRange ? [target?.startUtf16, target?.endUtf16] : []),
+    ].join(":");
     const findTextSegments = (displayText: string) => [{
       segment: 0,
       startUtf16: 0,
@@ -338,7 +392,35 @@ async function mockTauriInvoke(
         }
       };
       const sourceText = String(item.text ?? "");
-      if (item.content_kind === "text" || item.content_kind === "html" || item.content_kind === "unknown" || !item.content_kind) {
+      const canonicalFields = item.__findCanonicalFields;
+      if (canonicalFields) {
+        const canonicalContent = canonicalFields.content ?? [];
+        const contentText = canonicalContent.map((segment: any) => segment.displayText).join("");
+        const contentRanges = findRanges(contentText, needle, 0, 0).flatMap((range: any) => {
+          const segment = canonicalContent.find(
+            (candidate: any) => range.startUtf16 >= candidate.startUtf16 && range.endUtf16 <= candidate.endUtf16,
+          );
+          return segment ? [{ ...range, segment: segment.segment }] : [];
+        });
+        if (contentRanges.length > 0) {
+          fields.push({ field: "content", ranges: contentRanges, displayText: contentText, segments: canonicalContent });
+        }
+        const canonicalImageAlt = canonicalFields.imageAlt ?? [];
+        const imageAltRanges = canonicalImageAlt.flatMap((segment: any) => findRanges(
+          segment.displayText,
+          needle,
+          0,
+          segment.segment,
+        ));
+        if (imageAltRanges.length > 0) {
+          fields.push({
+            field: "imageAlt",
+            ranges: imageAltRanges,
+            displayText: "",
+            segments: canonicalImageAlt,
+          });
+        }
+      } else if (item.content_kind === "text" || item.content_kind === "html" || item.content_kind === "unknown" || !item.content_kind) {
         const imageSegments: any[] = [];
         const contentSegments: any[] = [];
         const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
@@ -389,20 +471,19 @@ async function mockTauriInvoke(
             fields.push({ field: "content", ranges, displayText: contentText, segments: contentSegments });
           }
         }
-        for (const image of imageSegments) {
-          if (image.ranges.length > 0) {
-            fields.push({
-              field: "imageAlt",
-              ranges: image.ranges,
+        const matchingImageSegments = imageSegments.filter((image) => image.ranges.length > 0);
+        if (matchingImageSegments.length > 0) {
+          fields.push({
+            field: "imageAlt",
+            ranges: matchingImageSegments.flatMap((image) => image.ranges),
+            displayText: imageSegments.length === 1 ? matchingImageSegments[0].displayText : "",
+            segments: imageSegments.map((image) => ({
+              segment: image.segment,
+              startUtf16: 0,
+              endUtf16: image.displayText.length,
               displayText: image.displayText,
-              segments: [{
-                segment: image.segment,
-                startUtf16: 0,
-                endUtf16: image.displayText.length,
-                displayText: image.displayText,
-              }],
-            });
-          }
+            })),
+          });
         }
       }
       addPlainField("title", item.title);
@@ -817,6 +898,19 @@ async function mockTauriInvoke(
           case "find_start": {
             const request = args?.request ?? {};
             const mockOptions = (window as any).__copicuTestMockOptions ?? {};
+            const expectedDescriptor = (window as any).__copicuTestAppliedDescriptor;
+            const descriptor = request.appliedDescriptor;
+            if (
+              !descriptor
+              || !expectedDescriptor
+              || descriptor.schemaVersion !== expectedDescriptor.schemaVersion
+              || descriptor.fingerprint !== expectedDescriptor.fingerprint
+              || descriptor.effectiveQuery !== expectedDescriptor.effectiveQuery
+              || descriptor.mode !== expectedDescriptor.mode
+              || JSON.stringify(descriptor.plan) !== JSON.stringify(expectedDescriptor.plan)
+            ) {
+              throw new Error("Find mock received an appliedDescriptor different from the active snapshot");
+            }
             const startToken = ++findStartToken;
             findActiveSessionId = null;
             findSessions.clear();
@@ -854,7 +948,22 @@ async function mockTauriInvoke(
               }
             }
             const sessionId = "find-session-" + (++findSessionCounter);
-            findSessions.set(sessionId, { needle, occurrences, matchesByItem });
+            const exactTargets = new Map<string, any>();
+            const segmentTargets = new Map<string, any[]>();
+            for (const occurrence of occurrences) {
+              exactTargets.set(findAnchorKey(occurrence), occurrence);
+              const segmentKey = findAnchorKey(occurrence, false);
+              const targets = segmentTargets.get(segmentKey) ?? [];
+              targets.push(occurrence);
+              segmentTargets.set(segmentKey, targets);
+            }
+            findSessions.set(sessionId, {
+              needle,
+              occurrences,
+              matchesByItem,
+              exactTargets,
+              segmentTargets,
+            });
             findActiveSessionId = sessionId;
             syncFindState();
             return {
@@ -922,8 +1031,53 @@ async function mockTauriInvoke(
                     )?.displayText ?? sourceItem.text ?? "",
                     item: materializeFindItem(sourceItem),
                   }
-                : null,
+              : null,
             };
+          }
+          case "find_resolve_anchor": {
+            const request = args?.request ?? {};
+            const session = findSessions.get(request.sessionId);
+            if (!session) {
+              throw new Error("find session not found");
+            }
+            const total = session.occurrences.length;
+            const preferredTarget = request.preferredTarget ?? null;
+            const preferredOrdinal = Number(
+              request.preferredOrdinal ?? preferredTarget?.ordinal ?? 1,
+            );
+            let target = preferredTarget
+              ? session.exactTargets.get(findAnchorKey(preferredTarget)) ?? null
+              : null;
+            if (!target && preferredTarget) {
+              const candidates = session.segmentTargets.get(findAnchorKey(preferredTarget, false)) ?? [];
+              let low = 0;
+              let high = candidates.length;
+              while (low < high) {
+                const middle = Math.floor((low + high) / 2);
+                if (Number(candidates[middle]?.ordinal ?? 0) < preferredOrdinal) {
+                  low = middle + 1;
+                } else {
+                  high = middle;
+                }
+              }
+              const before = candidates[low - 1];
+              const after = candidates[low];
+              target = before && after
+                ? Math.abs(Number(before.ordinal) - preferredOrdinal)
+                  <= Math.abs(Number(after.ordinal) - preferredOrdinal)
+                  ? before
+                  : after
+                : before ?? after ?? null;
+            }
+            if (!target && total > 0) {
+              const ordinal = Math.min(Math.max(Math.round(preferredOrdinal), 1), total);
+              target = session.occurrences[ordinal - 1] ?? null;
+            }
+            (window as any).__copicuTestFindResolveCalls.push({
+              request: { ...request },
+              target: target ? { ...target } : null,
+            });
+            return { total, target };
           }
           case "find_matches_for_items": {
             const request = args?.request ?? {};
@@ -1075,6 +1229,7 @@ async function mockTauriInvoke(
               warnings: aiMode ? ["Synthetic unsupported source filter ignored."] : [],
               appliedDescriptor,
             };
+            (window as any).__copicuTestAppliedDescriptor = appliedDescriptor;
             (window as any).__copicuTestHistoryResponses.push({
               cursor: cursor ?? null,
               ids: pageItems.map((item: any) => item.id),
@@ -1729,6 +1884,19 @@ test("Find keeps Markdown mixed text and inline alt highlights mapped to visible
   await expect(page.locator(".markdown-find-content .find-highlight")).toHaveCount(2);
 });
 
+test("Find consumes canonical Markdown segments for emphasis, links, comments, fences and repeated alts", async ({ page }) => {
+  await mockTauriInvoke(page, [findCanonicalMarkdownFixture]);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { input } = await openFind(page, "invoice");
+  await waitForFindReady(page, "1 / 6");
+  await expect(page.locator(".markdown-find-content .find-highlight")).toHaveCount(4);
+  await expect(page.locator(".markdown-find-content .find-highlight[aria-current='true']")).toHaveCount(1);
+  await expect(page.locator(".markdown-image-alt .find-highlight")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(input).toBeHidden();
+});
+
 test("Find rebase keeps the nearest anchor through edit and advances on delete", async ({ page }) => {
   await mockTauriInvoke(page, findFixtureHistory);
   await gotoShell(page);
@@ -1775,6 +1943,42 @@ test("Find rebase keeps the nearest anchor through edit and advances on delete",
   await page.keyboard.press("Escape");
   await page.waitForTimeout(80);
   expect(await page.evaluate(() => (window as any).__copicuTestFindSessionIds)).toEqual([]);
+});
+
+test("Find large rebase resolves its anchor with one bounded IPC", async ({ page }) => {
+  test.slow();
+  await mockTauriInvoke(page, findLargeRebaseHistory);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+  const { input } = await openFind(page, "NEEDLE");
+  await waitForFindReady(page, "1 / 2000");
+  await page.evaluate(() => {
+    (window as any).__copicuTestFindResolveCalls = [];
+    (window as any).__copicuTestInvocations = [];
+  });
+
+  const firstRow = page.locator("#history-item-8000");
+  await firstRow.hover();
+  await firstRow.getByRole("button", { name: "Open item actions" }).click();
+  const firstMenu = page.getByRole("menu", { name: "Item actions" });
+  await firstMenu.getByRole("group", { name: "Editar" }).getByRole("menuitem", { name: "Quick edit" }).click();
+  const firstEditor = firstRow.getByRole("textbox", { name: "Quick edit item 8000" });
+  await firstEditor.fill("NEEDLE large fixture 0");
+  await firstEditor.press("Control+Enter");
+  await expect(firstEditor).toBeHidden();
+  await waitForFindReady(page, "1 / 2000");
+  const resolveCalls = await page.evaluate(() => (window as any).__copicuTestFindResolveCalls);
+  expect(resolveCalls).toHaveLength(1);
+  const findTargetCalls = await page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "find_target"),
+  );
+  expect(findTargetCalls).toHaveLength(1);
+  expect(resolveCalls[0].request.preferredTarget).toMatchObject({
+    itemId: 8000,
+    field: "content",
+    segment: 0,
+  });
+  await input.press("Escape");
 });
 
 test("picker shell keeps semantic feed state and only mounts active context strips", async ({ page }) => {

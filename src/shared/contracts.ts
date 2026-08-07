@@ -90,6 +90,17 @@ export type FindTargetRequest = {
   ordinal: number;
 };
 
+export type FindResolveAnchorRequest = {
+  sessionId: string;
+  preferredOrdinal?: number | null;
+  preferredTarget?: FindOccurrence | null;
+};
+
+export type FindResolveAnchorResponse = {
+  total: number;
+  target: FindOccurrence | null;
+};
+
 export type FindTargetResponse = {
   total: number;
   target: FindOccurrence | null;
