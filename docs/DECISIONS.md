@@ -66,13 +66,13 @@ Proximo paso: al ejecutar `actualizar aos`, seguir `docs/topics/agentic-os-opera
 
 ### 2026-06-12 - Canonizar skills locales en `docs/skills`
 
-Estado: superseded parcialmente por AOS 1.1 flow-first
+Estado: accepted para el canon de skills; las skills de lifecycle quedaron superseded por la frontera AOS/OMP.
 
-Decision: `docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` queda solo como junction de compatibilidad para descubrimiento tecnico de Codex. Los comandos operativos `sigamos`, `cerrar sesion`, `continuar sesion`, `continuar sesion con gol` y `realinear os` se representan como skills locales versionadas dentro de `docs/skills/`.
+Decision: `docs/skills/` es la fuente canonica de skills locales del repo. `.agents/skills` queda como junction de compatibilidad para descubrimiento tecnico. No se representan comandos de continuidad, sesión o planificación como skills locales.
 
-Motivo: las skills dan discovery barato para slash commands, pero la logica durable debe seguir en topics, scripts y docs canonicos para evitar drift y mantener el sistema agentico visible.
+Motivo: las skills locales portan capacidades con propósito propio; el runtime y su lifecycle pertenecen a OMP.
 
-Proximo paso: mantener `docs/skills/`, `scripts/ensure-skills-link.ps1`, `context-index` y `context-audit` alineados cuando se actualice AOS.
+Proximo paso: mantener `docs/skills/`, discovery, `context-index` y `context-audit` alineados sin añadir gobierno runtime.
 
 ### 2026-06-11 - Simplificar continuidad con `gol`
 
@@ -187,22 +187,28 @@ Proximo paso: mantener `docs/ASSISTANT_RULES.md`, `docs/topics/docs-knowledge-sy
 | Instalar GitHub MCP | deferred | Reabrir solo si la investigacion sobre issues/repos de Tauri se vuelve repetida. |
 | GitHub Pages / web propia | deferred | El repo/README cumple como web inicial; reabrir cuando existan screenshots/gifs, assets publicos y un release menos alpha. |
 
-### 2026-07-04 - Usar internet libremente y pedir permiso antes de instalar
+### 2026-07-04 - Privacidad externa y autorización antes de instalar
 
-Estado: accepted
+Estado: accepted para los gates locales; selección de tools y estrategia de research delegadas al runtime OMP.
 
-Decision: los agentes deben usar web/internet libremente por defecto cuando conocimiento externo o cambiante evite adivinar, priorizando fuentes oficiales y sin enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales. Si evidencia online contradice el repo local, docs del proyecto o comportamiento observado, deben consultar a JP antes de decidir y presentar ambas evidencias con fuentes e impacto. Para instalar dependencias, CLIs, paquetes de sistema, herramientas auxiliares o binarios/scripts remotos, deben pedir autorizacion explicita con comando exacto, alcance, motivo, riesgos, alternativas, cambios esperados y rollback.
+Decision: no enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos. Si evidencia externa contradice el repo local, docs del proyecto o comportamiento observado, consultar a JP antes de decidir y presentar ambas evidencias con fuentes e impacto. Instalar dependencias, CLIs, paquetes de sistema, herramientas auxiliares o binarios/scripts remotos requiere autorización explícita con comando exacto, alcance, motivo, riesgos, alternativas, cambios esperados y rollback.
 
-Motivo: JP quiere recuperar poder agente usando conocimiento disponible en internet en vez de inferir de memoria, pero conservar control humano sobre cambios de entorno/instalaciones y sobre conflictos entre fuentes externas y realidad local.
-
-Proximo paso: aplicar la politica desde `AGENTS.md` y `docs/topics/pi-agentic-os.md`.
+Motivo: el proyecto conserva control humano sobre cambios de entorno, instalaciones, datos sensibles y conflictos entre evidencia externa y realidad local, sin prescribir al runtime cómo investigar.
 
 ### 2026-07-04 - Simplificar continuidad Pi a `/aos-continuar` post-guardado
 
-Estado: superseded por AOS 1.1 flow-first
+Estado: superseded; historia previa a la frontera AOS/OMP.
 
-Decision histórica: el adapter local separaba guardado y continuidad mediante `/aos-continuar`. Desde AOS 1.1 la superficie diaria es `/flow`; el handoff documental de Hacer reemplaza ese lifecycle local sin copiar runtime al downstream.
+Decision histórica: el adapter local separaba guardado y continuidad mediante `/aos-continuar`; luego fue reemplazado por `/flow`. Ninguna de esas superficies define el runtime actual.
 
-Motivo: los comandos previos (`/aos-nueva-sesion`, `/aos-continuar-sesion`, `/aos-nueva-sesion-con-gol`, `/aos-continuar-con-gol`, `/aos-siguiente`) mezclaban guardado, handoff y ejecucion, generando ambiguedad. JP quiere revisar/controlar el guardado por separado y tener una continuidad confiable basada en docs vivos.
+Motivo: los comandos previos mezclaban persistencia documental, handoff y ejecución. La continuidad durable permanece en los docs del repo; OMP gobierna la ejecución.
 
-Proximo paso histórico: reemplazado por `/flow`; no reintroducir los aliases locales.
+### 2026-08-04 - Frontera AOS/OMP y `computer` built-in para dogfood
+
+Estado: accepted; reemplaza el runtime lifecycle AOS/Pi y el wrapper local workstation-specific.
+
+Decision: AOS conserva contexto, memoria durable, topics, tracks, specs, skills y gates locales. OMP gobierna su runtime sin defaults project-local de modelo, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo o modos. El dogfood conserva el `computer` built-in habilitado en `.omp/config.yml`, con inspección read-only, aprobación para input y sin dependencia del runtime de producto. C0 conserva el oracle app externa -> hotkey foreground -> type global sin targetear Copicu -> token visible.
+
+Motivo: evita que la capa contextual duplique el control plane de OMP y mantiene la capacidad local de dogfood sin Python/AHK, rutas absolutas ni dependencias de producto. AX sigue sin ser oracle suficiente para WebView2.
+
+Proximo paso: mantener docs, auditoría, baterías manuales e índice alineados con esta frontera; no reintroducir wrappers ni políticas runtime project-local.

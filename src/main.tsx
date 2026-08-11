@@ -537,6 +537,7 @@ const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
 const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
+const EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT = "copicu://external-editor/edit-active";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const SCENARIO_SESSION_CHANGED_EVENT = "copicu://scenario/session-changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
@@ -3475,6 +3476,22 @@ function App() {
     },
     [autocompleteOpen, refreshHistory, scenarioCommandOpen, updateDeferredAppliedRefresh],
   );
+  const pickerEventHandlersRef = useRef({
+    focusSearch,
+    refreshHistory,
+    refreshAppliedHistory,
+    resetPickerSession,
+  });
+
+  useEffect(() => {
+    pickerEventHandlersRef.current = {
+      focusSearch,
+      refreshHistory,
+      refreshAppliedHistory,
+      resetPickerSession,
+    };
+  }, [focusSearch, refreshAppliedHistory, refreshHistory, resetPickerSession]);
+
 
   useEffect(() => {
     const deferredRefresh = deferredAppliedRefresh;
@@ -3533,7 +3550,7 @@ function App() {
         const nextQuery = scenarioSession.query;
         queryRef.current = nextQuery;
         setQuery(nextQuery);
-        void refreshHistory({
+        void pickerEventHandlersRef.current.refreshHistory({
           resetScroll: true,
           queryOverride: nextQuery,
           allowAi: false,
@@ -3559,11 +3576,11 @@ function App() {
       setSelectedIds(new Set());
       setSelectedItemId(null);
       selectionAnchorItemIdRef.current = null;
-      void refreshHistory({
+      void pickerEventHandlersRef.current.refreshHistory({
         resetScroll: true,
         queryOverride: nextQuery,
         allowAi: false,
-      }).then(focusSearch);
+      }).then(() => pickerEventHandlersRef.current.focusSearch());
     }).then((nextUnlisten) => {
       unlisten = nextUnlisten;
     });
@@ -3583,7 +3600,7 @@ function App() {
       unlisten?.();
       unlistenScenario?.();
     };
-  }, [focusSearch, refreshHistory]);
+  }, []);
 
   const loadNextHistoryPage = useCallback(async () => {
     const paginationBlock = historyPaginationBlockedRef.current;
@@ -4138,6 +4155,42 @@ function App() {
     });
   }, [beginEdit, focusSearch]);
 
+  const openExternalEditor = useCallback(async (itemId: number | null) => {
+    if (itemId === null) {
+      pushToast({
+        title: "External editor",
+        message: "Clipboard history is empty.",
+        tone: "warning",
+      });
+      return;
+    }
+    try {
+      setActionError(null);
+      const launch = await invoke<{ editorName: string }>("edit_history_item_external", { itemId });
+      pushToast({
+        title: "External editor",
+        message: `Opened in ${launch.editorName}. Save and close the file to import changes.`,
+        tone: "info",
+      });
+    } catch (error) {
+      setActionError(String(error));
+      pushToast({
+        title: "External editor",
+        message: String(error),
+        tone: "warning",
+      });
+    }
+  }, [pushToast]);
+
+  const openActiveExternalEditor = useCallback(() => {
+    const itemId = pendingHistoryActivationItemIdRef.current
+      ?? selectedItemIdRef.current
+      ?? lastActivatedItemIdRef.current
+      ?? historyRef.current[0]?.id
+      ?? null;
+    void openExternalEditor(itemId);
+  }, [openExternalEditor]);
+
   useEffect(() => {
     if (!isTauriRuntime()) {
       return undefined;
@@ -4148,6 +4201,19 @@ function App() {
     });
     return () => unlisten?.();
   }, [openActiveMetadata]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return undefined;
+    }
+    let unlisten: (() => void) | null = null;
+    void listen(EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT, () => {
+      void openActiveExternalEditor();
+    }).then((nextUnlisten) => {
+      unlisten = nextUnlisten;
+    });
+    return () => unlisten?.();
+  }, [openActiveExternalEditor]);
 
   const deleteItems = useCallback(
     async (items: HistoryItem[]) => {
@@ -4953,22 +5019,29 @@ function App() {
       selectionAnchorItemIdRef.current = itemId;
       lastActivatedItemIdRef.current = itemId;
       const activationSelectionSeq = ++selectionInteractionSeqRef.current;
-      void refreshAppliedHistory({
+      const applyActivationSelection = () => {
+        const targetIndex = historyRef.current.findIndex((item) => item.id === itemId);
+        if (targetIndex < 0) {
+          pendingHistoryActivationItemIdRef.current = itemId;
+          return false;
+        }
+        pendingHistoryActivationItemIdRef.current = null;
+        setSelectedIds(emptySelection);
+        setSelectedItemId(itemId);
+        if (targetIndex === 0) {
+          historyScrollRef.current?.scrollTo({ top: 0 });
+        }
+        return true;
+      };
+      applyActivationSelection();
+      void pickerEventHandlersRef.current.refreshAppliedHistory({
         respectManualScroll: false,
         showPending: false,
       }).then(() => {
         if (!active || activationSelectionSeq !== selectionInteractionSeqRef.current) {
           return;
         }
-        const targetIndex = historyRef.current.findIndex((item) => item.id === itemId);
-        if (targetIndex < 0) {
-          return;
-        }
-        setSelectedIds(emptySelection);
-        setSelectedItemId(itemId);
-        if (targetIndex === 0) {
-          historyScrollRef.current?.scrollTo({ top: 0 });
-        }
+        applyActivationSelection();
       }).catch((error) => {
         if (active) {
           setHistoryPending(false);
@@ -4976,14 +5049,18 @@ function App() {
         }
       });
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) {
+        unlisten = nextUnlisten;
+      } else {
+        void nextUnlisten();
+      }
     });
 
     return () => {
       active = false;
       unlisten?.();
     };
-  }, [refreshAppliedHistory]);
+  }, []);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -5029,7 +5106,7 @@ function App() {
             pickerWasHiddenRef.current = true;
             return;
           }
-          return refreshAppliedHistory({
+          return pickerEventHandlersRef.current.refreshAppliedHistory({
             respectManualScroll: true,
             showPending: false,
           }).then(activatePendingHistoryItem);
@@ -5085,16 +5162,16 @@ function App() {
           focusRequestSeq === historyRequestSeqRef.current;
         pickerWasHiddenRef.current = false;
         if (resetAfterHidden) {
-          resetPickerSession();
+          pickerEventHandlersRef.current.resetPickerSession();
         }
         const refresh = resetAfterHidden
-          ? refreshHistory({
+          ? pickerEventHandlersRef.current.refreshHistory({
               resetScroll: true,
               showPending: false,
               queryOverride: filterLockedRef.current ? historyInputQueryRef.current : "",
               allowAi: false,
             })
-          : refreshAppliedHistory({
+          : pickerEventHandlersRef.current.refreshAppliedHistory({
               respectManualScroll: true,
               showPending: false,
             });
@@ -5115,7 +5192,7 @@ function App() {
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [refreshAppliedHistory, refreshHistory, resetPickerSession]);
+  }, []);
 
   useEffect(() => {
     const [lastVirtualRow] = [...virtualRows].reverse();
@@ -5681,7 +5758,13 @@ function App() {
           break;
         case "F2":
           event.preventDefault();
-          beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+          if (event.ctrlKey || event.metaKey) {
+            if (!hasMultiSelection) {
+              void openActiveExternalEditor();
+            }
+          } else {
+            beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+          }
           break;
         case "Enter":
           event.preventDefault();
@@ -5738,7 +5821,13 @@ function App() {
             return;
           }
           event.preventDefault();
-          beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+          if (event.ctrlKey || event.metaKey) {
+            if (!hasMultiSelection) {
+              void openActiveExternalEditor();
+            }
+          } else {
+            beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+          }
         }}
       >
         {editDraft?.mode === "content" ? (
@@ -6742,7 +6831,11 @@ function App() {
                             event.stopPropagation();
                             if (event.key === "F2") {
                               event.preventDefault();
-                              void beginEdit(item, "content");
+                              if (event.ctrlKey || event.metaKey) {
+                                void openExternalEditor(item.id);
+                              } else {
+                                void beginEdit(item, "content");
+                              }
                             } else if (event.key === "Escape") {
                               event.preventDefault();
                               cancelInlineEdit();
@@ -6963,6 +7056,17 @@ function App() {
                                 <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
                                 <span>Open full editor</span>
                                 <ShortcutBadge shortcut="F2" />
+                              </UiUnstyledButton>
+                              <UiUnstyledButton
+                                type="button"
+                                role="menuitem"
+                                tabIndex={-1}
+                                className="item-menu-action"
+                                onClick={() => void openExternalEditor(item.id)}
+                              >
+                                <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                                <span>Edit externally</span>
+                                <ShortcutBadge shortcut="Ctrl+F2" />
                               </UiUnstyledButton>
                             </>
                           ) : null}
@@ -7469,7 +7573,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
             <dl>
               <div><dt><code>Search</code> / <code>Ctrl+Enter</code></dt><dd>Run the current query.</dd></div>
               <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit tags for the active clip or add tags to a selection.</dd></div>
-              <div><dt><code>F2</code> / <code>Shift+F2</code></dt><dd>Edit content or metadata.</dd></div>
+              <div><dt><code>F2</code> / <code>Ctrl+F2</code> / <code>Shift+F2</code></dt><dd>Edit content, use the external editor, or edit metadata.</dd></div>
               <div><dt><code>Settings → Picker</code></dt><dd>Choose realtime, Enter, or button-triggered search.</dd></div>
             </dl>
           </section>

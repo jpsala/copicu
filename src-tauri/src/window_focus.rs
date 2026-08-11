@@ -21,6 +21,11 @@ pub struct PreviousWindow {
 }
 
 type NativeWindowId = isize;
+
+#[cfg(target_os = "windows")]
+pub(crate) fn process_name_for_window(window_id: NativeWindowId) -> Option<String> {
+    platform::window_process_name(window_id)
+}
 const FOREGROUND_TRACK_INTERVAL: Duration = Duration::from_millis(250);
 
 #[cfg(debug_assertions)]
@@ -182,10 +187,7 @@ pub fn hide_tauri_window<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result
     let tauri_result = window
         .hide()
         .map_err(|error| format!("window hide failed: {error}"));
-    let window_id = window
-        .hwnd()
-        .ok()
-        .map(|hwnd| hwnd.0 as NativeWindowId);
+    let window_id = window.hwnd().ok().map(|hwnd| hwnd.0 as NativeWindowId);
     let Some(window_id) = window_id else {
         return tauri_result;
     };
@@ -280,8 +282,7 @@ mod platform {
                 BringWindowToTop, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
                 GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetForegroundWindow,
                 SetWindowPos, ShowWindow, HWND_NOTOPMOST, HWND_TOPMOST, SHOW_WINDOW_CMD,
-                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE,
-                SW_SHOWNOACTIVATE,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE,
             },
         },
     };
@@ -393,7 +394,7 @@ mod platform {
         })
     }
 
-    fn window_process_name(window_id: NativeWindowId) -> Option<String> {
+    pub fn window_process_name(window_id: NativeWindowId) -> Option<String> {
         let process_id = window_process_id(window_id)?;
         process_path_from_id(process_id)
             .as_deref()

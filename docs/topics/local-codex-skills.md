@@ -54,7 +54,6 @@ powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
 powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
 bun run context:index
 bun run context:audit
-bun run routing:check
 ```
 
 Al agregar o modificar una skill, editar `docs/skills/<nombre>/`, actualizar

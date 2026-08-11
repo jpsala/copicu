@@ -1,16 +1,21 @@
 # Copicu dogfood battery
 
-Bateria guardada para correr periodicamente con Computer Use/AHK sobre la app real de Windows.
+Batería guardada para correr periódicamente sobre la app real de Windows. El
+script npm de producto y las baterías manuales OMP son superficies separadas.
 
-## Computer Use directo
+## OMP Computer directo
 
-La bateria especifica del tool `copicu_computer_use` esta en:
+Las baterías del built-in `computer` son:
 
-- `tests/manual/dogfood/COMPUTER_USE_BATTERY.md` - bateria general del tool.
-- `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md` - bateria especifica del picker, separada en mouse/hotkeys y centrada en foco + pin/candadito. Incluye C0, oracle obligatorio de keyboard-ready: app externa -> hotkey -> type sin `focus` manual debe escribir en search.
-- `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md` - corrida real tipo usuario: seleccionar/copiar texto externo, abrir picker, filtrar, activar, pegar de vuelta y estresar foco/pin.
+- `tests/manual/dogfood/COMPUTER_USE_BATTERY.md` — batería general.
+- `tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md` — foco,
+  pin/keep-open y C0 obligatorio: app externa -> hotkey foreground ->
+  `desktop.type` sin targetear Copicu -> token visible.
+- `tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md` — copy/search/activate/
+  paste interactivo con datos sintéticos.
 
-Estas baterias no son comandos npm: se ejecutan desde el agente llamando acciones reales del tool (`self_test`, `open_picker`, `windows`, `focus`, `window_info`, `read`, `send`, `type`, `click`, `screenshot`, `uia_find`).
+No son comandos npm. Se ejecutan con `desktop.windows`, `desktop.focusedWindow`,
+window handles, AX y screenshots del built-in; input requiere aprobación.
 
 ## Comando principal
 
@@ -74,12 +79,12 @@ El primer caso que dejamos automatizado es el smoke de picker real:
 - search input recibe texto;
 - hotkey del picker deja el search keyboard-ready sin click ni `focus` manual;
 - la lista filtra sobre fixtures sembrados;
-- Enter copia el item filtrado y se valida `A_Clipboard`;
+- Enter copia el item filtrado y se valida en una app interactiva;
 - teclado navega y permite marcas/multiseleccion;
 - se puede abrir menu contextual;
 - queda screenshot de evidencia.
 
-Esto cubre el problema que encontramos: Pi corre en Session 0 y no puede focalizar ventanas reales si AHK no se ejecuta en la sesion interactiva.
+Esto cubre el problema central: existencia/capture de la ventana no prueban foco ni keyboard-readiness; C0 usa entrega foreground y resultado visible.
 
 ## Matriz larga para ir ampliando
 
@@ -89,9 +94,9 @@ La suite debe crecer por capas. Cada capa nueva debe dejar evidencia textual + s
 
 - [x] Proceso Copicu arranca en sesion interactiva.
 - [x] Hotkey global abre/oculta picker.
-- [x] AHK puede enfocar `Copicu ahk_class Tauri Window`.
+- [x] OMP enumera una ventana exacta y confirma foreground.
 - [x] Screenshot real de WebView.
-- [ ] Detectar y cerrar dialogs AHK residuales si una accion falla.
+- [ ] Formalizar pin/keep-open sin coordenadas aproximadas.
 
 ### B. Picker keyboard-first
 
@@ -164,7 +169,8 @@ Pendiente ampliar:
 ## Guardrails
 
 - No usar `%APPDATA%\dev.jpsala.copicu` para esta bateria: siempre app-data aislada.
-- No depender de UIA para WebView; usar foco, teclado y screenshots.
-- No dejar watcher activo salvo test especifico de clipboard capture.
+- AX/UIA no es oracle único para WebView; combinar foco, teclado, screenshots y estado de producto.
+- Todo click por coordenadas usa el screenshot más reciente del mismo target y se recaptura tras cambios de ventana/display.
+- No dejar watcher activo salvo test específico de clipboard capture.
 - No cerrar apps del usuario fuera de procesos repo-owned.
-- Si Pi corre en Session 0, ejecutar AHK via tarea `Interactive only`; de lo contrario los hotkeys/foco no son confiables.
+- Ejecutar en sesión Windows interactiva; no usar Session 0 como oracle de foco, hotkeys o clipboard.

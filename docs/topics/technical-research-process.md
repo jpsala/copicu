@@ -23,16 +23,15 @@ Antes de elegir o implementar una libreria para una necesidad tecnica importante
 
 Para cada necesidad del MVP o arquitectura:
 
-1. Usar `code_search` para ejemplos concretos, API references y patrones de uso cuando la pregunta sea de programacion o librerias.
-2. Usar `web_search`/`fetch_content` para confirmar detalles criticos con fuentes primarias: docs oficiales, docs.rs, crates.io, GitHub del proyecto, issues relevantes o Microsoft Learn para Win32.
-3. Usar la skill `librarian` cuando haya que entender internals de una libreria OSS, cambios historicos, commits, blame o comportamiento respaldado por lineas exactas de codigo.
-4. Documentar el resultado en un topic especifico.
-5. Registrar decisiones durables en `docs/DECISIONS.md`.
-6. Linkear la decision o pattern desde la spec correspondiente.
+1. Ubicar ejemplos concretos, APIs y patrones ya usados en el código.
+2. Verificar detalles cambiantes con fuentes primarias: documentación oficial, repositorios, issues relevantes o referencias de plataforma.
+3. Documentar el resultado en un topic especifico.
+4. Registrar decisiones durables en `docs/DECISIONS.md`.
+5. Linkear la decision o pattern desde la spec correspondiente.
 
-`pi-web-access` y la skill `librarian` son herramientas de research; no reemplazan el criterio del proyecto ni las fuentes durables. Si el hallazgo afecta arquitectura, dependencias o roadmap, promoverlo a topic, decision o spec.
+La elección de tools y agentes pertenece a OMP. Las fuentes y conclusiones durables pertenecen al proyecto cuando afectan arquitectura, dependencias o roadmap.
 
-En Pi, se puede iniciar este flujo con el prompt template `/research <tema>` definido en `.pi/prompts/research.md`.
+El comando project-local opt-in `/research <tema>` vive en `.omp/commands/research.md` y adapta este procedimiento durable.
 
 ## Que Cuenta Como Necesidad Tecnica
 

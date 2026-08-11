@@ -16,10 +16,9 @@ updated: YYYY-MM-DD
 
 Cuando un trabajo descubra algo durable, promoverlo a `docs/PROJECT.md`, `docs/DECISIONS.md`, `docs/OPEN_QUESTIONS.md` o `docs/topics/`.
 
-## `/flow` Y Continuidad
+## Continuidad Durable
 
-Planear registra un brief liviano y Hacer usa la track seleccionada como handoff
-documental hacia una sesión nueva enlazada. Al cerrar un corte:
+Un track conserva trabajo retomable y valor durable:
 
 - actualizar estado y próximo paso sólo si cambiaron;
 - promover decisiones durables a `docs/DECISIONS.md`;
@@ -27,8 +26,7 @@ documental hacia una sesión nueva enlazada. Al cerrar un corte:
 - mantener `docs/WORKING_MEMORY.md` como foco mínimo;
 - evitar historial, receipts y duplicación.
 
-Cerrar compacta únicamente valor durable faltante y no inicia otro batch. El
-handoff apunta a docs actualizados; no los reemplaza ni repite.
+La capa local no prescribe cómo OMP planifica, ejecuta, paraleliza o gestiona sesiones.
 
 ## Inventario
 

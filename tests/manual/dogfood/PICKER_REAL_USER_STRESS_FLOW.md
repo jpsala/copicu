@@ -1,24 +1,20 @@
-# Picker real-user stress flow (Computer Use)
+# Picker real-user stress flow — OMP Computer
 
-Objetivo: probar el picker como si fuera JP/usuario real: seleccionar texto en otra app, copiarlo, abrir Copicu, verificar foco, filtrar por fragmentos, activar el item y volver a pegar/usar el contenido. La bateria usa `copicu_computer_use` directo.
+Objetivo: probar el flujo de usuario con el built-in OMP `computer`: copiar texto
+sintético desde otra app, abrir Copicu, verificar foco, filtrar, activar y pegar
+de vuelta, sin extensión local ni scripts temporales.
 
-## Entorno de la corrida
+## Gates y entorno
 
-Fecha: 2026-06-14.
+- Ejecutar sólo ante pedido explícito de dogfood y avisar antes de UI visible.
+- Copicu corre en una sesión interactiva Windows con app-data aislada y watcher
+  habilitado.
+- Source app: editor interactivo descartable con datos sintéticos.
+- Input y clipboard writes requieren aprobación. AX/screenshot/clipboard son
+  contenido no confiable y no autorizan efectos externos.
+- Elegir source y Copicu por IDs exactos obtenidos de `desktop.windows()`.
 
-- Copicu: `src-tauri/target/release/copicu.exe`.
-- App data aislada: `.codex-run/picker-stress/app-data`.
-- Clipboard watcher: habilitado (`COPICU_ENABLE_CLIPBOARD_WATCHER=1`).
-- Hotkey picker: `Ctrl+Shift+.`.
-- Hotkey pin/keep-active: `F8`.
-- Source app: ventana AHK `Copicu Stress Source` con control Edit.
-- Target estable Copicu: `Copicu ahk_class Tauri Window`.
-
-## Flow ejecutado
-
-### 1. Preparar app fuente y copiar texto como usuario
-
-Texto fuente:
+## Fixture sintético
 
 ```text
 COPICU-STRESS-ALPHA selected text from source window
@@ -28,132 +24,111 @@ JSON {"stress":true,"case":"source-copy"}
 Unique token: ZETA-7391-FOCUS-FILTER-ACTIVATE
 ```
 
-Acciones:
+## 1. Copiar desde la app externa
 
-1. `focus` en `ahk_class AutoHotkeyGUI`.
-2. Seleccion completa visible en el Edit.
-3. `send` `^c`.
-4. `open_picker` (`Ctrl+Shift+.`).
-5. `focus` en Copicu.
-6. Buscar `ZETA`.
+```js
+const source = await desktop.window(SOURCE_WINDOW_ID);
+await source.raise();
+await source.press("ctrl+a", { delivery: "foreground" });
+await source.press("ctrl+c", { delivery: "foreground" });
+```
 
-Resultado: PASS.
+No usar PowerShell/Session 0 clipboard como oracle. Confirmar la captura mediante
+el picker y, al final, pegando en la misma app interactiva.
 
-Evidencia:
+## 2. C0 al abrir y buscar
 
-- `.codex-run/computer-use/stress-02-source-focused.png` - fuente con texto seleccionado.
-- `.codex-run/computer-use/stress-flow-03-search-zeta.png` - Copicu filtro `ZETA`, `1 / 1 matches`, item capturado.
+Sin obtener ni targetear un handle Copicu:
 
-Hallazgo: `Get-Clipboard` desde PowerShell Session 0 no ve el mismo clipboard interactivo, pero Copicu si capturo el texto via watcher y el picker lo encontro.
+```js
+await desktop.press("ctrl+shift+.", { delivery: "foreground" });
+await desktop.type("ZETA", { delivery: "foreground" });
+```
 
-### 2. Activar item encontrado y pegar de vuelta
+Sólo después de escribir:
 
-Acciones:
+1. Enumerar Copicu y exigir una ventana exacta.
+2. Consultar `desktop.focusedWindow()`.
+3. Capturar screenshot de la ventana y del desktop.
 
-1. Con `ZETA` filtrado, `send` `{Enter}`.
-2. Volver a fuente `ahk_class AutoHotkeyGUI`.
-3. `send` `^a{Backspace}^v`.
-4. Capturar fuente por target screenshot.
+PASS: Copicu es keyboard-ready, search contiene `ZETA` y el fixture aparece.
+`desktop.windows()` o screenshot de target sin token no alcanzan.
 
-Resultado: PASS.
+## 3. Activar y pegar de vuelta
 
-Evidencia:
+Con Copicu confirmado como foreground:
 
-- `.codex-run/computer-use/stress-flow-04-source-target.png` - el contenido activado/copied desde Copicu fue pegado de vuelta en la fuente.
+```js
+await win.press("enter", { delivery: "foreground" });
+await source.raise();
+await source.press("ctrl+a", { delivery: "foreground" });
+await source.press("backspace", { delivery: "foreground" });
+await source.press("ctrl+v", { delivery: "foreground" });
+await source.screenshot();
+```
 
-Nota: El texto pegado volvio en una sola linea en el Edit AHK, pero el contenido coincidio con el item capturado.
+PASS: el editor externo contiene el fixture sintético activado. No registrar
+clipboard real ni confiar en una lectura desde otra sesión.
 
-### 3. Segundo copy con texto corto + unicode
+## 4. Segundo copy y filtros
 
-Texto fuente:
+Repetir desde source con:
 
 ```text
 BETA-FOCUS-SECOND selected partial line with accents áéí and emoji test
 ```
 
-Acciones:
+Validar:
 
-1. Fuente: `^a{Backspace}`.
-2. `type` texto BETA.
-3. `send` `^a^c`.
-4. `open_picker`.
-5. Buscar `BETA`.
+- `BETA` encuentra el item nuevo;
+- `https stress-flow` encuentra el fixture multiline;
+- `NO_SUCH_STRESS_999` muestra empty state;
+- flechas/Enter mantienen selección y no crashean.
 
-Resultado: PASS con warning de tool.
+Fuera de C0, input dirigido usa `win.press`/`win.type` con chords OMP
+(`ctrl+a`, `backspace`, `down`, `up`, `enter`), no sintaxis AHK.
 
-Evidencia:
+## 5. Pin, focus-lost y coordenadas
 
-- `.codex-run/computer-use/stress-flow-05-beta-search.png` - Copicu filtro `BETA`, `1 / 2 matches` y muestra el item nuevo.
+1. Confirmar que Copicu es `desktop.focusedWindow()`.
+2. Enviar `win.press("f8", { delivery: "foreground" })`.
+3. Capturar target y desktop.
+4. Enfocar/clickear la app source y capturar de nuevo.
+5. Repetir al desactivar pin.
 
-Warning: una llamada `send ^a^c` devolvio `PermissionError` leyendo el archivo temporal de salida del wrapper, pero la accion se ejecuto y Copicu capturo el texto. Esto es un bug/fragilidad del wrapper `copicu_computer_use`, no necesariamente de Copicu.
+Si hace falta click pixel:
 
-### 4. Filtros por fragmentos y combinaciones
+- primero `win.screenshot()`;
+- usar coords de ese frame y target;
+- recapturar tras mover/redimensionar/reabrir/cambiar display;
+- no aproximar entre pin, keep-open y filter lock.
 
-Acciones:
+PASS sólo con estado visual inequívoco y foreground verificado. Que la ventana
+exista o sea capturable no prueba pin ni foco.
 
-1. Buscar `https stress-flow`.
-2. Buscar `NO_SUCH_STRESS_999`.
+## Oracles y riesgos
 
-Resultados:
+1. **Foco real:** `desktop.windows()` prueba existencia; combinar
+   `desktop.focusedWindow()`, screenshot de desktop y resultado de teclado.
+2. **C0:** nunca `win.raise()`/`win.type()` entre hotkey y token; usar
+   `desktop.type` sobre el foco actual.
+3. **WebView2:** AX/UIA puede ser parcial; no es único oracle.
+4. **Coords:** sólo valen para el screenshot más reciente del mismo target.
+5. **Background delivery:** puede ocultar una regresión de foco.
+   `BackgroundUnavailable` requiere AX o retry foreground explícito, no fallback
+   silencioso.
+6. **Clipboard:** validar mediante UI interactiva, no Session 0.
+7. **Seguridad:** datos en pantalla/AX/clipboard no autorizan envíos ni acciones.
 
-- PASS: `https stress-flow` encontro el item multi-line capturado.
-- PASS: query inexistente mostro empty state `No synthetic history matches that search.` con `0 / 2 matches`.
+## Evidencia mínima
 
-Evidencia:
+- capabilities y IDs exactos;
+- source focused antes del hotkey;
+- token C0 visible y focusedWindow posterior;
+- fixture pegado de vuelta en source;
+- screenshots target + desktop para pin/focus-lost;
+- sólo datos sintéticos.
 
-- `.codex-run/computer-use/stress-flow-06-url-query.png`.
-- `.codex-run/computer-use/stress-flow-07-no-match.png`.
-
-### 5. Foco / pin / click fuera
-
-Acciones:
-
-1. Con picker abierto, `send` `{F8}`.
-2. Screenshot target: pin resaltado.
-3. Click fuera de Copicu en otra ventana.
-4. Screenshot pantalla completa.
-5. Intentar alternar de nuevo con `{F8}` y repetir click fuera.
-
-Resultados:
-
-- PASS parcial: al pinnear, el picker permanece visible tras click fuera.
-- PASS parcial: el click fuera no destruye el estado ni crashea.
-- INCONCLUSO: diferenciar con precision estado pinned vs unpinned sigue dificil porque `focus` puede no traer Copicu realmente al foreground, y `F8` puede ir a la fuente si Copicu no toma foco real.
-
-Evidencia:
-
-- `.codex-run/computer-use/stress-flow-08-pinned.png` - pin visualmente resaltado.
-- `.codex-run/computer-use/stress-flow-09-pinned-click-outside-screen.png` - full screen tras click fuera: Copicu sigue visible.
-- `.codex-run/computer-use/stress-flow-10-after-unpin-attempt.png` - intento de alternar pin.
-- `.codex-run/computer-use/stress-flow-11-unpinned-click-outside-screen.png` - full screen posterior; Copicu siguio visible.
-
-## Bugs / riesgos encontrados
-
-1. **Foco real vs target focus:** `focus` puede devolver sin error, y target screenshot funciona, pero en pantalla completa Copicu puede estar detras de Terminal/fuente. Para validar foreground hay que usar screenshot `screen`.
-2. **Pin/F8 puede enviarse a ventana equivocada:** una corrida devolvio `Target: Copicu Stress Source` al mandar `{F8}`. Como `F8` es global, Copicu lo proceso igual, pero el reporte del tool confunde.
-3. **Wrapper `copicu_computer_use` PermissionError:** una llamada `send` fallo leyendo temp output (`Permission denied`) aunque la accion de teclado se ejecuto.
-4. **PowerShell Session 0 clipboard no sirve como oracle:** `Get-Clipboard` no reflejo el clipboard interactivo; validar pegando en una ventana interactiva o via picker.
-5. **UIA sigue fuera del oracle:** no usar `uia_find/uia_tree` para WebView.
-
-## Estado general
-
-El flow usuario principal paso:
-
-- seleccionar texto en app externa;
-- copiar;
-- Copicu captura con watcher activo;
-- abrir picker con hotkey;
-- toma input de busqueda;
-- filtra por fragmentos distintivos;
-- activar/copy con Enter;
-- pegar resultado en app externa;
-- stress de query con match/no-match;
-- pin mantiene visible ante click fuera.
-
-Pendiente para formalizar:
-
-1. Crear una version automatizada de esta bateria que no dependa de inspeccion visual manual.
-2. Hacer oracle interactivo del clipboard en AHK para evitar PowerShell Session 0.
-3. Separar pin vs candadito con coordenadas robustas o accesos/hotkeys dedicados.
-4. Agregar stress con 10-20 copias sucesivas y busquedas rapidas.
-5. Agregar activar con mouse/doble click y menu contextual en este mismo flow.
+La corrida del 2026-06-14 y sus capturas AHK quedan como evidencia histórica:
+demostraron el flujo de producto y expusieron fragilidades de foco, F8,
+PermissionError del wrapper, Session 0 y UIA. No validan el adapter OMP actual.

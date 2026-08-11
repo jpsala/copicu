@@ -6,14 +6,15 @@ mod clipboard;
 mod clipboard_probe;
 mod diagnostics;
 mod enrichment;
+mod external_editor;
 mod find;
 mod host;
 mod hotkeys;
 mod image_capture;
 mod markdown_output;
 mod picker_session;
-mod script_editor;
 mod scenario;
+mod script_editor;
 pub mod storage;
 mod surface_registry;
 mod ui_host;
@@ -110,6 +111,8 @@ const METADATA_SHORTCUT_LABEL: &str = "Ctrl+Shift+C";
 const ACTIVE_PREVIOUS_SHORTCUT_LABEL: &str = "Ctrl+Shift+ArrowUp";
 #[cfg(not(test))]
 const ACTIVE_NEXT_SHORTCUT_LABEL: &str = "Ctrl+Shift+ArrowDown";
+#[cfg(not(test))]
+const EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT: &str = "copicu://external-editor/edit-active";
 #[cfg(not(test))]
 const METADATA_EDIT_ACTIVE_EVENT: &str = "copicu://metadata/edit-active";
 #[cfg(not(test))]
@@ -234,6 +237,7 @@ struct NativeShortcutStatus {
 struct AppShortcutStatus {
     picker: NativeShortcutStatus,
     pin: NativeShortcutStatus,
+    external_editor: NativeShortcutStatus,
 }
 
 #[cfg(not(test))]
@@ -270,6 +274,10 @@ struct CurrentPickerPinShortcut {
     shortcut: Arc<Mutex<Option<Shortcut>>>,
     status: Arc<Mutex<NativeShortcutStatus>>,
 }
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+struct CurrentExternalEditorShortcut(CurrentPickerPinShortcut);
 
 #[cfg(not(test))]
 #[derive(Clone)]
@@ -450,7 +458,6 @@ impl ItemPreviewState {
     fn is_visible(&self) -> bool {
         self.visible.load(Ordering::SeqCst)
     }
-
 }
 
 #[cfg(not(test))]
@@ -612,6 +619,25 @@ impl CurrentPickerPinShortcut {
 }
 
 #[cfg(not(test))]
+impl CurrentExternalEditorShortcut {
+    fn get(&self) -> Option<Shortcut> {
+        self.0.get()
+    }
+
+    fn set(&self, next_shortcut: Option<Shortcut>) {
+        self.0.set(next_shortcut);
+    }
+
+    fn status(&self) -> NativeShortcutStatus {
+        self.0.status()
+    }
+
+    fn set_status(&self, status: NativeShortcutStatus) {
+        self.0.set_status(status);
+    }
+}
+
+#[cfg(not(test))]
 #[tauri::command]
 fn get_capture_stats<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> clipboard::CaptureStats {
     app.try_state::<clipboard::ClipboardCapture>()
@@ -712,8 +738,21 @@ fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppSh
             supported: false,
             error: Some("picker pin shortcut state unavailable".to_string()),
         });
+    let external_editor = app
+        .try_state::<CurrentExternalEditorShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: Some("external editor shortcut state unavailable".to_string()),
+        });
 
-    AppShortcutStatus { picker, pin }
+    AppShortcutStatus {
+        picker,
+        pin,
+        external_editor,
+    }
 }
 
 #[cfg(not(test))]
@@ -871,13 +910,12 @@ fn history_search_with_ai_planner(
             let mut fallback_request = request;
             fallback_request.mode = storage::HistorySearchMode::Structured;
             fallback_request.explain = true;
-            fallback_request.applied_descriptor = Some(
-                storage::AppliedSearchDescriptor::for_query(
+            fallback_request.applied_descriptor =
+                Some(storage::AppliedSearchDescriptor::for_query(
                     display_query,
                     original_query.clone(),
                     storage::AppliedSearchMode::Ai,
-                )?,
-            );
+                )?);
             let mut page = storage.history_search(fallback_request)?;
             page.interpreted_query = Some(original_query);
             page.explanation =
@@ -898,13 +936,11 @@ fn history_search_with_ai_planner(
     planned_request.query = effective_query.clone();
     planned_request.mode = storage::HistorySearchMode::Structured;
     planned_request.explain = true;
-    planned_request.applied_descriptor = Some(
-        storage::AppliedSearchDescriptor::for_query(
-            display_query,
-            effective_query,
-            storage::AppliedSearchMode::Ai,
-        )?,
-    );
+    planned_request.applied_descriptor = Some(storage::AppliedSearchDescriptor::for_query(
+        display_query,
+        effective_query,
+        storage::AppliedSearchMode::Ai,
+    )?);
 
     let mut page = storage.history_search(planned_request)?;
     page.interpreted_query = Some(plan.query);
@@ -1022,13 +1058,12 @@ fn execute_ai_history_action_plan(
                 .to_string();
             refreshed_request.mode = storage::HistorySearchMode::Structured;
             refreshed_request.explain = true;
-            refreshed_request.applied_descriptor = Some(
-                storage::AppliedSearchDescriptor::for_query(
+            refreshed_request.applied_descriptor =
+                Some(storage::AppliedSearchDescriptor::for_query(
                     refreshed_request.query.clone(),
                     refreshed_request.query.clone(),
                     storage::AppliedSearchMode::Ai,
-                )?,
-            );
+                )?);
             let mut page = storage.history_search(refreshed_request)?;
             page.interpreted_query = Some(
                 script_plan
@@ -1328,8 +1363,8 @@ struct OpenMetadataWindowRequest {
 #[serde(rename_all = "camelCase")]
 struct MetadataEditorPayload {
     item: storage::HistoryItem,
-    item_tags: Vec<String>,
-    item_properties: storage::ScenarioProperties,
+    tag_entries: Vec<storage::MetadataTagEntry>,
+    property_entries: Vec<storage::MetadataPropertyEntry>,
     capture_context_events: Vec<storage::CaptureContextEvent>,
 }
 
@@ -1387,8 +1422,8 @@ fn open_metadata_window(
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_metadata_window")?;
     let fetch_started_at = Instant::now();
     let item = storage.get_item(request.item_id)?;
-    let item_tags = storage.get_item_tags(request.item_id)?;
-    let item_properties = storage.list_item_properties(request.item_id)?;
+    let tag_entries = storage.get_item_tag_entries(request.item_id)?;
+    let property_entries = storage.list_item_property_entries(request.item_id)?;
     let capture_context_events = storage.list_capture_context_events(request.item_id, 12)?;
     diag_log(
         "metadata.open.item-fetch.done",
@@ -1407,8 +1442,8 @@ fn open_metadata_window(
                 &app_for_main_thread,
                 MetadataEditorPayload {
                     item,
-                    item_tags,
-                    item_properties,
+                    tag_entries,
+                    property_entries,
                     capture_context_events,
                 },
             ) {
@@ -1497,7 +1532,10 @@ fn toggle_item_preview(
     let visible = state.is_visible();
     diag_log(
         "item-preview.toggle",
-        format!("item_id={} same_item={same_item} visible={visible}", request.item_id),
+        format!(
+            "item_id={} same_item={same_item} visible={visible}",
+            request.item_id
+        ),
     );
     if same_item && visible {
         hide_item_preview_for_app(&app);
@@ -1508,10 +1546,7 @@ fn toggle_item_preview(
 }
 
 #[cfg(not(test))]
-fn dispatch_item_preview_open(
-    app: tauri::AppHandle,
-    payload: storage::ItemPreviewPayload,
-) {
+fn dispatch_item_preview_open(app: tauri::AppHandle, payload: storage::ItemPreviewPayload) {
     thread::spawn(move || {
         let app_for_main_thread = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
@@ -1806,6 +1841,10 @@ fn update_settings(
         normalize_optional_single_shortcut(&settings.picker.settings_shortcut, "settings")?;
     settings.picker.preview_shortcut =
         normalize_optional_single_shortcut(&settings.picker.preview_shortcut, "preview")?;
+    settings.picker.external_editor_shortcut = normalize_optional_single_shortcut(
+        &settings.picker.external_editor_shortcut,
+        "external editor",
+    )?;
     let current_settings = storage.get_settings()?;
     sync_autostart_setting(
         &app,
@@ -1819,6 +1858,48 @@ fn update_settings(
     actions::refresh_script_action_cache(&storage)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
     Ok(next_settings)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn set_external_editor_shortcut(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    shortcut: String,
+) -> Result<storage::AppSettings, String> {
+    require_surface_window(
+        &window,
+        &[SETTINGS_WINDOW_LABEL],
+        "set_external_editor_shortcut",
+    )?;
+    let normalized = normalize_optional_single_shortcut(&shortcut, "external editor")?;
+    let previous_settings = storage.get_settings()?;
+    if previous_settings.picker.external_editor_shortcut == normalized {
+        refresh_external_editor_shortcut_from_settings(&app, &previous_settings);
+        return Ok(previous_settings);
+    }
+
+    let mut next_settings = previous_settings.clone();
+    next_settings.picker.external_editor_shortcut = normalized.clone();
+    let persisted = storage.update_settings(next_settings)?;
+    refresh_external_editor_shortcut_from_settings(&app, &persisted);
+    let status = app
+        .try_state::<CurrentExternalEditorShortcut>()
+        .map(|current| current.status())
+        .ok_or_else(|| "external editor shortcut state unavailable".to_string())?;
+    if normalized.is_empty() || status.registered {
+        return Ok(persisted);
+    }
+
+    let registration_error = status
+        .error
+        .unwrap_or_else(|| "shortcut registration failed".to_string());
+    let restored = storage.update_settings(previous_settings)?;
+    refresh_external_editor_shortcut_from_settings(&app, &restored);
+    Err(format!(
+        "External editor shortcut was not saved: {registration_error}"
+    ))
 }
 
 #[cfg(not(test))]
@@ -1898,6 +1979,140 @@ fn edit_script_in_vscode(
 }
 
 #[cfg(not(test))]
+#[tauri::command]
+fn list_external_editors(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+) -> Result<Vec<external_editor::ExternalEditorCandidate>, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, SETTINGS_WINDOW_LABEL],
+        "list_external_editors",
+    )?;
+    let settings = storage.get_settings()?;
+    Ok(external_editor::detect_external_editors(
+        &settings.editor.external_editor_path,
+    ))
+}
+
+#[cfg(not(test))]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExternalEditorLaunch {
+    editor_name: String,
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn edit_history_item_external(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    item_id: i64,
+) -> Result<ExternalEditorLaunch, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "edit_history_item_external")?;
+    let item = storage.get_item(item_id)?;
+    if item.content_kind() != "text" {
+        return Err("External editing currently supports text items only.".to_string());
+    }
+    let settings = storage.get_settings()?;
+    let editor =
+        match external_editor::resolve_external_editor(&settings.editor.external_editor_path) {
+            Ok(editor) => editor,
+            Err(error) => {
+                spawn_open_settings_window(app.clone());
+                focus_settings_section(app.clone(), "editor");
+                return Err(error);
+            }
+        };
+    let session_folder = storage
+        .db_path()
+        .parent()
+        .ok_or_else(|| "Could not resolve the external editor session folder.".to_string())?
+        .join("external-editor");
+    std::fs::create_dir_all(&session_folder)
+        .map_err(|error| format!("Could not create the external editor session folder: {error}"))?;
+    let session_id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_millis())
+        .unwrap_or_default();
+    let session_path = session_folder.join(format!("item-{item_id}-{session_id}.txt"));
+    std::fs::write(&session_path, item.text())
+        .map_err(|error| format!("Could not prepare the external editor file: {error}"))?;
+
+    let launch = ExternalEditorLaunch {
+        editor_name: editor.name.clone(),
+    };
+    let storage = storage.inner().clone();
+    thread::Builder::new()
+        .name(format!("copicu-external-editor-{item_id}"))
+        .spawn(move || {
+            let result = (|| {
+                let status = external_editor::launch_and_wait(&editor, &session_path)?;
+                if !status.success() {
+                    return Err(format!(
+                        "{} exited before the edit completed ({status}). The session file was kept at {}.",
+                        editor.name,
+                        session_path.display()
+                    ));
+                }
+                let edited_text = std::fs::read_to_string(&session_path)
+                    .map_err(|error| format!("Could not read the edited file: {error}"))?;
+                let changed = edited_text != item.text();
+                if changed {
+                    storage.update_item_text(item_id, edited_text)?;
+                    let app_for_main_thread = app.clone();
+                    app.run_on_main_thread(move || {
+                        if let Err(error) = app_for_main_thread.emit(
+                            HISTORY_CHANGED_EVENT,
+                            serde_json::json!({
+                                "itemId": item_id,
+                                "contentKind": "text",
+                            }),
+                        ) {
+                            eprintln!("external editor history changed emit failed: {error}");
+                        }
+                    })
+                    .map_err(|error| {
+                        format!("Could not refresh history after external editing: {error}")
+                    })?;
+                }
+                if let Err(error) = std::fs::remove_file(&session_path) {
+                    eprintln!(
+                        "external editor session cleanup failed for {}: {error}",
+                        session_path.display()
+                    );
+                }
+                Ok(changed)
+            })();
+
+            let (message, tone) = match result {
+                Ok(true) => (
+                    "Saved changes back to clipboard history.".to_string(),
+                    actions::ToastTone::Success,
+                ),
+                Ok(false) => (
+                    "Closed without changing the clipboard item.".to_string(),
+                    actions::ToastTone::Info,
+                ),
+                Err(error) => (error, actions::ToastTone::Warning),
+            };
+            emit_toast_on_main_thread(
+                app,
+                actions::ActionToast {
+                    title: Some("External editor".to_string()),
+                    message,
+                    tone,
+                    duration_ms: Some(5_000),
+                },
+                "external editor completion",
+            );
+        })
+        .map_err(|error| format!("Could not start the external editor session: {error}"))?;
+    Ok(launch)
+}
+
+#[cfg(not(test))]
 fn normalize_picker_global_shortcut(input: &str) -> Result<String, String> {
     let sequence = hotkeys::HotkeySequence::parse(input)
         .map_err(|error| format!("invalid picker shortcut: {error}"))?;
@@ -1955,12 +2170,15 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
     if normalized == settings.general.global_shortcut
         || normalized == settings.picker.pin_toggle_shortcut
         || normalized == settings.picker.settings_shortcut
+        || normalized == settings.picker.external_editor_shortcut
         || normalized == COMMAND_PALETTE_SHORTCUT_LABEL
         || normalized == METADATA_SHORTCUT_LABEL
         || normalized == ACTIVE_PREVIOUS_SHORTCUT_LABEL
         || normalized == ACTIVE_NEXT_SHORTCUT_LABEL
     {
-        return Err(format!("saved view shortcut conflicts with an app shortcut: {normalized}"));
+        return Err(format!(
+            "saved view shortcut conflicts with an app shortcut: {normalized}"
+        ));
     }
     let existing_views = storage.list_saved_history_views()?;
     let retains_own_hotkey = existing_views.iter().any(|view| {
@@ -1968,24 +2186,37 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
     });
     for view in &existing_views {
         if Some(view.id) != editing_id && view.hotkey.as_deref() == Some(normalized.as_str()) {
-            return Err(format!("saved view shortcut already belongs to {}", view.title));
+            return Err(format!(
+                "saved view shortcut already belongs to {}",
+                view.title
+            ));
         }
     }
     if retains_own_hotkey {
         return Ok(Some(normalized));
     }
     for action in actions::list_actions(storage)? {
-        if actions::normalize_shortcut_string(action.shortcut.as_deref()).as_deref() == Some(&normalized) {
-            return Err(format!("saved view shortcut conflicts with script action {}", action.title));
+        if actions::normalize_shortcut_string(action.shortcut.as_deref()).as_deref()
+            == Some(&normalized)
+        {
+            return Err(format!(
+                "saved view shortcut conflicts with script action {}",
+                action.title
+            ));
         }
     }
     if app.global_shortcut().is_registered(shortcut) {
-        return Err(format!("saved view shortcut is already registered: {normalized}"));
+        return Err(format!(
+            "saved view shortcut is already registered: {normalized}"
+        ));
     }
-    app.global_shortcut().register(shortcut)
-        .map_err(|error| format!("saved view shortcut registration failed for {normalized}: {error}"))?;
+    app.global_shortcut().register(shortcut).map_err(|error| {
+        format!("saved view shortcut registration failed for {normalized}: {error}")
+    })?;
     if let Err(error) = app.global_shortcut().unregister(shortcut) {
-        return Err(format!("saved view shortcut registration cleanup failed for {normalized}: {error}"));
+        return Err(format!(
+            "saved view shortcut registration cleanup failed for {normalized}: {error}"
+        ));
     }
     Ok(Some(normalized))
 }
@@ -2031,7 +2262,11 @@ fn update_saved_history_view(
     storage: State<'_, storage::AppStorage>,
     mut request: storage::UpdateSavedHistoryViewRequest,
 ) -> Result<storage::SavedHistoryView, String> {
-    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_saved_history_view")?;
+    require_surface_window(
+        &window,
+        &[SETTINGS_WINDOW_LABEL],
+        "update_saved_history_view",
+    )?;
     request.hotkey = normalize_saved_view_hotkey(&app, &storage, request.hotkey, Some(request.id))?;
     let view = storage.update_saved_history_view(request)?;
     refresh_global_shortcuts_from_storage(&app, &storage)?;
@@ -2046,7 +2281,11 @@ fn delete_saved_history_view(
     storage: State<'_, storage::AppStorage>,
     id: i64,
 ) -> Result<(), String> {
-    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "delete_saved_history_view")?;
+    require_surface_window(
+        &window,
+        &[SETTINGS_WINDOW_LABEL],
+        "delete_saved_history_view",
+    )?;
     storage.delete_saved_history_view(id)?;
     refresh_global_shortcuts_from_storage(&app, &storage)
 }
@@ -2664,7 +2903,9 @@ pub fn run() {
                     _ => {}
                 },
                 AI_OUTPUT_WINDOW_LABEL => match event {
-                    WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::Focused(false) => {
+                    WindowEvent::Moved(_)
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::Focused(false) => {
                         save_window_bounds_from_event(window);
                     }
                     _ => {}
@@ -2838,10 +3079,13 @@ pub fn run() {
             get_history_item,
             get_settings,
             update_settings,
+            set_external_editor_shortcut,
             set_picker_keep_open,
             set_picker_search_trigger_mode,
             edit_scripts_in_vscode,
             edit_script_in_vscode,
+            list_external_editors,
+            edit_history_item_external,
             list_tags,
             list_saved_history_views,
             create_saved_history_view,
@@ -2928,6 +3172,7 @@ pub fn run() {
             app.manage(CompoundShortcutRuntime::default());
             app.manage(CurrentPickerShortcut::default());
             app.manage(CurrentPickerPinShortcut::default());
+            app.manage(CurrentExternalEditorShortcut::default());
             app.manage(ui_host::UiHostState::default());
             app.manage(AiOutputState::default());
             app.manage(MetadataEditorState::default());
@@ -3840,8 +4085,7 @@ fn autostart_unavailable_reason() -> Option<String> {
     {
         if !current_exe_looks_installed() {
             return Some(
-                "Launch on startup can only be changed from the installed Copicu app."
-                    .to_string(),
+                "Launch on startup can only be changed from the installed Copicu app.".to_string(),
             );
         }
     }
@@ -4044,7 +4288,9 @@ fn spawn_open_command_palette<R: tauri::Runtime + 'static>(app: tauri::AppHandle
             if let Err(error) = show_main_window(&app_for_main_thread, true) {
                 eprintln!("{error}");
             }
-            if let Err(error) = app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, COMMAND_PALETTE_OPEN_EVENT, ()) {
+            if let Err(error) =
+                app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, COMMAND_PALETTE_OPEN_EVENT, ())
+            {
                 eprintln!("command palette open event failed: {error}");
             }
         }) {
@@ -4059,15 +4305,32 @@ fn spawn_edit_active_metadata<R: tauri::Runtime + 'static>(app: tauri::AppHandle
         thread::sleep(NATIVE_WINDOW_TASK_DELAY);
         let app_for_main_thread = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
-            if let Err(error) = app_for_main_thread.emit_to(
-                MAIN_WINDOW_LABEL,
-                METADATA_EDIT_ACTIVE_EVENT,
-                (),
-            ) {
+            if let Err(error) =
+                app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, METADATA_EDIT_ACTIVE_EVENT, ())
+            {
                 eprintln!("metadata edit-active event failed: {error}");
             }
         }) {
             eprintln!("metadata edit-active dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn spawn_edit_active_external<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
+        let app_for_main_thread = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            if let Err(error) = app_for_main_thread.emit_to(
+                MAIN_WINDOW_LABEL,
+                EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT,
+                (),
+            ) {
+                eprintln!("external editor edit-active event failed: {error}");
+            }
+        }) {
+            eprintln!("external editor edit-active dispatch failed: {error}");
         }
     });
 }
@@ -4100,10 +4363,7 @@ fn spawn_activate_neighbor<R: tauri::Runtime + 'static>(
                 .state::<clipboard::SelfWriteSuppression>()
                 .inner()
                 .clone();
-            let previous_window = app
-                .state::<window_focus::PreviousWindow>()
-                .inner()
-                .clone();
+            let previous_window = app.state::<window_focus::PreviousWindow>().inner().clone();
             host::activate_item(
                 &app,
                 None,
@@ -4224,9 +4484,19 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         return;
     }
 
-    if shortcut_from_label(COMMAND_PALETTE_SHORTCUT_LABEL).is_some_and(|command_palette_shortcut| {
-        *shortcut == command_palette_shortcut
-    }) {
+    if app
+        .try_state::<CurrentExternalEditorShortcut>()
+        .and_then(|current| current.get())
+        .is_some_and(|external_shortcut| *shortcut == external_shortcut)
+    {
+        eprintln!("external editor shortcut pressed: {shortcut:?}");
+        spawn_edit_active_external(app.clone());
+        return;
+    }
+
+    if shortcut_from_label(COMMAND_PALETTE_SHORTCUT_LABEL)
+        .is_some_and(|command_palette_shortcut| *shortcut == command_palette_shortcut)
+    {
         eprintln!("command palette shortcut pressed: {shortcut:?}");
         spawn_open_command_palette(app.clone());
         return;
@@ -4316,12 +4586,17 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
 #[cfg(not(test))]
 impl GlobalScriptShortcuts {
     fn current_shortcuts(&self) -> Vec<Shortcut> {
-        let mut shortcuts = self.actions_by_shortcut.lock()
+        let mut shortcuts = self
+            .actions_by_shortcut
+            .lock()
             .map(|current| current.keys().copied().collect::<Vec<_>>())
             .unwrap_or_default();
-        shortcuts.extend(self.saved_views_by_shortcut.lock()
-            .map(|current| current.keys().copied().collect::<Vec<_>>())
-            .unwrap_or_default());
+        shortcuts.extend(
+            self.saved_views_by_shortcut
+                .lock()
+                .map(|current| current.keys().copied().collect::<Vec<_>>())
+                .unwrap_or_default(),
+        );
         shortcuts
     }
 
@@ -4341,11 +4616,17 @@ impl GlobalScriptShortcuts {
     }
 
     fn action_for(&self, shortcut: &Shortcut) -> Option<GlobalScriptShortcutAction> {
-        self.actions_by_shortcut.lock().ok().and_then(|current| current.get(shortcut).cloned())
+        self.actions_by_shortcut
+            .lock()
+            .ok()
+            .and_then(|current| current.get(shortcut).cloned())
     }
 
     fn saved_view_for(&self, shortcut: &Shortcut) -> Option<GlobalSavedViewShortcut> {
-        self.saved_views_by_shortcut.lock().ok().and_then(|current| current.get(shortcut).cloned())
+        self.saved_views_by_shortcut
+            .lock()
+            .ok()
+            .and_then(|current| current.get(shortcut).cloned())
     }
 }
 
@@ -4606,9 +4887,10 @@ impl CompoundShortcutState {
 fn whichkey_route_label(route: &hotkeys::ShortcutRoute, fallback_id: &str) -> (String, String) {
     let (group, label) = match route {
         hotkeys::ShortcutRoute::PickerOpen => ("Picker".to_string(), "Open picker".to_string()),
-        hotkeys::ShortcutRoute::SavedViewOpen { view_id } => {
-            ("Saved views".to_string(), format!("Open saved view {view_id}"))
-        }
+        hotkeys::ShortcutRoute::SavedViewOpen { view_id } => (
+            "Saved views".to_string(),
+            format!("Open saved view {view_id}"),
+        ),
         hotkeys::ShortcutRoute::ScriptRun { action_id } => {
             ("Scripts".to_string(), readable_route_label(action_id))
         }
@@ -4665,6 +4947,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
 ) {
     refresh_picker_shortcut_from_settings(app, settings);
     refresh_picker_pin_shortcut_from_settings(app, settings);
+    refresh_external_editor_shortcut_from_settings(app, settings);
     refresh_command_palette_shortcut(app);
     refresh_metadata_shortcut(app);
     refresh_active_item_navigation_shortcuts(app);
@@ -4797,23 +5080,37 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
 
     let mut registered_saved_views = HashMap::new();
     for view in saved_views {
-        let Some(shortcut_label) = view.hotkey.as_deref() else { continue };
+        let Some(shortcut_label) = view.hotkey.as_deref() else {
+            continue;
+        };
         let Some(shortcut) = shortcut_from_label(shortcut_label) else {
-            eprintln!("saved view shortcut not registered for {}: unsupported shortcut {}", view.title, shortcut_label);
+            eprintln!(
+                "saved view shortcut not registered for {}: unsupported shortcut {}",
+                view.title, shortcut_label
+            );
             continue;
         };
         if app.global_shortcut().is_registered(shortcut) {
-            eprintln!("saved view shortcut not registered for {}: already registered {}", view.title, shortcut_label);
+            eprintln!(
+                "saved view shortcut not registered for {}: already registered {}",
+                view.title, shortcut_label
+            );
             continue;
         }
         match app.global_shortcut().register(shortcut) {
             Ok(()) => {
-                registered_saved_views.insert(shortcut, GlobalSavedViewShortcut {
-                    view: view.clone(),
-                    shortcut_label: shortcut_label.to_string(),
-                });
+                registered_saved_views.insert(
+                    shortcut,
+                    GlobalSavedViewShortcut {
+                        view: view.clone(),
+                        shortcut_label: shortcut_label.to_string(),
+                    },
+                );
             }
-            Err(error) => eprintln!("saved view shortcut registration failed for {} ({}): {error}", view.title, shortcut_label),
+            Err(error) => eprintln!(
+                "saved view shortcut registration failed for {} ({}): {error}",
+                view.title, shortcut_label
+            ),
         }
     }
 
@@ -4885,7 +5182,9 @@ fn refresh_command_palette_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>
 #[cfg(not(test))]
 fn refresh_metadata_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Some(shortcut) = shortcut_from_label(METADATA_SHORTCUT_LABEL) else {
-        eprintln!("metadata shortcut not refreshed: unsupported shortcut {METADATA_SHORTCUT_LABEL}");
+        eprintln!(
+            "metadata shortcut not refreshed: unsupported shortcut {METADATA_SHORTCUT_LABEL}"
+        );
         return;
     };
     if app.global_shortcut().is_registered(shortcut) {
@@ -4911,7 +5210,9 @@ fn refresh_active_item_navigation_shortcuts<R: tauri::Runtime>(app: &tauri::AppH
         }
         match app.global_shortcut().register(shortcut) {
             Ok(()) => eprintln!("active item shortcut registered: {label}"),
-            Err(error) => eprintln!("active item shortcut registration failed for {label}: {error}"),
+            Err(error) => {
+                eprintln!("active item shortcut registration failed for {label}: {error}")
+            }
         }
     }
 }
@@ -5086,6 +5387,103 @@ fn refresh_picker_pin_shortcut_from_settings<R: tauri::Runtime>(
                     if let Err(restore_error) = app.global_shortcut().register(previous_shortcut) {
                         eprintln!(
                             "picker pin shortcut restore failed for {previous_shortcut:?}: {restore_error}"
+                        );
+                    } else {
+                        current.set(Some(previous_shortcut));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(test))]
+fn refresh_external_editor_shortcut_from_settings<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    settings: &storage::AppSettings,
+) {
+    let Some(current) = app.try_state::<CurrentExternalEditorShortcut>() else {
+        eprintln!("external editor shortcut state not ready");
+        return;
+    };
+    let label = settings.picker.external_editor_shortcut.trim();
+    let next_shortcut = if label.is_empty() {
+        None
+    } else {
+        shortcut_from_label(label)
+    };
+
+    if !label.is_empty() && next_shortcut.is_none() {
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: false,
+            supported: false,
+            error: Some("unsupported shortcut".to_string()),
+        });
+        eprintln!("external editor shortcut not refreshed: unsupported shortcut {label}");
+        return;
+    }
+
+    let previous_shortcut = current.get();
+    let already_registered = next_shortcut
+        .map(|shortcut| app.global_shortcut().is_registered(shortcut))
+        .unwrap_or(false);
+    if previous_shortcut == next_shortcut && already_registered {
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
+        return;
+    }
+
+    if let Some(previous_shortcut) = previous_shortcut {
+        if app.global_shortcut().is_registered(previous_shortcut) {
+            if let Err(error) = app.global_shortcut().unregister(previous_shortcut) {
+                eprintln!(
+                    "external editor shortcut unregister failed: {previous_shortcut:?}: {error}"
+                );
+            }
+        }
+    }
+
+    let Some(next_shortcut) = next_shortcut else {
+        current.set(None);
+        current.set_status(NativeShortcutStatus {
+            label: String::new(),
+            registered: false,
+            supported: true,
+            error: None,
+        });
+        eprintln!("external editor shortcut disabled from settings");
+        return;
+    };
+
+    match app.global_shortcut().register(next_shortcut) {
+        Ok(()) => {
+            current.set(Some(next_shortcut));
+            current.set_status(NativeShortcutStatus {
+                label: label.to_string(),
+                registered: true,
+                supported: true,
+                error: None,
+            });
+            eprintln!("external editor shortcut registered from settings: {label}");
+        }
+        Err(error) => {
+            eprintln!("external editor shortcut registration failed for {label}: {error}");
+            current.set_status(NativeShortcutStatus {
+                label: label.to_string(),
+                registered: false,
+                supported: true,
+                error: Some(error.to_string()),
+            });
+            if let Some(previous_shortcut) = previous_shortcut {
+                if !app.global_shortcut().is_registered(previous_shortcut) {
+                    if let Err(restore_error) = app.global_shortcut().register(previous_shortcut) {
+                        eprintln!(
+                            "external editor shortcut restore failed for {previous_shortcut:?}: {restore_error}"
                         );
                     } else {
                         current.set(Some(previous_shortcut));
@@ -5291,11 +5689,9 @@ fn open_picker_for_history_query<R: tauri::Runtime + 'static>(
             eprintln!("history filter picker show failed: {error}");
             return;
         }
-        if let Err(error) = app_for_main_thread.emit_to(
-            MAIN_WINDOW_LABEL,
-            PICKER_FILTER_EVENT,
-            payload,
-        ) {
+        if let Err(error) =
+            app_for_main_thread.emit_to(MAIN_WINDOW_LABEL, PICKER_FILTER_EVENT, payload)
+        {
             eprintln!("history filter picker emit failed: {error}");
         }
     })
@@ -5308,7 +5704,10 @@ fn spawn_open_saved_history_view<R: tauri::Runtime + 'static>(
     saved_view: GlobalSavedViewShortcut,
 ) {
     thread::spawn(move || {
-        eprintln!("saved history view shortcut pressed: {} -> {}", saved_view.shortcut_label, saved_view.view.id);
+        eprintln!(
+            "saved history view shortcut pressed: {} -> {}",
+            saved_view.shortcut_label, saved_view.view.id
+        );
         if let Err(error) = open_picker_for_saved_history_view(app, saved_view.view, true) {
             eprintln!("saved history view shortcut open failed: {error}");
         }
@@ -5525,7 +5924,10 @@ fn execute_shortcut_route<R: tauri::Runtime + 'static>(
             spawn_toggle_main_window(app);
         }
         hotkeys::ShortcutRoute::SavedViewOpen { view_id } => {
-            let Some(storage) = app.try_state::<storage::AppStorage>().map(|state| state.inner().clone()) else {
+            let Some(storage) = app
+                .try_state::<storage::AppStorage>()
+                .map(|state| state.inner().clone())
+            else {
                 eprintln!("saved view shortcut route storage unavailable");
                 return;
             };

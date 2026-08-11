@@ -245,6 +245,22 @@ pub struct CaptureContextEvent {
     pub scenario_revision: Option<i64>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataTagEntry {
+    pub value: String,
+    pub source: String,
+    pub confidence: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataPropertyEntry {
+    pub key: String,
+    pub value: String,
+    pub source: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureFormatContext {
@@ -370,7 +386,9 @@ impl AppliedSearchDescriptor {
         compile_search_plan(&self.plan)?;
         let expected = self.fingerprint_for_plan()?;
         if self.fingerprint != expected {
-            return Err("applied search descriptor fingerprint does not match its plan".to_string());
+            return Err(
+                "applied search descriptor fingerprint does not match its plan".to_string(),
+            );
         }
         Ok(())
     }
@@ -716,6 +734,8 @@ pub struct PickerSettings {
     pub settings_shortcut: String,
     #[serde(default = "default_preview_shortcut")]
     pub preview_shortcut: String,
+    #[serde(default)]
+    pub external_editor_shortcut: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -758,6 +778,8 @@ pub struct EditorSettings {
     pub tab_size: u8,
     pub line_numbers: bool,
     pub highlight_active_line: bool,
+    #[serde(default)]
+    pub external_editor_path: String,
 }
 
 impl Default for EditorSettings {
@@ -770,6 +792,7 @@ impl Default for EditorSettings {
             tab_size: 4,
             line_numbers: true,
             highlight_active_line: true,
+            external_editor_path: String::new(),
         }
     }
 }
@@ -880,6 +903,7 @@ impl Default for AppSettings {
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
                 settings_shortcut: default_settings_shortcut(),
                 preview_shortcut: default_preview_shortcut(),
+                external_editor_shortcut: String::new(),
             },
             history: HistorySettings {
                 retention_count: UNLIMITED_HISTORY_LIMIT,
@@ -1008,12 +1032,7 @@ impl AppStorage {
     ) -> Result<Vec<FindSourceItem>, String> {
         let cancelled = Arc::new(AtomicBool::new(false));
         let epoch = self.mutation_epoch.load(Ordering::SeqCst);
-        self.read_find_items_cancelable(
-            descriptor,
-            cancelled,
-            self.mutation_epoch.clone(),
-            epoch,
-        )
+        self.read_find_items_cancelable(descriptor, cancelled, self.mutation_epoch.clone(), epoch)
     }
 
     pub(crate) fn read_find_items_cancelable(
@@ -1024,11 +1043,8 @@ impl AppStorage {
         expected_epoch: u64,
     ) -> Result<Vec<FindSourceItem>, String> {
         descriptor.validate()?;
-        let conn = Connection::open_with_flags(
-            &self.db_path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|error| format!("failed to open Find read-only sqlite connection: {error}"))?;
+        let conn = Connection::open_with_flags(&self.db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| format!("failed to open Find read-only sqlite connection: {error}"))?;
         conn.busy_timeout(Duration::from_millis(250))
             .map_err(|error| format!("failed to configure Find sqlite busy timeout: {error}"))?;
 
@@ -1159,13 +1175,12 @@ impl AppStorage {
     }
 
     pub(crate) fn read_find_item(&self, item_id: i64) -> Result<Option<FindSourceItem>, String> {
-        let conn = Connection::open_with_flags(
-            &self.db_path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|error| format!("failed to open Find target sqlite connection: {error}"))?;
+        let conn = Connection::open_with_flags(&self.db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| format!("failed to open Find target sqlite connection: {error}"))?;
         conn.busy_timeout(Duration::from_millis(250))
-            .map_err(|error| format!("failed to configure Find target sqlite busy timeout: {error}"))?;
+            .map_err(|error| {
+                format!("failed to configure Find target sqlite busy timeout: {error}")
+            })?;
         conn.query_row(
             "SELECT id, content_kind, text, title, notes, tags,
                     (SELECT GROUP_CONCAT(label, char(31))
@@ -1244,13 +1259,7 @@ impl AppStorage {
         capture_context: Option<CaptureContext>,
         capture_tags: &[String],
     ) -> Result<i64, String> {
-        self.insert_text_with_scenario(
-            text,
-            normalized_hash,
-            capture_context,
-            capture_tags,
-            None,
-        )
+        self.insert_text_with_scenario(text, normalized_hash, capture_context, capture_tags, None)
     }
 
     pub fn insert_text_with_scenario(
@@ -1768,10 +1777,10 @@ impl AppStorage {
 
         let descriptor = if let Some(descriptor) = request.applied_descriptor.clone() {
             descriptor.validate()?;
-            if request.cursor.is_some()
-                && descriptor.effective_query.trim() != trimmed
-            {
-                return Err("applied search descriptor does not match the request query".to_string());
+            if request.cursor.is_some() && descriptor.effective_query.trim() != trimmed {
+                return Err(
+                    "applied search descriptor does not match the request query".to_string()
+                );
             }
             Some(descriptor)
         } else {
@@ -2052,11 +2061,9 @@ impl AppStorage {
         {
             return Err("query has invalid structured syntax; refusing marked update".to_string());
         }
-        let descriptor = request
-            .applied_descriptor
-            .ok_or_else(|| {
-                "applied search descriptor is required for marked query updates".to_string()
-            })?;
+        let descriptor = request.applied_descriptor.ok_or_else(|| {
+            "applied search descriptor is required for marked query updates".to_string()
+        })?;
         descriptor.validate()?;
         if descriptor.effective_query.trim() != trimmed_query {
             return Err("applied search descriptor does not match the marked query".to_string());
@@ -2211,6 +2218,19 @@ impl AppStorage {
         }
     }
 
+    pub fn update_item_text(&self, id: i64, text: String) -> Result<(), String> {
+        let existing = self.get_item(id)?;
+        self.update_item(UpdateHistoryItemRequest {
+            id,
+            text,
+            title: existing.title,
+            notes: existing.notes,
+            tags: existing.tags,
+            mime_primary: existing.mime_primary,
+            marked: None,
+        })
+    }
+
     pub fn update_item_metadata(&self, request: UpdateItemMetadataRequest) -> Result<(), String> {
         let mut conn = self
             .conn
@@ -2231,19 +2251,19 @@ impl AppStorage {
             )
             .map_err(|error| format!("failed to update clipboard item metadata: {error}"))?;
         set_item_tags_from_values(&transaction, request.id, &request.tags)?;
-        replace_item_properties_manual(
+        replace_item_property_values(
             &transaction,
             request.id,
             "client",
             &request.properties.client,
         )?;
-        replace_item_properties_manual(
+        replace_item_property_values(
             &transaction,
             request.id,
             "project",
             &request.properties.project,
         )?;
-        replace_item_properties_manual(
+        replace_item_property_values(
             &transaction,
             request.id,
             "activity",
@@ -2263,6 +2283,18 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         ensure_item_exists(&conn, item_id)?;
         scenario_properties_for_item(&conn, item_id)
+    }
+
+    pub fn list_item_property_entries(
+        &self,
+        item_id: i64,
+    ) -> Result<Vec<MetadataPropertyEntry>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_item_exists(&conn, item_id)?;
+        item_property_entries(&conn, item_id)
     }
 
     pub fn delete_item(&self, id: i64) -> Result<(), String> {
@@ -2818,7 +2850,9 @@ impl AppStorage {
                 .prepare("SELECT id, tags_json FROM scenarios")
                 .map_err(|error| format!("failed to prepare scenario tag cleanup: {error}"))?;
             let rows = statement
-                .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })
                 .map_err(|error| format!("failed to read scenario tags: {error}"))?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|error| format!("failed to collect scenario tags: {error}"))?;
@@ -2841,7 +2875,9 @@ impl AppStorage {
                 .prepare("SELECT id, capture_tags FROM saved_history_views")
                 .map_err(|error| format!("failed to prepare capture tag cleanup: {error}"))?;
             let rows = statement
-                .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+                .query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })
                 .map_err(|error| format!("failed to read capture tags: {error}"))?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|error| format!("failed to collect capture tags: {error}"))?;
@@ -2877,6 +2913,15 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         ensure_item_exists(&conn, item_id)?;
         item_tag_labels(&conn, item_id)
+    }
+
+    pub fn get_item_tag_entries(&self, item_id: i64) -> Result<Vec<MetadataTagEntry>, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        ensure_item_exists(&conn, item_id)?;
+        item_tag_entries(&conn, item_id)
     }
 
     pub fn set_item_tags(&self, request: SetItemTagsRequest) -> Result<(), String> {
@@ -3586,18 +3631,27 @@ fn set_item_tags_from_values(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to read existing item tag: {error}"))?;
     drop(existing_statement);
-    for (slug, label) in existing {
-        if !desired_slugs.contains(slug.as_str()) {
-            suppress_metadata_value(conn, item_id, "tag", "", &label, &slug)?;
+    let existing_slugs = existing
+        .iter()
+        .map(|(slug, _)| slug.clone())
+        .collect::<BTreeSet<_>>();
+    for (slug, label) in &existing {
+        if desired_slugs.contains(slug.as_str()) {
+            continue;
         }
+        suppress_metadata_value(conn, item_id, "tag", "", label, slug)?;
+        let tag_id = tag_id_by_slug(conn, slug)?;
+        conn.execute(
+            "DELETE FROM clipboard_item_tags WHERE item_id = ?1 AND tag_id = ?2",
+            params![item_id, tag_id],
+        )
+        .map_err(|error| format!("failed to remove item tag: {error}"))?;
     }
 
-    conn.execute(
-        "DELETE FROM clipboard_item_tags WHERE item_id = ?1",
-        params![item_id],
-    )
-    .map_err(|error| format!("failed to clear item tags: {error}"))?;
     for (slug, label) in &normalized {
+        if existing_slugs.contains(slug) {
+            continue;
+        }
         add_item_tag_relation(conn, item_id, slug, label, "manual", None)?;
     }
     sync_legacy_tags_for_item(conn, item_id)
@@ -3767,24 +3821,12 @@ fn add_item_property(
 ) -> Result<bool, String> {
     let normalized_value = normalized_metadata_value(value);
     if source != "manual"
-        && metadata_value_is_suppressed(
-            conn,
-            item_id,
-            "property",
-            property_key,
-            &normalized_value,
-        )?
+        && metadata_value_is_suppressed(conn, item_id, "property", property_key, &normalized_value)?
     {
         return Ok(false);
     }
     if source == "manual" {
-        clear_metadata_suppression(
-            conn,
-            item_id,
-            "property",
-            property_key,
-            &normalized_value,
-        )?;
+        clear_metadata_suppression(conn, item_id, "property", property_key, &normalized_value)?;
     }
     let existing_source = conn
         .query_row(
@@ -3819,7 +3861,7 @@ fn add_item_property(
     Ok(true)
 }
 
-fn replace_item_properties_manual(
+fn replace_item_property_values(
     conn: &Connection,
     item_id: i64,
     property_key: &str,
@@ -3844,27 +3886,88 @@ fn replace_item_properties_manual(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to read existing item property: {error}"))?;
     drop(statement);
-    for (value, normalized_value) in existing {
-        if !desired.contains(&normalized_value) {
-            suppress_metadata_value(
-                conn,
-                item_id,
-                "property",
-                property_key,
-                &value,
-                &normalized_value,
-            )?;
+    let existing_normalized = existing
+        .iter()
+        .map(|(_, normalized_value)| normalized_value.clone())
+        .collect::<BTreeSet<_>>();
+    for (value, normalized_value) in &existing {
+        if desired.contains(normalized_value) {
+            continue;
         }
+        suppress_metadata_value(
+            conn,
+            item_id,
+            "property",
+            property_key,
+            value,
+            normalized_value,
+        )?;
+        conn.execute(
+            "DELETE FROM clipboard_item_properties
+             WHERE item_id = ?1 AND property_key = ?2 AND normalized_value = ?3",
+            params![item_id, property_key, normalized_value],
+        )
+        .map_err(|error| format!("failed to remove item property: {error}"))?;
     }
-    conn.execute(
-        "DELETE FROM clipboard_item_properties WHERE item_id = ?1 AND property_key = ?2",
-        params![item_id, property_key],
-    )
-    .map_err(|error| format!("failed to clear item properties: {error}"))?;
     for value in normalized {
+        if existing_normalized.contains(&normalized_metadata_value(&value)) {
+            continue;
+        }
         add_item_property(conn, item_id, property_key, &value, "manual")?;
     }
     Ok(())
+}
+
+fn item_tag_entries(conn: &Connection, item_id: i64) -> Result<Vec<MetadataTagEntry>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT tags.label, clipboard_item_tags.source, clipboard_item_tags.confidence
+             FROM clipboard_item_tags
+             JOIN tags ON tags.id = clipboard_item_tags.tag_id
+             WHERE clipboard_item_tags.item_id = ?1
+             ORDER BY tags.label COLLATE NOCASE ASC, tags.id ASC",
+        )
+        .map_err(|error| format!("failed to prepare item tag entries: {error}"))?;
+    let rows = statement
+        .query_map(params![item_id], |row| {
+            Ok(MetadataTagEntry {
+                value: row.get(0)?,
+                source: row.get(1)?,
+                confidence: row.get(2)?,
+            })
+        })
+        .map_err(|error| format!("failed to query item tag entries: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read item tag entry row: {error}"))
+}
+
+fn item_property_entries(
+    conn: &Connection,
+    item_id: i64,
+) -> Result<Vec<MetadataPropertyEntry>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT property_key, value, source FROM clipboard_item_properties
+             WHERE item_id = ?1
+             ORDER BY property_key ASC, value COLLATE NOCASE ASC",
+        )
+        .map_err(|error| format!("failed to prepare item property entries: {error}"))?;
+    let rows = statement
+        .query_map(params![item_id], |row| {
+            Ok(MetadataPropertyEntry {
+                key: row.get(0)?,
+                value: row.get(1)?,
+                source: row.get(2)?,
+            })
+        })
+        .map_err(|error| format!("failed to query item property entries: {error}"))?;
+    let entries = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read item property entry row: {error}"))?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| matches!(entry.key.as_str(), "client" | "project" | "activity"))
+        .collect())
 }
 
 fn scenario_properties_for_item(
@@ -4289,7 +4392,8 @@ fn scenario_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Scenario> {
 }
 
 fn encode_values(values: &[String]) -> Result<String, String> {
-    serde_json::to_string(values).map_err(|error| format!("failed to encode metadata values: {error}"))
+    serde_json::to_string(values)
+        .map_err(|error| format!("failed to encode metadata values: {error}"))
 }
 
 fn validate_scenario_name(name: &str) -> Result<String, String> {
@@ -4386,6 +4490,9 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     settings.scripts.folder_path = settings.scripts.folder_path.trim().to_string();
     settings.picker.pin_toggle_shortcut = settings.picker.pin_toggle_shortcut.trim().to_string();
     settings.picker.settings_shortcut = settings.picker.settings_shortcut.trim().to_string();
+    settings.picker.external_editor_shortcut =
+        settings.picker.external_editor_shortcut.trim().to_string();
+    settings.editor.external_editor_path = settings.editor.external_editor_path.trim().to_string();
     let endpoint = settings.ai.endpoint.trim().trim_end_matches('/');
     let model = settings.ai.model.trim();
     if endpoint.is_empty() {
@@ -5012,7 +5119,9 @@ mod tests {
         let decoded: AppliedSearchDescriptor =
             serde_json::from_str(&encoded).expect("descriptor should deserialize");
         assert_eq!(decoded, descriptor);
-        decoded.validate().expect("round-tripped descriptor should validate");
+        decoded
+            .validate()
+            .expect("round-tripped descriptor should validate");
 
         let mut tampered = decoded;
         tampered.plan = search_plan_from_query("tag:private");
@@ -5209,7 +5318,9 @@ mod tests {
 
         assert_eq!(first_id, second_id);
         assert_eq!(
-            storage.get_item_tags(first_id).expect("context tags should load"),
+            storage
+                .get_item_tags(first_id)
+                .expect("context tags should load"),
             vec!["Review".to_string(), "Work".to_string()]
         );
         let conn = storage.conn.lock().expect("sqlite lock should work");
@@ -5875,21 +5986,26 @@ mod tests {
             })
             .expect("saved view should persist");
 
-        storage.delete_tag(shared.id).expect("tag should delete globally");
+        storage
+            .delete_tag(shared.id)
+            .expect("tag should delete globally");
 
         assert_eq!(
-            storage.get_item_tags(1).expect("remaining tags should load"),
+            storage
+                .get_item_tags(1)
+                .expect("remaining tags should load"),
             vec!["Keep".to_string()]
         );
-        assert!(storage.get_item(1).is_ok(), "tag deletion must preserve the item");
+        assert!(
+            storage.get_item(1).is_ok(),
+            "tag deletion must preserve the item"
+        );
         assert!(storage
             .list_tags()
             .expect("tags should list")
             .iter()
             .all(|tag| tag.slug != "shared"));
-        assert!(storage
-            .list_scenarios()
-            .expect("scenarios should list")[0]
+        assert!(storage.list_scenarios().expect("scenarios should list")[0]
             .tags
             .is_empty());
         assert!(storage
@@ -7132,13 +7248,7 @@ mod tests {
         };
         let hash = hash_text("suppression item");
         let item_id = storage
-            .insert_text_with_scenario(
-                "suppression item",
-                &hash,
-                None,
-                &[],
-                Some(session.clone()),
-            )
+            .insert_text_with_scenario("suppression item", &hash, None, &[], Some(session.clone()))
             .expect("scenario capture");
 
         storage
@@ -7155,13 +7265,7 @@ mod tests {
             })
             .expect("manual removal");
         storage
-            .insert_text_with_scenario(
-                "suppression item",
-                &hash,
-                None,
-                &[],
-                Some(session.clone()),
-            )
+            .insert_text_with_scenario("suppression item", &hash, None, &[], Some(session.clone()))
             .expect("recapture after suppression");
         assert!(storage.get_item_tags(item_id).expect("tags").is_empty());
         assert!(storage
@@ -7209,28 +7313,205 @@ mod tests {
     }
 
     #[test]
+    fn no_op_metadata_save_preserves_generated_sources_and_confidence() {
+        let storage = test_storage_with_migrations();
+        let session = ActiveScenarioSession {
+            session_id: "session-acme-3".to_string(),
+            scenario_id: 9,
+            scenario_name: "ACME".to_string(),
+            scenario_revision: 1,
+            query: "tag:acme".to_string(),
+            properties: ScenarioProperties {
+                client: vec!["ACME".to_string()],
+                project: vec!["Web".to_string()],
+                activity: Vec::new(),
+            },
+            tags: vec!["ACME".to_string()],
+            started_at_unix_ms: 10,
+        };
+        let hash = hash_text("provenance item");
+        let item_id = storage
+            .insert_text_with_scenario("provenance item", &hash, None, &[], Some(session.clone()))
+            .expect("scenario capture");
+        storage
+            .apply_builtin_enrichment(
+                item_id,
+                &[crate::enrichment::BuiltinEnrichmentMatch {
+                    detector: crate::enrichment::BuiltinDetector::Path,
+                    tag: crate::enrichment::BuiltinTag::Path,
+                    confidence: 0.75,
+                }],
+            )
+            .expect("rule enrichment should apply");
+
+        let expected_tags = vec![
+            MetadataTagEntry {
+                value: "ACME".to_string(),
+                source: "scenario".to_string(),
+                confidence: None,
+            },
+            MetadataTagEntry {
+                value: "Path".to_string(),
+                source: "rule".to_string(),
+                confidence: Some(0.75),
+            },
+        ];
+        let expected_properties = vec![
+            MetadataPropertyEntry {
+                key: "client".to_string(),
+                value: "ACME".to_string(),
+                source: "scenario".to_string(),
+            },
+            MetadataPropertyEntry {
+                key: "project".to_string(),
+                value: "Web".to_string(),
+                source: "scenario".to_string(),
+            },
+        ];
+        assert_eq!(
+            storage.get_item_tag_entries(item_id).expect("tag entries"),
+            expected_tags
+        );
+        assert_eq!(
+            storage
+                .list_item_property_entries(item_id)
+                .expect("property entries"),
+            expected_properties
+        );
+
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: item_id,
+                title: None,
+                notes: Some("edited notes".to_string()),
+                tags: vec!["ACME".to_string(), "Path".to_string()],
+                properties: ScenarioProperties {
+                    client: vec!["ACME".to_string()],
+                    project: vec!["Web".to_string()],
+                    activity: Vec::new(),
+                },
+            })
+            .expect("no-op metadata save");
+
+        assert_eq!(
+            storage.get_item_tag_entries(item_id).expect("tag entries"),
+            expected_tags,
+            "a no-op save must not promote generated tags to manual"
+        );
+        assert_eq!(
+            storage
+                .list_item_property_entries(item_id)
+                .expect("property entries"),
+            expected_properties,
+            "a no-op save must not promote generated properties to manual"
+        );
+    }
+
+    #[test]
+    fn metadata_save_marks_only_newly_added_values_manual() {
+        let storage = test_storage_with_migrations();
+        let session = ActiveScenarioSession {
+            session_id: "session-acme-4".to_string(),
+            scenario_id: 10,
+            scenario_name: "ACME".to_string(),
+            scenario_revision: 1,
+            query: "tag:acme".to_string(),
+            properties: ScenarioProperties {
+                client: vec!["ACME".to_string()],
+                project: vec!["Web".to_string()],
+                activity: Vec::new(),
+            },
+            tags: vec!["ACME".to_string()],
+            started_at_unix_ms: 10,
+        };
+        let hash = hash_text("mixed provenance item");
+        let item_id = storage
+            .insert_text_with_scenario(
+                "mixed provenance item",
+                &hash,
+                None,
+                &[],
+                Some(session.clone()),
+            )
+            .expect("scenario capture");
+
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: item_id,
+                title: None,
+                notes: None,
+                tags: vec!["ACME".to_string(), "Invoice".to_string()],
+                properties: ScenarioProperties {
+                    client: vec!["ACME".to_string()],
+                    project: Vec::new(),
+                    activity: vec!["Billing".to_string()],
+                },
+            })
+            .expect("metadata save with additions and removals");
+
+        assert_eq!(
+            storage.get_item_tag_entries(item_id).expect("tag entries"),
+            vec![
+                MetadataTagEntry {
+                    value: "ACME".to_string(),
+                    source: "scenario".to_string(),
+                    confidence: None,
+                },
+                MetadataTagEntry {
+                    value: "Invoice".to_string(),
+                    source: "manual".to_string(),
+                    confidence: None,
+                },
+            ]
+        );
+        assert_eq!(
+            storage
+                .list_item_property_entries(item_id)
+                .expect("property entries"),
+            vec![
+                MetadataPropertyEntry {
+                    key: "activity".to_string(),
+                    value: "Billing".to_string(),
+                    source: "manual".to_string(),
+                },
+                MetadataPropertyEntry {
+                    key: "client".to_string(),
+                    value: "ACME".to_string(),
+                    source: "scenario".to_string(),
+                },
+            ]
+        );
+
+        storage
+            .insert_text_with_scenario("mixed provenance item", &hash, None, &[], Some(session))
+            .expect("recapture after removal");
+        assert!(
+            storage
+                .list_item_property_entries(item_id)
+                .expect("property entries")
+                .iter()
+                .all(|entry| entry.key != "project"),
+            "a removed value stays suppressed against scenario recapture"
+        );
+    }
+
+    #[test]
     fn find_snapshot_reads_without_the_operational_connection_mutex() {
-        let app_data_dir = std::env::temp_dir().join(format!(
-            "copicu-find-snapshot-test-{}",
-            now_unix_ms()
-        ));
+        let app_data_dir =
+            std::env::temp_dir().join(format!("copicu-find-snapshot-test-{}", now_unix_ms()));
         let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
         storage
             .insert_text("invoice snapshot", &hash_text("invoice snapshot"))
             .expect("test item should insert");
-        let descriptor = AppliedSearchDescriptor::for_query(
-            "all",
-            "",
-            AppliedSearchMode::Structured,
-        )
-        .expect("descriptor should compile");
+        let descriptor =
+            AppliedSearchDescriptor::for_query("all", "", AppliedSearchMode::Structured)
+                .expect("descriptor should compile");
 
         let operational_lock = storage.conn.lock().expect("operational lock should work");
         let worker_storage = storage.clone();
         let worker_descriptor = descriptor.clone();
-        let read_worker = std::thread::spawn(move || {
-            worker_storage.read_find_items(&worker_descriptor)
-        });
+        let read_worker =
+            std::thread::spawn(move || worker_storage.read_find_items(&worker_descriptor));
         let writer_storage = storage.clone();
         let writer = std::thread::spawn(move || {
             writer_storage.update_item(UpdateHistoryItemRequest {
@@ -7261,10 +7542,8 @@ mod tests {
 
     #[test]
     fn find_snapshot_reproduces_plan_limit_and_custom_sort_membership() {
-        let app_data_dir = std::env::temp_dir().join(format!(
-            "copicu-find-limit-test-{}",
-            now_unix_ms()
-        ));
+        let app_data_dir =
+            std::env::temp_dir().join(format!("copicu-find-limit-test-{}", now_unix_ms()));
         let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
         let first = storage
             .insert_text("first invoice", &hash_text("first invoice"))
@@ -7315,21 +7594,16 @@ mod tests {
 
     #[test]
     fn find_snapshot_none_is_unbounded_while_some_is_exact() {
-        let app_data_dir = std::env::temp_dir().join(format!(
-            "copicu-find-unbounded-test-{}",
-            now_unix_ms()
-        ));
+        let app_data_dir =
+            std::env::temp_dir().join(format!("copicu-find-unbounded-test-{}", now_unix_ms()));
         let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
         storage
             .insert_find_benchmark_items(75)
             .expect("benchmark rows should insert");
 
-        let unbounded = AppliedSearchDescriptor::for_query(
-            "all",
-            "",
-            AppliedSearchMode::Structured,
-        )
-        .expect("unbounded descriptor should compile");
+        let unbounded =
+            AppliedSearchDescriptor::for_query("all", "", AppliedSearchMode::Structured)
+                .expect("unbounded descriptor should compile");
         let rows = storage
             .read_find_items(&unbounded)
             .expect("unbounded Find snapshot should load");
@@ -7356,20 +7630,15 @@ mod tests {
 
     #[test]
     fn find_snapshot_cancellation_is_checked_while_rows_are_read() {
-        let app_data_dir = std::env::temp_dir().join(format!(
-            "copicu-find-cancel-test-{}",
-            now_unix_ms()
-        ));
+        let app_data_dir =
+            std::env::temp_dir().join(format!("copicu-find-cancel-test-{}", now_unix_ms()));
         let storage = AppStorage::open(&app_data_dir).expect("file-backed storage should open");
         storage
             .insert_text("cancel invoice", &hash_text("cancel invoice"))
             .expect("test item should insert");
-        let descriptor = AppliedSearchDescriptor::for_query(
-            "all",
-            "",
-            AppliedSearchMode::Structured,
-        )
-        .expect("descriptor should compile");
+        let descriptor =
+            AppliedSearchDescriptor::for_query("all", "", AppliedSearchMode::Structured)
+                .expect("descriptor should compile");
         let cancelled = Arc::new(AtomicBool::new(true));
         let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let error = storage
@@ -7395,12 +7664,9 @@ mod tests {
         storage
             .insert_find_benchmark_items(50_000)
             .expect("benchmark rows should insert");
-        let descriptor = AppliedSearchDescriptor::for_query(
-            "all",
-            "",
-            AppliedSearchMode::Structured,
-        )
-        .expect("descriptor should compile");
+        let descriptor =
+            AppliedSearchDescriptor::for_query("all", "", AppliedSearchMode::Structured)
+                .expect("descriptor should compile");
         let cancelled = Arc::new(AtomicBool::new(false));
         let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let gate = Arc::new(FindScanGate {
@@ -7442,12 +7708,9 @@ mod tests {
         storage
             .insert_find_benchmark_items(50_000)
             .expect("benchmark rows should insert");
-        let descriptor = AppliedSearchDescriptor::for_query(
-            "all",
-            "",
-            AppliedSearchMode::Structured,
-        )
-        .expect("descriptor should compile");
+        let descriptor =
+            AppliedSearchDescriptor::for_query("all", "", AppliedSearchMode::Structured)
+                .expect("descriptor should compile");
         let cancelled = Arc::new(AtomicBool::new(false));
         let expected_epoch = storage.mutation_epoch.load(Ordering::SeqCst);
         let gate = Arc::new(FindScanGate {
@@ -7561,6 +7824,33 @@ mod tests {
             })
             .expect("tag edit should succeed");
         assert!(storage.mutation_epoch.load(Ordering::SeqCst) > edited_epoch);
+    }
+
+    #[test]
+    fn external_text_update_preserves_item_metadata() {
+        let storage = test_storage_with_migrations();
+        let created = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "before external edit".to_string(),
+                title: Some("Pinned note".to_string()),
+                notes: Some("Keep these notes".to_string()),
+                tags: Some("#work".to_string()),
+                mime_primary: Some("text/markdown".to_string()),
+            })
+            .expect("item should be created");
+
+        storage
+            .update_item_text(created.id, "after external edit".to_string())
+            .expect("external text update should succeed");
+
+        let item = storage
+            .get_item(created.id)
+            .expect("updated item should load");
+        assert_eq!(item.text, "after external edit");
+        assert_eq!(item.title.as_deref(), Some("Pinned note"));
+        assert_eq!(item.notes.as_deref(), Some("Keep these notes"));
+        assert_eq!(item.tags.as_deref(), Some("#work"));
+        assert_eq!(item.mime_primary.as_deref(), Some("text/markdown"));
     }
 
     #[test]

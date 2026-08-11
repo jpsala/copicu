@@ -8,8 +8,8 @@ Fuente estable para abreviaturas, nombres cortos y definiciones recurrentes del 
 | --- | --- | --- |
 | SA | Sistema agentico de este proyecto | Documentacion, reglas y memoria que usan los agentes para trabajar en este repo. |
 | OS | Sistema agentico de este proyecto | Alias corto de SA; no significa sistema operativo cuando se use en contexto agentico del repo. |
-| AOS Upstream | `C:\dev\os`, kit canonico que provee patrones y mejoras portables. | No se copia entero a Copicu. |
-| Downstream AOS | Instalacion local de AOS dentro de Copicu. | Solo contiene contexto, scripts, skills y adapters utiles para este repo. |
+| Frontera AOS/OMP | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución agentic. | La capa local no prescribe defaults runtime. |
+| AOS local | Capa agentic durable de Copicu. | Contiene docs, índices, memoria, topics, tracks, specs, skills y gates locales. |
 | Manager-only | Piezas del upstream que no viajan a Copicu. | Registry global, decisiones/tracks/memoria del kit, inventarios y docs meta. |
 | CQ | CopyQ | Referencia funcional principal; baseline, no objetivo de compatibilidad total. |
 | CC | copycu | Alias corto pedido para el producto/proyecto. El resto de docs todavia usa `Copicu`; reconciliar el nombre cuando se formalice la marca. |

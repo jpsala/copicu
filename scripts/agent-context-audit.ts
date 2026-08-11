@@ -1,7 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import type { Stats } from "node:fs";
 import { join, relative } from "node:path";
-import { validateTraycerRoutingPolicy } from "./traycer-routing-contract.ts";
 
 type Finding = {
   level: "error" | "warn";
@@ -206,6 +205,20 @@ const docsReadme = exists("docs/README.md") ? read("docs/README.md") : "";
 const docsKnowledge = exists("docs/topics/docs-knowledge-system.md")
   ? read("docs/topics/docs-knowledge-system.md")
   : "";
+for (const [marker, contract] of [
+  ["<!-- aos-bootstrap: stable-bootstrap-v1 -->", "stable bootstrap"],
+  ["<!-- aos-runtime-authority: omp -->", "OMP runtime authority"],
+  [
+    "<!-- aos-local-authority: product, domain, data, security, external-effects -->",
+    "local product and safety authority",
+  ],
+] as const) {
+  const count = agents.split(marker).length - 1;
+  if (count !== 1) {
+    add("error", `AGENTS.md must contain exactly one ${contract} marker; found ${count}: ${marker}`);
+  }
+}
+
 
 if ((exists("docs/topics/agentic-os-operations.md") || exists("docs/skills/aos-realinear-os"))
   && (!agents.includes("aos-realinear-os") || !agents.includes("docs/topics/agentic-os-operations.md"))) {
@@ -337,7 +350,7 @@ if (exists("docs/skills")) {
 
 
 for (const path of retiredAgenticPaths) {
-  if (exists(path)) add("error", `${path} is retired by the OMP-native cutover`);
+  if (exists(path)) add("error", `${path} is retired by the AOS/OMP boundary`);
 }
 
 const agenticHotFiles = [
@@ -350,8 +363,6 @@ const agenticHotFiles = [
   "docs/topics/agent-tool-routing.md",
   "docs/topics/docs-knowledge-system.md",
   "docs/topics/omp-agentic-os.md",
-  "docs/reference/omp-agentic-os-command-surface.md",
-  "docs/reference/tool-routing.yaml",
   "tests/manual/dogfood/COMPUTER_USE_BATTERY.md",
   "tests/manual/dogfood/PICKER_COMPUTER_USE_FOCUS_BATTERY.md",
   "tests/manual/dogfood/PICKER_REAL_USER_STRESS_FLOW.md",
@@ -498,11 +509,6 @@ if (!exists("docs/.generated/context-index.md")) {
   }
 }
 
-const routingPolicy = exists("docs/reference/tool-routing.yaml") ? read("docs/reference/tool-routing.yaml") : "";
-const portableContract = exists("docs/topics/portable-multiharness-contract.md")
-  ? read("docs/topics/portable-multiharness-contract.md")
-  : "";
-for (const error of validateTraycerRoutingPolicy(routingPolicy, portableContract)) add("error", error);
 
 const errors = findings.filter((finding) => finding.level === "error");
 const warnings = findings.filter((finding) => finding.level === "warn");

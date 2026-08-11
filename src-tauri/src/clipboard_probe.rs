@@ -12,6 +12,7 @@ pub struct ClipboardProbe {
     pub has_files: bool,
     pub file_count: Option<u32>,
     pub formats: Vec<ClipboardFormatProbe>,
+    pub trusted_transient_transport: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -54,6 +55,7 @@ pub fn probe_clipboard() -> Result<ClipboardProbe, String> {
         has_image: false,
         has_files: false,
         file_count: None,
+        trusted_transient_transport: false,
         formats: Vec::new(),
     })
 }
@@ -67,10 +69,10 @@ mod windows_probe {
         System::{
             DataExchange::{
                 CloseClipboard, CountClipboardFormats, EnumClipboardFormats, GetClipboardData,
-                GetClipboardFormatNameW, GetClipboardSequenceNumber, IsClipboardFormatAvailable,
-                OpenClipboard,
+                GetClipboardFormatNameW, GetClipboardOwner, GetClipboardSequenceNumber,
+                IsClipboardFormatAvailable, OpenClipboard,
             },
-            Memory::GlobalSize,
+            Memory::{GlobalLock, GlobalSize, GlobalUnlock},
         },
         UI::Shell::{DragQueryFileW, HDROP},
     };
@@ -93,6 +95,8 @@ mod windows_probe {
         Duration::from_millis(32),
         Duration::from_millis(64),
     ];
+    const TRANSIENT_PASTE_FORMAT_NAME: &str = "Fixvox.TransientPaste.v1";
+    const TRANSIENT_PASTE_MARKER: &[u8] = b"dictation-tauri/v1\0";
 
     pub fn probe_clipboard() -> Result<ClipboardProbe, String> {
         let _guard = ClipboardOpenGuard::open()?;
@@ -116,6 +120,7 @@ mod windows_probe {
         };
 
         let format_count = formats.len() as u32;
+        let trusted_transient_transport = is_trusted_transient_transport(&formats);
 
         Ok(ClipboardProbe {
             platform: "windows",
@@ -139,6 +144,7 @@ mod windows_probe {
             has_files: has_format(CF_HDROP),
             file_count,
             formats,
+            trusted_transient_transport,
         })
     }
 
@@ -196,6 +202,54 @@ mod windows_probe {
             || lower_name.starts_with("image/")
     }
 
+    fn is_trusted_transient_transport(formats: &[ClipboardFormatProbe]) -> bool {
+        let Some(marker_format) = formats
+            .iter()
+            .find(|format| format.name == TRANSIENT_PASTE_FORMAT_NAME)
+        else {
+            return false;
+        };
+        let Some(marker_bytes) = clipboard_format_bytes(marker_format.id) else {
+            return false;
+        };
+        let owner_process_name = unsafe { GetClipboardOwner() }
+            .ok()
+            .filter(|owner| !owner.0.is_null())
+            .and_then(|owner| crate::window_focus::process_name_for_window(owner.0 as isize));
+        trusted_transient_transport_parts(
+            &marker_format.name,
+            &marker_bytes,
+            owner_process_name.as_deref(),
+        )
+    }
+
+    fn trusted_transient_transport_parts(
+        marker_name: &str,
+        marker_bytes: &[u8],
+        owner_process_name: Option<&str>,
+    ) -> bool {
+        marker_name == TRANSIENT_PASTE_FORMAT_NAME
+            && marker_bytes == TRANSIENT_PASTE_MARKER
+            && owner_process_name == Some("dictation-tauri.exe")
+    }
+
+    fn clipboard_format_bytes(id: u32) -> Option<Vec<u8>> {
+        let handle = unsafe { GetClipboardData(id).ok()? };
+        let global = HGLOBAL(handle.0);
+        let size = unsafe { GlobalSize(global) };
+        if size == 0 {
+            return None;
+        }
+        let ptr = unsafe { GlobalLock(global) } as *const u8;
+        if ptr.is_null() {
+            return None;
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(ptr, size) }.to_vec();
+        unsafe {
+            let _ = GlobalUnlock(global);
+        }
+        Some(bytes)
+    }
     fn clipboard_file_count() -> Option<u32> {
         let handle = unsafe { GetClipboardData(CF_HDROP).ok()? };
         let count = unsafe { DragQueryFileW(HDROP(handle.0), u32::MAX, None) };
@@ -289,5 +343,31 @@ mod windows_probe {
     fn clipboard_format_count() -> u32 {
         let count = unsafe { CountClipboardFormats() };
         count.max(0) as u32
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{
+            trusted_transient_transport_parts, TRANSIENT_PASTE_FORMAT_NAME, TRANSIENT_PASTE_MARKER,
+        };
+
+        #[test]
+        fn trusts_only_dictation_owned_transient_paste_markers() {
+            assert!(trusted_transient_transport_parts(
+                TRANSIENT_PASTE_FORMAT_NAME,
+                TRANSIENT_PASTE_MARKER,
+                Some("dictation-tauri.exe"),
+            ));
+            assert!(!trusted_transient_transport_parts(
+                TRANSIENT_PASTE_FORMAT_NAME,
+                TRANSIENT_PASTE_MARKER,
+                Some("other.exe"),
+            ));
+            assert!(!trusted_transient_transport_parts(
+                TRANSIENT_PASTE_FORMAT_NAME,
+                b"spoofed",
+                Some("dictation-tauri.exe"),
+            ));
+        }
     }
 }

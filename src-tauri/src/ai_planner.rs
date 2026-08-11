@@ -72,7 +72,6 @@ pub struct AiMarkdownResponseContext {
     pub visible_item_ids: Vec<String>,
 }
 
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiMarkdownResponseItem {

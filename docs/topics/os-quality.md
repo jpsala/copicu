@@ -33,7 +33,7 @@ Alcance por defecto: solo capa agentica local. No tocar producto, runtime, datos
 3. Topics activos como routers; detalle historico o profundo en `docs/reference/`, specs o tracks archivadas.
 4. Tracks con frontmatter/estado claro, next step y refs existentes.
 5. Skills en `docs/skills/`; `.agents/skills` como junction/toggle, nunca duplicacion real.
-6. Capa OMP sin runtime lifecycle ni wrappers; `.omp/config.yml` sólo habilita capacidades nativas requeridas y preserva gates.
+6. Frontera AOS/OMP explícita: la capa local conserva contexto y gates, sin defaults de modelos, tools, agentes, planificación ni modos runtime; `.omp/config.yml` preserva sólo la capacidad local `computer`.
 7. SpecKit y scripts de contexto presentes si aplican al repo.
 8. `bun run context:index` y `bun run context:audit` ejecutan sin errores; warnings restantes son conocidos o tienen plan.
 9. Respeto local: no borrar memoria dudosa ni reemplazar reglas locales por templates genericos.
@@ -49,4 +49,4 @@ Alcance por defecto: solo capa agentica local. No tocar producto, runtime, datos
 
 ## Criterio De Exito
 
-Una sesión puede leer poco, encontrar el topic correcto, usar intención/tools nativas, continuar un track y confiar en que el audit detecta drift barato recurrente.
+Una sesión puede leer poco, recuperar contexto durable, continuar un track y confiar en que el audit detecta drift documental barato y recurrente.

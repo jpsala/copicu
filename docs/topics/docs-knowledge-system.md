@@ -5,14 +5,13 @@ kind: how-to
 triggers:
   - sistema agentico
   - aos
-  - /flow
+  - frontera aos omp
   - documentacion liviana
   - context index
   - working memory
   - track
-  - handoff
+  - persistencia
   - skills locales
-  - slash commands
   - context bloat
 primary_refs:
   - AGENTS.md
@@ -21,7 +20,7 @@ primary_refs:
   - docs/TOPICS.md
   - docs/GLOSSARY.md
   - docs/skills/
-  - docs/topics/pi-agentic-os.md
+  - docs/topics/omp-agentic-os.md
   - docs/topics/agent-tool-routing.md
   - scripts/context-index.ts
   - scripts/agent-context-audit.ts
@@ -29,8 +28,7 @@ primary_refs:
 
 # Sistema De Conocimiento Agentico
 
-Copicu usa una capa local mínima de AOS. La regla es leer poco, elegir bien el
-topic y abrir referencias profundas sólo cuando el trabajo lo necesita.
+Copicu usa una capa AOS local mínima para conocimiento durable. La regla es leer poco, elegir bien el topic y abrir referencias profundas sólo cuando el trabajo lo necesita.
 
 ## Ruta Caliente
 
@@ -42,12 +40,9 @@ docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/TOPICS.md -> 
 son las fuentes durables según el tipo de conocimiento. El índice se regenera con
 `bun run context:index` y la auditoría con `bun run context:audit`.
 
-## `/flow` Y Continuidad
+## Continuidad Durable
 
-`/flow` es la única entrada Pi cotidiana. Pensar converge decisiones, Planear
-crea el brief y foco, Hacer abre una sesión enlazada con handoff documental y
-Cerrar compacta sólo valor durable faltante. El handoff es revisable y no se
-autoenvía; la conversación transitoria no reemplaza los docs.
+La continuidad vive en `WORKING_MEMORY.md`, topics, tracks, decisiones y specs. La conversación transitoria no reemplaza los docs, y la capa local no prescribe cómo OMP planifica, ejecuta, coordina agentes o gestiona sesiones.
 
 El foco válido de `WORKING_MEMORY.md` declara exactamente un estado. `ready`
 usa pares `Plan`/`Próximo batch`; `needs_planning`, `blocked`, `complete` y
@@ -67,9 +62,7 @@ usa pares `Plan`/`Próximo batch`; `needs_planning`, `blocked`, `complete` y
 
 ## Capacidades Locales
 
-`.pi/extensions/copicu-computer-use.ts`, prompts de producto, taskflows y skills
-locales se preservan si tienen propósito propio. No se copian runtime global,
-registry, tracks manager-only, inventarios ni settings privados.
+El built-in `computer`, el comando opt-in `.omp/commands/research.md` y las skills locales cubren la superficie project-local real. `computer` queda habilitado sólo por config agentic y no entra al producto. No se copian runtime, inventarios ni settings manager-only.
 
 ## Mantenimiento
 

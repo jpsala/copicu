@@ -30,7 +30,7 @@ Para entender el estado actual sin inflar contexto:
 - `user/README.md`: guia clara de que es Copicu, que hace y como se usa.
 - `user/scripts.md`: guia exhaustiva de scripts, metadata, API host, capabilities y ejemplos.
 - `USER_GUIDE.md`: guia breve para humanos sobre como usar la capa agentica.
-- `OS_PLAYBOOK.md`: playbook humano mínimo para intención OMP nativa, continuidad documental, dogfood y auditoría.
+- `OS_PLAYBOOK.md`: playbook humano mínimo para contexto durable, dogfood y auditoría.
 
 ## Contexto Inicial
 
@@ -47,7 +47,7 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 - `OPEN_QUESTIONS.md`: preguntas pendientes.
 - `GLOSSARY.md`: aliases y definiciones recurrentes.
 - `USER_GUIDE.md`: guia humana breve del sistema agentico.
-- `OS_PLAYBOOK.md`: guia practica para usar comandos, flujos y automatizaciones del OS en Pi.
+- `OS_PLAYBOOK.md`: guia practica de la capa AOS local y su frontera con OMP.
 - `TOPICS.md` y `topics/`: conocimiento recuperable.
 - `WORKING_MEMORY.md`: memoria operativa actual.
 - `tracks/`: trabajos vivos retomables.
@@ -58,7 +58,7 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 ## Skills Locales
 
 - `docs/skills/` es la fuente canonica de skills locales portables.
-- `.agents/skills` es una junction estable para descubrimiento de Codex/Pi; `skills:off` queda como no-op legacy y no borra la junction.
+- `.agents/skills` es una junction estable para descubrimiento de skills; `skills:off` queda como no-op legacy y no borra la junction.
 
 ## Audit De Contexto
 

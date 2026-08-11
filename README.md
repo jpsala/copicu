@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.7](https://github.com/jpsala/copicu/releases/tag/v0.4.7)
-- Asset: `Copicu_0.4.7_x64-setup.exe`
+- [v0.4.8](https://github.com/jpsala/copicu/releases/tag/v0.4.8)
+- Asset: `Copicu_0.4.8_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `B12ADFC8993E58AA8A1E2BCB22D207BC6956A2FA7F732D2285F898DECDA555DC`
+- SHA256: `42328660BCEA689767E50855736628F65ECF0CD163BBA3E9A39A27E2C0AA35B7`
 
-Fixes picker opening flicker by keeping overflow summaries stable and loading full clip content only when Expand is requested.
+Adds contextual find and search hardening, external editor integration, enriched metadata provenance, and OMP-aligned agent tooling.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

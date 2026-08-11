@@ -1,52 +1,33 @@
 # Guía De Usuario Del Sistema Agentico
 
-Copicu es downstream de AOS: consume el runtime global y conserva sólo contexto,
-skills y adapters útiles para este producto. No copia registry, memoria, tracks o
-gobierno del manager.
+Copicu conserva una capa AOS local de conocimiento durable sobre OMP. No copia runtime, registry, memoria ni gobierno de otro manager.
 
-## Uso Diario
+## Frontera
 
-Usá `/flow` como única entrada cotidiana:
+AOS mantiene `AGENTS.md`, el índice, `WORKING_MEMORY.md`, topics, tracks, specs, skills y gates locales. OMP gobierna modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime.
 
-- **Pensar** explora y converge una decisión.
-- **Planear** crea un brief liviano, declara una `execution_route` revisable y registra el foco.
-- **Hacer** aplica la ruta, abre una sesión nueva enlazada con handoff documental revisable y ejecuta allí sin Agent ni auto-send; modelo o auth ausentes bloquean sin fallback.
-- **Cerrar** guarda sólo valor durable faltante; es opcional si Hacer ya cerró.
-
-`balanced` con Sol Medium es la ruta normal aun para trabajo multifile,
-cross-layer o nativo acotado. `strong` con Sol High queda sólo para ambigüedad
-material o fallos materiales difíciles de detectar; prioridad, cantidad de
-archivos o un efecto externo autorizado no bastan. `economical` con Luna requiere
-pedido explícito de JP por cuota y checks deterministas. `Ctrl+P` alterna Sol
-Medium/High y `Ctrl+L` conserva la selección manual.
-
-`realinear os` sigue disponible como operación para auditar la capa agentica. Las
-skills de producto, SpecKit, release/research, taskflows y computer use no forman
-parte del lifecycle `/flow`.
+`realinear os` audita esta capa contextual. `computer` es el built-in local para dogfood explícito: está fuera del runtime de producto, exige aviso antes de UI visible y mantiene aprobación para input. El oracle C0 parte de una app externa y escribe tras `Ctrl+Shift+.` sin enfocar Copicu manualmente.
 
 ## Modelo Mental
 
-- `AGENTS.md`: reglas mínimas.
+- `AGENTS.md`: reglas críticas y frontera.
 - `docs/.generated/context-index.md`: índice generado.
 - `docs/WORKING_MEMORY.md`: foco y estado vivo.
 - `docs/TOPICS.md`: router humano.
 - `docs/topics/`: conocimiento reusable.
-- `docs/tracks/`: briefs y trabajo retomable.
+- `docs/tracks/`: trabajo retomable.
 - `docs/skills/`: skills locales portables.
 - `docs/DECISIONS.md`: decisiones durables.
 - `specs/`: features grandes.
 
-La memoria principal son los docs versionados, no la conversación ni un prompt de
-handoff. La ruta caliente debe permanecer corta.
+La memoria principal son los docs versionados. La ruta caliente debe permanecer corta.
 
 ## Verificación
 
 ```powershell
 bun run context:index
 bun run context:audit
-bun run routing:check
 npm run skills:status
 ```
 
-Installs, commit, push, deploy, producción, credenciales, datos privados y efectos
-externos conservan confirmación explícita.
+Installs, commit, push, deploy, producción, credenciales, datos privados y efectos externos conservan confirmación explícita.

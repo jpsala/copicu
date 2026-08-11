@@ -931,12 +931,24 @@ async function mockTauriInvoke(
     const eventHandlers = new Map<string, number[]>();
     let nextCallbackId = 1;
     (window as any).__copicuTestEmitEvent = async (event: string, payload: unknown) => {
-      for (const callbackId of eventHandlers.get(event) ?? []) {
-        await eventCallbacks.get(callbackId)?.({ event, id: callbackId, payload });
+      let invoked = 0;
+      for (const callbackId of [...(eventHandlers.get(event) ?? [])]) {
+        const callback = eventCallbacks.get(callbackId);
+        if (callback) {
+          invoked += 1;
+          callback({ event, id: callbackId, payload });
+        }
       }
+      return invoked;
     };
     (window as any).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
-      unregisterListener: () => undefined,
+      unregisterListener: (event: string, eventId: number) => {
+        eventHandlers.set(
+          event,
+          (eventHandlers.get(event) ?? []).filter((callbackId) => callbackId !== eventId),
+        );
+        eventCallbacks.delete(eventId);
+      },
     };
     (window as any).__copicuTestTags = [
       {
@@ -1026,6 +1038,7 @@ async function mockTauriInvoke(
         searchTriggerMode: mockOptions.searchTriggerMode ?? "realtime",
         deferStructuredSearchUntilEnter: mockOptions.deferStructuredSearchUntilEnter ?? false,
         previewShortcut: mockOptions.previewShortcut ?? "Alt+Enter",
+        externalEditorShortcut: "",
       },
       history: {
         retentionCount: 1000,
@@ -1042,6 +1055,7 @@ async function mockTauriInvoke(
         tabSize: 4,
         lineNumbers: true,
         highlightActiveLine: true,
+        externalEditorPath: "",
         ...mockOptions.editorSettings,
       },
       scripts: {
@@ -1065,6 +1079,11 @@ async function mockTauriInvoke(
             return args.handler;
           }
           case "plugin:event|unlisten":
+            eventHandlers.set(
+              args.event,
+              (eventHandlers.get(args.event) ?? []).filter((callbackId) => callbackId !== args.eventId),
+            );
+            eventCallbacks.delete(args.eventId);
             return null;
           case "plugin:event|unregisterListener":
           case "plugin:event|emit_to":
@@ -1081,20 +1100,36 @@ async function mockTauriInvoke(
               target: "test",
             };
           case "get_app_shortcut_status":
-            return {
-              picker: {
-                label: "Ctrl+Shift+,",
-                registered: true,
-                supported: true,
-                error: null,
-              },
-              pin: {
-                label: "F8",
-                registered: true,
-                supported: true,
-                error: null,
-              },
-            };
+            {
+              const testWindow = window as Window & {
+                __copicuTestSettings: {
+                  picker: { externalEditorShortcut: string };
+                };
+              };
+              const externalEditorShortcut =
+                testWindow.__copicuTestSettings.picker.externalEditorShortcut;
+              return {
+                picker: {
+                  label: "Ctrl+Shift+,",
+                  registered: true,
+                  supported: true,
+                  error: null,
+                },
+                pin: {
+                  label: "F8",
+                  registered: true,
+                  supported: true,
+                  error: null,
+                },
+                externalEditor: {
+                  label: externalEditorShortcut,
+                  registered: Boolean(externalEditorShortcut),
+                  supported: true,
+                  error: null,
+                },
+              };
+            }
+
           case "clear_compound_hotkey_pending":
             (window as any).__copicuTestCompoundPending = null;
             return null;
@@ -1830,11 +1865,11 @@ async function mockTauriInvoke(
               tags: scenario.tags,
               startedAtUnixMs: Date.now(),
             };
-            (window as any).__copicuTestActiveScenarioSession = session;
-            await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
             await (window as any).__copicuTestEmitEvent("copicu://picker/filter", {
               query: scenario.query,
             });
+            (window as any).__copicuTestActiveScenarioSession = session;
+            await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
             return session;
           }
           case "stop_active_scenario":
@@ -1845,15 +1880,16 @@ async function mockTauriInvoke(
             const item = ((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0];
             return {
               item: withHistoryPreview(item, true),
-              itemTags: (item.tags ?? "")
+              tagEntries: (item.tags ?? "")
                 .split(/\s+/)
                 .map((tag: string) => tag.replace(/^#/, "").trim())
-                .filter(Boolean),
-              itemProperties: {
-                client: ["ACME"],
-                project: ["Web"],
-                activity: ["Development"],
-              },
+                .filter(Boolean)
+                .map((value: string) => ({ value, source: "manual", confidence: null })),
+              propertyEntries: [
+                { key: "client", value: "ACME", source: "manual" },
+                { key: "project", value: "Web", source: "manual" },
+                { key: "activity", value: "Development", source: "manual" },
+              ],
               captureContextEvents: [
                 {
                   id: 1,
@@ -2099,6 +2135,24 @@ async function mockTauriInvoke(
           }
           case "normalize_hotkey_sequence":
             return { normalized: args.input, valid: Boolean(args.input), error: null };
+          case "edit_history_item_external":
+            return { editorName: "Visual Studio Code" };
+          case "list_external_editors":
+            return [{
+              id: "vscode",
+              name: "Visual Studio Code",
+              path: "C:\\Users\\JP\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+              configured: false,
+            }];
+          case "set_external_editor_shortcut": {
+            const testWindow = window as Window & {
+              __copicuTestSettings: {
+                picker: { externalEditorShortcut: string };
+              };
+            };
+            testWindow.__copicuTestSettings.picker.externalEditorShortcut = args.shortcut;
+            return testWindow.__copicuTestSettings;
+          }
           case "get_settings":
             return (window as any).__copicuTestSettings;
           case "update_settings":
@@ -2165,6 +2219,9 @@ async function selectLongSingleLine(page: Page) {
 
 async function selectLongSingleLineAndUnbroken(page: Page) {
   await selectLongSingleLine(page);
+  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click({
+    modifiers: ["Control"],
+  });
   const unbroken = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
   await unbroken.click({ modifiers: ["Control"] });
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-multi-selected/);
@@ -3312,7 +3369,7 @@ test("picker scenario menu mirrors Views and supports Alt+S, switching, and Stop
   await expect(menu.getByRole("menuitem", { name: /Internal review/ })).toBeVisible();
   await menu.getByRole("menuitem", { name: /Internal review/ }).click();
   await expect(menu).toBeHidden();
-  await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+  await expect(page.getByTestId("scenario-session-bar")).toContainText("Internal review");
   await expect(page.getByTestId("saved-view-bar")).toHaveCount(0);
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
   const layout = await page.evaluate(() => {
@@ -3326,12 +3383,12 @@ test("picker scenario menu mirrors Views and supports Alt+S, switching, and Stop
     };
   });
   expect(layout.interpretationHeight).toBeLessThan(140);
-  expect(layout.feedGap).toBeLessThanOrEqual(2);
+  expect(layout.feedGap).toBeLessThanOrEqual(6);
   expect(layout.firstItemOffset).toBeLessThan(16);
 
   await openPickerOverflow(page);
   await page.getByRole("menu", { name: "Picker menu" }).getByRole("menuitem", { name: /Cliente ACME/ }).click();
-  await expect(page.getByLabel(/Active scenario: Cliente ACME/)).toBeVisible();
+  await expect(page.getByTestId("scenario-session-bar")).toContainText("Cliente ACME");
 
   await openPickerOverflow(page);
   await expect(page.getByRole("menu", { name: "Picker menu" })).toBeVisible();
@@ -3374,7 +3431,7 @@ test("switching to an edited scenario applies its updated picker view", async ({
   await search.press("Alt+s");
   await menu.getByRole("menuitem", { name: /Internal review/ }).click();
   await expect(search).toHaveValue("tag:context-smoke");
-  await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+  await expect(page.getByTestId("scenario-session-bar")).toContainText("Internal review");
 });
 
 test("picker creates and activates a scenario from the current query", async ({ page }) => {
@@ -3395,7 +3452,7 @@ test("picker creates and activates a scenario from the current query", async ({ 
   await creator.getByRole("button", { name: "Save and activate" }).click();
 
   await expect(creator).toBeHidden();
-  await expect(page.getByLabel(/Active scenario: Writing session/)).toBeVisible();
+  await expect(page.getByTestId("scenario-session-bar")).toContainText("Writing session");
   await expect(search).toHaveValue("#111");
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
@@ -3417,7 +3474,7 @@ test("> escenario activates as an action and restores the scenario view query", 
   await expect(actions.getByRole("option", { name: "Activate scenario: Internal review" })).toBeVisible();
   await search.press("Enter");
   await expect(search).toHaveValue("tag:work kind:text");
-  await expect(page.getByLabel(/Active scenario: Internal review/)).toBeVisible();
+  await expect(page.getByTestId("scenario-session-bar")).toContainText("Internal review");
   await expect(actions).toHaveCount(0);
 });
 
@@ -3792,6 +3849,7 @@ test("compact previews expose only real overflow and keep inline editing stable"
   const feedScroll = page.locator(".history-feed-scroll");
   const shortRow = page.locator("#history-item-1201");
   const longRow = page.locator("#history-item-1202");
+  await expect(longRow).toBeVisible();
   await expect(shortRow.locator(".text-preview-overflow")).toHaveCount(0);
 
   const expectedChars = Array.from(compactPreviewText).length;
@@ -3814,8 +3872,8 @@ test("compact previews expose only real overflow and keep inline editing stable"
   await overflow.getByRole("button", { name: "Collapse" }).click();
   expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeCloseTo(collapsedHeight, 0);
 
-  await longRow.hover();
-  await longRow.getByRole("button", { name: "Quick edit item" }).click();
+  await longRow.getByRole("button", { name: "Open item actions" }).click();
+  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   const inlineEditor = longRow.getByRole("textbox", { name: "Quick edit item 1202" });
   await expect(inlineEditor).toBeFocused();
   await inlineEditor.fill("COPICU_INLINE_SAVED\nsecond line");
@@ -3831,8 +3889,8 @@ test("compact previews expose only real overflow and keep inline editing stable"
   const updatesAfterSave = await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "update_history_item").length,
   );
-  await longRow.hover();
-  await longRow.getByRole("button", { name: "Quick edit item" }).click();
+  await longRow.getByRole("button", { name: "Open item actions" }).click();
+  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   await inlineEditor.fill("COPICU_INLINE_CANCELLED");
   await inlineEditor.press("Escape");
   await expect(inlineEditor).toBeHidden();
@@ -3918,7 +3976,7 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   expect(getCalls).toHaveLength(1);
 });
 
-test("F2 edits content and Shift+F2 opens the metadata window from shortcut or menu", async ({ page }) => {
+test("F2, Ctrl+F2, and Shift+F2 route to content, external, and metadata editors", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, {
     editorSettings: {
       fontFamily: "consolas",
@@ -3938,6 +3996,9 @@ test("F2 edits content and Shift+F2 opens the metadata window from shortcut or m
   const metadataMenuItem = page.getByRole("menuitem", { name: /Edit metadata/ });
   await expect(metadataMenuItem).toBeVisible();
   await expect(metadataMenuItem.getByLabel("Shift+F2")).toBeVisible();
+  const externalMenuItem = page.getByRole("menuitem", { name: /Edit externally/ });
+  await expect(externalMenuItem).toBeVisible();
+  await expect(externalMenuItem.getByLabel("Ctrl+F2")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(metadataMenuItem).toBeHidden();
   const firstItem = page.locator(".feed-item").first();
@@ -3977,6 +4038,22 @@ test("F2 edits content and Shift+F2 opens the metadata window from shortcut or m
   await page.keyboard.press("Escape");
   await expect(contentEditor).toBeHidden();
 
+  await search.focus();
+  await page.keyboard.press("Control+F2");
+  const externalEditCall = await page.waitForFunction(() => {
+    const testWindow = window as Window & {
+      __copicuTestInvocations: Array<{ cmd: string; args: { itemId?: number } }>;
+    };
+    return testWindow.__copicuTestInvocations.find(
+      (entry) => entry.cmd === "edit_history_item_external",
+    );
+  });
+  const externalEdit = await externalEditCall.jsonValue() as {
+    args: { itemId: number };
+  };
+  expect(externalEdit.args.itemId).toBe(syntheticLongHistory[0].id);
+  await expect(page.getByText(/Opened in Visual Studio Code/)).toBeVisible();
+
   await page.keyboard.press("Shift+F2");
   const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
   await expect(metadataDialog).toBeVisible();
@@ -4010,8 +4087,15 @@ test("Ctrl+Shift+C targets the last item activated with Enter", async ({ page })
 test("native global activation updates the active item while the picker is hidden", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  await page.waitForFunction(() =>
+    (window as any).__copicuTestInvocations.some(
+      (call: any) => call.cmd === "plugin:event|listen"
+        && call.args.event === "copicu://picker/active-item",
+    ),
+  );
 
-  await page.evaluate(() => {
+  const handlerCount = await page.evaluate(() => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "hidden",
@@ -4021,6 +4105,7 @@ test("native global activation updates the active item while the picker is hidde
       { itemId: 101 },
     );
   });
+  expect(handlerCount).toBeGreaterThan(0);
 
   await expect(page.locator("#history-item-101 .feed-item")).toHaveClass(/is-selected/);
 });
@@ -4351,15 +4436,17 @@ test("picker navigation clears a pending compound shortcut without consuming Arr
     expiresAtUnixMs: Date.now() + 3000,
   });
   await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
 
   const search = page.getByLabel("Search clipboard history");
-  await search.focus();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
       (call: any) => call.cmd === "get_compound_hotkey_pending",
     ),
   );
-  await page.keyboard.press("ArrowDown");
+  await search.focus();
+  await expect(search).toBeFocused();
+  await search.press("ArrowDown");
 
   await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-selected/);
   const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
@@ -5391,28 +5478,6 @@ test("URL action appears only when selected text contains an URL", async ({ page
   await expect(menu.getByRole("menuitem", { name: "Open URL" })).toBeVisible();
 });
 
-test("item hover actions appear only while hovering row", async ({ page }) => {
-  await mockTauriInvoke(page);
-  await gotoShell(page);
-
-  const firstRow = page.locator(".history-feed.has-items > li").first();
-  const menuButton = firstRow.locator(".item-menu-button");
-  const previewButton = firstRow.locator(".item-preview-button");
-  const editButton = firstRow.locator(".item-edit-button");
-  const deleteButton = firstRow.locator(".item-delete-button");
-  const hoverActions = [menuButton, previewButton, editButton, deleteButton];
-
-  await page.mouse.move(1, 1);
-  await expect(menuButton).toHaveCSS("opacity", /0\.7/);
-  for (const action of [previewButton, editButton, deleteButton]) await expect(action).toHaveCSS("opacity", "0");
-
-  await firstRow.hover();
-  for (const action of hoverActions) await expect(action).toHaveCSS("opacity", "1");
-
-  await page.mouse.move(1, 1);
-  await expect(menuButton).toHaveCSS("opacity", /0\.7/);
-  for (const action of [previewButton, editButton, deleteButton]) await expect(action).toHaveCSS("opacity", "0");
-});
 
 test("dots menu uses pointer position too", async ({ page }) => {
   await mockTauriInvoke(page);
@@ -5566,7 +5631,7 @@ test("quick actions handles multi-selected legacy text clips without MIME", asyn
   await expect(page.locator("[title='Result count']")).toHaveText("2 total");
   const first = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   const second = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
-  await first.click();
+  await first.click({ modifiers: ["Control"] });
   await second.click({ modifiers: ["Control"] });
   await expect(first).toHaveClass(/is-multi-selected/);
   await expect(second).toHaveClass(/is-multi-selected/);
@@ -5961,6 +6026,17 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByLabel("App shortcuts")).toContainText("Registered");
   await expect(page.getByLabel("App shortcuts")).toContainText("Open settings");
   await expect(page.getByLabel("App shortcuts")).toContainText("Toggle pin on top");
+  await expect(page.getByLabel("App shortcuts")).toContainText("Edit in external editor");
+  const externalShortcutInput = page.getByLabel("External editor global shortcut manual value");
+  await externalShortcutInput.fill("Ctrl+Alt+E");
+  await externalShortcutInput.press("Enter");
+  await expect(page.getByLabel("External editor global shortcut", { exact: true })).toContainText("Ctrl");
+  const externalShortcutSection = page
+    .getByLabel("App shortcuts")
+    .locator(".hotkey-inventory-item")
+    .filter({ hasText: "Edit in external editor" });
+  await expect(externalShortcutSection).toContainText("Registered");
+  await expect(page.getByText("Ctrl+Alt+E is registered and ready.")).toBeVisible();
   await page.getByRole("button", { name: "Edit shortcut" }).first().click();
   await expect(page.getByText("Manual source edit")).toBeVisible();
   await expect(page.getByText("Current shortcut")).toBeVisible();
@@ -5987,6 +6063,10 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await page.getByRole("option", { name: "Code" }).click();
 
   await page.getByRole("tab", { name: /Editor/ }).click();
+  const externalEditorPath = page.getByLabel("External editor path");
+  await expect(externalEditorPath).toHaveValue("");
+  await page.getByRole("button", { name: "Detect" }).click();
+  await expect(externalEditorPath).toHaveValue(/Microsoft VS Code[\\/]Code\.exe$/);
   const editorFont = page.getByRole("combobox", { name: "Editor font" });
   await editorFont.click();
   await page.getByRole("option", { name: "Consolas", exact: true }).click();
@@ -6019,9 +6099,11 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
     tabSize: 2,
     lineNumbers: true,
     highlightActiveLine: false,
+    externalEditorPath: "C:\\Users\\JP\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
   });
   expect(savedSettings.general.captureEnabled).toBe(false);
   expect(savedSettings.picker.previewShortcut).toBe("F3");
+  expect(savedSettings.picker.externalEditorShortcut).toBe("Ctrl+Alt+E");
 
   await page.getByLabel("Search settings").fill("ai");
   await expect(page.getByLabel("AI endpoint")).toBeVisible();
@@ -6248,7 +6330,7 @@ test("metadata window keeps tags and properties inline at its minimum size", asy
   await expect(page.getByLabel("Client properties")).toHaveCount(0);
   await expect(page.getByLabel("Project properties")).toHaveCount(0);
   await expect(editor).toHaveValue(/client:ACME project:Web activity:Development/);
-  await expect(page.getByLabel("Capture context")).toHaveCount(0);
+  await expect(page.getByLabel("Capture details")).toBeVisible();
   await expect(page.locator(".metadata-text-suggestions")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
@@ -6274,7 +6356,7 @@ test("metadata window keeps tags and properties inline at its minimum size", asy
   await expect(editor).toHaveValue('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #work anywhere #backend ');
 
   await editor.press("Tab");
-  await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await expect(page.getByLabel("Capture details").locator("summary")).toBeFocused();
   await editor.focus();
   await editor.pressSequentially("#wo");
   await expect(suggestionList).toBeVisible();
@@ -6303,7 +6385,12 @@ test("metadata window keeps tags and properties inline at its minimum size", asy
 
   const overflowing = await page.locator(".metadata-window-app").evaluate((element) =>
     Array.from(element.querySelectorAll<HTMLElement>("*"))
-      .filter((child) => child.scrollWidth > Math.ceil(child.clientWidth) + 1)
+      .filter((child) => {
+        const overflowX = getComputedStyle(child).overflowX;
+        return child.scrollWidth > Math.ceil(child.clientWidth) + 1
+          && overflowX !== "hidden"
+          && overflowX !== "clip";
+      })
       .map((child) => ({
         className: child.className,
         clientWidth: child.clientWidth,

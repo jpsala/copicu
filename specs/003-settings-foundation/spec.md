@@ -121,6 +121,25 @@ La pantalla principal sigue siendo el picker util, no una landing ni preferencia
 - `globalShortcut` queda persistido y visible; hot reload queda para el siguiente corte.
 - `scripts.folderPath` queda persistido y visible; file watching/runtime queda para Actions And Scripting.
 
+## Corte: Editor Externo
+
+Contrato implementado:
+
+- `Ctrl+F2` abre el item de texto activo en un editor externo; `F2` y `Shift+F2` conservan editor interno y metadata.
+- Al confirmar o grabar el hotkey global, Settings lo persiste y registra inmediatamente. Un conflicto revierte el valor y mantiene el shortcut anterior.
+- `picker.externalEditorShortcut` permite registrar el mismo comando como hotkey global opcional; vacio lo desactiva.
+- `editor.externalEditorPath` acepta un launcher explicito. Si queda vacio, el backend detecta instalaciones de Visual Studio Code, VS Code Insiders, Cursor, VSCodium y Windsurf en rutas Windows y `PATH`.
+- La integracion crea un archivo temporal por sesion, usa `--wait` para editores compatibles, importa cambios al cerrar el archivo y conserva metadata del item.
+- Solo texto entra en este corte. Imagenes y perfiles por MIME quedan fuera.
+- Si no hay editor compatible, Copicu abre `Settings > Editor`; si el proceso o la importacion falla, conserva el archivo de sesion para recuperacion.
+
+Checks requeridos:
+
+- tests unitarios de normalizacion/deteccion y preservacion del item;
+- build TypeScript/Vite;
+- tests Rust;
+- smoke Windows con VS Code: `Ctrl+F2` -> editar -> guardar/cerrar -> historial actualizado.
+
 ## Futuro
 
 - Per-profile settings: normal/private/debug/portable.

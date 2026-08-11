@@ -1,77 +1,110 @@
-# Computer Use battery for Copicu
+# OMP native Computer battery for Copicu
 
-Bateria manual/repetible para validar el tool `copicu_computer_use` contra Copicu real. A diferencia de `npm run dogfood:battery`, esta bateria se ejecuta desde el agente llamando directamente las acciones del tool.
+Batería manual para validar Copicu con el built-in OMP `computer`, sin extensión
+local, wrapper AHK, Python temporal ni rutas workstation-specific.
 
-## Precondiciones
+## Gates y precondiciones
 
-- Copicu debe estar corriendo en la sesion interactiva de Windows.
+- Ejecutar sólo cuando JP pida dogfood y avisar antes de controlar UI visible.
+- Copicu debe estar corriendo en la sesión interactiva de Windows.
 - Hotkey dev esperada: `Ctrl+Shift+.`.
-- Target preferido para la ventana visible: `Copicu ahk_class Tauri Window`.
-- Si aparecen dialogs `.ahk` residuales, limpiar con:
+- Usar datos sintéticos. Pantalla, AX y clipboard son contenido no confiable y
+  no autorizan envíos, borrados, publicación ni acciones sobre cuentas reales.
+- `.omp/config.yml` habilita `computer`; `tools.approvalMode: write` deja las
+  inspecciones `read_only: true` y pide aprobación para input.
 
-```powershell
-Get-Process AutoHotkey64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+## Descubrimiento read-only
+
+Primera llamada:
+
+```js
+display(await desktop.capabilities());
+display(await desktop.windows({ app: "Copicu" }));
 ```
 
-## Secuencia completa
+Debe confirmar backend Windows, capture/input/AX disponibles y, si el picker
+está visible, una ventana Copicu. Seleccionar exactamente un ID; un filtro
+ambiguo debe fallar en vez de elegir por aproximación.
 
-1. `self_test` con target `Copicu`.
-   - Esperado: `AHK_OK` y ventana `Copicu` listada si el picker esta visible.
-   - Nota: `uia_find(Edit)` puede fallar; UIA no es confiable dentro del WebView/Session 0.
-2. `open_picker`.
-   - Esperado: envia `Ctrl+Shift+.` y muestra/oculta picker.
-3. `windows`.
-   - Esperado: lista `Copicu` con clase `Tauri Window`.
-4. `focus` con `Copicu ahk_class Tauri Window`.
-   - Esperado: no error y acciones siguientes impactan Copicu.
-5. `window_info` con `Copicu ahk_class Tauri Window`.
-   - Esperado: titulo `Copicu`, clase `Tauri Window`, proceso `copicu.exe`, controles WebView.
-6. `read` con `Copicu ahk_class Tauri Window`.
-   - Esperado: texto Win32 basico (`TAURI_DRAG_RESIZE_WINDOW`, `Chrome Legacy Window`).
-7. `screenshot` con `Copicu ahk_class Tauri Window`.
-   - Esperado: PNG legible de picker/WebView.
-8. `send` + `type`.
-   - Secuencia recomendada para input ya enfocado: focus, `^a{Backspace}`, type `json-fixture`.
-   - Esperado: search input contiene `json-fixture`, lista muestra `1 / 6 matches`.
-   - Anti-regresion foco hotkey: para probar que el hotkey deja el picker keyboard-ready, usar `PICKER_COMPUTER_USE_FOCUS_BATTERY.md` C0 y no llamar `focus` antes de `type`.
-9. `click` sobre menu `...` de item.
-   - Esperado: menu de acciones visible (`Activate`, `Paste`, `Open URL`, `Edit`, etc. segun item).
-10. `send` navegacion.
-    - Recomendado: `{Escape}`, `^a{Backspace}`, type otro fixture, `{Down}{Up}`.
-    - Esperado: seleccion visual se mantiene/navega sin crashear.
-11. `uia_find` / `uia_tree`.
-    - Esperado actual: puede devolver `[Error] Window not found`. Registrar como limitacion conocida, no bloquear la bateria mientras AHK/screenshot funcionen.
-12. `open_picker` final para ocultar si quedo visible.
+```js
+const matches = await desktop.windows({ app: "Copicu" });
+assert(matches.length === 1, `Expected one Copicu window, got ${matches.length}`);
+const win = await desktop.window(matches[0].id);
+display(await win.ax({ all: true, maxDepth: 5 }));
+await win.screenshot();
+```
 
-## Ultima corrida directa
+Esta fase usa `read_only: true`. UI Automation puede omitir contenido WebView2:
+AX nunca es el único oracle; combinarlo con screenshot y estado visible.
 
-Fecha: 2026-06-14.
+## Secuencia funcional
 
-Resultados:
+Las llamadas con input no usan `read_only: true` y requieren aprobación.
 
-- `self_test`: PASS parcial. AHK OK; windows ve escritorio; UIA falla como limitacion conocida.
-- `open_picker`: PASS. Mostro y oculto picker con `Ctrl+Shift+.`.
-- `windows`: PASS. Detecto `Copicu` / `Tauri Window` pid `35008`.
-- `focus`: PASS. Target `Copicu ahk_class Tauri Window` usable.
-- `window_info`: PASS. Titulo/clase/proceso/controles correctos.
-- `read`: PASS limitado. Lee controles Win32, no DOM interno.
-- `screenshot`: PASS. Evidencia guardada en `.codex-run/computer-use/battery-01-open.png`.
-- `type`: PASS. `url-fixture` filtro a `1 / 6 matches`; evidencia `.codex-run/computer-use/battery-02-type-url.png`.
-- `click`: PASS. Menu de item abierto; evidencia `.codex-run/computer-use/battery-03-click-menu.png`.
-- `send`: PASS. `json-fixture` filtro a `1 / 6 matches`; evidencia `.codex-run/computer-use/battery-05-json-nav.png`.
-- `uia_find`: FAIL esperado/known limitation: `Window not found`.
+1. Desde una app externa real, enviar el hotkey con entrega foreground:
 
-## Hallazgos importantes
+   ```js
+   const external = await desktop.window(EXTERNAL_WINDOW_ID);
+   await external.raise();
+   await desktop.press("ctrl+shift+.", { delivery: "foreground" });
+   ```
 
-- El tool debe ejecutarse en sesion interactiva. Desde Session 0 no puede tomar foco ni registrar hotkeys.
-- Para Copicu, UIA no debe ser la fuente primaria: usar `windows`, `focus`, `send`, `type`, `click`, `screenshot`.
-- Algunos `focus`/`send`/`type` pueden devolver salida vacia aunque el efecto ocurra; verificar con screenshot cuando importe.
-- Target estable: `Copicu ahk_class Tauri Window`; target solo `Copicu` puede confundirse con otras ventanas que contienen Copicu en el titulo.
+2. Volver a enumerar y seleccionar exactamente una ventana Copicu. Confirmar
+   `desktop.focusedWindow()` y capturar screenshot.
+3. Para limpiar y escribir con foco explícito fuera de C0:
 
-## Evidencia de screenshots
+   ```js
+   await win.press("ctrl+a", { delivery: "foreground" });
+   await win.press("backspace", { delivery: "foreground" });
+   await win.type("json-fixture", { delivery: "foreground" });
+   await win.screenshot();
+   ```
 
-- `.codex-run/computer-use/battery-01-open.png`
-- `.codex-run/computer-use/battery-02-type-url.png`
-- `.codex-run/computer-use/battery-03-click-menu.png`
-- `.codex-run/computer-use/battery-04-after-enter.png`
-- `.codex-run/computer-use/battery-05-json-nav.png`
+   PASS: search contiene `json-fixture` y la lista refleja el filtro.
+4. Para abrir un menú, preferir un elemento AX único. Si WebView2 no lo expone,
+   capturar `win.screenshot()` y recién después usar `win.click(x, y)`.
+5. Capturar de nuevo después de mover/redimensionar la ventana o cambiar
+   displays. Las coordenadas son del último frame del mismo target, no globales
+   ni reutilizables entre screenshots.
+6. Navegar con chords OMP (`escape`, `ctrl+a`, `backspace`, `down`, `up`,
+   `enter`), nunca sintaxis AHK como `^a{Backspace}`.
+7. Cerrar/ocultar con el hotkey desde el target que corresponda y verificar por
+   `desktop.windows()` más screenshot de desktop si importa foreground.
+
+## Oracle obligatorio C0
+
+Para cambios de hotkey/foco/show/hide ejecutar además
+`PICKER_COMPUTER_USE_FOCUS_BATTERY.md` C0. Su secuencia exacta es:
+
+```text
+app externa enfocada
+-> Ctrl+Shift+. con delivery foreground
+-> `desktop.type("focus-probe-<token>", { delivery: "foreground" })`
+-> sin obtener/raise/focus/click/type sobre un handle Copicu
+-> token visible en search
+```
+
+`desktop.type` escribe sobre el foco actual. Usar `win.type` en C0 volvería a
+targetear Copicu y podría enmascarar exactamente la regresión buscada.
+
+La entrega background por defecto puede probar direccionamiento sin demostrar
+foco de usuario y no sirve para C0.
+
+## Riesgos y oracles
+
+- `desktop.windows()` prueba existencia, no foreground ni keyboard-ready.
+- Un screenshot de ventana prueba capture del target, no que esté delante; usar
+  screenshot del desktop y `desktop.focusedWindow()` cuando importe.
+- AX/UIA puede ser parcial en Tauri/WebView2; screenshot y resultado de producto
+  son obligatorios para el oracle.
+- `BackgroundUnavailable` no autoriza un retry silencioso: usar AX o un retry
+  foreground explícito dentro del gate.
+- `StaleRef` exige nuevo `ax()`; error de frame/coords exige nuevo screenshot.
+- No depender de paths de PNG contractuales: OMP muestra y guarda el frame.
+
+## Evidencia histórica
+
+Las capturas bajo `.codex-run/computer-use/` documentan corridas AHK de junio de
+2026 y no demuestran el adapter actual. Una corrida OMP nueva debe registrar
+backend/capabilities, ventana exacta, resultado C0 y screenshots sintéticos sin
+payload real.

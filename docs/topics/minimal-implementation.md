@@ -16,7 +16,7 @@ triggers:
   - revisar complejidad
 primary_refs:
   - docs/topics/agentic-os-operations.md
-  - docs/topics/pi-agentic-os.md
+  - docs/topics/omp-agentic-os.md
   - docs/topics/technical-research-process.md
   - docs/DECISIONS.md
 ---
@@ -27,7 +27,7 @@ Copicu puede usar disciplina minimalista para implementar o revisar codigo, pero
 
 ## Regla Local
 
-AOS gobierna contexto, memoria durable, continuidad, specs, TDD, verificaciones, ask-before y seguridad downstream. La disciplina minimalista gobierna solo la forma de implementar una solucion una vez entendido el flujo y el estado real de Copicu.
+AOS local gobierna contexto, memoria durable, continuidad, specs y gates propios; OMP gobierna la ejecución agentic. La disciplina minimalista gobierna sólo la forma de implementar una solución una vez entendido el flujo y el estado real de Copicu.
 
 Antes de escribir codigo, preferir en este orden:
 

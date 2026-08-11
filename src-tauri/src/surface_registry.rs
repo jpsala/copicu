@@ -280,7 +280,14 @@ mod tests {
 
     #[test]
     fn close_behavior_follows_surface_lifecycle() {
-        for label in [MAIN, SETTINGS, AI_OUTPUT, METADATA, ITEM_PREVIEW, NOTIFICATIONS] {
+        for label in [
+            MAIN,
+            SETTINGS,
+            AI_OUTPUT,
+            METADATA,
+            ITEM_PREVIEW,
+            NOTIFICATIONS,
+        ] {
             assert!(hides_on_close(label), "{label} should hide on close");
         }
         for label in [UI_HOST, WHICHKEY, "unknown"] {

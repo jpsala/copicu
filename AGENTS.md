@@ -14,14 +14,12 @@ Antes de trabajar en este proyecto, usar una ruta liviana:
 4. Consultar `docs/TOPICS.md` o buscar por triggers para elegir topic.
 5. Abrir solo el topic, track, spec o codigo puntual segun el pedido.
 
-No abrir por defecto docs largos (`PROJECT`, `ASSISTANT_RULES`, `DEVELOPMENT`, specs completas, referencias). En OMP, preferir búsquedas scoped (`src`, `src-tauri/src`, `docs/topics`); `docs/skills/impeccable/` es solo para UI/impeccable.
+No abrir por defecto docs largos (`PROJECT`, `ASSISTANT_RULES`, `DEVELOPMENT`, specs completas, referencias). Preferir búsquedas scoped (`src`, `src-tauri/src`, `docs/topics`); `docs/skills/impeccable/` es solo para UI/impeccable.
 
 ## Reglas Generales
 
-- Usar web/internet libremente por defecto cuando conocimiento externo o cambiante evite adivinar: docs oficiales, releases, issues/source, metadata de paquetes, errores, APIs y comparativas. No enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos.
-- Browser visible/desatendido usa la capacidad nativa del harness activo; AXI, adapters y Lavish quedan como fallback manual de OMP únicamente. Vivaldi personal sólo si JP lo pide.
-- No usar OMP Browser Relay/`app.relay`; login nuevo y efectos externos sensibles conservan los gates locales. Referencia local: `docs/topics/agent-tool-routing.md`.
-- Si evidencia online contradice el repo local, docs del proyecto o comportamiento observado, consultar a JP antes de decidir; presentar ambas evidencias, fuentes e impacto practico.
+- No enviar secretos, `.env`, codigo privado sensible, datos personales ni credenciales a servicios externos.
+- Si evidencia externa contradice el repo local, docs del proyecto o comportamiento observado, consultar a JP antes de decidir; presentar ambas evidencias, fuentes e impacto practico.
 - Antes de instalar dependencias, CLIs globales, paquetes de sistema, herramientas de package-manager o binarios/scripts remotos, pedir autorizacion explicita con comando exacto, alcance, motivo, riesgos, alternativa, cambios esperados y rollback. Tratar `curl | sh`/scripts remotos como alto riesgo y preferir alternativas auditables.
 - Respetar el stack objetivo salvo decision explicita en contrario: Tauri 2, TypeScript, frontend React/Vite o Solid, Rust y SQLite.
 - No intentar paridad completa con CopyQ por defecto. El producto es CopyQ-inspired, no CopyQ-compatible.
@@ -35,17 +33,18 @@ No abrir por defecto docs largos (`PROJECT`, `ASSISTANT_RULES`, `DEVELOPMENT`, s
 - Tras cambios de codigo/config/assets/frontend/backend, reiniciar o recargar la instancia dev segun corresponda; no dejar una app vieja corriendo.
 - No dejar que la capa agentica se convierta en transcript, backlog historico o lectura obligatoria amplia. Si crece, compactar, archivar o mover a referencia profunda.
 
-## Control plane portable
+## Frontera AOS / OMP
+<!-- aos-bootstrap: stable-bootstrap-v1 -->
+<!-- aos-runtime-authority: omp -->
+<!-- aos-local-authority: product, domain, data, security, external-effects -->
 
-- Traycer con el harness nativo activo es la ruta cotidiana: conversar no implementa, planear no ejecuta e implementar actúa en esta sesión.
-- OMP queda standalone/manual para compatibilidad de producto; Traycer no lo invoca automáticamente y Pi sólo aplica a producto/laboratorio si un gate local lo permite.
-- El repo no depende de `.traycer` ni de artifacts del manager. El owner mantiene la rama/worktree; simultaneidad exige aislamiento y el handoff bajo demanda contiene objetivo, rama/worktree, decisiones, archivos/cambios, checks y siguiente gate.
-- Usar tools mínimas; todos para trabajo multietapa y subagentes sólo por pedido de JP en slices independientes.
-- Default `Sol Medium`; High sólo por ambigüedad/riesgo material, seguridad, irreversibilidad o producción. Sin fallback de modelo/provider/auth.
-- Sin sesión nueva, handoff ni auto-send rutinarios; persistir una vez sólo valor durable. Campos de control del foco en `WORKING_MEMORY.md` ocupan una línea física.
+Bootstrap estable: OMP gobierna la ejecución y el runtime de agentes; Copicu conserva autoridad sobre producto, dominio, datos, seguridad y efectos externos. Esto no altera `computer` ni los gates locales de Tauri, clipboard, persistencia e instalación.
+
+- AOS conserva en este repo conocimiento durable, continuidad documental, índices, `WORKING_MEMORY.md`, topics, tracks, specs, skills y gates locales.
+- OMP gobierna modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime. La capa local no fija defaults ni fallbacks para esas capacidades.
 - `aos-realinear-os` / `realinear os` es operación manager: abrir `docs/topics/agentic-os-operations.md`; no crear prompt.
 - `computer` built-in vive sólo en `.omp/config.yml`: avisar UI visible, inspeccionar `read_only`, AX no basta para WebView2 y C0 exige app externa -> hotkey foreground -> type global sin targetear Copicu -> token visible.
-- Capacidades en `docs/skills/`, discovery en `.agents/skills` y único comando local `.omp/commands/research.md`; cero superficie activa `.pi`.
+- Capacidades locales en `docs/skills/`, discovery en `.agents/skills` y comando opt-in `.omp/commands/research.md`; cero superficie activa `.pi`.
 - App instalada: si JP pide promover dev a instalada/crear instalador/instalar current, ejecutar `npm run install:current`; toca procesos Copicu instalados, asi que avisar y verificar evidencia.
 
 ## Persistencia

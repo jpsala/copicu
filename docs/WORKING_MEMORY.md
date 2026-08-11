@@ -2,30 +2,31 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-07-30. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-08-10. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
-Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o reference. En Pi, preferir lecturas scoped (`src`, `src-tauri/src`, `docs/topics`) y evitar `map .` salvo orientacion global.
+Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o reference. Preferir lecturas scoped (`src`, `src-tauri/src`, `docs/topics`) y evitar recorridos globales salvo orientacion.
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete`.
-- **Referencia:** `docs/tracks/033-picker-compact-previews-inline-edit.md`.
-- **Siguiente acción:** ninguna requerida; el picker ya tiene previews compactas, expansión de overflow y edición rápida inline, conservando F2 como editor completo.
+- **Estado:** `planned`.
+- **Referencia:** `docs/tracks/034-local-rpc-cli.md`.
+- **Siguiente acción:** implementar el corte V1 completo: Named Pipe seguro por perfil, facade JSON-RPC, `copicu-cli.exe`, cinco metodos semanticos y smoke dev antes del gate de instalacion.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
+| RPC / automatizacion externa | planned | `docs/tracks/034-local-rpc-cli.md`, `docs/topics/actions-and-scripting-api.md` | Implementar V1 en una pasada; PowerShell y AutoHotkey usan CLI sobre Named Pipe, sin SQL/Tauri/Host passthrough. |
 | Actions/scripts/hotkeys | complete | `docs/tracks/012-tags-and-hotkeys.md`, `docs/topics/tag-management-hotkeys.md`, `docs/tracks/004-actions-scripting.md` | Installer distribuye solo `030` Extract URLs y `031` Join Markdown, sin sobrescribir; ejemplos restantes quedan como fixtures del repo. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `specs/005-search-plan-engine/` | Triggers, chips/explain, diagnostico y autocomplete local de tags/operadores aplicados; luego saved searches o highlighting. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
 | Open source/release | active | `docs/tracks/018-public-launch-readiness.md`, `docs/tracks/021-distribution-trust-code-signing.md`, `docs/topics/windows-installer.md` | `v0.4.3` estable publicado con instalador, firma de updater y `latest.json`; instalada local promovida y respondiendo. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
-| OS / sistema agentic | active | `docs/topics/portable-multiharness-contract.md`, `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md` | Traycer y el harness activo son la ruta cotidiana; OMP queda standalone/manual y `computer` se conserva como binding de producto. |
+| OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 
 ## Specs Activas
 

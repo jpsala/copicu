@@ -155,6 +155,7 @@ type NativeShortcutStatus = {
 type AppShortcutStatus = {
   picker: NativeShortcutStatus;
   pin: NativeShortcutStatus;
+  externalEditor: NativeShortcutStatus;
 };
 
 type AutostartStatus = {
@@ -163,14 +164,29 @@ type AutostartStatus = {
   reason: string | null;
 };
 
+type ExternalEditorCandidate = {
+  id: string;
+  name: string;
+  path: string;
+  configured: boolean;
+};
+
+type MetadataTagEntry = {
+  value: string;
+  source: string;
+  confidence: number | null;
+};
+
+type MetadataPropertyEntry = {
+  key: "client" | "project" | "activity";
+  value: string;
+  source: string;
+};
+
 type MetadataEditorPayload = {
   item: HistoryItem;
-  itemTags: string[];
-  itemProperties: {
-    client: string[];
-    project: string[];
-    activity: string[];
-  };
+  tagEntries: MetadataTagEntry[];
+  propertyEntries: MetadataPropertyEntry[];
   captureContextEvents: CaptureContextEvent[];
 };
 
@@ -281,10 +297,6 @@ function captureContextRows(event: CaptureContextEvent) {
     ["Window", event.sourceWindowTitle ?? "—"],
     ["Domain", event.domain ?? "—"],
     ["MIME", event.mimePrimary ?? "—"],
-    ["Formats", event.clipboardFormatsText ?? "—"],
-    ["App path", event.sourceAppPath ?? "—"],
-    ["PID / HWND", `${formatOptionalNumber(event.sourceProcessId)} / ${formatOptionalNumber(event.sourceWindowId)}`],
-    ["Clipboard", `${event.clipboardPlatform ?? "—"} · seq ${formatOptionalNumber(event.clipboardSequenceNumber)} · ${formatOptionalNumber(event.clipboardFormatCount)} formats`],
     ["Size", `${formatOptionalNumber(event.byteSize, " bytes")} · ${formatOptionalNumber(event.textCharCount, " chars")} · ${formatOptionalNumber(event.lineCount, " lines")}`],
   ];
 }
@@ -319,6 +331,35 @@ function captureSearchChips(event: CaptureContextEvent) {
     event.sourceKind ? `source:${event.sourceKind}` : null,
     event.clipboardFormatsText ? "format:<format>" : null,
   ].filter(Boolean) as string[];
+}
+
+function metadataProperties(entries: MetadataPropertyEntry[]) {
+  const properties = {
+    client: [] as string[],
+    project: [] as string[],
+    activity: [] as string[],
+  };
+  for (const entry of entries) {
+    properties[entry.key].push(entry.value);
+  }
+  return properties;
+}
+
+function metadataSourceLabel(source: string) {
+  const normalized = source.trim().toLocaleLowerCase();
+  if (normalized.includes("scenario")) {
+    return "Scenario";
+  }
+  if (normalized.includes("context") || normalized.includes("capture")) {
+    return "Context";
+  }
+  return "Auto";
+}
+
+function captureEventSummary(event: CaptureContextEvent) {
+  const source = event.sourceAppName ?? event.sourceKind;
+  const detail = event.sourceWindowTitle ?? event.domain;
+  return [source, detail, formatCaptureTimestamp(event.capturedAtUnixMs)].filter(Boolean).join(" · ");
 }
 
 function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
@@ -615,6 +656,114 @@ if (isTauriRuntime()) {
   }
 }
 
+function GeneratedMetadataSection({
+  tagEntries,
+  propertyEntries,
+}: {
+  tagEntries: MetadataTagEntry[];
+  propertyEntries: MetadataPropertyEntry[];
+}) {
+  const entries = [
+    ...tagEntries
+      .filter((entry) => entry.source !== "manual")
+      .map((entry) => ({
+        key: `tag:${entry.source}:${entry.value}`,
+        text: `#${entry.value}`,
+        source: entry.source,
+        confidence: entry.confidence,
+      })),
+    ...propertyEntries
+      .filter((entry) => entry.source !== "manual")
+      .map((entry) => ({
+        key: `property:${entry.key}:${entry.source}:${entry.value}`,
+        text: `${entry.key}:${entry.value}`,
+        source: entry.source,
+        confidence: null,
+      })),
+  ];
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="metadata-provenance" aria-labelledby="metadata-provenance-title">
+      <div className="metadata-provenance-heading">
+        <strong id="metadata-provenance-title">Generated metadata</strong>
+        <span>Removing generated metadata prevents it from being added automatically again.</span>
+      </div>
+      <ul>
+        {entries.map((entry) => (
+          <li key={entry.key}>
+            <UiBadge size="xs" variant="light">{metadataSourceLabel(entry.source)}</UiBadge>
+            <code>{entry.text}</code>
+            {entry.confidence === null
+              ? null
+              : <span>{Math.round(entry.confidence * 100)}% confidence</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function CaptureEventFacts({ event }: { event: CaptureContextEvent }) {
+  const chips = captureSearchChips(event);
+  return (
+    <div className="metadata-capture-event-facts">
+      <dl className="metadata-capture-context-grid">
+        {captureContextRows(event).map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {chips.length > 0 ? (
+        <div className="metadata-capture-context-chips" aria-label="Capture search filters">
+          {chips.map((chip) => <code key={chip}>{chip}</code>)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CaptureDetails({ events }: { events: CaptureContextEvent[] }) {
+  if (events.length === 0) {
+    return null;
+  }
+
+  const orderedEvents = [...events].sort(
+    (left, right) => right.capturedAtUnixMs - left.capturedAtUnixMs,
+  );
+  const [newestEvent, ...olderEvents] = orderedEvents;
+
+  return (
+    <section className="metadata-capture-context" aria-label="Capture details">
+      <details>
+        <summary>
+          <span>Capture details</span>
+          <small>{captureEventSummary(newestEvent)}</small>
+        </summary>
+        <CaptureEventFacts event={newestEvent} />
+        {olderEvents.length > 0 ? (
+          <div className="metadata-capture-context-events">
+            <span>Earlier captures</span>
+            {olderEvents.map((event) => (
+              <details key={event.id} className="metadata-capture-context-event">
+                <summary>
+                  <small>{captureEventSummary(event)}</small>
+                </summary>
+                <CaptureEventFacts event={event} />
+              </details>
+            ))}
+          </div>
+        ) : null}
+      </details>
+    </section>
+  );
+}
+
 export function MetadataWindowApp() {
   const [payload, setPayload] = useState<MetadataEditorPayload | null>(null);
   const [metadataText, setMetadataText] = useState("");
@@ -648,8 +797,8 @@ export function MetadataWindowApp() {
     setPayload(nextPayload);
     setMetadataText(formatMetadataText(
       nextPayload?.item.notes,
-      nextPayload?.itemTags ?? [],
-      nextPayload?.itemProperties,
+      nextPayload?.tagEntries.map((entry) => entry.value) ?? [],
+      nextPayload ? metadataProperties(nextPayload.propertyEntries) : undefined,
     ));
     setEditorSession((current) => current + 1);
     setError(null);
@@ -700,7 +849,11 @@ export function MetadataWindowApp() {
     }
     setSaving(true);
     setError(null);
-    const parsed = parseMetadataText(metadataText, availableTags, payload.itemTags);
+    const parsed = parseMetadataText(
+      metadataText,
+      availableTags,
+      payload.tagEntries.map((entry) => entry.value),
+    );
     const request: UpdateItemMetadataRequest = {
       id: payload.item.id,
       title: payload.item.title,
@@ -773,6 +926,11 @@ export function MetadataWindowApp() {
               availableTags={availableTags}
               onChange={setMetadataText}
             />
+            <GeneratedMetadataSection
+              tagEntries={payload.tagEntries}
+              propertyEntries={payload.propertyEntries}
+            />
+            <CaptureDetails events={payload.captureContextEvents} />
             {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
             <div className="metadata-window-footer">
               <span><code>#tag</code> · <code>client:value</code> · <code>Ctrl+Enter</code></span>
@@ -893,6 +1051,62 @@ export function SettingsWindowApp() {
       setError(String(saveError));
     }
   }, [draft]);
+
+  const applyExternalEditorShortcut = useCallback(async (shortcut: string) => {
+    setDraft((current) => ({
+      ...current,
+      picker: {
+        ...current.picker,
+        externalEditorShortcut: shortcut,
+      },
+    }));
+    try {
+      setError(null);
+      const persisted = normalizeSettings(await invoke<AppSettings>(
+        "set_external_editor_shortcut",
+        { shortcut },
+      ));
+      setSettings((current) => ({
+        ...current,
+        picker: {
+          ...current.picker,
+          externalEditorShortcut: persisted.picker.externalEditorShortcut,
+        },
+      }));
+      setDraft((current) => ({
+        ...current,
+        picker: {
+          ...current.picker,
+          externalEditorShortcut: persisted.picker.externalEditorShortcut,
+        },
+      }));
+      setShortcutStatus(await getAppShortcutStatus());
+      pushToast({
+        title: "External editor shortcut",
+        message: persisted.picker.externalEditorShortcut
+          ? `${persisted.picker.externalEditorShortcut} is registered and ready.`
+          : "Global shortcut disabled.",
+        tone: "success",
+      });
+    } catch (applyError) {
+      const message = String(applyError);
+      setDraft((current) => ({
+        ...current,
+        picker: {
+          ...current.picker,
+          externalEditorShortcut: settings.picker.externalEditorShortcut,
+        },
+      }));
+      setError(message);
+      setShortcutStatus(await getAppShortcutStatus().catch(() => null));
+      pushToast({
+        title: "External editor shortcut failed",
+        message,
+        tone: "danger",
+        durationMs: STICKY_TOAST_DURATION_MS,
+      });
+    }
+  }, [pushToast, settings.picker.externalEditorShortcut]);
 
   const runStandaloneScriptAction = useCallback(
     async (action: ActionDefinition) => {
@@ -1284,6 +1498,61 @@ export function SettingsWindowApp() {
     }
   }, []);
 
+  const browseExternalEditorPath = useCallback(async () => {
+    try {
+      setError(null);
+      const selected = await openDialog({
+        directory: false,
+        multiple: false,
+        title: "Choose external editor",
+        filters: [
+          {
+            name: "Launchers",
+            extensions: ["exe", "cmd", "bat", "ps1"],
+          },
+        ],
+      });
+      if (typeof selected !== "string" || selected.length === 0) {
+        return;
+      }
+      setDraft((current) => ({
+        ...current,
+        editor: {
+          ...current.editor,
+          externalEditorPath: selected,
+        },
+      }));
+    } catch (browseError) {
+      setError(String(browseError));
+    }
+  }, []);
+
+  const detectExternalEditor = useCallback(async () => {
+    try {
+      setError(null);
+      const candidates = await invoke<ExternalEditorCandidate[]>("list_external_editors");
+      const detected = candidates.find((candidate) => !candidate.configured) ?? candidates[0];
+      if (!detected) {
+        setError("No supported editor found. Install VS Code, Cursor, VSCodium, or Windsurf, or choose an executable.");
+        return;
+      }
+      setDraft((current) => ({
+        ...current,
+        editor: {
+          ...current.editor,
+          externalEditorPath: detected.path,
+        },
+      }));
+      pushToast({
+        title: "External editor detected",
+        message: `${detected.name}: ${detected.path}`,
+        tone: "success",
+      });
+    } catch (detectError) {
+      setError(String(detectError));
+    }
+  }, [pushToast]);
+
   useEffect(() => {
     document.body.classList.add("settings-window");
     return () => {
@@ -1472,6 +1741,9 @@ export function SettingsWindowApp() {
           onEditScript={(action) => void openScriptInEditor(action)}
           onRefreshScripts={() => void refreshScriptActions()}
           onBrowseVscodePath={() => void browseVscodePath()}
+          onBrowseExternalEditorPath={() => void browseExternalEditorPath()}
+          onDetectExternalEditor={() => void detectExternalEditor()}
+          onApplyExternalEditorShortcut={(shortcut) => void applyExternalEditorShortcut(shortcut)}
           onCheckUpdates={() => void checkForUpdatesNow()}
           onCancel={closeWindow}
           onSave={() => void saveSettings()}
@@ -1687,6 +1959,9 @@ type SettingsPanelProps = {
   onEditScript: (action: ActionDefinition) => void;
   onRefreshScripts: () => void;
   onBrowseVscodePath: () => void;
+  onBrowseExternalEditorPath: () => void;
+  onDetectExternalEditor: () => void;
+  onApplyExternalEditorShortcut: (shortcut: string) => void;
   onCheckUpdates: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -1773,6 +2048,9 @@ function SettingsPanel({
   onEditScript,
   onRefreshScripts,
   onBrowseVscodePath,
+  onBrowseExternalEditorPath,
+  onDetectExternalEditor,
+  onApplyExternalEditorShortcut,
   onCheckUpdates,
   onCancel,
   onSave,
@@ -1817,6 +2095,7 @@ function SettingsPanel({
     draft.general.globalShortcut,
     draft.picker.pinToggleShortcut,
     draft.picker.settingsShortcut,
+    draft.picker.externalEditorShortcut,
     "F8",
     "pin",
     "stay open",
@@ -1830,6 +2109,8 @@ function SettingsPanel({
     "Shift+Enter",
     "F2",
     "Shift+F2",
+    "Ctrl+F2",
+    "external editor",
     scriptHotkeySearchText,
   ].join(" ");
   const pickerSearchText = [
@@ -2133,6 +2414,7 @@ function SettingsPanel({
                       pickerShortcut={draft.general.globalShortcut}
                       pinShortcut={draft.picker.pinToggleShortcut}
                       settingsShortcut={draft.picker.settingsShortcut}
+                      externalEditorShortcut={draft.picker.externalEditorShortcut}
                       shortcutStatus={shortcutStatus}
                       onPickerShortcutChange={(globalShortcut) =>
                         onDraftChange({
@@ -2161,6 +2443,7 @@ function SettingsPanel({
                           },
                         })
                       }
+                      onExternalEditorShortcutChange={onApplyExternalEditorShortcut}
                     />
                   </SettingRow>
                 ) : null}
@@ -2377,7 +2660,38 @@ function SettingsPanel({
             ) : null}
 
             {displayedSections.some((section) => section.id === "editor") ? (
-              <SettingsSection title="Editor" description="Typography and display behavior for F2 content editing.">
+              <SettingsSection title="Editor" description="Built-in F2 editing and external editor integration.">
+                {visible("editor", "External editor", "VS Code Cursor VSCodium Windsurf executable path Ctrl F2") ? (
+                  <SettingRow
+                    label="External editor"
+                    description="Ctrl+F2 opens the active text item in this editor. Leave blank to auto-detect a VS Code-compatible editor."
+                  >
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <UiTextInput
+                        aria-label="External editor path"
+                        value={draft.editor.externalEditorPath}
+                        placeholder="Auto-detect VS Code, Cursor, VSCodium, or Windsurf"
+                        onChange={(event) =>
+                          onDraftChange({
+                            ...draft,
+                            editor: {
+                              ...draft.editor,
+                              externalEditorPath: event.currentTarget.value,
+                            },
+                          })
+                        }
+                      />
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <UiButton type="button" variant="default" onClick={onDetectExternalEditor}>
+                          Detect
+                        </UiButton>
+                        <UiButton type="button" variant="default" onClick={onBrowseExternalEditorPath}>
+                          Browse...
+                        </UiButton>
+                      </div>
+                    </div>
+                  </SettingRow>
+                ) : null}
                 {visible("editor", "Font", "Editor font family monospace Cascadia Consolas sans") ? (
                   <SettingRow label="Font" description="Uses installed system fonts and falls back safely when unavailable.">
                     <UiSelect
@@ -2959,9 +3273,17 @@ type HotkeyFieldProps = {
   onChange: (value: string) => void;
   allowSequences?: boolean;
   helpText?: string;
+  required?: boolean;
 };
 
-function HotkeyField({ label, value, onChange, allowSequences = true, helpText }: HotkeyFieldProps) {
+function HotkeyField({
+  label,
+  value,
+  onChange,
+  allowSequences = true,
+  helpText,
+  required = true,
+}: HotkeyFieldProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [draftSteps, setDraftSteps] = useState<string[]>([]);
   const [manualValue, setManualValue] = useState(value);
@@ -2982,8 +3304,8 @@ function HotkeyField({ label, value, onChange, allowSequences = true, helpText }
     if (!trimmed) {
       setValidation({
         normalized: null,
-        valid: false,
-        error: "Shortcut is required.",
+        valid: !required,
+        error: required ? "Shortcut is required." : null,
       });
       return;
     }
@@ -3017,7 +3339,7 @@ function HotkeyField({ label, value, onChange, allowSequences = true, helpText }
     return () => {
       cancelled = true;
     };
-  }, [allowSequences, value]);
+  }, [allowSequences, required, value]);
 
   const normalizedSteps = useMemo(
     () =>
@@ -3237,18 +3559,22 @@ function AppShortcutInventory({
   pickerShortcut,
   pinShortcut,
   settingsShortcut,
+  externalEditorShortcut,
   shortcutStatus,
   onPickerShortcutChange,
   onPinShortcutChange,
   onSettingsShortcutChange,
+  onExternalEditorShortcutChange,
 }: {
   pickerShortcut: string;
   pinShortcut: string;
   settingsShortcut: string;
+  externalEditorShortcut: string;
   shortcutStatus: AppShortcutStatus | null;
   onPickerShortcutChange: (value: string) => void;
   onPinShortcutChange: (value: string) => void;
   onSettingsShortcutChange: (value: string) => void;
+  onExternalEditorShortcutChange: (value: string) => void;
 }) {
   return (
     <div className="hotkey-inventory-list" aria-label="App shortcuts">
@@ -3310,6 +3636,27 @@ function AppShortcutInventory({
         />
       </section>
 
+      <section className="hotkey-inventory-item">
+        <div className="hotkey-inventory-copy">
+          <div className="hotkey-inventory-header">
+            <strong>Edit in external editor</strong>
+            <div className="hotkey-meta">
+              <ShortcutRegistrationStatusBadge status={shortcutStatus?.externalEditor ?? null} />
+              <ReadOnlyStatus value="Editable" />
+            </div>
+          </div>
+          <p>{shortcutStatusDescription(shortcutStatus?.externalEditor ?? null, "Optional global shortcut for editing the active text item externally. Ctrl+F2 remains available inside the picker.")}</p>
+        </div>
+        <HotkeyField
+          required={false}
+          label="External editor global shortcut"
+          value={externalEditorShortcut}
+          allowSequences={false}
+          helpText="Optional. Leave blank to disable the global shortcut."
+          onChange={onExternalEditorShortcutChange}
+        />
+      </section>
+
       {[
         {
           id: "picker.commandPalette",
@@ -3344,8 +3691,8 @@ function AppShortcutInventory({
         {
           id: "picker.editSelection",
           title: "Edit active item",
-          description: "F2 edits content. Shift+F2 opens the advanced metadata editor.",
-          shortcut: "F2, Shift+F2",
+          description: "F2 edits content, Ctrl+F2 uses the external editor, and Shift+F2 opens metadata.",
+          shortcut: "F2, Ctrl+F2, Shift+F2",
         },
       ].map((entry) => (
         <section key={entry.id} className="hotkey-inventory-item">

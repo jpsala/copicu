@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-08-06T20:02:49.196Z
+Generated: 2026-08-11T00:18:14.378Z
 
 ## Topics
 
@@ -28,7 +28,6 @@ Generated: 2026-08-06T20:02:49.196Z
 - active: [os-quality](../topics/os-quality.md)
 - active: [performance-and-memory](../topics/performance-and-memory.md)
 - active: [picker-interaction](../topics/picker-interaction.md)
-- reference: [portable-multiharness-contract](../topics/portable-multiharness-contract.md)
 - active: [product-ambition](../topics/product-ambition.md)
 - active: [product-direction](../topics/product-direction.md)
 - active: [product-register](../topics/product-register.md)
@@ -65,15 +64,14 @@ Generated: 2026-08-06T20:02:49.196Z
 - Canon: [docs/skills/](../skills/)
 - Guidance: [local-codex-skills](../topics/local-codex-skills.md)
 
-## Portable harness
+## Local agentic capabilities
 
-- Daily control plane: Traycer with the active native harness.
-- OMP remains standalone/manual for product bindings and explicit fallback.
+- AOS context: docs, working memory, topics, tracks, specs, skills and local gates.
+- OMP boundary: runtime models, effort, tools, browser, todos, agents, planning, parallelism, language, style and modes.
 - Computer: built-in enabled by [.omp/config.yml](../../.omp/config.yml); no local wrapper.
-- Commands: [research](../../.omp/commands/research.md); release stays in its canonical script/docs.
-- Gates: read-only inspection; approval before visible input.
+- Commands: opt-in [research](../../.omp/commands/research.md).
 - Oracle C0: external app -> foreground hotkey -> global type without targeting Copicu -> visible token.
-- Skills: `.agents/skills` preserves OMP discovery for `docs/skills/`.
+- Skills: `.agents/skills` discovers the canon in `docs/skills/`.
 - Guidance: [omp-agentic-os](../topics/omp-agentic-os.md)
 
 ## Aliases

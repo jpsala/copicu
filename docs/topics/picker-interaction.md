@@ -194,10 +194,20 @@ Crear item manual:
 Metadata editable:
 
 - La utility muestra el contenido del item como preview read-only y mantiene el foco inicial en el textarea de metadata.
-- Un solo texto mezcla notas libres y `#tags`; al guardar, el parser separa tags normalizados de `notes` y preserva `title` sin exponerlo.
+- Un solo texto mezcla notas libres, `#tags` y las properties acotadas `client`, `project` y `activity`; al guardar, el parser separa metadata normalizada y preserva `title` sin exponerlo.
 - `Ctrl+Shift+C` es global app-owned y `Shift+F2` abre la misma utility desde el picker.
 - El flujo rapido `Edit tags` y el batch de seleccion multiple permanecen separados, atomicos e idempotentes.
-- Provenance user/assistant/enrichment queda diferida: `meta:` busca metadata visible sin exponer origen, `ctx:` busca contexto oculto automatico.
+- Tags y properties semanticas muestran su provenance durable; un guardado sin cambios normalizados conserva source/confidence, una remocion crea suppression y una adicion o reintroduccion pasa a manual.
+- Capture context se muestra por evento como hechos read-only, sin aplanarlo dentro de metadata editable.
+- Los detalles de sistema permanecen internos por defecto y, si se exponen, viven en una superficie avanzada.
+- La promocion manual explicita de metadata generada y una cola rica de revision de sugerencias quedan fuera de este corte.
+
+Editor externo:
+
+- `Ctrl+F2` entrega el item de texto activo a un editor externo sin reemplazar `F2`.
+- El menu contextual ofrece `Edit externally` con el mismo contrato.
+- La sesion importa cambios al guardar y cerrar el archivo; errores de editor/importacion conservan el archivo temporal y muestran feedback.
+- Settings detecta Visual Studio Code y editores compatibles en Windows, permite elegir launcher y configurar un hotkey global opcional.
 
 Activacion:
 
@@ -235,9 +245,9 @@ Estado actual 2026-06-22:
 - Decision 2026-07-27: filter lock es independiente de window pin y keep-open. Conserva la query aplicada en hide/show y reinicios, usa candado inline + `Ctrl+Shift+L`, y al desbloquear recupera el reset normal.
 - Decision ajustada 2026-06-12: `Keep picker open` es la politica persistida para sesion persistente del picker. Cuando esta activa, perder foco no oculta, activar un item no oculta y no resetea query/sesion. El boton de barra del picker toggla esa politica persistida via comando host-owned `set_picker_keep_open` desde `main`; no llama `update_settings` porque ese comando esta guardado para `settings`. En modo transitorio el picker sigue fuera de taskbar/Alt-Tab; con `Keep picker open` activo el host aplica `skip_taskbar=false` para que se comporte como ventana recuperable. `Pin` queda como control generico de ventana para always-on-top; en picker tambien evita ocultado por foco como consecuencia de estar pinned, pero no es la unica forma de mantener abierto. Los intentos de hotkey renderer (`Ctrl+G`, `Ctrl+Shift+O`, `F8`) no fueron confiables en WebView/Computer Use; si se quiere hotkey, implementarlo nativo/global, no como handler React. Computer Use valido el 2026-06-12 que el boton cambia `Keep picker open is on/off`, persiste en backend, deshabilita focus-lost hide y permite activar un item sin ocultar.
 - Decision 2026-06-18: abrir el picker por hotkey global debe dejar el search listo para recibir teclado. Se removio el default no-activate porque hacia que el picker pudiera verse delante pero el input siguiera en la app previa. La ruta no-activate queda solo para diagnostico (`COPICU_PICKER_NO_ACTIVATE=1`).
-- Validacion stress 2026-06-14 con `copicu_computer_use`: flow usuario real paso con watcher activo en app-data aislada: seleccionar/copiar texto externo en una ventana AHK, abrir picker con `Ctrl+Shift+.`, filtrar por token (`ZETA`, `BETA`, `https stress-flow`), activar con `Enter` y pegar de vuelta en la app fuente. El empty state `0 / 2 matches` tambien se valido. Riesgos detectados: `Get-Clipboard` desde Pi/Session 0 no sirve como oracle del clipboard interactivo; `focus`/target screenshot no prueban foreground real, por lo que los checks de foco deben incluir screenshot de pantalla completa; `F8`/pin puede reportar target de ventana equivocada aunque el hotkey global llegue a Copicu; el wrapper `copicu_computer_use` tuvo un `PermissionError` leyendo temp output pese a que la accion se ejecuto.
-- Validacion 2026-06-18: regresion de foco del hotkey cubierta con Computer Use: enfocar ventana externa, `open_picker`, tipear token sin `focus` manual, y confirmar por screenshot que el token entro en el search (`.codex-run/computer-use/focus-hotkey-after-type-2.png`). Este oracle debe repetirse si se toca hotkey, foco, show/hide o lifecycle del picker.
-- Validacion requerida tras tocar search/scroll 2026-07-09: usar Computer Use/CDP con la app visible y muestrear `query`, `[title='Result count']`, `scrollTop`, `scrollHeight` y primer item. Casos minimos: query plain + Enter/lupa muestra `filtered / total matches`; `ai:` puede mostrar AI planning; idle no cambia conteo/scroll; navegar con flechas no resetea seleccion ni vuelve al primer item.
+- Evidencia histórica 2026-06-14: el flow usuario real pasó con watcher aislado, copy externo, filtros `ZETA`/`BETA`/`https stress-flow`, Enter y paste de vuelta. También reveló que Session 0 no sirve como oracle de clipboard, target capture no prueba foreground, F8 puede ir a otra ventana y UIA es parcial en WebView2. El wrapper AHK usado entonces fue retirado y esa evidencia no valida el adapter actual.
+- Oracle C0 vigente con OMP `computer`: enfocar app externa exacta -> `desktop.press("ctrl+shift+.", { delivery: "foreground" })` -> `desktop.type("<token>", { delivery: "foreground" })` sobre el foco actual -> recién entonces enumerar/capturar Copicu y confirmar token + `desktop.focusedWindow()`. No obtener/raise/targetear Copicu antes del type. Repetir si se toca hotkey, foco, show/hide o lifecycle.
+- Tras tocar search/scroll, usar `computer`/CDP con app visible y muestrear `query`, `[title='Result count']`, `scrollTop`, `scrollHeight` y primer item. AX no reemplaza el oracle WebView; clicks por coords requieren screenshot reciente del mismo target. Casos mínimos: query plain + Enter/lupa muestra `filtered / total matches`; `ai:` puede mostrar AI planning; idle no cambia conteo/scroll; flechas no resetean selección.
 
 Settings a prever:
 

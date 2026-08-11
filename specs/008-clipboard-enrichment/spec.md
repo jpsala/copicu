@@ -40,14 +40,26 @@ Flow:
   - `copicu.enrichment.runForItem(itemId, options?)`;
   - `copicu.enrichment.getResult(itemId)`.
 
+### Standalone Metadata Editor
+
+- Semantic metadata remains user-editable: normalized tags and the constrained `client`, `project`, and `activity` properties are shown separately from their durable provenance.
+- Generated semantic metadata must expose its source and, where recorded, confidence. Editing the item must not silently relabel generated values as manual.
+- Saving expresses the desired semantic values. Values retained after normalization keep their existing source and confidence, so an unchanged or no-op save preserves provenance exactly.
+- Removing a semantic value deletes its active relation and records a durable suppression so capture, scenario, or enrichment flows do not silently reintroduce it.
+- A newly added or explicitly reintroduced semantic value is manual and clears any suppression for that value.
+- Capture context is factual and event-scoped. The editor may display each capture event's facts, but they are read-only and must not be flattened into editable item metadata.
+- System details remain internal by default and belong only in an advanced diagnostic surface when exposed.
+
 ## Non-Goals
 
 - User-defined rule DSL.
 - Automatic AI classification.
-- Rich metadata key/value fields.
+- Arbitrary or user-defined metadata key/value schemas beyond the constrained semantic properties.
 - Image enrichment.
 - AI enrichment.
-- Rule DSL or complex metadata key/value storage.
+- Rule DSL or additional complex metadata storage.
+- Explicitly promoting generated metadata to manual.
+- A rich suggestion-review or approval queue.
 
 ## Built-In Detectors
 
@@ -131,4 +143,9 @@ Minimal scriptability in this slice reuses the host API bridge:
 - Re-copying the same path does not create duplicate tag links.
 - Search `tag:path` finds enriched items.
 - Script host can fetch a deterministic enrichment result for an existing item by stable item ID.
+- The standalone metadata editor visibly distinguishes generated semantic values from manual values and shows recorded source/confidence.
+- Saving without changing normalized semantic values preserves their source/confidence.
+- Removing a generated or scenario value suppresses it from automatic reintroduction; adding that value again makes it manual and clears the suppression.
+- Capture facts remain read-only and are presented per capture event rather than as editable item metadata.
+- System details are absent from the default editing surface.
 - Current build and Rust checks pass.

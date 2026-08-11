@@ -56,6 +56,7 @@ pub struct CaptureStats {
     ignored_empty_count: u64,
     ignored_image_with_text_count: u64,
     self_write_suppressed_count: u64,
+    trusted_transient_transport_suppressed_count: u64,
     read_error_count: u64,
     event_count: u64,
 }
@@ -86,6 +87,7 @@ pub enum CaptureOutcome {
     IgnoredDuplicateOrCoalesced,
     IgnoredEmpty,
     SelfWriteSuppressed,
+    TrustedTransientTransportSuppressed,
     ReadError,
 }
 
@@ -99,6 +101,7 @@ struct ClipboardCaptureState {
     ignored_empty_count: u64,
     ignored_image_with_text_count: u64,
     self_write_suppressed_count: u64,
+    trusted_transient_transport_suppressed_count: u64,
     read_error_count: u64,
     event_count: u64,
     events: VecDeque<CaptureEvent>,
@@ -228,6 +231,28 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
 
         let started_at = Instant::now();
         let probe_result = crate::clipboard_probe::probe_clipboard();
+        if probe_result
+            .as_ref()
+            .is_ok_and(|probe| probe.trusted_transient_transport)
+        {
+            record_event(
+                &self.state,
+                CaptureOutcome::TrustedTransientTransportSuppressed,
+                probe_result,
+                None,
+            );
+            persistent_log(
+                "clipboard.event.end",
+                format!(
+                    "outcome=trusted_transient_transport_suppressed duration_ms={}",
+                    elapsed_ms(started_at)
+                ),
+            );
+            dev_log(format_args!(
+                "clipboard text ignored: trusted transient transport"
+            ));
+            return;
+        }
         let has_image_without_text = probe_result
             .as_ref()
             .is_ok_and(|probe| probe.has_image && !probe.has_text);
@@ -321,7 +346,8 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
         match outcome {
             CaptureOutcome::CapturedText => {
                 let capture_context = capture_context_from_probe("clipboard", &probe_result);
-                let capture_tags = self.capture_tag_context
+                let capture_tags = self
+                    .capture_tag_context
                     .snapshot()
                     .ok()
                     .flatten()
@@ -375,6 +401,7 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::CapturedImage
             | CaptureOutcome::SelfWriteSuppressed
+            | CaptureOutcome::TrustedTransientTransportSuppressed
             | CaptureOutcome::ReadError => {}
         };
     }
@@ -431,7 +458,8 @@ impl<R: Runtime> TextClipboardHandler<R> {
         match outcome {
             CaptureOutcome::CapturedImage => {
                 let capture_context = capture_context_from_probe("clipboard", &probe_result);
-                let capture_tags = self.capture_tag_context
+                let capture_tags = self
+                    .capture_tag_context
                     .snapshot()
                     .ok()
                     .flatten()
@@ -493,6 +521,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
             CaptureOutcome::CapturedText
             | CaptureOutcome::IgnoredEmpty
             | CaptureOutcome::SelfWriteSuppressed
+            | CaptureOutcome::TrustedTransientTransportSuppressed
             | CaptureOutcome::ReadError => {}
         };
     }
@@ -562,10 +591,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
 impl ClipboardCapture {
     pub fn set_enabled(&self, enabled: bool) {
         self.enabled.store(enabled, Ordering::Release);
-        persistent_log(
-            "clipboard.capture.state",
-            format!("enabled={enabled}"),
-        );
+        persistent_log("clipboard.capture.state", format!("enabled={enabled}"));
     }
 
     #[cfg(test)]
@@ -746,7 +772,10 @@ mod windows_clipboard_text {
         };
 
         if let Some(utf8_text) = utf8_text {
-            if unicode.as_ref().is_none_or(|text| looks_like_utf8_mojibake(text)) {
+            if unicode
+                .as_ref()
+                .is_none_or(|text| looks_like_utf8_mojibake(text))
+            {
                 return Ok(utf8_text);
             }
         }
@@ -827,7 +856,10 @@ mod windows_clipboard_text {
         }
 
         let bytes = unsafe { std::slice::from_raw_parts(ptr, size) };
-        let len = bytes.iter().position(|byte| *byte == 0).unwrap_or(bytes.len());
+        let len = bytes
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(bytes.len());
         Ok(bytes[..len].to_vec())
     }
 
@@ -937,6 +969,9 @@ fn record_event(
     match &outcome {
         CaptureOutcome::IgnoredEmpty => state.ignored_empty_count += 1,
         CaptureOutcome::SelfWriteSuppressed => state.self_write_suppressed_count += 1,
+        CaptureOutcome::TrustedTransientTransportSuppressed => {
+            state.trusted_transient_transport_suppressed_count += 1;
+        }
         CaptureOutcome::ReadError => state.read_error_count += 1,
         CaptureOutcome::CapturedText
         | CaptureOutcome::CapturedImage
@@ -1001,6 +1036,8 @@ fn capture_stats(state: &ClipboardCaptureState) -> CaptureStats {
         ignored_empty_count: state.ignored_empty_count,
         ignored_image_with_text_count: state.ignored_image_with_text_count,
         self_write_suppressed_count: state.self_write_suppressed_count,
+        trusted_transient_transport_suppressed_count: state
+            .trusted_transient_transport_suppressed_count,
         read_error_count: state.read_error_count,
         event_count: state.event_count,
     }

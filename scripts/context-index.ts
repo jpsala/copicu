@@ -153,15 +153,14 @@ if (skillDirs.length) {
 }
 lines.push("");
 
-lines.push("## Portable harness");
+lines.push("## Local agentic capabilities");
 lines.push("");
-lines.push("- Daily control plane: Traycer with the active native harness.");
-lines.push("- OMP remains standalone/manual for product bindings and explicit fallback.");
+lines.push("- AOS context: docs, working memory, topics, tracks, specs, skills and local gates.");
+lines.push("- OMP boundary: runtime models, effort, tools, browser, todos, agents, planning, parallelism, language, style and modes.");
 lines.push("- Computer: built-in enabled by [.omp/config.yml](../../.omp/config.yml); no local wrapper.");
-lines.push("- Commands: [research](../../.omp/commands/research.md); release stays in its canonical script/docs.");
-lines.push("- Gates: read-only inspection; approval before visible input.");
+lines.push("- Commands: opt-in [research](../../.omp/commands/research.md).");
 lines.push("- Oracle C0: external app -> foreground hotkey -> global type without targeting Copicu -> visible token.");
-lines.push("- Skills: `.agents/skills` preserves OMP discovery for `docs/skills/`.");
+lines.push("- Skills: `.agents/skills` discovers the canon in `docs/skills/`.");
 lines.push("- Guidance: [omp-agentic-os](../topics/omp-agentic-os.md)");
 lines.push("");
 

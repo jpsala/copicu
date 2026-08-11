@@ -487,7 +487,10 @@ impl FindSessionStore {
             .ok_or_else(|| "find session not found".to_string())?;
         let total = session.occurrences.len() as u64;
         if total == 0 {
-            return Ok(FindResolveAnchorResponse { total, target: None });
+            return Ok(FindResolveAnchorResponse {
+                total,
+                target: None,
+            });
         }
         let index = state
             .anchor_indexes
@@ -514,7 +517,12 @@ impl FindSessionStore {
             .or_else(|| {
                 let preferred = request
                     .preferred_ordinal
-                    .or_else(|| request.preferred_target.as_ref().map(|target| target.ordinal))
+                    .or_else(|| {
+                        request
+                            .preferred_target
+                            .as_ref()
+                            .map(|target| target.ordinal)
+                    })
                     .unwrap_or(1)
                     .clamp(1, total);
                 Some(preferred as usize - 1)
@@ -1216,8 +1224,7 @@ fn projection_segments(projected: &ProjectedField) -> Vec<FindDisplaySegment> {
     let mut segment_start = 0usize;
     let mut segment = projected.spans[0].segment;
     for index in 1..=projected.spans.len() {
-        let changed = index == projected.spans.len()
-            || projected.spans[index].segment != segment;
+        let changed = index == projected.spans.len() || projected.spans[index].segment != segment;
         if !changed {
             continue;
         }
@@ -1634,9 +1641,7 @@ fn lowercase_projected_field(field: &ProjectedField) -> (Vec<char>, Vec<OffsetSp
     while index < normalized.len() {
         let cluster_start = index;
         index += 1;
-        while index < normalized.len()
-            && canonical_combining_class(normalized[index].0) != 0
-        {
+        while index < normalized.len() && canonical_combining_class(normalized[index].0) != 0 {
             index += 1;
         }
         let cluster = normalized[cluster_start..index]
@@ -1679,14 +1684,13 @@ fn nfc_projected_field(field: &ProjectedField) -> Vec<(char, OffsetSpan)> {
         let mut source_cursor = 0usize;
         for normalized_char in normalized_run {
             let decomposition = normalized_char.nfd().collect::<Vec<_>>();
-            let matching_start = (source_cursor..source_decomposed.len())
-                .find(|candidate| {
-                    source_decomposed[*candidate..]
-                        .iter()
-                        .map(|(ch, _)| *ch)
-                        .take(decomposition.len())
-                        .eq(decomposition.iter().copied())
-                });
+            let matching_start = (source_cursor..source_decomposed.len()).find(|candidate| {
+                source_decomposed[*candidate..]
+                    .iter()
+                    .map(|(ch, _)| *ch)
+                    .take(decomposition.len())
+                    .eq(decomposition.iter().copied())
+            });
             let source_start = matching_start.unwrap_or(source_cursor);
             let source_end = source_start
                 .saturating_add(decomposition.len().max(1))
@@ -1900,7 +1904,11 @@ mod tests {
         let (beta, _) = build_occurrence_index(&source, "β", &cancelled).unwrap();
         assert_eq!(beta.len(), 2, "U+03D0 must fold to Greek beta");
         let (kelvin, _) = build_occurrence_index(&source, "k", &cancelled).unwrap();
-        assert_eq!(kelvin.len(), 1, "Kelvin sign must use its official simple fold");
+        assert_eq!(
+            kelvin.len(),
+            1,
+            "Kelvin sign must use its official simple fold"
+        );
 
         let (beta_offsets, _) =
             build_occurrence_index(&[item(6, "text", "ϐβ")], "β", &cancelled).unwrap();
@@ -1939,12 +1947,13 @@ mod tests {
         let cancelled = AtomicBool::new(false);
         let (secret, _) = build_occurrence_index(&source, "secret.example", &cancelled).unwrap();
         assert!(secret.is_empty());
-        let (nested_alt, _) = build_occurrence_index(&source, "outer [nested]", &cancelled).unwrap();
+        let (nested_alt, _) =
+            build_occurrence_index(&source, "outer [nested]", &cancelled).unwrap();
         assert_eq!(nested_alt.len(), 1);
 
         let fenced = vec![item(7, "text", "Invoice ```secret.example/no-close")];
-        let (fenced_secret, _) = build_occurrence_index(&fenced, "secret.example", &cancelled)
-            .unwrap();
+        let (fenced_secret, _) =
+            build_occurrence_index(&fenced, "secret.example", &cancelled).unwrap();
         assert!(fenced_secret.is_empty());
     }
 
@@ -1957,10 +1966,14 @@ mod tests {
         )];
         let cancelled = AtomicBool::new(false);
 
-        let draft = build_occurrence_index(&source, "draft", &cancelled).unwrap().0;
+        let draft = build_occurrence_index(&source, "draft", &cancelled)
+            .unwrap()
+            .0;
         assert_eq!(draft.len(), 1, "unresolved [draft] must remain visible");
 
-        let after = build_occurrence_index(&source, "after", &cancelled).unwrap().0;
+        let after = build_occurrence_index(&source, "after", &cancelled)
+            .unwrap()
+            .0;
         assert_eq!(after.len(), 1, "a literal < must not truncate later text");
 
         let body = build_occurrence_index(&source, "invoice body", &cancelled)
@@ -2018,7 +2031,10 @@ mod tests {
         let secret_attribute = build_occurrence_index(&html, "secret.example", &cancelled)
             .unwrap()
             .0;
-        assert!(secret_attribute.is_empty(), "HTML attributes must remain private");
+        assert!(
+            secret_attribute.is_empty(),
+            "HTML attributes must remain private"
+        );
         let visible = build_occurrence_index(&html, "visible", &cancelled)
             .unwrap()
             .0;
@@ -2115,8 +2131,7 @@ mod tests {
                 .closed
         );
         assert!(!store.cancel_owner("owner-b").cancelled);
-        let (_, pending_close_session, pending_close_cancelled) =
-            store.begin_job("owner-c", 1, 0);
+        let (_, pending_close_session, pending_close_cancelled) = store.begin_job("owner-c", 1, 0);
         assert!(
             store
                 .close(FindCloseRequest {
@@ -2299,7 +2314,10 @@ mod tests {
             response.total
         );
         assert_eq!(response.total, count as u64);
-        assert_eq!(response.target.as_ref().map(|target| target.ordinal), Some(40_000));
+        assert_eq!(
+            response.target.as_ref().map(|target| target.ordinal),
+            Some(40_000)
+        );
 
         let exact = store
             .resolve_anchor(FindResolveAnchorRequest {
@@ -2308,7 +2326,10 @@ mod tests {
                 preferred_target: response.target,
             })
             .expect("exact large anchor should resolve");
-        assert_eq!(exact.target.as_ref().map(|target| target.ordinal), Some(40_000));
+        assert_eq!(
+            exact.target.as_ref().map(|target| target.ordinal),
+            Some(40_000)
+        );
     }
 
     #[test]
@@ -2610,10 +2631,8 @@ mod tests {
             * (std::mem::size_of::<i64>()
                 + std::mem::size_of::<Vec<usize>>()
                 + std::mem::size_of::<usize>());
-        let estimated_peak_bytes = source_text_bytes
-            + source_struct_bytes
-            + range_bytes
-            + by_item_bytes;
+        let estimated_peak_bytes =
+            source_text_bytes + source_struct_bytes + range_bytes + by_item_bytes;
         eprintln!(
             "real_50k_find_scan_and_projection elapsed_ms={} occurrences={} items={} estimated_peak_bytes={} source_text_bytes={} source_struct_bytes={} range_bytes={} by_item_bytes={}",
             started.elapsed().as_millis(),

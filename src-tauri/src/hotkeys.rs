@@ -422,7 +422,8 @@ mod tests {
 
     #[test]
     fn parses_and_formats_global_active_navigation_hotkeys() {
-        let previous = HotkeySequence::parse("Ctrl+Shift+ArrowUp").expect("valid previous shortcut");
+        let previous =
+            HotkeySequence::parse("Ctrl+Shift+ArrowUp").expect("valid previous shortcut");
         let next = HotkeySequence::parse("Ctrl+Shift+ArrowDown").expect("valid next shortcut");
 
         assert_eq!(previous.to_string(), "Ctrl+Shift+ArrowUp");

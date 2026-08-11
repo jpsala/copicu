@@ -13,6 +13,7 @@ export type EditorSettings = {
   tabSize: 2 | 4 | 8;
   lineNumbers: boolean;
   highlightActiveLine: boolean;
+  externalEditorPath: string;
 };
 
 export const EDITOR_FONT_OPTIONS = [
@@ -65,6 +66,7 @@ export type AppSettings = {
     pinToggleShortcut: string;
     settingsShortcut: string;
     previewShortcut: string;
+    externalEditorShortcut: string;
   };
   history: {
     retentionCount: number;
@@ -107,6 +109,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     pinToggleShortcut: "F8",
     settingsShortcut: "Ctrl+,",
     previewShortcut: "Alt+Enter",
+    externalEditorShortcut: "",
   },
   history: {
     retentionCount: 0,
@@ -123,6 +126,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     tabSize: 4,
     lineNumbers: true,
     highlightActiveLine: true,
+    externalEditorPath: "",
   },
   scripts: {
     folderPath: "Documents\\Copicu\\Scripts",

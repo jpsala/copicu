@@ -1,11 +1,5 @@
 # Reglas Del Asistente
 
-## Comportamiento
-
-- Hablar de forma directa, tecnica y colaborativa.
-- Implementar y verificar cambios chicos cuando el pedido sea claro.
-- Preguntar solo cuando una decision no pueda inferirse del repo y asumir sea riesgoso.
-- No revertir cambios ajenos sin pedido explicito.
 
 ## Seguridad Y Privacidad
 
@@ -44,24 +38,19 @@
 
 ## Investigacion Tecnica
 
-- Para APIs de librerias o frameworks, preferir Context7 CLI antes de web search generico:
-  - `npx ctx7 library <nombre> "<tema>"`
-  - `npx ctx7 docs <library-id> "<consulta>"`
-- Usar fuentes oficiales o GitHub/issues para confirmar detalles criticos, bugs, cambios recientes o comportamiento nativo por plataforma.
-- Antes de elegir librerias para una necesidad importante, hacer research con Context7 y web/fuentes primarias, y documentar el resultado en `docs/topics/`.
-- Para features grandes, cada area tecnica debe tener un topic o seccion de topic con discovery, opciones, pattern recomendado, decision y preguntas abiertas.
-- No instalar un MCP persistente salvo decision explicita; mantener Context7 como consulta liviana bajo demanda.
+- Confirmar detalles criticos, bugs, cambios recientes o comportamiento nativo por plataforma con fuentes primarias.
+- Antes de elegir librerias para una necesidad importante, documentar opciones, evidencia y decisión en `docs/topics/`.
+- Para features grandes, cada area tecnica debe tener un topic o seccion con discovery, opciones, pattern recomendado, decision y preguntas abiertas.
+- La selección de tools, browser y agentes pertenece a OMP.
 
 ## Cambios Permitidos
 
 El asistente puede modificar documentacion, codigo, configuracion, scripts, tests y estructura del proyecto, respetando reglas locales y cambios del usuario.
 
-## Flujo Y Persistencia
+## Persistencia Durable
 
-`/flow` es la única entrada Pi cotidiana. Pensar converge decisiones, Planear
-crea un brief liviano, Hacer abre una sesión nueva enlazada con handoff documental
-revisable y Cerrar persiste sólo valor durable faltante. No crear aliases locales
-para esas fases ni usar un session saver externo.
+La capa local conserva sólo conocimiento durable y retomable; las decisiones de
+ejecución de OMP no se duplican en el repo.
 
 El objetivo no es archivar la conversación: es dejar el proyecto retomable con
 la menor lectura posible. Promover únicamente:

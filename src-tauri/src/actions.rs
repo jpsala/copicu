@@ -648,8 +648,8 @@ fn open_ai_output_window_on_main_thread<R: Runtime + 'static>(
 fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
     app: &AppHandle<R>,
     item: crate::storage::HistoryItem,
-    item_tags: Vec<String>,
-    item_properties: crate::storage::ScenarioProperties,
+    tag_entries: Vec<crate::storage::MetadataTagEntry>,
+    property_entries: Vec<crate::storage::MetadataPropertyEntry>,
 ) -> Result<(), String> {
     let app = app.clone();
     app.clone()
@@ -658,8 +658,8 @@ fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
                 &app,
                 crate::MetadataEditorPayload {
                     item,
-                    item_tags,
-                    item_properties,
+                    tag_entries,
+                    property_entries,
                     capture_context_events: Vec::new(),
                 },
             ) {
@@ -1328,9 +1328,9 @@ fn script_metadata_edit_active<R: Runtime + 'static>(
         .map_err(|error| format!("invalid metadata.editActive payload: {error}"))?;
     let item_id = parse_script_item_id(&payload.id)?;
     let item = storage.get_item(item_id)?;
-    let item_tags = storage.get_item_tags(item_id)?;
-    let item_properties = storage.list_item_properties(item_id)?;
-    open_metadata_editor_window_on_main_thread(app, item, item_tags, item_properties)?;
+    let tag_entries = storage.get_item_tag_entries(item_id)?;
+    let property_entries = storage.list_item_property_entries(item_id)?;
+    open_metadata_editor_window_on_main_thread(app, item, tag_entries, property_entries)?;
     Ok(json!(null))
 }
 
