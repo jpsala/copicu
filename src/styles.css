@@ -1656,8 +1656,13 @@ button {
 }
 
 .item-title {
+  min-width: 0;
+  flex-basis: 100%;
+  overflow: hidden;
   color: var(--ink);
   font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .toast-stack {

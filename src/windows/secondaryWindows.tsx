@@ -796,6 +796,7 @@ export function MetadataWindowApp() {
     recordRendererDiagnostic("metadata.loadPayload", `item_id=${itemId ?? "none"}`);
     setPayload(nextPayload);
     setMetadataText(formatMetadataText(
+      nextPayload?.item.title,
       nextPayload?.item.notes,
       nextPayload?.tagEntries.map((entry) => entry.value) ?? [],
       nextPayload ? metadataProperties(nextPayload.propertyEntries) : undefined,
@@ -856,7 +857,7 @@ export function MetadataWindowApp() {
     );
     const request: UpdateItemMetadataRequest = {
       id: payload.item.id,
-      title: payload.item.title,
+      title: parsed.title,
       notes: nullableTrim(parsed.notes),
       tags: parsed.tags,
       properties: parsed.properties,

@@ -117,15 +117,21 @@ function parseQuotedPropertyValue(value: string) {
 }
 
 export function formatMetadataText(
+  title: string | null | undefined,
   notes: string | null | undefined,
   tags: string[],
   properties: ScenarioProperties = { client: [], project: [], activity: [] },
 ) {
+  const titleDirective = title?.trim()
+    ? `@title: ${title.trim().replace(/\s*\r?\n\s*/g, " ")}`
+    : "";
   const tagTokens = uniqueTags(tags).map((tag) => `#${tagKey(tag)}`).filter((tag) => tag !== "#");
   const propertyTokens = METADATA_PROPERTY_KEYS.flatMap((key) =>
     uniquePropertyValues(properties[key]).map((value) => `${key}:${formatPropertyValue(value)}`),
   );
-  return [[...tagTokens, ...propertyTokens].join(" "), notes?.trim() ?? ""].filter(Boolean).join("\n");
+  return [titleDirective, [...tagTokens, ...propertyTokens].join(" "), notes?.trim() ?? ""]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function parseMetadataText(
@@ -133,6 +139,14 @@ export function parseMetadataText(
   availableTags: TagSummary[],
   currentTags: string[] = [],
 ) {
+  let title: string | null = null;
+  const metadataWithoutTitle = value.replace(
+    /^\s*@title:\s*(.*?)\s*$/imu,
+    (_match, titleValue: string) => {
+      title = titleValue.trim() || null;
+      return "";
+    },
+  );
   const knownTags = new Map<string, string>();
   for (const tag of availableTags) {
     knownTags.set(tagKey(tag.slug), tag.label);
@@ -144,7 +158,7 @@ export function parseMetadataText(
 
   const tags: string[] = [];
   const properties: ScenarioProperties = { client: [], project: [], activity: [] };
-  const notes = value.replace(
+  const notes = metadataWithoutTitle.replace(
     METADATA_TOKEN_PATTERN,
     (
       match,
@@ -174,7 +188,7 @@ export function parseMetadataText(
     properties[key] = uniquePropertyValues(properties[key]);
   }
 
-  return { notes, tags: uniqueTags(tags), properties };
+  return { title, notes, tags: uniqueTags(tags), properties };
 }
 
 function metadataTagDraftAt(value: string, caret: number): MetadataTagDraft | null {
@@ -294,7 +308,7 @@ export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInp
           aria-controls="metadata-tag-suggestions"
           aria-expanded={suggestions.length > 0}
           value={value}
-          placeholder="Write a note; add #tags or client:value anywhere…"
+          placeholder="Write a note; use @title: …, #tags, or client:value…"
           onChange={(event) => {
             onChange(event.currentTarget.value);
             setCaret(event.currentTarget.selectionStart);
