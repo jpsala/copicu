@@ -6785,16 +6785,16 @@ function App() {
                     }}
                   >
                     <span className="item-main">
-                      {item.title || hasMetadata(item) ? (
+                      {item.title ? (
+                        <FindHighlightedText
+                          matches={findFieldMatches(itemFindMatches?.fields, "title")}
+                          currentOrdinal={findState?.currentOrdinal ?? null}
+                          className="item-title"
+                          fallback={<span className="item-title">{item.title}</span>}
+                        />
+                      ) : null}
+                      {item.tags || metadataNotesPreview(item.notes, item.tags) ? (
                         <span className="item-metadata">
-                          {item.title ? (
-                            <FindHighlightedText
-                              matches={findFieldMatches(itemFindMatches?.fields, "title")}
-                              currentOrdinal={findState?.currentOrdinal ?? null}
-                              className="item-title"
-                              fallback={<span className="item-title">{item.title}</span>}
-                            />
-                          ) : null}
                           {item.tags ? (
                             <FindHighlightedText
                               matches={findFieldMatches(itemFindMatches?.fields, "tag")}
