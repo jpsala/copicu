@@ -163,6 +163,7 @@ Modos de filtro:
 Navegacion por teclado:
 
 - `Up`/`Down`: mover seleccion un item.
+- `Ctrl+click`: selección aditiva estándar. El primer `Ctrl+click` conserva el ítem activo como parte del conjunto y alterna la fila clickeada; los siguientes alternan sobre el conjunto explícito.
 - `PgUp`/`PgDown`: saltar una pagina visual.
 - `Home`/`End`: ir al primer/ultimo item visible.
 - `Enter`: activar item seleccionado.

@@ -6753,14 +6753,21 @@ function App() {
                         setRangeSelection(index);
                       } else if (event.ctrlKey || event.metaKey) {
                         selectionInteractionSeqRef.current += 1;
-                        selectedItemIdRef.current = item.id;
-                        setSelectedItemId(item.id);
+                        const previousActiveItemId = selectedItemIdRef.current;
                         const nextSelectedIds = new Set(selectedIdsRef.current);
+                        if (
+                          nextSelectedIds.size === 0
+                          && previousActiveItemId !== null
+                        ) {
+                          nextSelectedIds.add(previousActiveItemId);
+                        }
                         if (nextSelectedIds.has(item.id)) {
                           nextSelectedIds.delete(item.id);
                         } else {
                           nextSelectedIds.add(item.id);
                         }
+                        selectedItemIdRef.current = item.id;
+                        setSelectedItemId(item.id);
                         selectedIdsRef.current = nextSelectedIds;
                         setSelectedIds(nextSelectedIds);
                         selectionAnchorItemIdRef.current = item.id;

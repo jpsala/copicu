@@ -17,7 +17,7 @@ Separar visualmente la selección transitoria de los marks durables sin perder e
 
 ## Comportamiento Observable
 
-- El checkbox de cada fila y el checkbox global representan selección transitoria; permiten seleccionar uno, alternar con Ctrl, extender rangos con Shift, seleccionar los ítems visibles y limpiar la selección.
+- El checkbox de cada fila y el checkbox global representan selección transitoria; permiten seleccionar uno, alternar con Ctrl, extender rangos con Shift, seleccionar los ítems visibles y limpiar la selección. Si todavía no existe selección explícita, `Ctrl+click` parte del ítem activo y agrega o quita la fila clickeada, en lugar de descartar el activo.
 - El ítem activo conserva su resaltado y navegación keyboard-first, independiente de que forme parte o no de una selección múltiple.
 - `Marked` usa una bandera u otro affordance persistente distinto del checkbox; su control separado conserva conteo, filtros y acciones actuales sin modificar la selección transitoria.
 - Al existir selección aparece una barra contextual compacta con cantidad, Clear y las acciones batch existentes; cerrar/resetear el picker limpia selección pero no marks.
