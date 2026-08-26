@@ -1,12 +1,12 @@
 ---
 id: paste-queue
-status: planned
+status: completed
 updated: 2026-08-26
 ---
 
 # Paste Queue
 
-Track retomado para diseñar una cola de pegado acotada. El primer corte queda definido abajo; el hotkey global exacto y el feedback fuera del picker deben cerrarse antes de implementar.
+Primer corte implementado: cola efimera host-owned, acciones contextuales y hotkey global configurable, sin persistencia ni una superficie nueva.
 
 ## Idea
 
@@ -27,6 +27,8 @@ Caso base: llenar formularios con nombre, email, telefono, fecha, etc.
 - Preparar una cola reemplaza la activa. Append, colas nombradas, recipes y reordenamiento quedan fuera del primer corte.
 - La entrada primaria reutiliza **Quick Actions** del picker (`Ctrl+Alt+Q`, `Enter` o `1`-`9`) y el registry contextual existente. El menu batch puede exponer la misma accion para discoverability; no se crea un segundo selector de acciones.
 - La cola y `Paste next` son primitivas host-owned/built-in. Un script global no recibe seleccion del picker y el runner actual no debe asumir foco, estado ni loops de paste.
+- `Paste next` usa `Ctrl+Alt+Shift+V` por defecto y sigue siendo configurable en Settings. El default de tres modificadores evita `Ctrl+Shift+V`, ya observado como ocupado en el entorno, y reduce colisiones con shortcuts de editores; cualquier conflicto real de registro se reporta y no invalida los shortcuts que ya estaban activos.
+- El feedback minimo fuera del picker usa notificaciones host que no toman foco: cola creada, cola completada/vacia y error. No se notifica cada paste exitoso.
 
 Flujo objetivo:
 
@@ -115,12 +117,16 @@ Requiere mas cuidado por seguridad/foco y debe pedirse confirmacion para automat
 - Si la cola incluye secure clips, el flujo debe pedir unlock justo a tiempo.
 - No convertirlo en macro recorder general en primer corte.
 
-## Preguntas Abiertas
+## Decisiones Cerradas
 
-- ¿Que hotkey global real no choca con el entorno de JP y sigue siendo comodo al repetirlo?
-- ¿Que feedback minimo confirma progreso/final/error sin robar foco a la app destino?
-- ¿La primera version acepta todo item que ya soporte la activacion individual o se restringe a texto?
+- `Paste next` usa el default configurable `Ctrl+Alt+Shift+V`; el registro real sigue siendo la evidencia definitiva de disponibilidad.
+- El feedback minimo no enfoca Copicu ni muestra contenido del item.
+- La cola acepta todos los tipos que ya soporte `activate_item`; no agrega una ruta de clipboard paralela.
 
-## Proximo Corte Recomendado
+## Estado Implementado
 
-Implementar **Slice 1** como estado host-owned en memoria + built-ins contextuales + hotkey global configurable, sin recipes ni ventana nueva. Validar con items sinteticos y un formulario externo: orden `3, 2, 1`, una sola insercion por pulsacion, avance solo tras exito, cola vacia al terminar y ningun paste ante focus invalido.
+- `src-tauri/src/paste_queue.rs` conserva una sola cola en memoria, invalida intentos stale y consume solo tras exito.
+- Los built-ins `builtin.queueSelectedBottomToTop` y `builtin.clearPasteQueue` usan el registry existente; Quick Actions y el menu batch consumen la misma definicion.
+- `Settings > General` persiste `pasteNextShortcut`; el inventario de shortcuts muestra registro, soporte y error.
+- Verificacion automatizada: 192 tests Rust, `cargo check`, `cargo fmt --check` y build frontend.
+- Smoke Windows con datos sinteticos: seleccion visual `THREE, TWO, ONE` pego `ONE, TWO, THREE`; la cuarta pulsacion no repitio; reemplazar pendientes pego la seleccion nueva; borrar el item pendiente no pego y mostro error manteniendolo; reiniciar devolvio `Paste Queue is empty`; Settings rechazo el duplicado `Alt+Meta+C` sin cerrar ni reemplazar el registro vigente.

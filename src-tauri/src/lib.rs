@@ -12,6 +12,7 @@ mod host;
 mod hotkeys;
 mod image_capture;
 mod markdown_output;
+mod paste_queue;
 mod picker_session;
 mod scenario;
 mod script_editor;
@@ -238,6 +239,7 @@ struct AppShortcutStatus {
     picker: NativeShortcutStatus,
     pin: NativeShortcutStatus,
     external_editor: NativeShortcutStatus,
+    paste_next: NativeShortcutStatus,
 }
 
 #[cfg(not(test))]
@@ -278,6 +280,10 @@ struct CurrentPickerPinShortcut {
 #[cfg(not(test))]
 #[derive(Clone, Default)]
 struct CurrentExternalEditorShortcut(CurrentPickerPinShortcut);
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+struct CurrentPasteNextShortcut(CurrentPickerPinShortcut);
 
 #[cfg(not(test))]
 #[derive(Clone)]
@@ -638,6 +644,25 @@ impl CurrentExternalEditorShortcut {
 }
 
 #[cfg(not(test))]
+impl CurrentPasteNextShortcut {
+    fn get(&self) -> Option<Shortcut> {
+        self.0.get()
+    }
+
+    fn set(&self, next_shortcut: Option<Shortcut>) {
+        self.0.set(next_shortcut);
+    }
+
+    fn status(&self) -> NativeShortcutStatus {
+        self.0.status()
+    }
+
+    fn set_status(&self, status: NativeShortcutStatus) {
+        self.0.set_status(status);
+    }
+}
+
+#[cfg(not(test))]
 #[tauri::command]
 fn get_capture_stats<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> clipboard::CaptureStats {
     app.try_state::<clipboard::ClipboardCapture>()
@@ -747,11 +772,21 @@ fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppSh
             supported: false,
             error: Some("external editor shortcut state unavailable".to_string()),
         });
+    let paste_next = app
+        .try_state::<CurrentPasteNextShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: Some("paste next shortcut state unavailable".to_string()),
+        });
 
     AppShortcutStatus {
         picker,
         pin,
         external_editor,
+        paste_next,
     }
 }
 
@@ -1835,6 +1870,11 @@ fn update_settings(
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_settings")?;
     settings.general.global_shortcut =
         normalize_picker_global_shortcut(&settings.general.global_shortcut)?;
+    settings.general.paste_next_shortcut =
+        normalize_optional_single_shortcut(&settings.general.paste_next_shortcut, "paste next")?;
+    if settings.general.paste_next_shortcut.is_empty() {
+        return Err("paste next shortcut cannot be empty".to_string());
+    }
     settings.picker.pin_toggle_shortcut =
         normalize_optional_single_shortcut(&settings.picker.pin_toggle_shortcut, "pin toggle")?;
     settings.picker.settings_shortcut =
@@ -1846,12 +1886,32 @@ fn update_settings(
         "external editor",
     )?;
     let current_settings = storage.get_settings()?;
-    sync_autostart_setting(
+    validate_paste_next_shortcut(&app, &storage, &settings)?;
+    apply_paste_next_shortcut_from_settings(&app, &settings)?;
+    if let Err(error) = sync_autostart_setting(
         &app,
         current_settings.general.launch_on_startup,
         settings.general.launch_on_startup,
-    )?;
-    let next_settings = storage.update_settings(settings)?;
+    ) {
+        if let Err(restore_error) = apply_paste_next_shortcut_from_settings(&app, &current_settings)
+        {
+            eprintln!("paste next shortcut restore failed after autostart error: {restore_error}");
+        }
+        return Err(error);
+    }
+    let next_settings = match storage.update_settings(settings) {
+        Ok(settings) => settings,
+        Err(error) => {
+            if let Err(restore_error) =
+                apply_paste_next_shortcut_from_settings(&app, &current_settings)
+            {
+                eprintln!(
+                    "paste next shortcut restore failed after settings error: {restore_error}"
+                );
+            }
+            return Err(error);
+        }
+    };
     apply_capture_enabled_state(&app, next_settings.general.capture_enabled)?;
     apply_tray_shortcuts(&app, &next_settings)?;
     apply_picker_keep_open_window_policy(&app, &next_settings);
@@ -2148,6 +2208,72 @@ fn normalize_optional_single_shortcut(input: &str, label: &str) -> Result<String
 }
 
 #[cfg(not(test))]
+fn validate_paste_next_shortcut<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    storage: &storage::AppStorage,
+    settings: &storage::AppSettings,
+) -> Result<(), String> {
+    let label = &settings.general.paste_next_shortcut;
+    let conflicting_app_shortcuts = [
+        settings.general.global_shortcut.as_str(),
+        settings.picker.pin_toggle_shortcut.as_str(),
+        settings.picker.settings_shortcut.as_str(),
+        settings.picker.preview_shortcut.as_str(),
+        settings.picker.external_editor_shortcut.as_str(),
+        COMMAND_PALETTE_SHORTCUT_LABEL,
+        METADATA_SHORTCUT_LABEL,
+        ACTIVE_PREVIOUS_SHORTCUT_LABEL,
+        ACTIVE_NEXT_SHORTCUT_LABEL,
+    ];
+    if conflicting_app_shortcuts
+        .iter()
+        .any(|candidate| !candidate.is_empty() && *candidate == label)
+    {
+        return Err(format!(
+            "paste next shortcut conflicts with an app shortcut: {label}"
+        ));
+    }
+    if storage
+        .list_saved_history_views()?
+        .iter()
+        .any(|view| view.hotkey.as_deref() == Some(label))
+    {
+        return Err(format!(
+            "paste next shortcut conflicts with a saved view: {label}"
+        ));
+    }
+    if actions::list_actions(storage)?.iter().any(|action| {
+        action.source == actions::ActionSource::Script
+            && actions::normalize_shortcut_string(action.shortcut.as_deref()).as_deref()
+                == Some(label)
+    }) {
+        return Err(format!(
+            "paste next shortcut conflicts with a script action: {label}"
+        ));
+    }
+
+    let shortcut = shortcut_from_label(label)
+        .ok_or_else(|| format!("unsupported paste next shortcut: {label}"))?;
+    let current = app
+        .try_state::<CurrentPasteNextShortcut>()
+        .and_then(|state| state.get());
+    if current == Some(shortcut) && app.global_shortcut().is_registered(shortcut) {
+        return Ok(());
+    }
+    if app.global_shortcut().is_registered(shortcut) {
+        return Err(format!(
+            "paste next shortcut is already registered: {label}"
+        ));
+    }
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|error| format!("paste next shortcut registration failed for {label}: {error}"))?;
+    app.global_shortcut().unregister(shortcut).map_err(|error| {
+        format!("paste next shortcut registration cleanup failed for {label}: {error}")
+    })
+}
+
+#[cfg(not(test))]
 fn normalize_saved_view_hotkey<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     storage: &storage::AppStorage,
@@ -2168,6 +2294,7 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
         .ok_or_else(|| format!("unsupported saved view shortcut: {normalized}"))?;
     let settings = storage.get_settings()?;
     if normalized == settings.general.global_shortcut
+        || normalized == settings.general.paste_next_shortcut
         || normalized == settings.picker.pin_toggle_shortcut
         || normalized == settings.picker.settings_shortcut
         || normalized == settings.picker.external_editor_shortcut
@@ -3173,6 +3300,8 @@ pub fn run() {
             app.manage(CurrentPickerShortcut::default());
             app.manage(CurrentPickerPinShortcut::default());
             app.manage(CurrentExternalEditorShortcut::default());
+            app.manage(CurrentPasteNextShortcut::default());
+            app.manage(paste_queue::PasteQueue::default());
             app.manage(ui_host::UiHostState::default());
             app.manage(AiOutputState::default());
             app.manage(MetadataEditorState::default());
@@ -4336,6 +4465,107 @@ fn spawn_edit_active_external<R: tauri::Runtime + 'static>(app: tauri::AppHandle
 }
 
 #[cfg(not(test))]
+fn spawn_paste_next<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        let queue = app.state::<paste_queue::PasteQueue>();
+        let attempt = match queue.begin() {
+            Ok(paste_queue::BeginPaste::Ready(attempt)) => attempt,
+            Ok(paste_queue::BeginPaste::Empty) => {
+                emit_paste_queue_toast(
+                    app,
+                    "Paste Queue is empty".to_string(),
+                    actions::ToastTone::Info,
+                );
+                return;
+            }
+            Ok(paste_queue::BeginPaste::Busy) => {
+                emit_paste_queue_toast(
+                    app,
+                    "Paste Queue is already processing an item".to_string(),
+                    actions::ToastTone::Warning,
+                );
+                return;
+            }
+            Err(error) => {
+                emit_paste_queue_toast(app, error, actions::ToastTone::Danger);
+                return;
+            }
+        };
+
+        let storage = app.state::<storage::AppStorage>().inner().clone();
+        let suppression = app
+            .state::<clipboard::SelfWriteSuppression>()
+            .inner()
+            .clone();
+        let previous_window = app.state::<window_focus::PreviousWindow>().inner().clone();
+        let activation = host::activate_item(
+            &app,
+            None,
+            &storage,
+            &suppression,
+            &previous_window,
+            host::ActivateItemRequest {
+                item_id: attempt.item_id,
+                copy: true,
+                mark_used: true,
+                hide_picker: false,
+                focus_previous: true,
+                paste: true,
+                paste_shortcut: host::PasteShortcut::Default,
+            },
+        );
+        let finish = queue.finish(attempt, activation.is_ok());
+
+        if let Err(error) = activation {
+            let message = match finish {
+                Ok(_) => format!(
+                    "Could not paste item {}. It remains next in the queue: {error}",
+                    attempt.item_id
+                ),
+                Err(queue_error) => format!(
+                    "Could not paste item {}: {error}. Queue state error: {queue_error}",
+                    attempt.item_id
+                ),
+            };
+            emit_paste_queue_toast(app, message, actions::ToastTone::Danger);
+            return;
+        }
+
+        match finish {
+            Ok(paste_queue::FinishPaste::Completed) => emit_paste_queue_toast(
+                app,
+                "Paste Queue completed".to_string(),
+                actions::ToastTone::Success,
+            ),
+            Ok(
+                paste_queue::FinishPaste::Advanced
+                | paste_queue::FinishPaste::Stale
+                | paste_queue::FinishPaste::Retained,
+            ) => {}
+            Err(error) => emit_paste_queue_toast(app, error, actions::ToastTone::Danger),
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn emit_paste_queue_toast<R: tauri::Runtime + 'static>(
+    app: tauri::AppHandle<R>,
+    message: String,
+    tone: actions::ToastTone,
+) {
+    emit_toast_on_main_thread(
+        app,
+        actions::ActionToast {
+            title: Some("Paste Queue".to_string()),
+            message,
+            tone,
+            duration_ms: Some(4_500),
+        },
+        "paste queue",
+    );
+}
+
+#[cfg(not(test))]
 fn spawn_activate_neighbor<R: tauri::Runtime + 'static>(
     app: tauri::AppHandle<R>,
     direction: storage::HistoryNeighborDirection,
@@ -4491,6 +4721,16 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     {
         eprintln!("external editor shortcut pressed: {shortcut:?}");
         spawn_edit_active_external(app.clone());
+        return;
+    }
+
+    if app
+        .try_state::<CurrentPasteNextShortcut>()
+        .and_then(|current| current.get())
+        .is_some_and(|paste_next_shortcut| *shortcut == paste_next_shortcut)
+    {
+        eprintln!("paste next shortcut pressed: {shortcut:?}");
+        spawn_paste_next(app.clone());
         return;
     }
 
@@ -4948,6 +5188,9 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
     refresh_picker_shortcut_from_settings(app, settings);
     refresh_picker_pin_shortcut_from_settings(app, settings);
     refresh_external_editor_shortcut_from_settings(app, settings);
+    if let Err(error) = apply_paste_next_shortcut_from_settings(app, settings) {
+        eprintln!("paste next shortcut refresh failed: {error}");
+    }
     refresh_command_palette_shortcut(app);
     refresh_metadata_shortcut(app);
     refresh_active_item_navigation_shortcuts(app);
@@ -5492,6 +5735,88 @@ fn refresh_external_editor_shortcut_from_settings<R: tauri::Runtime>(
             }
         }
     }
+}
+
+#[cfg(not(test))]
+fn apply_paste_next_shortcut_from_settings<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    settings: &storage::AppSettings,
+) -> Result<(), String> {
+    let current = app
+        .try_state::<CurrentPasteNextShortcut>()
+        .ok_or_else(|| "paste next shortcut state not ready".to_string())?;
+    let label = settings.general.paste_next_shortcut.trim();
+    let next_shortcut = shortcut_from_label(label).ok_or_else(|| {
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: false,
+            supported: false,
+            error: Some("unsupported shortcut".to_string()),
+        });
+        format!("unsupported paste next shortcut: {label}")
+    })?;
+    let previous_shortcut = current.get();
+    if previous_shortcut == Some(next_shortcut)
+        && app.global_shortcut().is_registered(next_shortcut)
+    {
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
+        return Ok(());
+    }
+    if app.global_shortcut().is_registered(next_shortcut) {
+        let error = format!("paste next shortcut is already registered: {label}");
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: false,
+            supported: true,
+            error: Some(error.clone()),
+        });
+        return Err(error);
+    }
+
+    app.global_shortcut()
+        .register(next_shortcut)
+        .map_err(|error| {
+            let message = format!("paste next shortcut registration failed for {label}: {error}");
+            current.set_status(NativeShortcutStatus {
+                label: label.to_string(),
+                registered: false,
+                supported: true,
+                error: Some(message.clone()),
+            });
+            message
+        })?;
+
+    if let Some(previous_shortcut) = previous_shortcut.filter(|value| *value != next_shortcut) {
+        if app.global_shortcut().is_registered(previous_shortcut) {
+            if let Err(error) = app.global_shortcut().unregister(previous_shortcut) {
+                let _ = app.global_shortcut().unregister(next_shortcut);
+                let message =
+                    format!("previous paste next shortcut could not be unregistered: {error}");
+                current.set_status(NativeShortcutStatus {
+                    label: label.to_string(),
+                    registered: false,
+                    supported: true,
+                    error: Some(message.clone()),
+                });
+                return Err(message);
+            }
+        }
+    }
+
+    current.set(Some(next_shortcut));
+    current.set_status(NativeShortcutStatus {
+        label: label.to_string(),
+        registered: true,
+        supported: true,
+        error: None,
+    });
+    eprintln!("paste next shortcut registered from settings: {label}");
+    Ok(())
 }
 
 #[cfg(not(test))]

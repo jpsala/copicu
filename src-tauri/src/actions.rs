@@ -48,7 +48,10 @@ mod shortcuts;
 #[path = "actions/url.rs"]
 mod url;
 
-use self::builtin::{JOIN_SELECTED_ID, OPEN_URL_ID, PASTE_PLAIN_ID};
+use self::builtin::{
+    CLEAR_PASTE_QUEUE_ID, JOIN_SELECTED_ID, OPEN_URL_ID, PASTE_PLAIN_ID,
+    QUEUE_SELECTED_BOTTOM_TO_TOP_ID,
+};
 use self::capabilities::{
     unsupported_script_capabilities, validate_script_command_capabilities,
     validate_script_host_capabilities,
@@ -97,12 +100,18 @@ pub fn refresh_script_action_cache(
 ) -> Result<Vec<ActionDefinition>, String> {
     let settings = storage.get_settings()?;
     let mut discovered_scripts = discover_script_actions(&settings.scripts.folder_path)?;
-    annotate_global_shortcut_diagnostics(&mut discovered_scripts);
+    annotate_global_shortcut_diagnostics(
+        &mut discovered_scripts,
+        &settings.general.paste_next_shortcut,
+    );
     storage.replace_script_action_cache(&discovered_scripts)?;
     Ok(discovered_scripts)
 }
 
-fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
+fn annotate_global_shortcut_diagnostics(
+    actions: &mut [ActionDefinition],
+    paste_next_shortcut: &str,
+) {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for action in actions.iter() {
         if action.source == ActionSource::Script
@@ -136,7 +145,8 @@ fn annotate_global_shortcut_diagnostics(actions: &mut [ActionDefinition]) {
                 | "Ctrl+Shift+C"
                 | "Ctrl+Shift+ArrowUp"
                 | "Ctrl+Shift+ArrowDown"
-        ) {
+        ) || shortcut == paste_next_shortcut
+        {
             action.diagnostics.push(ActionDiagnostic {
                 severity: DiagnosticSeverity::Error,
                 message: "global shortcut is reserved by Copicu".to_string(),
@@ -221,6 +231,20 @@ pub fn run_action<R: Runtime + 'static>(
                 effects: Vec::new(),
             })
         }
+        QUEUE_SELECTED_BOTTOM_TO_TOP_ID => {
+            builtin::queue_selected_bottom_to_top(app, window, previous_window, &request).map(
+                |message| ScriptOrBuiltinRun {
+                    message,
+                    toasts: Vec::new(),
+                    effects: Vec::new(),
+                },
+            )
+        }
+        CLEAR_PASTE_QUEUE_ID => builtin::clear_paste_queue(app).map(|message| ScriptOrBuiltinRun {
+            message,
+            toasts: Vec::new(),
+            effects: Vec::new(),
+        }),
         _ => run_script_action(app, window, storage, suppression, previous_window, &request),
     };
     let finished_at = now_unix_ms();
@@ -1990,7 +2014,16 @@ mod tests {
         let actions = builtin_actions();
         let ids: Vec<_> = actions.iter().map(|action| action.id.as_str()).collect();
 
-        assert_eq!(ids, vec![PASTE_PLAIN_ID, JOIN_SELECTED_ID, OPEN_URL_ID]);
+        assert_eq!(
+            ids,
+            vec![
+                PASTE_PLAIN_ID,
+                JOIN_SELECTED_ID,
+                OPEN_URL_ID,
+                QUEUE_SELECTED_BOTTOM_TO_TOP_ID,
+                CLEAR_PASTE_QUEUE_ID,
+            ]
+        );
         assert!(actions.iter().all(|action| action.builtin));
     }
 
@@ -2195,7 +2228,7 @@ mod tests {
             },
         ];
 
-        annotate_global_shortcut_diagnostics(&mut actions);
+        annotate_global_shortcut_diagnostics(&mut actions, "Ctrl+Alt+Shift+V");
 
         assert!(actions[0]
             .diagnostics

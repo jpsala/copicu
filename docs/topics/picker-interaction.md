@@ -179,6 +179,9 @@ Navegacion por teclado:
 - `Shift+F2`: abre el editor completo de metadata del item activo. Metadata conserva su textarea compacto y autocomplete especifico; no usa CodeMirror por defecto.
 - `Ctrl+Shift+C`: global app-owned; abre la utility de metadata para el item activo o el ultimo activado.
 - `Ctrl+Shift+Up` / `Ctrl+Shift+Down`: globales app-owned; activan y copian el item anterior (más viejo) o siguiente (más nuevo), con wrap en los extremos y feedback por toast. La implementación interna reemplaza la necesidad de los scripts `032`/`033` para este flujo cotidiano.
+- `Ctrl+Alt+Shift+V` es el default global configurable de `Paste next`. Cada `Pressed` procesa como maximo un item de la cola host-owned; una cola vacia nunca reutiliza el ultimo item.
+- Quick Actions y el menu batch exponen `Queue selected, bottom to top` desde el mismo registry. La seleccion se entrega en orden visual y el host la invierte; preparar reemplaza pendientes, oculta el picker y restaura la ventana previa sin pegar.
+- La cola sobrevive hide/show, pero no reinicios. Un item ausente o un fallo de focus/paste queda pendiente y produce feedback fuera del picker sin tomar foco.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 
 Crear item manual:

@@ -4451,8 +4451,8 @@ function App() {
       onClear?: () => void;
     }) => {
       const hasItems = items.length > 0;
-      const scriptActions = hasItems
-        ? itemMenuScriptActions(actionDefinitions, items, items.length === 1 ? items[0] : selectedItem)
+      const contextualActions = hasItems
+        ? itemMenuRegistryActions(actionDefinitions, items, items.length === 1 ? items[0] : selectedItem)
         : [];
 
       return (
@@ -4490,7 +4490,7 @@ function App() {
             <span>Edit tags for {noun}</span>
             <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
           </UiUnstyledButton>
-          {scriptActions.map((action) => (
+          {contextualActions.map((action) => (
             <UiUnstyledButton
               key={action.id}
               type="button"
@@ -4499,7 +4499,9 @@ function App() {
               className="item-menu-action"
               onClick={() => void runActionDefinition(action, items, "itemMenu")}
             >
-              <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+              {action.source === "script"
+                ? <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                : <Command size={14} strokeWidth={2.2} aria-hidden="true" />}
               <span>{action.title}</span>
               <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
             </UiUnstyledButton>
@@ -7095,7 +7097,7 @@ function App() {
                           </div>
                           <div className="item-menu-group" role="group" aria-label="Más">
                             <span className="item-menu-group-label">Más</span>
-                          {itemMenuScriptActions(actionDefinitions, [item], item).map((action) => (
+                          {itemMenuRegistryActions(actionDefinitions, [item], item).map((action) => (
                             <UiUnstyledButton
                               key={action.id}
                               type="button"
@@ -7104,7 +7106,9 @@ function App() {
                               className="item-menu-action"
                               onClick={() => void runActionDefinition(action, [item], "itemMenu")}
                             >
-                              <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                              {action.source === "script"
+                                ? <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                                : <Command size={14} strokeWidth={2.2} aria-hidden="true" />}
                               <span>{action.title}</span>
                               <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
                             </UiUnstyledButton>
@@ -7996,16 +8000,20 @@ function actionPickerContextLabel(trigger: ActionTrigger) {
   }
 }
 
-function itemMenuScriptActions(
+function itemMenuRegistryActions(
   actions: ActionDefinition[],
   items: HistoryItem[],
   activeItem: HistoryItem | null,
 ) {
   return actions.filter((action) => {
-    if (action.source !== "script") {
+    if (isSupersededMetadataEditAction(action)) {
       return false;
     }
-    if (isSupersededMetadataEditAction(action)) {
+    if (action.source === "builtin") {
+      if (items.length <= 1 || action.id === BUILTIN_ACTIONS.joinSelected) {
+        return false;
+      }
+    } else if (action.source !== "script") {
       return false;
     }
     if (items.length > 1 && action.input.selection === "active") {

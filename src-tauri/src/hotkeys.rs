@@ -509,6 +509,10 @@ mod tests {
 
         assert_eq!(diagnostic.kind, HotkeyDiagnosticKind::Duplicate);
         assert_eq!(registry.diagnostics().len(), 1);
+        assert_eq!(
+            registry.resolve(&HotkeySequence::parse("Ctrl+Shift+,").unwrap()),
+            Some(&ShortcutRoute::PickerOpen)
+        );
     }
 
     #[test]

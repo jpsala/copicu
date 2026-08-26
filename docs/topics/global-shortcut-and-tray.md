@@ -95,6 +95,13 @@ Decision inicial para MVP 0:
 - El toggle por global shortcut debe ocultar si la ventana principal esta visible, aunque no este foreground/focused. El criterio anterior en ruta no-focus solo ocultaba si estaba foreground; eso hacia que una segunda pulsacion no ocultara cuando habia dos instancias o foco raro.
 - Dev tray se diferencia con tooltip `Copicu Dev`, menu `Toggle Copicu Dev` y badge `D`.
 
+## Paste Queue
+
+- `Paste next` es un shortcut global app-owned y configurable en `Settings > General`.
+- Default Windows: `Ctrl+Alt+Shift+V`. Se evita `Ctrl+Shift+V` porque ya fue observado como ocupado en el entorno; el registro real de Tauri decide disponibilidad.
+- La validacion comparte el inventario de picker, comandos app-owned, saved views y scripts. Una combinacion invalida, duplicada o no registrable se rechaza sin desmontar registros vigentes.
+- El handler procesa solo `Pressed`, pega como maximo un item por pulsacion y no muestra ni enfoca el picker.
+
 ## Decision 2026-06-18 - hotkey abre con foco
 
 - Problema observado: el picker a veces aparecia al usar el hotkey pero no quedaba listo para escribir. La causa era arquitectonica: el shortcut global usaba la ruta `toggle_main_window_without_focus`, que terminaba en `SW_SHOWNOACTIVATE` / `SWP_NOACTIVATE`.

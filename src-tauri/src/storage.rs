@@ -57,6 +57,7 @@ const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const DEFAULT_AI_ENDPOINT: &str = "https://openrouter.ai/api/v1";
 const DEFAULT_AI_MODEL: &str = "openai/gpt-4.1-mini";
 const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Shift+,";
+const DEFAULT_PASTE_NEXT_SHORTCUT: &str = "Ctrl+Alt+Shift+V";
 const MIN_RETENTION_COUNT: i64 = 100;
 const MAX_RETENTION_COUNT: i64 = 100_000;
 
@@ -693,6 +694,8 @@ pub struct AppSettings {
 #[serde(rename_all = "camelCase")]
 pub struct GeneralSettings {
     pub global_shortcut: String,
+    #[serde(default = "default_paste_next_shortcut")]
+    pub paste_next_shortcut: String,
     #[serde(default)]
     pub launch_on_startup: bool,
     #[serde(default = "default_capture_enabled")]
@@ -890,6 +893,7 @@ impl Default for AppSettings {
             schema_version: SETTINGS_SCHEMA_VERSION,
             general: GeneralSettings {
                 global_shortcut: default_global_shortcut(),
+                paste_next_shortcut: default_paste_next_shortcut(),
                 launch_on_startup: false,
                 capture_enabled: default_capture_enabled(),
             },
@@ -955,6 +959,10 @@ fn default_global_shortcut() -> String {
         .filter(|value| !value.as_os_str().is_empty())
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| DEFAULT_GLOBAL_SHORTCUT.to_string())
+}
+
+fn default_paste_next_shortcut() -> String {
+    DEFAULT_PASTE_NEXT_SHORTCUT.to_string()
 }
 
 impl AppStorage {
@@ -4488,6 +4496,7 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     }
     settings.tray.vscode_path.clear();
     settings.scripts.folder_path = settings.scripts.folder_path.trim().to_string();
+    settings.general.paste_next_shortcut = settings.general.paste_next_shortcut.trim().to_string();
     settings.picker.pin_toggle_shortcut = settings.picker.pin_toggle_shortcut.trim().to_string();
     settings.picker.settings_shortcut = settings.picker.settings_shortcut.trim().to_string();
     settings.picker.external_editor_shortcut =
@@ -4607,6 +4616,12 @@ fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     }
     if settings.general.global_shortcut.trim().is_empty() {
         return Err("global shortcut cannot be empty".to_string());
+    }
+    let paste_next =
+        crate::hotkeys::HotkeySequence::parse(settings.general.paste_next_shortcut.trim())
+            .map_err(|error| format!("invalid paste next shortcut: {error}"))?;
+    if !paste_next.is_simple() {
+        return Err("paste next shortcut must be a single shortcut, not a sequence".to_string());
     }
     if !(15..=1440).contains(&settings.auto_update.check_interval_minutes) {
         return Err("auto-update check interval must be between 15 and 1440 minutes".to_string());

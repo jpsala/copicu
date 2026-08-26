@@ -50,6 +50,7 @@ export type AppSettings = {
   schemaVersion: 1;
   general: {
     globalShortcut: string;
+    pasteNextShortcut: string;
     launchOnStartup: boolean;
     captureEnabled: boolean;
   };
@@ -93,6 +94,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   schemaVersion: 1,
   general: {
     globalShortcut: "Ctrl+Shift+,",
+    pasteNextShortcut: "Ctrl+Alt+Shift+V",
     launchOnStartup: false,
     captureEnabled: true,
   },

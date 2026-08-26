@@ -6,6 +6,8 @@ use super::{
 pub(super) const PASTE_PLAIN_ID: &str = "builtin.pastePlain";
 pub(super) const JOIN_SELECTED_ID: &str = "builtin.joinSelected";
 pub(super) const OPEN_URL_ID: &str = "builtin.openUrl";
+pub(super) const QUEUE_SELECTED_BOTTOM_TO_TOP_ID: &str = "builtin.queueSelectedBottomToTop";
+pub(super) const CLEAR_PASTE_QUEUE_ID: &str = "builtin.clearPasteQueue";
 
 pub(super) fn builtin_actions() -> Vec<ActionDefinition> {
     vec![
@@ -80,7 +82,98 @@ pub(super) fn builtin_actions() -> Vec<ActionDefinition> {
             diagnostics: Vec::new(),
             logging: None,
         },
+        ActionDefinition {
+            id: QUEUE_SELECTED_BOTTOM_TO_TOP_ID.to_string(),
+            title: "Queue selected, bottom to top".to_string(),
+            description: "Replace the Paste Queue with selected items in reverse visual order."
+                .to_string(),
+            shortcut: None,
+            triggers: vec![Trigger::ItemMenu, Trigger::CommandPalette],
+            input: ActionInput {
+                source: ActionInputSource::PickerSelection,
+                selection: SelectionRequirement::OneOrMore,
+                kinds: None,
+                mime: None,
+                query: None,
+            },
+            capabilities: vec!["window:focus-previous".to_string()],
+            builtin: true,
+            source: ActionSource::Builtin,
+            script: None,
+            diagnostics: Vec::new(),
+            logging: None,
+        },
+        ActionDefinition {
+            id: CLEAR_PASTE_QUEUE_ID.to_string(),
+            title: "Clear Paste Queue".to_string(),
+            description: "Clear every pending item from the active Paste Queue.".to_string(),
+            shortcut: None,
+            triggers: vec![Trigger::ItemMenu, Trigger::CommandPalette],
+            input: ActionInput {
+                source: ActionInputSource::None,
+                selection: SelectionRequirement::None,
+                kinds: None,
+                mime: None,
+                query: None,
+            },
+            capabilities: Vec::new(),
+            builtin: true,
+            source: ActionSource::Builtin,
+            script: None,
+            diagnostics: Vec::new(),
+            logging: None,
+        },
     ]
+}
+
+#[cfg(not(test))]
+pub(super) fn queue_selected_bottom_to_top<R: tauri::Runtime + 'static>(
+    app: &tauri::AppHandle<R>,
+    window: Option<&tauri::WebviewWindow<R>>,
+    previous_window: &crate::window_focus::PreviousWindow,
+    request: &super::RunActionRequest,
+) -> Result<String, String> {
+    use tauri::Manager;
+
+    let item_ids = require_one_or_more_selected(&request.context)?;
+    let queue = app
+        .try_state::<crate::paste_queue::PasteQueue>()
+        .ok_or_else(|| "Paste Queue state is unavailable".to_string())?;
+    let count = queue.replace_bottom_to_top(item_ids)?;
+    let prepare_result = (|| {
+        let window =
+            window.ok_or_else(|| "picker window is required to prepare Paste Queue".to_string())?;
+        crate::host::hide_picker(window)?;
+        previous_window.focus_previous()
+    })();
+    if let Err(error) = prepare_result {
+        crate::emit_paste_queue_toast(
+            app.clone(),
+            format!("Could not prepare Paste Queue: {error}"),
+            super::ToastTone::Danger,
+        );
+        return Err(error);
+    }
+
+    let message = format!("Queued {count} items, bottom to top");
+    crate::emit_paste_queue_toast(app.clone(), message.clone(), super::ToastTone::Success);
+    Ok(message)
+}
+
+#[cfg(not(test))]
+pub(super) fn clear_paste_queue<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<String, String> {
+    use tauri::Manager;
+
+    let queue = app
+        .try_state::<crate::paste_queue::PasteQueue>()
+        .ok_or_else(|| "Paste Queue state is unavailable".to_string())?;
+    if queue.clear()? {
+        Ok("Paste Queue cleared".to_string())
+    } else {
+        Ok("Paste Queue is empty".to_string())
+    }
 }
 
 #[cfg(not(test))]

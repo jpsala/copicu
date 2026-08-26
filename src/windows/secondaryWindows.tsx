@@ -154,6 +154,7 @@ type NativeShortcutStatus = {
 
 type AppShortcutStatus = {
   picker: NativeShortcutStatus;
+  pasteNext: NativeShortcutStatus;
   pin: NativeShortcutStatus;
   externalEditor: NativeShortcutStatus;
 };
@@ -2397,7 +2398,7 @@ function SettingsPanel({
                 {visible("hotkeys", "Shortcut summary", "Global local script editable inventory") ? (
                   <SettingRow label="Shortcut summary" description="Current hotkey surface across the app and discovered scripts.">
                     <div className="action-summary" aria-label="Hotkey summary">
-                      <UiBadge className="settings-summary-badge" variant="light">4 editable app shortcuts</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">5 editable app shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">6 picker shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">
                         {scriptActions.filter((action) => Boolean(normalizeShortcutString(action.shortcut ?? ""))).length} script shortcuts
@@ -2405,7 +2406,7 @@ function SettingsPanel({
                     </div>
                   </SettingRow>
                 ) : null}
-                {visible("hotkeys", "App shortcuts", `picker command palette ai toggle enter shift enter f2 ${draft.general.globalShortcut}`) ? (
+                {visible("hotkeys", "App shortcuts", `picker paste next paste queue command palette ai toggle enter shift enter f2 ${draft.general.globalShortcut} ${draft.general.pasteNextShortcut}`) ? (
                   <SettingRow
                     label="App shortcuts"
                     description="Editable only for shortcuts persisted in Settings. Renderer-local shortcuts stay read-only here."
@@ -2413,6 +2414,7 @@ function SettingsPanel({
                   >
                     <AppShortcutInventory
                       pickerShortcut={draft.general.globalShortcut}
+                      pasteNextShortcut={draft.general.pasteNextShortcut}
                       pinShortcut={draft.picker.pinToggleShortcut}
                       settingsShortcut={draft.picker.settingsShortcut}
                       externalEditorShortcut={draft.picker.externalEditorShortcut}
@@ -2423,6 +2425,15 @@ function SettingsPanel({
                           general: {
                             ...draft.general,
                             globalShortcut,
+                          },
+                        })
+                      }
+                      onPasteNextShortcutChange={(pasteNextShortcut) =>
+                        onDraftChange({
+                          ...draft,
+                          general: {
+                            ...draft.general,
+                            pasteNextShortcut,
                           },
                         })
                       }
@@ -3368,6 +3379,7 @@ function HotkeyField({
       onChange("");
       return;
     }
+    onChange(trimmed);
 
     void normalizeHotkeySequence(trimmed)
       .then((result) => {
@@ -3558,21 +3570,25 @@ function ReadOnlyStatus({
 
 function AppShortcutInventory({
   pickerShortcut,
+  pasteNextShortcut,
   pinShortcut,
   settingsShortcut,
   externalEditorShortcut,
   shortcutStatus,
   onPickerShortcutChange,
+  onPasteNextShortcutChange,
   onPinShortcutChange,
   onSettingsShortcutChange,
   onExternalEditorShortcutChange,
 }: {
   pickerShortcut: string;
+  pasteNextShortcut: string;
   pinShortcut: string;
   settingsShortcut: string;
   externalEditorShortcut: string;
   shortcutStatus: AppShortcutStatus | null;
   onPickerShortcutChange: (value: string) => void;
+  onPasteNextShortcutChange: (value: string) => void;
   onPinShortcutChange: (value: string) => void;
   onSettingsShortcutChange: (value: string) => void;
   onExternalEditorShortcutChange: (value: string) => void;
@@ -3595,6 +3611,26 @@ function AppShortcutInventory({
           value={pickerShortcut}
           allowSequences={false}
           onChange={onPickerShortcutChange}
+        />
+      </section>
+
+      <section className="hotkey-inventory-item">
+        <div className="hotkey-inventory-copy">
+          <div className="hotkey-inventory-header">
+            <strong>Paste next</strong>
+            <div className="hotkey-meta">
+              <ShortcutRegistrationStatusBadge status={shortcutStatus?.pasteNext ?? null} />
+              <ReadOnlyStatus value="Editable" />
+            </div>
+          </div>
+          <p>{shortcutStatusDescription(shortcutStatus?.pasteNext ?? null, "Pastes the next item from the active Paste Queue into the previous window.")}</p>
+        </div>
+        <HotkeyField
+          label="Paste next shortcut"
+          value={pasteNextShortcut}
+          allowSequences={false}
+          helpText="Global shortcut. Ctrl+Alt+Shift+V by default."
+          onChange={onPasteNextShortcutChange}
         />
       </section>
 
