@@ -1,12 +1,12 @@
 ---
 id: paste-queue
-status: parked
-updated: 2026-06-29
+status: planned
+updated: 2026-08-26
 ---
 
 # Paste Queue
 
-Track para retomar cuando JP quiera implementar una cola de pegado. Por ahora queda **parked**: la idea interesa, pero requiere diseño y dogfood cuidadoso antes de tocar producto.
+Track retomado para diseñar una cola de pegado acotada. El primer corte queda definido abajo; el hotkey global exacto y el feedback fuera del picker deben cerrarse antes de implementar.
 
 ## Idea
 
@@ -18,6 +18,24 @@ Convertir Copicu de selector de clipboard a una **cinta ordenada de pegado**:
 4. avanzar/retroceder/limpiar la cola sin volver al picker.
 
 Caso base: llenar formularios con nombre, email, telefono, fecha, etc.
+
+## Decisiones 2026-08-26
+
+- Una sola cola activa, efimera: sobrevive hide/show mientras Copicu corre, se limpia al completarse y no persiste tras reiniciar.
+- La seleccion conserva el orden visual actual del picker; la accion invierte ese orden. Una seleccion visible `1, 2, 3` produce la cola `3, 2, 1`, independientemente del orden de clicks.
+- Cada pulsacion del hotkey global pega exactamente un item y avanza. No hay rafaga automatica ni paso manual adicional con `Ctrl+V`.
+- Preparar una cola reemplaza la activa. Append, colas nombradas, recipes y reordenamiento quedan fuera del primer corte.
+- La entrada primaria reutiliza **Quick Actions** del picker (`Ctrl+Alt+Q`, `Enter` o `1`-`9`) y el registry contextual existente. El menu batch puede exponer la misma accion para discoverability; no se crea un segundo selector de acciones.
+- La cola y `Paste next` son primitivas host-owned/built-in. Un script global no recibe seleccion del picker y el runner actual no debe asumir foco, estado ni loops de paste.
+
+Flujo objetivo:
+
+1. seleccionar varios items en el picker;
+2. abrir Quick Actions y ejecutar `Queue selected, bottom to top`;
+3. Copicu guarda IDs en orden inverso, oculta el picker y restaura la ventana previa sin pegar;
+4. cada `Paste next` reutiliza la ruta host de write -> focus previous -> paste;
+5. avanzar solo despues de completar la operacion host; al terminar, limpiar la cola;
+6. si el item ya no existe o falla focus/paste, no pegar otro item en la misma pulsacion y mostrar feedback explicito.
 
 ## Superficies Posibles
 
@@ -99,12 +117,10 @@ Requiere mas cuidado por seguridad/foco y debe pedirse confirmacion para automat
 
 ## Preguntas Abiertas
 
-- ¿La cola debe ser una sola global o varias nombradas?
-- ¿Debe persistir entre reinicios?
-- ¿Paste next debe copiar+pegar o solo copiar al clipboard?
-- ¿Como manejar imagenes/html/fileList?
-- ¿Que hotkey real no choca con el entorno de JP?
+- ¿Que hotkey global real no choca con el entorno de JP y sigue siendo comodo al repetirlo?
+- ¿Que feedback minimo confirma progreso/final/error sin robar foco a la app destino?
+- ¿La primera version acepta todo item que ya soporte la activacion individual o se restringe a texto?
 
 ## Proximo Corte Recomendado
 
-Si se retoma: implementar primero **Slice 1** como built-ins + Quick Actions, sin recipes. Validar con un formulario sintetico antes de pensar en automatizacion avanzada.
+Implementar **Slice 1** como estado host-owned en memoria + built-ins contextuales + hotkey global configurable, sin recipes ni ventana nueva. Validar con items sinteticos y un formulario externo: orden `3, 2, 1`, una sola insercion por pulsacion, avance solo tras exito, cola vacia al terminar y ningun paste ante focus invalido.
