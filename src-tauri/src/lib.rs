@@ -137,6 +137,31 @@ const ENABLE_COMPOUND_GLOBAL_SHORTCUTS: bool = true;
 #[cfg(not(test))]
 const ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS: bool = false;
 
+fn should_dispatch_global_shortcut(is_paste_next: bool, is_pressed: bool) -> bool {
+    if is_paste_next {
+        !is_pressed
+    } else {
+        is_pressed
+    }
+}
+
+#[cfg(test)]
+mod global_shortcut_dispatch_tests {
+    use super::should_dispatch_global_shortcut;
+
+    #[test]
+    fn paste_next_dispatches_only_after_the_trigger_chord_is_released() {
+        assert!(!should_dispatch_global_shortcut(true, true));
+        assert!(should_dispatch_global_shortcut(true, false));
+    }
+
+    #[test]
+    fn other_global_shortcuts_still_dispatch_on_press() {
+        assert!(should_dispatch_global_shortcut(false, true));
+        assert!(!should_dispatch_global_shortcut(false, false));
+    }
+}
+
 #[cfg(not(test))]
 #[derive(Clone, Default)]
 struct PickerFocusPolicy {
@@ -2973,7 +2998,14 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
+                    let is_paste_next = app
+                        .try_state::<CurrentPasteNextShortcut>()
+                        .and_then(|current| current.get())
+                        .is_some_and(|paste_next_shortcut| *shortcut == paste_next_shortcut);
+                    if should_dispatch_global_shortcut(
+                        is_paste_next,
+                        event.state == ShortcutState::Pressed,
+                    ) {
                         handle_global_shortcut(app, shortcut);
                     }
                 })
@@ -4729,7 +4761,7 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         .and_then(|current| current.get())
         .is_some_and(|paste_next_shortcut| *shortcut == paste_next_shortcut)
     {
-        eprintln!("paste next shortcut pressed: {shortcut:?}");
+        eprintln!("paste next shortcut released: {shortcut:?}");
         spawn_paste_next(app.clone());
         return;
     }

@@ -579,6 +579,7 @@ const BUILTIN_ACTIONS = {
   newItem: "builtin.newItem",
   pastePlain: "builtin.pastePlain",
   joinSelected: "builtin.joinSelected",
+  queueSelectedBottomToTop: "builtin.queueSelectedBottomToTop",
   openUrl: "builtin.openUrl",
 } as const;
 
@@ -3873,7 +3874,10 @@ function App() {
         if (result.status === "failed") {
           throw new Error(result.message);
         } else {
-          if (resultToasts.length === 0) {
+          if (
+            resultToasts.length === 0
+            && action.id !== BUILTIN_ACTIONS.queueSelectedBottomToTop
+          ) {
             pushToast({
               title: action.title,
               message: result.message,

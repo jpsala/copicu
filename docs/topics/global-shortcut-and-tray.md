@@ -100,7 +100,7 @@ Decision inicial para MVP 0:
 - `Paste next` es un shortcut global app-owned y configurable en `Settings > General`.
 - Default Windows: `Ctrl+Alt+Shift+V`. Se evita `Ctrl+Shift+V` porque ya fue observado como ocupado en el entorno; el registro real de Tauri decide disponibilidad.
 - La validacion comparte el inventario de picker, comandos app-owned, saved views y scripts. Una combinacion invalida, duplicada o no registrable se rechaza sin desmontar registros vigentes.
-- El handler procesa solo `Pressed`, pega como maximo un item por pulsacion y no muestra ni enfoca el picker.
+- `Paste next` procesa solo `Released`, para que el chord disparador ya no interfiera con el `Ctrl+V` sintetico. Pega como maximo un item por ciclo press/release y no muestra ni enfoca el picker; los demas shortcuts globales siguen procesando `Pressed`.
 
 ## Decision 2026-06-18 - hotkey abre con foco
 

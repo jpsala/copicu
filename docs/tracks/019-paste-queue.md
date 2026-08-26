@@ -128,5 +128,6 @@ Requiere mas cuidado por seguridad/foco y debe pedirse confirmacion para automat
 - `src-tauri/src/paste_queue.rs` conserva una sola cola en memoria, invalida intentos stale y consume solo tras exito.
 - Los built-ins `builtin.queueSelectedBottomToTop` y `builtin.clearPasteQueue` usan el registry existente; Quick Actions y el menu batch consumen la misma definicion.
 - `Settings > General` persiste `pasteNextShortcut`; el inventario de shortcuts muestra registro, soporte y error.
-- Verificacion automatizada: 192 tests Rust, `cargo check`, `cargo fmt --check` y build frontend.
+- Verificacion automatizada: 194 tests Rust, `cargo check`, `cargo fmt --check` y build frontend.
 - Smoke Windows con datos sinteticos: seleccion visual `THREE, TWO, ONE` pego `ONE, TWO, THREE`; la cuarta pulsacion no repitio; reemplazar pendientes pego la seleccion nueva; borrar el item pendiente no pego y mostro error manteniendolo; reiniciar devolvio `Paste Queue is empty`; Settings rechazo el duplicado `Alt+Meta+C` sin cerrar ni reemplazar el registro vigente.
+- Regresion 2026-08-26: el primer paste podia consumirse sin insertarse si el chord disparador seguia fisicamente presionado. `Paste next` ahora despacha en `Released`, mientras los demas shortcuts globales conservan `Pressed`. Smoke externo posterior: tres pulsaciones insertaron `B, C, A` y la cuarta solo informo cola vacia.
