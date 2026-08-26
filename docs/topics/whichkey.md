@@ -54,7 +54,7 @@ Por lo tanto:
 
 ## Quick Actions Dentro Del Picker
 
-Actualizacion 2026-06-29: se agrego un primer slice seguro como overlay dentro de `main`, no como ventana secundaria WhichKey. `Ctrl+Alt+Q` abre **Quick Actions** cuando el search del picker tiene foco; `Alt+Q` se descarto porque Windows/dev reporto `HotKey already registered` y `Ctrl+Shift+Q` porque mutea en el entorno de JP. La lista se calcula desde el registry de actions/scripts y muestra solo acciones compatibles con el contexto actual:
+Actualizacion 2026-08-26: el overlay local **Quick Actions** dentro de `main` abre con `F6` cuando el picker tiene foco. `Ctrl+Alt+Q` se retiro porque Windows lo interpreta como AltGr en el layout de JP y escribe un caracter en el search; `Alt+Q` tampoco resulto confiable bajo WebView2. `F6` es local al picker, independiente del layout y no se registra globalmente, por lo que no compite con hotkeys de otras aplicaciones. La lista se calcula desde el registry de actions/scripts y muestra solo acciones compatibles con el contexto actual:
 
 - seleccion activa o multiple;
 - `kinds`/MIME compatibles;

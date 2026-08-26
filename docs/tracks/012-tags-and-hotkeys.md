@@ -88,7 +88,7 @@ Actualizacion 2026-07-12:
 - `Ctrl+Shift+Space` abre y enfoca la **Command Palette** en el picker principal. Rust solo registra el hotkey, muestra/enfoca la ventana y emite el evento; el renderer mantiene el catalogo y despacha acciones existentes.
 - La palette agrupa navegacion por History (`All history`, `Text`, `Images`, `Marked`), saved views persistidas y tags pinned, ademas de las acciones ejecutables actuales. La busqueda local filtra todas las entradas.
 - Elegir navegacion cierra la palette y aplica la query al picker normal editable; las acciones conservan su ejecucion actual.
-- El overlay local **Quick Actions** contextual (`Ctrl+Alt+Q` con el picker enfocado) se conserva separado: lista solo acciones/scripts compatibles con la seleccion actual.
+- El overlay local **Quick Actions** contextual (`F6` con el picker enfocado) se conserva separado: lista solo acciones/scripts compatibles con la seleccion actual.
 
 ### Shortcuts Nativos De Metadata
 

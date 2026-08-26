@@ -2689,11 +2689,7 @@ function App() {
         return;
       }
       if (
-        event.ctrlKey &&
-        event.altKey &&
-        !event.metaKey &&
-        !event.shiftKey &&
-        event.key.toLocaleLowerCase() === "q" &&
+        isQuickActionsShortcut(event) &&
         !commandPalette &&
         !actionPicker &&
         !editDraft &&
@@ -5601,7 +5597,7 @@ function App() {
       selectionAnchorItemIdRef.current = null;
     },
     onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      if (event.ctrlKey && event.altKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "q") {
+      if (isQuickActionsShortcut(event)) {
         event.preventDefault();
         openActionPicker();
         return;
@@ -6215,7 +6211,7 @@ function App() {
               </Menu.Item>
               <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
-                rightSection={<ShortcutBadge shortcut="Ctrl+Alt+Q" className="menu-shortcut-badge" />}
+                rightSection={<ShortcutBadge shortcut="F6" className="menu-shortcut-badge" />}
                 onClick={() => {
                   setPickerMenuOpen(false);
                   openActionPicker();
@@ -7849,7 +7845,7 @@ function ActionPicker({
       <UiPaper className="command-palette-panel action-picker-panel">
         <div className="action-picker-header">
           <strong>Quick Actions</strong>
-          <span>Context-aware scripts and actions · Ctrl Alt Q</span>
+          <span>Context-aware scripts and actions · F6</span>
         </div>
         <UiTextInput
           ref={inputRef}
@@ -8155,6 +8151,16 @@ type ShortcutKeyboardEvent = Pick<
   globalThis.KeyboardEvent | ReactKeyboardEvent,
   "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "repeat"
 >;
+
+type QuickActionsKeyboardEvent = Pick<
+  globalThis.KeyboardEvent | ReactKeyboardEvent,
+  "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey"
+>;
+
+function isQuickActionsShortcut(event: QuickActionsKeyboardEvent) {
+  const f6Key = event.code === "F6" || event.key === "F6";
+  return f6Key && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+}
 
 function shortcutFromKeyboardEvent(event: ShortcutKeyboardEvent) {
   const key = shortcutKeyFromKeyboardEvent(event);

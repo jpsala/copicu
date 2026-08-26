@@ -634,7 +634,7 @@ The repo includes a launch-ready set of scripts under [`scripts/examples/`](../.
 
 Use synthetic data when sharing screenshots, issues, or demos. Do not paste real clipboard payloads or private logs into public examples.
 
-Tip: when the picker search box is focused, press `Ctrl+Alt+Q` to open **Quick Actions**. It shows only scripts/actions that match the active selection and lets you search, press Enter, or press `1`-`9` to run one without memorizing every shortcut.
+Tip: when the picker search box is focused, press `F6` to open **Quick Actions**. It shows only scripts/actions that match the active selection and lets you search, press Enter, or press `1`-`9` to run one without memorizing every shortcut.
 
 ## Examples
 

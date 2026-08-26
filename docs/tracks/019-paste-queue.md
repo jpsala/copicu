@@ -25,7 +25,7 @@ Caso base: llenar formularios con nombre, email, telefono, fecha, etc.
 - La seleccion conserva el orden visual actual del picker; la accion invierte ese orden. Una seleccion visible `1, 2, 3` produce la cola `3, 2, 1`, independientemente del orden de clicks.
 - Cada pulsacion del hotkey global pega exactamente un item y avanza. No hay rafaga automatica ni paso manual adicional con `Ctrl+V`.
 - Preparar una cola reemplaza la activa. Append, colas nombradas, recipes y reordenamiento quedan fuera del primer corte.
-- La entrada primaria reutiliza **Quick Actions** del picker (`Ctrl+Alt+Q`, `Enter` o `1`-`9`) y el registry contextual existente. El menu batch puede exponer la misma accion para discoverability; no se crea un segundo selector de acciones.
+- La entrada primaria reutiliza **Quick Actions** del picker (`F6`, `Enter` o `1`-`9`) y el registry contextual existente. El menu batch puede exponer la misma accion para discoverability; no se crea un segundo selector de acciones.
 - La cola y `Paste next` son primitivas host-owned/built-in. Un script global no recibe seleccion del picker y el runner actual no debe asumir foco, estado ni loops de paste.
 - `Paste next` usa `Ctrl+Alt+Shift+V` por defecto y sigue siendo configurable en Settings. El default de tres modificadores evita `Ctrl+Shift+V`, ya observado como ocupado en el entorno, y reduce colisiones con shortcuts de editores; cualquier conflicto real de registro se reporta y no invalida los shortcuts que ya estaban activos.
 - El feedback minimo fuera del picker usa notificaciones host que no toman foco: cola creada, cola completada/vacia y error. No se notifica cada paste exitoso.
@@ -41,7 +41,7 @@ Flujo objetivo:
 
 ## Superficies Posibles
 
-- Quick Actions (`Ctrl+Alt+Q`):
+- Quick Actions (`F6`):
   - `Replace Paste Queue With Selection`;
   - `Append Selection To Paste Queue`;
   - `Paste Next`;
