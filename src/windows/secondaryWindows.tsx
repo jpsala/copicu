@@ -3629,7 +3629,7 @@ function AppShortcutInventory({
           label="Paste next shortcut"
           value={pasteNextShortcut}
           allowSequences={false}
-          helpText="Global shortcut. Ctrl+Alt+Shift+V by default."
+          helpText="Global shortcut. Ctrl+Alt+F11 by default."
           onChange={onPasteNextShortcutChange}
         />
       </section>

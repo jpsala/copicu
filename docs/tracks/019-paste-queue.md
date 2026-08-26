@@ -27,7 +27,7 @@ Caso base: llenar formularios con nombre, email, telefono, fecha, etc.
 - Preparar una cola reemplaza la activa. Append, colas nombradas, recipes y reordenamiento quedan fuera del primer corte.
 - La entrada primaria reutiliza **Quick Actions** del picker (`F6`, `Enter` o `1`-`9`) y el registry contextual existente. El menu batch puede exponer la misma accion para discoverability; no se crea un segundo selector de acciones.
 - La cola y `Paste next` son primitivas host-owned/built-in. Un script global no recibe seleccion del picker y el runner actual no debe asumir foco, estado ni loops de paste.
-- `Paste next` usa `Ctrl+Alt+Shift+V` por defecto y sigue siendo configurable en Settings. El default de tres modificadores evita `Ctrl+Shift+V`, ya observado como ocupado en el entorno, y reduce colisiones con shortcuts de editores; cualquier conflicto real de registro se reporta y no invalida los shortcuts que ya estaban activos.
+- `Paste next` usa `Ctrl+Alt+F11` por defecto y sigue siendo configurable en Settings. El smoke con Windows Terminal confirmo que el target no reacciona al chord antes del paste. `Ctrl+Alt+Shift+V` se descarto porque abria la command palette del target antes de pegar.
 - El feedback minimo fuera del picker usa notificaciones host que no toman foco: cola creada, cola completada/vacia y error. No se notifica cada paste exitoso.
 
 Flujo objetivo:
@@ -119,7 +119,7 @@ Requiere mas cuidado por seguridad/foco y debe pedirse confirmacion para automat
 
 ## Decisiones Cerradas
 
-- `Paste next` usa el default configurable `Ctrl+Alt+Shift+V`; el registro real sigue siendo la evidencia definitiva de disponibilidad.
+- `Paste next` usa el default configurable `Ctrl+Alt+F11`; el registro real y un smoke sobre la app destino siguen siendo la evidencia definitiva de disponibilidad.
 - El feedback minimo no enfoca Copicu ni muestra contenido del item.
 - La cola acepta todos los tipos que ya soporte `activate_item`; no agrega una ruta de clipboard paralela.
 
@@ -128,6 +128,6 @@ Requiere mas cuidado por seguridad/foco y debe pedirse confirmacion para automat
 - `src-tauri/src/paste_queue.rs` conserva una sola cola en memoria, invalida intentos stale y consume solo tras exito.
 - Los built-ins `builtin.queueSelectedBottomToTop` y `builtin.clearPasteQueue` usan el registry existente; Quick Actions y el menu batch consumen la misma definicion.
 - `Settings > General` persiste `pasteNextShortcut`; el inventario de shortcuts muestra registro, soporte y error.
-- Verificacion automatizada: 194 tests Rust, `cargo check`, `cargo fmt --check` y build frontend.
-- Smoke Windows con datos sinteticos: seleccion visual `THREE, TWO, ONE` pego `ONE, TWO, THREE`; la cuarta pulsacion no repitio; reemplazar pendientes pego la seleccion nueva; borrar el item pendiente no pego y mostro error manteniendolo; reiniciar devolvio `Paste Queue is empty`; Settings rechazo el duplicado `Alt+Meta+C` sin cerrar ni reemplazar el registro vigente.
-- Regresion 2026-08-26: el primer paste podia consumirse sin insertarse si el chord disparador seguia fisicamente presionado. `Paste next` ahora despacha en `Released`, mientras los demas shortcuts globales conservan `Pressed`. Smoke externo posterior: tres pulsaciones insertaron `B, C, A` y la cuarta solo informo cola vacia.
+- Verificacion automatizada: suite Rust canonica, incluidos los tests de estado de cola y dispatch press/release; `cargo check`, `cargo fmt --check` y build frontend.
+- Smoke de integracion con Windows Terminal y datos sinteticos: la seleccion visual `PQ_C_826, PQ_B_826, PQ_A_826` pego `PQ_A_826, PQ_B_826, PQ_C_826`; una cuarta pulsacion no agrego texto y mostro feedback de cola vacia sin tomar foco.
+- `Ctrl+Alt+Shift+V` se descarto durante ese smoke porque el target abria su command palette antes del paste. `Ctrl+Alt+F11` no produjo accion ni caracteres en el target y completo el flujo inverso.

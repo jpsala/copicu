@@ -98,7 +98,7 @@ Decision inicial para MVP 0:
 ## Paste Queue
 
 - `Paste next` es un shortcut global app-owned y configurable en `Settings > General`.
-- Default Windows: `Ctrl+Alt+Shift+V`. Se evita `Ctrl+Shift+V` porque ya fue observado como ocupado en el entorno; el registro real de Tauri decide disponibilidad.
+- Default Windows: `Ctrl+Alt+F11`. El smoke sobre Windows Terminal confirmo que no abre comandos ni escribe caracteres antes del paste. `Ctrl+Alt+Shift+V` se descarto porque el chord llegaba al target y abria su command palette antes de que Copicu pegara.
 - La validacion comparte el inventario de picker, comandos app-owned, saved views y scripts. Una combinacion invalida, duplicada o no registrable se rechaza sin desmontar registros vigentes.
 - `Paste next` procesa solo `Released`, para que el chord disparador ya no interfiera con el `Ctrl+V` sintetico. Pega como maximo un item por ciclo press/release y no muestra ni enfoca el picker; los demas shortcuts globales siguen procesando `Pressed`.
 

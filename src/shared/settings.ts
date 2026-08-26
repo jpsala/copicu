@@ -94,7 +94,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   schemaVersion: 1,
   general: {
     globalShortcut: "Ctrl+Shift+,",
-    pasteNextShortcut: "Ctrl+Alt+Shift+V",
+    pasteNextShortcut: "Ctrl+Alt+F11",
     launchOnStartup: false,
     captureEnabled: true,
   },

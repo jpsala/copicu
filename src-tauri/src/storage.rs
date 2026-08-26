@@ -57,7 +57,7 @@ const SETTINGS_SCHEMA_VERSION: u32 = 1;
 const DEFAULT_AI_ENDPOINT: &str = "https://openrouter.ai/api/v1";
 const DEFAULT_AI_MODEL: &str = "openai/gpt-4.1-mini";
 const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Shift+,";
-const DEFAULT_PASTE_NEXT_SHORTCUT: &str = "Ctrl+Alt+Shift+V";
+const DEFAULT_PASTE_NEXT_SHORTCUT: &str = "Ctrl+Alt+F11";
 const MIN_RETENTION_COUNT: i64 = 100;
 const MAX_RETENTION_COUNT: i64 = 100_000;
 
