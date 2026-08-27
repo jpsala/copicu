@@ -254,6 +254,20 @@ function structuredDraftMessage(
 export function classifyStructuredSearchDraft(
   query: string,
 ): StructuredSearchDraftClassification {
+  const trimmed = query.trim();
+  if (trimmed.startsWith("re:")) {
+    const pattern = trimmed.slice(3).trim();
+    return pattern
+      ? { kind: "complete", token: null, operator: "re", message: null, structured: true }
+      : {
+          kind: "incomplete",
+          token: "re:",
+          operator: "re",
+          message: "Add a regular expression after `re:`.",
+          structured: true,
+        };
+  }
+
   const tokens = draftTokens(query);
   if (tokens.length === 0) {
     return { kind: "plain", token: null, operator: null, message: null, structured: false };

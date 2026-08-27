@@ -1,8 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use rusqlite::functions::FunctionFlags;
 use rusqlite::{
     params, params_from_iter,
     types::{Type, Value},
-    Connection, OpenFlags, OptionalExtension,
+    Connection, Error as SqliteError, OpenFlags, OptionalExtension,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -61,6 +62,29 @@ const DEFAULT_PASTE_NEXT_SHORTCUT: &str = "Ctrl+Alt+F11";
 const MIN_RETENTION_COUNT: i64 = 100;
 const MAX_RETENTION_COUNT: i64 = 100_000;
 
+type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+fn add_regexp_function(conn: &Connection) -> Result<(), String> {
+    conn.create_scalar_function(
+        "regexp",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let regexp: Arc<regex::Regex> =
+                ctx.get_or_create_aux(0, |value| -> Result<_, BoxError> {
+                    Ok(regex::RegexBuilder::new(value.as_str()?)
+                        .case_insensitive(true)
+                        .build()?)
+                })?;
+            let text = ctx
+                .get_raw(1)
+                .as_str()
+                .map_err(|error| SqliteError::UserFunctionError(error.into()))?;
+            Ok(regexp.is_match(text))
+        },
+    )
+    .map_err(|error| format!("failed to register SQLite regexp function: {error}"))
+}
 #[cfg(test)]
 struct FindScanGate {
     reached: std::sync::Barrier,
@@ -983,6 +1007,7 @@ impl AppStorage {
         MIGRATIONS
             .to_latest(&mut conn)
             .map_err(|error| format!("failed to migrate sqlite database: {error}"))?;
+        add_regexp_function(&conn)?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -5053,6 +5078,59 @@ mod tests {
     }
 
     #[test]
+    fn list_page_uses_re_prefix_for_case_insensitive_regular_expressions() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "Invoice-42");
+        insert_test_text_item(&storage, 2, 10_002, "invoice draft");
+
+        let page = storage
+            .list_page(HistoryPageRequest {
+                query: r"re:^invoice-\d+$".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("regular expression search should load");
+
+        assert_eq!(ids(&page.items), vec![1]);
+        assert_eq!(page.filtered_count, Some(1));
+    }
+
+    #[test]
+    fn list_page_keeps_unprefixed_search_literal() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "Invoice-42");
+        insert_test_text_item(&storage, 2, 10_002, "invoice draft");
+
+        let page = storage
+            .list_page(HistoryPageRequest {
+                query: "invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("plain search should load");
+
+        assert_eq!(ids(&page.items), vec![2, 1]);
+        assert_eq!(page.filtered_count, Some(2));
+    }
+
+    #[test]
+    fn list_page_rejects_invalid_regular_expressions_without_querying() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "Invoice-42");
+
+        let error = match storage.list_page(HistoryPageRequest {
+            query: "re:(".to_string(),
+            cursor: None,
+            limit: Some(10),
+        }) {
+            Ok(_) => panic!("invalid regular expression should fail closed"),
+            Err(error) => error,
+        };
+
+        assert!(error.starts_with("Invalid regular expression:"));
+    }
+
+    #[test]
     fn history_search_explains_and_warns_for_ai_mode_without_planner() {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 10_001, "sqlite migration note");
@@ -7918,11 +7996,11 @@ mod tests {
     fn test_storage() -> AppStorage {
         let app_data_dir =
             std::env::temp_dir().join(format!("copicu-storage-test-{}", now_unix_ms()));
+        let conn = Connection::open_in_memory().expect("in-memory sqlite should open");
+        add_regexp_function(&conn).expect("regexp function should register");
 
         AppStorage {
-            conn: Arc::new(Mutex::new(
-                Connection::open_in_memory().expect("in-memory sqlite should open"),
-            )),
+            conn: Arc::new(Mutex::new(conn)),
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
             mutation_epoch: Arc::new(AtomicU64::new(0)),
@@ -7938,6 +8016,7 @@ mod tests {
         MIGRATIONS
             .to_latest(&mut conn)
             .expect("migrations should run");
+        add_regexp_function(&conn).expect("regexp function should register");
 
         AppStorage {
             conn: Arc::new(Mutex::new(conn)),

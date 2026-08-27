@@ -31,6 +31,8 @@ pub struct SearchPlanTextV1 {
     pub phrases: Vec<String>,
     #[serde(default)]
     pub exclude: Vec<String>,
+    #[serde(default)]
+    pub regex: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -596,7 +598,20 @@ pub(super) struct CompiledHistorySearch {
 }
 
 pub(super) fn search_plan_from_query(query: &str) -> SearchPlanV1 {
-    parsed_query_to_search_plan(parse_history_query(query))
+    let trimmed = query.trim();
+    if let Some(pattern) = trimmed.strip_prefix("re:") {
+        return SearchPlanV1 {
+            schema_version: 1,
+            text: Some(SearchPlanTextV1 {
+                regex: Some(pattern.trim().to_string()),
+                ..SearchPlanTextV1::default()
+            }),
+            filters: None,
+            sort: Vec::new(),
+            limit: None,
+        };
+    }
+    parsed_query_to_search_plan(parse_history_query(trimmed))
 }
 
 fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
@@ -670,6 +685,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
                 || !text.any.is_empty()
                 || !text.phrases.is_empty()
                 || !text.exclude.is_empty()
+                || text.regex.is_some()
         }),
         filters: Some(filters).filter(|filters| !filters.is_empty()),
         sort: Vec::new(),
@@ -739,6 +755,13 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
         }
         for term in clean_values(&text.exclude) {
             push_text_like_clause(&mut clauses, &mut params, term, true);
+        }
+        if let Some(pattern) = text.regex.as_deref() {
+            regex::RegexBuilder::new(pattern)
+                .case_insensitive(true)
+                .build()
+                .map_err(|error| format!("Invalid regular expression: {error}"))?;
+            push_text_regex_clause(&mut clauses, &mut params, pattern);
         }
     }
 
@@ -1196,6 +1219,29 @@ fn push_text_like_clause(
     push_field_like_clause(clauses, params, &fields, term, negated);
 }
 
+fn push_text_regex_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, pattern: &str) {
+    let fields = [
+        "COALESCE(text, '')",
+        "COALESCE(title, '')",
+        "COALESCE(notes, '')",
+        "COALESCE(tags, '')",
+        "COALESCE(mime_primary, '')",
+        "content_kind",
+        "COALESCE(context_search_text, '')",
+    ];
+    clauses.push(format!(
+        "({})",
+        fields
+            .iter()
+            .map(|field| format!("regexp(?, {field})"))
+            .collect::<Vec<_>>()
+            .join(" OR ")
+    ));
+    for _ in fields {
+        params.push(Value::Text(pattern.to_string()));
+    }
+}
+
 fn push_field_like_clause(
     clauses: &mut Vec<String>,
     params: &mut Vec<Value>,
@@ -1377,6 +1423,25 @@ pub(super) fn explain_history_query(query: &str) -> String {
 pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation {
     let mut chips = Vec::new();
     let mut diagnostics = Vec::new();
+    if let Some(pattern) = query.strip_prefix("re:") {
+        if pattern.trim().is_empty() {
+            diagnostics.push(search_diagnostic(
+                "error",
+                "missingValue",
+                "Add a regular expression after `re:`.",
+            ));
+        } else {
+            chips.push(HistorySearchChip {
+                label: query.to_string(),
+                query_without_clause: String::new(),
+            });
+        }
+        return HistorySearchExplanation {
+            version: 1,
+            chips,
+            diagnostics,
+        };
+    }
 
     for token in tokenize_query(query) {
         if token.has_unclosed_quote {

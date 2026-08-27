@@ -273,7 +273,7 @@ const findLargeRebaseHistory = Array.from({ length: 2_000 }, (_, index) => ({
 }));
 
 const makeCanonicalSearchPlan = (overrides: {
-  text?: Partial<{ all: string[]; any: string[]; phrases: string[]; exclude: string[] }> | null;
+  text?: Partial<{ all: string[]; any: string[]; phrases: string[]; exclude: string[]; regex: string | null }> | null;
   filters?: Partial<Record<string, unknown>> | null;
   sort?: Array<{ field: "created" | "lastUsed" | "lastCopied"; direction: "asc" | "desc" }>;
   limit?: number | null;
@@ -286,6 +286,7 @@ const makeCanonicalSearchPlan = (overrides: {
         any: [],
         phrases: [],
         exclude: [],
+        regex: null,
         ...overrides.text,
       },
   filters: overrides.filters === null
@@ -686,17 +687,18 @@ async function mockTauriInvoke(
       }
       let text = null;
       if (rawPlan.text !== undefined && rawPlan.text !== null) {
-        if (!hasOnlyKeys(rawPlan.text, ["all", "any", "phrases", "exclude"])) {
+        if (!hasOnlyKeys(rawPlan.text, ["all", "any", "phrases", "exclude", "regex"])) {
           return null;
         }
         const all = normalizeStringArray(rawPlan.text.all);
         const any = normalizeStringArray(rawPlan.text.any);
         const phrases = normalizeStringArray(rawPlan.text.phrases);
         const exclude = normalizeStringArray(rawPlan.text.exclude);
-        if (!all || !any || !phrases || !exclude) {
+        const regex = rawPlan.text.regex;
+        if (!all || !any || !phrases || !exclude || (regex !== undefined && regex !== null && typeof regex !== "string")) {
           return null;
         }
-        text = { all, any, phrases, exclude };
+        text = { all, any, phrases, exclude, regex: regex ?? null };
       }
 
       let filters = null;
@@ -1636,7 +1638,17 @@ async function mockTauriInvoke(
             if (!descriptorResult.supported) {
               throw new Error("history mock cannot evaluate the appliedDescriptor plan");
             }
-            const queryTokens = (request.query ?? "").trim().split(/\s+/).filter(Boolean);
+            const rawRequestQuery = (request.query ?? "").trim();
+            const regexPattern = rawRequestQuery.startsWith("re:") ? rawRequestQuery.slice(3).trim() : null;
+            let regex: RegExp | null = null;
+            if (regexPattern !== null) {
+              try {
+                regex = new RegExp(regexPattern, "iu");
+              } catch (error) {
+                throw new Error(`Invalid regular expression: ${String(error)}`);
+              }
+            }
+            const queryTokens = rawRequestQuery.split(/\s+/).filter(Boolean);
             const knownChip = (token: string) => /^(?:-?(?:tag|tags|kind|type|is|mime|has|meta|metadata|title|note|notes|ctx|context|app|program|process|window|domain|site|source|format|fmt|after|since|before|until|on):.+|#.+)$/i.test(token);
             const diagnostics = queryTokens.includes("kind:")
               ? [{ severity: "error", code: "missingValue", message: "Add a value after `kind:`." }]
@@ -1659,6 +1671,16 @@ async function mockTauriInvoke(
               ? []
               : mockOptions.findAppliedDescriptor
               ? descriptorResult.items
+              : regex
+              ? sourceItems.filter((item: Record<string, unknown>) => [
+                  item.text,
+                  item.title,
+                  item.notes,
+                  item.tags,
+                  item.mime_primary,
+                  item.content_kind,
+                  item.context_search_text,
+                ].some((value) => regex.test(typeof value === "string" ? value : "")))
               : requestQuery
               ? sourceItems.filter((item: any) => {
                   if (requestQuery === "is:marked") {
@@ -4690,7 +4712,7 @@ test("search composer mode toggles with icon button", async ({ page }) => {
   const search = page.getByLabel("Search clipboard history");
   const toggle = page.getByRole("button", { name: "Search mode, switch to AI mode" });
 
-  await expect(search).toHaveAttribute("placeholder", "Search clips — meta:work, #tag, ai:find invoices");
+  await expect(search).toHaveAttribute("placeholder", "Search clips — re:pattern, meta:work, #tag, ai:find invoices");
   await expect(search).toHaveJSProperty("tagName", "INPUT");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(toggle).toHaveAttribute("data-mode", "search");
@@ -4710,8 +4732,29 @@ test("search composer mode toggles with icon button", async ({ page }) => {
     "data-mode",
     "search",
   );
-  await expect(search).toHaveAttribute("placeholder", "Search clips — meta:work, #tag, ai:find invoices");
+  await expect(search).toHaveAttribute("placeholder", "Search clips — re:pattern, meta:work, #tag, ai:find invoices");
   await expect(search).toHaveJSProperty("tagName", "INPUT");
+});
+
+test("regex search, literal search, and invalid patterns keep the picker coherent", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  const markdownItem = page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ });
+  const unbrokenItem = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
+
+  await search.fill("re:^## COPICU_SYNTH_MARKDOWN");
+  await expect(markdownItem).toBeVisible();
+  await expect(unbrokenItem).toHaveCount(0);
+
+  await search.fill("COPICU_SYNTH_MARKDOWN");
+  await expect(markdownItem).toBeVisible();
+
+  await search.fill("re:(");
+  await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  await expect(markdownItem).toBeVisible();
+  await expect(search).toHaveValue("re:(");
 });
 
 test("plain query in AI composer still runs local search", async ({ page }) => {

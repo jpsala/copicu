@@ -19,6 +19,15 @@ test("structured draft classifier holds incomplete operators and quotes", () => 
   assert.equal(classifyStructuredSearchDraft("tag:work").kind, "complete");
 });
 
+test("regular expressions require the explicit re prefix", () => {
+  const empty = classifyStructuredSearchDraft("re:");
+  assert.equal(empty.kind, "incomplete");
+  assert.equal(empty.message, "Add a regular expression after `re:`.");
+  assert.equal(empty.structured, true);
+  assert.equal(classifyStructuredSearchDraft("re:^invoice-\\d+$").kind, "complete");
+  assert.equal(classifyStructuredSearchDraft("invoice re:paid").kind, "plain");
+});
+
 test("closed structured values fail closed while date and free values remain applicable", () => {
   assert.equal(classifyStructuredSearchDraft("kind:").kind, "incomplete");
   assert.equal(classifyStructuredSearchDraft("kind:not-a-kind").kind, "invalid");

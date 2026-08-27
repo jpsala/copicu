@@ -5560,9 +5560,9 @@ function App() {
       ? `search-suggestion-${activeSearchSuggestionIndex}`
       : undefined,
     value: query,
-    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — meta:work, #tag, ai:find invoices',
+    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — re:pattern, meta:work, #tag, ai:find invoices',
     title:
-      'Search help: use plain text, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
+      'Search help: use plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const nextQuery = event.currentTarget.value;
       if (clearSearchPendingRef.current) {
@@ -7527,6 +7527,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>sqlite migration</code></dt><dd>All terms must match.</dd></div>
               <div><dt><code>"exact phrase"</code></dt><dd>Keep words together.</dd></div>
               <div><dt><code>-draft</code></dt><dd>Exclude matching clips.</dd></div>
+              <div><dt><code>re:^invoice-\d+$</code></dt><dd>Match a case-insensitive regular expression across searchable fields.</dd></div>
             </dl>
           </section>
 
