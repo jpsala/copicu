@@ -4753,6 +4753,7 @@ test("regex search, literal search, and invalid patterns keep the picker coheren
 
   await search.fill("re:(");
   await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
+  await expect(page.getByRole("alert")).toContainText("Invalid regular expression");
   await expect(markdownItem).toBeVisible();
   await expect(search).toHaveValue("re:(");
 });

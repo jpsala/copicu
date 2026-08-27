@@ -5131,6 +5131,38 @@ mod tests {
     }
 
     #[test]
+    fn empty_regular_expression_prefix_returns_missing_value_diagnostic() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "Invoice-42");
+
+        let page = storage
+            .history_search(HistorySearchRequest {
+                query: "re:".to_string(),
+                display_query: None,
+                cursor: None,
+                limit: Some(10),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: true,
+                explain: true,
+                ai_context: None,
+                applied_descriptor: None,
+            })
+            .expect("empty regex prefix should return a diagnostic page");
+
+        assert!(page.items.is_empty());
+        assert_eq!(page.filtered_count, Some(0));
+        assert!(page
+            .query_explanation
+            .as_ref()
+            .expect("explain response")
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "missingValue" && diagnostic.severity == "error"));
+    }
+
+    #[test]
     fn history_search_explains_and_warns_for_ai_mode_without_planner() {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 10_001, "sqlite migration note");

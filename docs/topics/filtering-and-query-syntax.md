@@ -122,7 +122,7 @@ El boton `Search` aplica explicitamente desde ambos modos. El control rapido con
 - La respuesta inicial sin filtro puede llegar despues de que el usuario haya escrito un draft retenido; solo se acepta para publicar el snapshot inicial cuando no hay un resultado aplicado. Las respuestas stale de consultas posteriores se descartan por secuencia/generacion.
 - El benchmark de Find usa historial sintetico y mide el escaneo acotado a 50k items bajo escrituras concurrentes; no habilita FTS ni envia contenido a servicios externos.
 
-El prefijo inicial exacto `re:` activa una expresion regular case-insensitive sobre los mismos campos que la busqueda plain. Sin ese prefijo, metacaracteres como `.` o `*` conservan el tratamiento literal previo. `re:` sin patron se retiene como draft incompleto; un patron invalido falla cerrado, muestra el error y conserva el snapshot aplicado anterior.
+El prefijo inicial exacto `re:` activa una expresion regular case-insensitive sobre los mismos campos que la busqueda plain. Sin ese prefijo, metacaracteres como `.` o `*` conservan el tratamiento literal previo. El motor es el crate `regex` de Rust: sin lookarounds ni backreferences. El prefijo es exclusivo: no se puede combinar con otros filtros en la misma query. `re:` sin patron se retiene como draft incompleto; un patron invalido falla cerrado, muestra el error y conserva el snapshot aplicado anterior.
 
 ## Filter Lock
 

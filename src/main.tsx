@@ -6580,7 +6580,7 @@ function App() {
 
         {historyError ? (
           <UiAlert className="error-text" color="red" variant="light" role="alert" aria-live="assertive">
-            <span>{historyErrorCopy}</span>
+            <span>{historyErrorCopy} {historyError}</span>
             <UiButton
               type="button"
               size="compact-xs"
@@ -6615,7 +6615,7 @@ function App() {
               <li className="empty-history">
                 {historyError ? (
                   <span className="empty-loading" role="status" aria-live="polite">
-                    <span>{historyErrorCopy}</span>
+                    <span>{historyErrorCopy} {historyError}</span>
                   </span>
                 ) : feedLoading ? (
                   historyLoadingDelayed ? (
