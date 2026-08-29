@@ -42,11 +42,14 @@ use tauri::{
     WindowEvent,
 };
 #[cfg(not(test))]
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-#[cfg(not(test))]
 use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(not(test))]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+#[cfg(all(not(test), target_os = "windows"))]
+use winreg::{
+    enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_BINARY},
+    RegKey, RegValue,
+};
 
 #[cfg(not(test))]
 const MAIN_WINDOW_LABEL: &str = surface_registry::MAIN;
@@ -274,6 +277,73 @@ struct AutostartStatus {
     supported: bool,
     enabled: bool,
     reason: Option<String>,
+}
+fn quoted_executable_command(exe: &std::path::Path) -> String {
+    format!("\"{}\"", exe.to_string_lossy())
+}
+
+fn paths_equal_case_insensitive(left: &std::path::Path, right: &std::path::Path) -> bool {
+    left.to_string_lossy()
+        .eq_ignore_ascii_case(right.to_string_lossy().as_ref())
+}
+
+fn command_points_to_exe(command: &str, exe: &std::path::Path) -> bool {
+    let command = command.trim_start();
+    let Some(command_exe) = command
+        .strip_prefix('"')
+        .and_then(|rest| rest.find('"').map(|end| &rest[..end]))
+    else {
+        return command
+            .split_whitespace()
+            .next()
+            .is_some_and(|token| paths_equal_case_insensitive(std::path::Path::new(token), exe));
+    };
+    paths_equal_case_insensitive(std::path::Path::new(command_exe), exe)
+}
+
+fn startup_approved_is_disabled(value: &[u8]) -> bool {
+    value.first() == Some(&3)
+}
+
+#[cfg(test)]
+mod autostart_helper_tests {
+    use super::{
+        command_points_to_exe, paths_equal_case_insensitive, quoted_executable_command,
+        startup_approved_is_disabled,
+    };
+    use std::path::Path;
+
+    #[test]
+    fn quotes_executable_path_for_run_value() {
+        assert_eq!(
+            quoted_executable_command(Path::new(r"C:\Program Files\Copicu\copicu.exe")),
+            r#""C:\Program Files\Copicu\copicu.exe""#
+        );
+    }
+
+    #[test]
+    fn compares_run_command_executable_case_insensitively() {
+        let exe = Path::new(r"C:\Program Files\Copicu\copicu.exe");
+        assert!(command_points_to_exe(
+            r#""c:\program files\copicu\COPICU.EXE" --background"#,
+            exe
+        ));
+        assert!(!command_points_to_exe(
+            r#""C:\Program Files\Other\copicu.exe""#,
+            exe
+        ));
+        assert!(paths_equal_case_insensitive(
+            exe,
+            Path::new(r"c:\PROGRAM FILES\COPICU\COPICU.EXE")
+        ));
+    }
+
+    #[test]
+    fn only_disabled_startup_approved_flag_is_disabled() {
+        assert!(startup_approved_is_disabled(&[3, 0, 0, 0]));
+        assert!(!startup_approved_is_disabled(&[2, 0, 0, 0]));
+        assert!(!startup_approved_is_disabled(&[]));
+    }
 }
 
 #[cfg(not(test))]
@@ -753,7 +823,141 @@ fn set_main_window_pin_state_on_main_thread<R: tauri::Runtime>(
         .is_always_on_top()
         .map_err(|error| format!("failed to read main window pin state after set: {error}"))?;
     emit_picker_pin_state(app, actual_pinned);
+
     Ok(actual_pinned)
+}
+#[cfg(all(not(test), target_os = "windows"))]
+const AUTOSTART_RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(all(not(test), target_os = "windows"))]
+const AUTOSTART_APPROVED_RUN_KEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+#[cfg(all(not(test), target_os = "windows"))]
+const AUTOSTART_APPROVED_ENABLED: [u8; 12] = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn registry_entry_missing(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn read_autostart_registry_state(canonical_name: &str) -> Result<bool, String> {
+    let current_exe = std::env::current_exe().map_err(|error| {
+        format!("failed to resolve current executable for startup state: {error}")
+    })?;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run = match hkcu.open_subkey_with_flags(AUTOSTART_RUN_KEY, KEY_READ) {
+        Ok(key) => key,
+        Err(error) if registry_entry_missing(&error) => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "failed to open startup Run key for reading: {error}"
+            ));
+        }
+    };
+    let command = match run.get_value::<String, _>(canonical_name) {
+        Ok(command) => command,
+        Err(error) if registry_entry_missing(&error) => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "failed to read startup Run value {canonical_name}: {error}"
+            ));
+        }
+    };
+    if !command_points_to_exe(&command, &current_exe) {
+        return Ok(false);
+    }
+
+    let approved = match hkcu.open_subkey_with_flags(AUTOSTART_APPROVED_RUN_KEY, KEY_READ) {
+        Ok(key) => key,
+        Err(error) if registry_entry_missing(&error) => return Ok(true),
+        Err(error) => {
+            return Err(format!(
+                "failed to open StartupApproved Run key for reading: {error}"
+            ));
+        }
+    };
+    let value = match approved.get_raw_value(canonical_name) {
+        Ok(value) => value,
+        Err(error) if registry_entry_missing(&error) => return Ok(true),
+        Err(error) => {
+            return Err(format!(
+                "failed to read StartupApproved value {canonical_name}: {error}"
+            ));
+        }
+    };
+    Ok(!startup_approved_is_disabled(&value.bytes))
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn enable_autostart_registry(canonical_name: &str) -> Result<(), String> {
+    let current_exe = std::env::current_exe()
+        .map_err(|error| format!("failed to resolve current executable for startup: {error}"))?;
+    let command = quoted_executable_command(&current_exe);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (run, _) = hkcu
+        .create_subkey(AUTOSTART_RUN_KEY)
+        .map_err(|error| format!("failed to create startup Run key: {error}"))?;
+    run.set_value(canonical_name, &command)
+        .map_err(|error| format!("failed to write startup Run value {canonical_name}: {error}"))?;
+
+    let approved = match hkcu.create_subkey(AUTOSTART_APPROVED_RUN_KEY) {
+        Ok((key, _)) => key,
+        Err(error) => {
+            let _ = run.delete_value(canonical_name);
+            return Err(format!("failed to create StartupApproved Run key: {error}"));
+        }
+    };
+    if let Err(error) = approved.set_raw_value(
+        canonical_name,
+        &RegValue {
+            vtype: REG_BINARY,
+            bytes: AUTOSTART_APPROVED_ENABLED.to_vec(),
+        },
+    ) {
+        let _ = run.delete_value(canonical_name);
+        return Err(format!(
+            "failed to enable StartupApproved value {canonical_name}: {error}"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn delete_autostart_value(
+    hkcu: &RegKey,
+    key_path: &str,
+    value_name: &str,
+    key_description: &str,
+) -> Result<(), String> {
+    let key = match hkcu.open_subkey_with_flags(key_path, KEY_WRITE) {
+        Ok(key) => key,
+        Err(error) if registry_entry_missing(&error) => return Ok(()),
+        Err(error) => {
+            return Err(format!(
+                "failed to open {key_description} key for deletion: {error}"
+            ));
+        }
+    };
+    match key.delete_value(value_name) {
+        Ok(()) => Ok(()),
+        Err(error) if registry_entry_missing(&error) => Ok(()),
+        Err(error) => Err(format!(
+            "failed to delete {key_description} value {value_name}: {error}"
+        )),
+    }
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+fn disable_autostart_registry(canonical_name: &str) -> Result<(), String> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    delete_autostart_value(
+        &hkcu,
+        AUTOSTART_APPROVED_RUN_KEY,
+        canonical_name,
+        "StartupApproved Run",
+    )?;
+    delete_autostart_value(&hkcu, AUTOSTART_RUN_KEY, canonical_name, "startup Run")?;
+    Ok(())
 }
 
 #[cfg(not(test))]
@@ -826,17 +1030,27 @@ fn get_autostart_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Autostar
         };
     }
 
-    match app.autolaunch().is_enabled() {
-        Ok(enabled) => AutostartStatus {
-            supported: true,
-            enabled,
-            reason: None,
-        },
-        Err(error) => AutostartStatus {
-            supported: true,
-            enabled: false,
-            reason: Some(format!("failed to read launch on startup state: {error}")),
-        },
+    #[cfg(target_os = "windows")]
+    {
+        let canonical_name = app.package_info().name.clone();
+        return match read_autostart_registry_state(&canonical_name) {
+            Ok(enabled) => AutostartStatus {
+                supported: true,
+                enabled,
+                reason: None,
+            },
+            Err(error) => AutostartStatus {
+                supported: true,
+                enabled: false,
+                reason: Some(error),
+            },
+        };
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        unreachable!("unsupported platforms return before reading autostart state");
     }
 }
 
@@ -1913,10 +2127,11 @@ fn update_settings(
     let current_settings = storage.get_settings()?;
     validate_paste_next_shortcut(&app, &storage, &settings)?;
     apply_paste_next_shortcut_from_settings(&app, &settings)?;
+    let requested_launch_on_startup = settings.general.launch_on_startup;
     if let Err(error) = sync_autostart_setting(
         &app,
         current_settings.general.launch_on_startup,
-        settings.general.launch_on_startup,
+        requested_launch_on_startup,
     ) {
         if let Err(restore_error) = apply_paste_next_shortcut_from_settings(&app, &current_settings)
         {
@@ -1933,6 +2148,13 @@ fn update_settings(
                 eprintln!(
                     "paste next shortcut restore failed after settings error: {restore_error}"
                 );
+            }
+            if let Err(restore_error) = sync_autostart_setting(
+                &app,
+                requested_launch_on_startup,
+                current_settings.general.launch_on_startup,
+            ) {
+                eprintln!("autostart restore failed after settings error: {restore_error}");
             }
             return Err(error);
         }
@@ -3283,10 +3505,6 @@ pub fn run() {
             activate_item
         ])
         .setup(|app| {
-            app.handle().plugin(tauri_plugin_autostart::init(
-                MacosLauncher::LaunchAgent,
-                None,
-            ))?;
             app.handle().plugin(tauri_plugin_dialog::init())?;
             log_shortcut_registration(app);
             let app_data_dir = std::env::var_os("COPICU_APP_DATA_DIR")
@@ -4195,23 +4413,20 @@ fn sync_autostart_setting<R: tauri::Runtime>(
         return Ok(());
     }
 
-    let autostart = app.autolaunch();
     let canonical_name = app.package_info().name.clone();
-    if next_enabled {
-        autostart
-            .enable()
-            .map_err(|error| format!("failed to enable launch on startup: {error}"))?;
-        cleanup_legacy_autostart_entries(&canonical_name);
-    } else {
-        let was_enabled = autostart.is_enabled().unwrap_or(false);
-        if was_enabled {
-            if let Err(error) = autostart.disable() {
-                if autostart.is_enabled().unwrap_or(false) {
-                    return Err(format!("failed to disable launch on startup: {error}"));
-                }
-            }
+    #[cfg(target_os = "windows")]
+    {
+        if next_enabled {
+            enable_autostart_registry(&canonical_name)?;
+        } else {
+            disable_autostart_registry(&canonical_name)?;
         }
         cleanup_legacy_autostart_entries(&canonical_name);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, canonical_name, next_enabled);
+        unreachable!("unsupported platforms return before changing autostart state");
     }
     Ok(())
 }
@@ -4273,34 +4488,33 @@ fn current_exe_looks_installed() -> bool {
     paths_equal_case_insensitive(&current_exe, &expected)
 }
 
-#[cfg(all(not(test), target_os = "windows"))]
-fn paths_equal_case_insensitive(left: &std::path::Path, right: &std::path::Path) -> bool {
-    left.to_string_lossy()
-        .eq_ignore_ascii_case(right.to_string_lossy().as_ref())
-}
-
 #[cfg(not(test))]
 fn cleanup_legacy_autostart_entries(canonical_name: &str) {
     #[cfg(target_os = "windows")]
     {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let run = match hkcu.open_subkey_with_flags(AUTOSTART_RUN_KEY, KEY_WRITE) {
+            Ok(key) => key,
+            Err(error) if registry_entry_missing(&error) => return,
+            Err(error) => {
+                diag_log(
+                    "autostart.cleanup.error",
+                    format!("failed to open startup Run key: {error}"),
+                );
+                return;
+            }
+        };
         for name in ["Copicu", "copicu"] {
             if name.eq_ignore_ascii_case(canonical_name) {
                 continue;
             }
-            let status = std::process::Command::new("reg")
-                .args([
-                    "delete",
-                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                    "/v",
-                    name,
-                    "/f",
-                ])
-                .status();
-            if let Err(error) = status {
-                diag_log(
-                    "autostart.cleanup.error",
-                    format!("name={name} error={error}"),
-                );
+            if let Err(error) = run.delete_value(name) {
+                if !registry_entry_missing(&error) {
+                    diag_log(
+                        "autostart.cleanup.error",
+                        format!("failed to delete legacy value {name}: {error}"),
+                    );
+                }
             }
         }
     }

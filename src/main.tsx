@@ -544,6 +544,16 @@ const NOTIFICATIONS_WINDOW_WIDTH = 340;
 const NOTIFICATION_ROW_HEIGHT = 78;
 const NOTIFICATIONS_WINDOW_CHROME = 10;
 const NOTIFICATIONS_WINDOW_MAX_HEIGHT = 430;
+const FEED_ITEM_MIN_HEIGHT = 62;
+const FEED_ITEM_VERTICAL_CHROME = 18;
+const FEED_ITEM_GRID_ROW_GAP = 5;
+const FEED_ITEM_TITLE_ESTIMATE = 21;
+const FEED_ITEM_METADATA_VERTICAL_CHROME = 13;
+const FEED_ITEM_METADATA_LINE_HEIGHT = 15;
+const FEED_ITEM_PREVIEW_LINE_HEIGHT = 17;
+const TEXT_PREVIEW_ESTIMATED_MAX_LINES = 4;
+const TEXT_PREVIEW_ESTIMATED_CHARS_PER_LINE = 72;
+const METADATA_ESTIMATED_CHARS_PER_LINE = 52;
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
@@ -1390,7 +1400,7 @@ function App() {
       if (item.content_kind === "image") {
         return 190;
       }
-      return hasMetadata(item) ? 132 : 108;
+      return estimateTextRowSize(item);
     },
     getItemKey: (index) => displayedHistory[index]?.id ?? `loader-${index}`,
     ...({ shouldAdjustScrollPositionOnItemSizeChange: () => false } as Record<string, unknown>),
@@ -6678,6 +6688,22 @@ function App() {
                 const itemDeleteTargets = itemIsMultiSelected && selectedIds.size > 0
                   ? effectiveSelection
                   : [item];
+                const imageWidth = typeof item.width === "number"
+                  && Number.isInteger(item.width)
+                  && item.width > 0
+                  && typeof item.height === "number"
+                  && Number.isInteger(item.height)
+                  && item.height > 0
+                  ? item.width
+                  : undefined;
+                const imageHeight = typeof item.height === "number"
+                  && Number.isInteger(item.height)
+                  && item.height > 0
+                  && typeof item.width === "number"
+                  && Number.isInteger(item.width)
+                  && item.width > 0
+                  ? item.height
+                  : undefined;
 
                 return (
                   <li
@@ -6872,6 +6898,8 @@ function App() {
                         <img
                           src={item.thumbnail_data_url}
                           alt=""
+                          width={imageWidth}
+                          height={imageHeight}
                           onLoad={measureImageRow}
                         />
                       </span>
@@ -8507,8 +8535,46 @@ function metadataNotesPreview(notes: string | null, tags: string | null) {
     .trim();
 }
 
-function hasMetadata(item: HistoryItem) {
-  return Boolean(item.tags?.trim() || item.notes?.trim());
+function estimateTextRowSize(item: HistoryItem) {
+  const visiblePreview = item.text.trim();
+  const previewLines = visiblePreview
+    ? Math.min(
+        TEXT_PREVIEW_ESTIMATED_MAX_LINES,
+        Math.max(
+          visiblePreview.split(/\r\n|\r|\n/).length,
+          Math.ceil(visiblePreview.length / TEXT_PREVIEW_ESTIMATED_CHARS_PER_LINE),
+        ),
+      )
+    : 0;
+  const metadataParts = [
+    item.tags?.trim() ?? "",
+    metadataNotesPreview(item.notes, item.tags),
+  ].filter(Boolean);
+  const metadataLength = metadataParts.reduce((total, part) => total + part.length, 0);
+  const metadataExplicitLines = metadataParts.reduce(
+    (maximum, part) => Math.max(maximum, part.split(/\r\n|\r|\n/).length),
+    0,
+  );
+  const metadataLines = metadataLength
+    ? Math.max(
+        metadataExplicitLines,
+        Math.ceil(metadataLength / METADATA_ESTIMATED_CHARS_PER_LINE),
+      )
+    : 0;
+  const estimatedHeight =
+    FEED_ITEM_VERTICAL_CHROME
+    + (item.title ? FEED_ITEM_TITLE_ESTIMATE : 0)
+    + (
+      metadataLines > 0
+        ? FEED_ITEM_METADATA_VERTICAL_CHROME + metadataLines * FEED_ITEM_METADATA_LINE_HEIGHT
+        : 0
+    )
+    + (
+      previewLines > 0
+        ? FEED_ITEM_GRID_ROW_GAP + previewLines * FEED_ITEM_PREVIEW_LINE_HEIGHT
+        : 0
+    );
+  return Math.max(FEED_ITEM_MIN_HEIGHT, estimatedHeight);
 }
 
 function markdownImages(text: string): MarkdownImage[] {

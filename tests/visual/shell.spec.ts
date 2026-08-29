@@ -3873,6 +3873,18 @@ test("compact previews expose only real overflow and keep inline editing stable"
   const longRow = page.locator("#history-item-1202");
   await expect(longRow).toBeVisible();
   await expect(shortRow.locator(".text-preview-overflow")).toHaveCount(0);
+  expect(await feedScroll.evaluate((feed) => getComputedStyle(feed).scrollbarGutter)).toBe("stable");
+  const imageDimensions = await page.locator(".image-preview img").evaluateAll((images) =>
+    images.map((image) => ({
+      width: image.getAttribute("width"),
+      height: image.getAttribute("height"),
+    })),
+  );
+  expect(imageDimensions).toEqual([
+    { width: "72", height: "48" },
+    { width: "120", height: "640" },
+    { width: "920", height: "96" },
+  ]);
 
   const expectedChars = Array.from(compactPreviewText).length;
   const overflow = longRow.locator(".text-preview-overflow");

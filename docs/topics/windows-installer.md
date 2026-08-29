@@ -161,16 +161,19 @@ El hook copia estos archivos a `$DOCUMENTS\Copicu\Scripts` solo cuando cada dest
 
 ## Launch On Windows Startup
 
-La opcion Settings -> General -> `Launch on Windows startup` usa `tauri-plugin-autostart`, que en Windows escribe `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con el app name de Tauri (`Copicu`) y marca `Explorer\StartupApproved\Run` como enabled cuando existe.
+La opcion Settings -> General -> `Launch on Windows startup` usa un backend Windows directo sobre `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con el app name de Tauri (`Copicu`) y `Explorer\StartupApproved\Run`.
 
-Hardening vigente desde `v0.3.2` (`ce27b55`):
+Hardening vigente:
 
 - Settings consulta `get_autostart_status` y muestra el estado real del OS, no solo el valor persistido en SQLite.
 - El toggle queda deshabilitado si la app corre en dev/debug/`COPICU_APP_DATA_DIR`/`COPICU_TAURI_DEV`, para no pisar el autostart de la instalada con una ruta dev.
-- `update_settings` bloquea cambios de autostart desde perfiles no instalados; en la instalada sincroniza de forma idempotente con el OS.
+- `update_settings` bloquea cambios desde perfiles no instalados, sincroniza el registro antes de persistir y revierte el registro si falla la persistencia.
+- Enable crea las claves faltantes, guarda `current_exe` entre comillas y escribe `StartupApproved` como `REG_BINARY` habilitado de 12 bytes. Esto evita que perfiles o rutas con espacios queden registrados pero no ejecutables.
+- Disable elimina `Run` y `StartupApproved` de forma idempotente, incluso si Windows habia marcado la entrada como deshabilitada.
+- `get_autostart_status` solo informa enabled cuando `Run` apunta al ejecutable instalado actual y `StartupApproved` no esta deshabilitado.
 - Al sincronizar, se limpian entradas legacy conocidas `Copicu`/`copicu` que no coincidan con el nombre canonico.
 
-Estado validado local: `HKCU Run\Copicu = C:\Users\jpsal\AppData\Local\Copicu\copicu.exe` y `StartupApproved\Run\Copicu = 020000000000000000000000`.
+Estado diagnosticado 2026-08-29: `StartupApproved\Run\Copicu` seguia enabled, pero `Run\Copicu` no existia; por eso Windows no podia iniciar Copicu aunque quedara un approval residual.
 
 Gotcha 2026-07-09: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH`, pero el password sigue siendo necesario. La clave nueva de `v0.3.7` vive localmente en `.codex-run/secrets/copicu-updater.key` con password en `.codex-run/secrets/copicu-updater.password`; ambos estan ignorados y deben respaldarse juntos fuera del repo. Si el archivo de password tiene BOM UTF-8, decodificarlo como `utf-8-sig` antes de exportarlo: Tauri interpreta el BOM como parte del password y rechaza la clave.
 

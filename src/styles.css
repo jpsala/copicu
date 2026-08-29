@@ -1425,6 +1425,7 @@ button {
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
+  scrollbar-gutter: stable;
   scroll-padding: 4px;
 }
 
