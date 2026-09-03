@@ -94,7 +94,7 @@ import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
 import { SavedHistoryViews } from "./SavedHistoryViews";
 import { Scenarios } from "./Scenarios";
-import { checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
+import { checkDownloadInstallAndRelaunch, checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
 
 
 type HistoryItem = {
@@ -969,7 +969,7 @@ export function SettingsWindowApp() {
   const [autostartStatus, setAutostartStatus] = useState<AutostartStatus | null>(null);
   const [appInfo, setAppInfo] = useState<AppAboutInfo | null>(null);
   const [updateStatus, setUpdateStatus] = useState<AutoUpdateStatus | null>(null);
-  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
+  const [updaterAction, setUpdaterAction] = useState<"idle" | "checking" | "updating">("idle");
   const [tags, setTags] = useState<TagSummary[]>([]);
   const [tagsLoading, setTagsLoading] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedHistoryView[]>([]);
@@ -1165,10 +1165,10 @@ export function SettingsWindowApp() {
   );
 
   const checkForUpdatesNow = useCallback(async () => {
-    if (checkingForUpdates) {
+    if (updaterAction !== "idle") {
       return;
     }
-    setCheckingForUpdates(true);
+    setUpdaterAction("checking");
     setError(null);
     try {
       const update = await checkForAvailableUpdate({
@@ -1178,7 +1178,7 @@ export function SettingsWindowApp() {
         update
           ? {
               title: "Update available",
-              message: `Version ${update.version} is available. Automatic updates can install it if enabled.`,
+              message: `Version ${update.version} is available. Install it now when you're ready.`,
               tone: "success",
             }
           : {
@@ -1198,9 +1198,34 @@ export function SettingsWindowApp() {
         durationMs: STICKY_TOAST_DURATION_MS,
       });
     } finally {
-      setCheckingForUpdates(false);
+      setUpdaterAction("idle");
     }
-  }, [appInfo, checkingForUpdates, pushToast]);
+  }, [appInfo, pushToast, updaterAction]);
+
+  const updateNow = useCallback(async () => {
+    if (updaterAction !== "idle") {
+      return;
+    }
+    setUpdaterAction("updating");
+    setError(null);
+    try {
+      await checkDownloadInstallAndRelaunch({
+        onStatus: (status) => setUpdateStatus(status),
+      });
+    } catch (updateError) {
+      const message = String(updateError);
+      setError(message);
+      setUpdateStatus({ phase: "idle", message });
+      pushToast({
+        title: "Update failed",
+        message,
+        tone: "danger",
+        durationMs: STICKY_TOAST_DURATION_MS,
+      });
+    } finally {
+      setUpdaterAction("idle");
+    }
+  }, [pushToast, updaterAction]);
 
   const refreshSavedViews = useCallback(async () => {
     setSavedViewsLoading(true);
@@ -1724,7 +1749,7 @@ export function SettingsWindowApp() {
           autostartStatus={autostartStatus}
           appInfo={appInfo}
           updateStatus={updateStatus}
-          checkingForUpdates={checkingForUpdates}
+          updaterAction={updaterAction}
           onDraftChange={setDraft}
           onQueryChange={setQuery}
           onRunScript={runStandaloneScriptAction}
@@ -1749,6 +1774,7 @@ export function SettingsWindowApp() {
           onDetectExternalEditor={() => void detectExternalEditor()}
           onApplyExternalEditorShortcut={(shortcut) => void applyExternalEditorShortcut(shortcut)}
           onCheckUpdates={() => void checkForUpdatesNow()}
+          onUpdateNow={() => void updateNow()}
           onCancel={closeWindow}
           onSave={() => void saveSettings()}
         />
@@ -1939,7 +1965,7 @@ type SettingsPanelProps = {
   autostartStatus: AutostartStatus | null;
   appInfo: AppAboutInfo | null;
   updateStatus: AutoUpdateStatus | null;
-  checkingForUpdates: boolean;
+  updaterAction: "idle" | "checking" | "updating";
   onDraftChange: (settings: AppSettings) => void;
   onQueryChange: (query: string) => void;
   onRunScript: (action: ActionDefinition) => void;
@@ -1967,6 +1993,7 @@ type SettingsPanelProps = {
   onDetectExternalEditor: () => void;
   onApplyExternalEditorShortcut: (shortcut: string) => void;
   onCheckUpdates: () => void;
+  onUpdateNow: () => void;
   onCancel: () => void;
   onSave: () => void;
 };
@@ -2031,7 +2058,7 @@ function SettingsPanel({
   autostartStatus,
   appInfo,
   updateStatus,
-  checkingForUpdates,
+  updaterAction,
   onDraftChange,
   onQueryChange,
   onRunScript,
@@ -2056,6 +2083,7 @@ function SettingsPanel({
   onDetectExternalEditor,
   onApplyExternalEditorShortcut,
   onCheckUpdates,
+  onUpdateNow,
   onCancel,
   onSave,
 }: SettingsPanelProps) {
@@ -3243,12 +3271,19 @@ function SettingsPanel({
                   >
                     <div className="about-update-panel" aria-label="Update status">
                       <div>
-                        <strong>{checkingForUpdates ? "Checking…" : "Updater status"}</strong>
+                        <strong>{updaterAction === "checking" ? "Checking…" : updaterAction === "updating" ? "Updating…" : "Updater status"}</strong>
                         <p>{updateStatusMessage(updateStatus)}</p>
                       </div>
-                      <UiButton type="button" variant="default" loading={checkingForUpdates} onClick={onCheckUpdates}>
-                        Check now
-                      </UiButton>
+                      <div className="about-update-actions">
+                        <UiButton type="button" variant="default" loading={updaterAction === "checking"} disabled={updaterAction !== "idle"} onClick={onCheckUpdates}>
+                          Check now
+                        </UiButton>
+                        {updateStatus?.phase === "available" ? (
+                          <UiButton type="button" variant="filled" loading={updaterAction === "updating"} disabled={updaterAction !== "idle"} onClick={onUpdateNow}>
+                            Update now
+                          </UiButton>
+                        ) : null}
+                      </div>
                     </div>
                   </SettingRow>
                 ) : null}

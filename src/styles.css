@@ -5146,9 +5146,20 @@ kbd {
   align-items: center;
 }
 
+.about-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 720px) {
   .about-update-panel {
     grid-template-columns: 1fr;
+  }
+
+  .about-update-actions {
+    justify-content: flex-start;
   }
 }
 

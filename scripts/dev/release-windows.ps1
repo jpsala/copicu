@@ -124,7 +124,9 @@ function New-UpdaterManifest(
     return
   }
 
-  $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding utf8
+  $json = $manifest | ConvertTo-Json -Depth 8
+  $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($OutputPath, $json, $utf8WithoutBom)
 }
 
 function ConvertTo-Semver($Value) {
