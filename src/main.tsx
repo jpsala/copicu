@@ -27,6 +27,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.mjs";
 import Bookmark from "lucide-react/dist/esm/icons/bookmark.mjs";
 import Check from "lucide-react/dist/esm/icons/check.mjs";
 import CheckCheck from "lucide-react/dist/esm/icons/check-check.mjs";
@@ -1200,6 +1201,7 @@ function App() {
   const [activeScenarioBusy, setActiveScenarioBusy] = useState(false);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [pickerMenuOpen, setPickerMenuOpen] = useState(false);
+  const [pickerMenuView, setPickerMenuView] = useState<"actions" | "organize">("actions");
   const [scenarioSwitcherOpen, setScenarioSwitcherOpen] = useState(false);
   const [scenarioSwitcherLoading, setScenarioSwitcherLoading] = useState(false);
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
@@ -2316,6 +2318,7 @@ function App() {
     setOpenItemMenu(null);
     setActionPicker(null);
     setPickerMenuOpen(false);
+    setPickerMenuView("actions");
     setSavedViewCreatorOpen(false);
     setEditError(null);
   }, []);
@@ -6228,6 +6231,9 @@ function App() {
             opened={pickerMenuOpen}
             onChange={(opened) => {
               setPickerMenuOpen(opened);
+              if (!opened) {
+                setPickerMenuView("actions");
+              }
               if (opened && !scenariosLoaded && !scenarioSwitcherLoading) {
                 void reloadScenarios();
               }
@@ -6246,6 +6252,8 @@ function App() {
               </UiIconButton>
             </Menu.Target>
             <Menu.Dropdown className="picker-menu-dropdown" aria-label="Picker menu">
+              {pickerMenuView === "actions" ? (
+                <>
               <Menu.Label>Picker actions</Menu.Label>
               <Menu.Item
                 leftSection={<Plus size={14} strokeWidth={2.2} />}
@@ -6304,13 +6312,45 @@ function App() {
                 {searchTriggerAriaLabel}
               </Menu.Item>
               <Menu.Divider />
-              <Menu.Sub>
-                <Menu.Sub.Target>
-                  <Menu.Sub.Item leftSection={<Bookmark size={14} strokeWidth={2.2} />}>
+                  <Menu.Item
+                    closeMenuOnClick={false}
+                    leftSection={<Bookmark size={14} strokeWidth={2.2} />}
+                    onClick={() => setPickerMenuView("organize")}
+                  >
                     Organize
-                  </Menu.Sub.Item>
-                </Menu.Sub.Target>
-                <Menu.Sub.Dropdown>
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item
+                    leftSection={<CircleHelp size={14} strokeWidth={2.2} />}
+                    onClick={() => {
+                      setPickerMenuOpen(false);
+                      setSearchHelpOpen(true);
+                    }}
+                  >
+                    Search help
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<Settings2 size={14} strokeWidth={2.2} />}
+                    rightSection={<ShortcutBadge shortcut={settings.picker.settingsShortcut} className="menu-shortcut-badge" />}
+                    onClick={() => {
+                      setPickerMenuOpen(false);
+                      openSettingsPanel();
+                    }}
+                  >
+                    Settings
+                  </Menu.Item>
+                </>
+              ) : (
+                <>
+                  <Menu.Label>Organize</Menu.Label>
+                  <Menu.Item
+                    closeMenuOnClick={false}
+                    leftSection={<ArrowLeft size={14} strokeWidth={2.2} />}
+                    onClick={() => setPickerMenuView("actions")}
+                  >
+                    Back to picker actions
+                  </Menu.Item>
+                  <Menu.Divider />
                   <Menu.Item
                     leftSection={<Bookmark size={14} strokeWidth={2.2} />}
                     onClick={() => {
@@ -6416,28 +6456,8 @@ function App() {
                   >
                     Tags
                   </Menu.Item>
-                </Menu.Sub.Dropdown>
-              </Menu.Sub>
-              <Menu.Divider />
-              <Menu.Item
-                leftSection={<CircleHelp size={14} strokeWidth={2.2} />}
-                onClick={() => {
-                  setPickerMenuOpen(false);
-                  setSearchHelpOpen(true);
-                }}
-              >
-                Search help
-              </Menu.Item>
-              <Menu.Item
-                leftSection={<Settings2 size={14} strokeWidth={2.2} />}
-                rightSection={<ShortcutBadge shortcut={settings.picker.settingsShortcut} className="menu-shortcut-badge" />}
-                onClick={() => {
-                  setPickerMenuOpen(false);
-                  openSettingsPanel();
-                }}
-              >
-                Settings
-              </Menu.Item>
+                </>
+              )}
             </Menu.Dropdown>
           </Menu>
         </div>

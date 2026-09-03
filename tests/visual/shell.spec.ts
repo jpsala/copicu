@@ -2869,6 +2869,23 @@ test("picker menu renders compact shortcut keycaps including configured Settings
   expect(hasOverflow).toBe(false);
 });
 
+test("Organize stays closed on hover and replaces the menu contents on click", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  const menu = await openPickerOverflow(page);
+  const organize = menu.getByRole("menuitem", { name: "Organize" });
+  await organize.hover();
+  await expect(menu.getByRole("menuitem", { name: "Inbox" })).toHaveCount(0);
+  await expect(page.getByRole("menu")).toHaveCount(1);
+
+  await organize.click();
+  await expect(menu.getByRole("menuitem", { name: "Inbox" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Back to picker actions" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "New item" })).toHaveCount(0);
+  await expect(page.getByRole("menu")).toHaveCount(1);
+});
+
 test("picker overlays mount from an inactive shell without a context strip", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);

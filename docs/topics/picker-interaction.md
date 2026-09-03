@@ -239,7 +239,7 @@ Mouse y acciones contextuales:
 
 Organizacion:
 
-- El menu principal usa un unico submenu `Organize`; no agrega una entrada top-level por cada filtro o contexto guardado.
+- El menu principal usa una unica entrada `Organize`; se abre solo por click y reemplaza el contenido del mismo dropdown con una vista interna que incluye `Back to picker actions`. No usa hover ni un segundo portal/submenu, y no agrega una entrada top-level por cada filtro o contexto guardado.
 - `Saved searches` es el nombre visible de las consultas pasivas persistidas; `Capture modes`, el de las sesiones activas que aplican metadata a nuevas capturas.
 - `Inbox`, `Saved searches`, `Capture modes` y `Tags` comparten esa superficie compacta. Las listas crecientes se abren desde el command palette o Settings.
 
