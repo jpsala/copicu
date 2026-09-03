@@ -4819,6 +4819,46 @@ test("search autocomplete suggests tags, operators, and closed values", async ({
   await expect(suggestions).toHaveCount(0);
 });
 
+test("focus refreshes nested tag suggestions created in another window", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+
+  await page.evaluate(() => {
+    (window as any).__copicuTestTags.push(
+      {
+        id: 3,
+        slug: "project/key",
+        label: "Project/Key",
+        color: null,
+        pinned: false,
+        sortOrder: null,
+        itemCount: 1,
+        autoApplyEnabled: false,
+      },
+      {
+        id: 4,
+        slug: "project/show",
+        label: "Project/Show",
+        color: null,
+        pinned: false,
+        sortOrder: null,
+        itemCount: 1,
+        autoApplyEnabled: false,
+      },
+    );
+    window.dispatchEvent(new Event("focus"));
+  });
+
+  await expect.poll(() => page.evaluate(() =>
+    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "list_tags").length,
+  )).toBeGreaterThan(1);
+
+  await page.getByLabel("Search clipboard history").fill("tag:project/");
+  const suggestions = page.getByRole("listbox", { name: "Search suggestions" });
+  await expect(suggestions.getByRole("option", { name: "tag:project/key" })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: "tag:project/show" })).toBeVisible();
+});
+
 test("search autocomplete accepts keyboard and click selections and dismisses Escape", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);

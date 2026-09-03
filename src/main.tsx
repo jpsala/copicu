@@ -5192,6 +5192,15 @@ function App() {
             pickerWasHiddenRef.current = true;
             return;
           }
+          try {
+            const tags = await listTags();
+            if (active) {
+              setKnownTagSlugs(tags.map((tag) => tag.slug));
+              setPaletteTags(tags);
+            }
+          } catch {
+            // History refresh remains usable when tag suggestions cannot be refreshed.
+          }
           const session = await consumePickerSessionSnapshot();
           resetFromHost = session.reset;
           if (session.pendingActivationItemId !== null) {

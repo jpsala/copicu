@@ -1295,16 +1295,27 @@ fn push_tag_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, value: &s
             FROM clipboard_item_tags
             JOIN tags normalized_tags ON normalized_tags.id = clipboard_item_tags.tag_id
             WHERE clipboard_item_tags.item_id = clipboard_items.id
-                AND normalized_tags.slug LIKE ? ESCAPE '\\'
+                AND (
+                    normalized_tags.slug = ?
+                    OR normalized_tags.slug LIKE ? ESCAPE '\\'
+                )
         )
-        OR COALESCE(clipboard_items.tags, '') LIKE ? ESCAPE '\\'
+        OR (
+            NOT EXISTS (
+                SELECT 1
+                FROM clipboard_item_tags any_item_tag
+                WHERE any_item_tag.item_id = clipboard_items.id
+            )
+            AND COALESCE(clipboard_items.tags, '') LIKE ? ESCAPE '\\'
+        )
     )";
     if negated {
         clauses.push(format!("NOT {clause}"));
     } else {
         clauses.push(clause.to_string());
     }
-    params.push(Value::Text(like_contains_pattern(&slug)));
+    params.push(Value::Text(slug.clone()));
+    params.push(Value::Text(format!("{}/%", escape_like(&slug))));
     params.push(Value::Text(like_contains_pattern(value)));
 }
 

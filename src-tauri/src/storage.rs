@@ -6036,6 +6036,50 @@ mod tests {
     }
 
     #[test]
+    fn parent_tag_search_matches_only_its_nested_tags() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "first nested tag item");
+        insert_test_text_item(&storage, 2, 40_002, "second nested tag item");
+        insert_test_text_item(&storage, 3, 40_003, "similar non-child tag item");
+        for (item_id, tag) in [
+            (1, "Workspace/Key"),
+            (2, "Workspace/Show"),
+            (3, "Other/Workspace"),
+        ] {
+            storage
+                .set_item_tags(SetItemTagsRequest {
+                    item_id,
+                    tags: vec![tag.to_string()],
+                })
+                .expect("nested item tag should save");
+        }
+
+        let search_ids = |query: &str| {
+            let page = storage
+                .history_search(HistorySearchRequest {
+                    query: query.to_string(),
+                    display_query: None,
+                    cursor: None,
+                    limit: Some(10),
+                    plan: None,
+                    mode: HistorySearchMode::Structured,
+                    include_content: true,
+                    include_counts: true,
+                    explain: false,
+                    ai_context: None,
+                    applied_descriptor: None,
+                })
+                .expect("nested tag search should load");
+            let mut item_ids = ids(&page.items);
+            item_ids.sort_unstable();
+            item_ids
+        };
+
+        assert_eq!(search_ids("tag:workspace"), vec![1, 2]);
+        assert_eq!(search_ids("tag:workspace/key"), vec![1]);
+    }
+
+    #[test]
     fn apply_item_tags_replace_sets_exact_tags_and_empty_clears_them() {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 40_001, "first tagged item");
