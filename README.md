@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.11](https://github.com/jpsala/copicu/releases/tag/v0.4.11)
-- Asset: `Copicu_0.4.11_x64-setup.exe`
+- [v0.4.12](https://github.com/jpsala/copicu/releases/tag/v0.4.12)
+- Asset: `Copicu_0.4.12_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `6C54A2D131FF8E996B47E7A248831E2E41E35169E1B735E6DBE3005451D3B85B`
+- SHA256: `A32560794FEB8DA02E34C474EDC074203772E10FD53EDA1A42764855F7892E5B`
 
-Nested tags now refresh immediately after metadata edits. Parent tag filters match the exact tag and its descendants without matching unrelated branches.
+Parent tags now show the combined count of direct items and all nested descendants in Settings.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
