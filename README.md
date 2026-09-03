@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.10](https://github.com/jpsala/copicu/releases/tag/v0.4.10)
-- Asset: `Copicu_0.4.10_x64-setup.exe`
+- [v0.4.11](https://github.com/jpsala/copicu/releases/tag/v0.4.11)
+- Asset: `Copicu_0.4.11_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `B8E000A34512FD5D1B418BC73CFB6D1B49ACF09D6D15D5458125D39EB8D517E2`
+- SHA256: `6C54A2D131FF8E996B47E7A248831E2E41E35169E1B735E6DBE3005451D3B85B`
 
-Add explicit re: regular expression search to clipboard history.
+Nested tags now refresh immediately after metadata edits. Parent tag filters match the exact tag and its descendants without matching unrelated branches.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
