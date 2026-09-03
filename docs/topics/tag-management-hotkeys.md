@@ -66,6 +66,7 @@ No mantener dos fuentes de verdad para shortcuts filtrados. Si existe `tag_confi
 - Settings tiene una seccion `Tags` con resumen, lista/counts, create tag, pin y `Open filtered`.
 - Los slugs con `/` modelan jerarquia sin crear entidades padre adicionales: `workspace/key` y `workspace/show` son tags independientes; `tag:workspace` encuentra ambos y `tag:workspace/key` solo la rama exacta.
 - El picker recarga el catalogo de tags al recuperar foco, por lo que los tags creados desde el editor de metadata secundario aparecen inmediatamente en el autocomplete de busqueda.
+- En Settings, `itemCount` es jerarquico: el conteo de un padre suma sus items directos y los de todos sus descendientes; cada hoja conserva su conteo propio.
 - La UI de hotkeys por tag con `HotkeyRecorder` fue eliminada. Settings > Tags no edita, valida ni muestra estado de hotkeys.
 - `tag_configs.hotkey` queda como compatibilidad historica de DB, pero `list_tags` ya no lo expone y el runtime no lo registra.
 - `Ctrl+Shift+C` es app-owned global y abre una utility chica para el item activo, con fallback al primer item visible. La UI usa un solo textarea: cualquier `#token` se extrae a tags normalizados y se quita de `notes`; `title` no se muestra y se preserva sin cambios.

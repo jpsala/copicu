@@ -3483,13 +3483,17 @@ fn query_tag_summaries(conn: &Connection, tag_id: Option<i64>) -> Result<Vec<Tag
             tags.color,
             tags.pinned,
             tags.sort_order,
-            COUNT(clipboard_item_tags.item_id) AS item_count,
+            (
+                SELECT COUNT(DISTINCT hierarchy_links.item_id)
+                FROM clipboard_item_tags hierarchy_links
+                JOIN tags hierarchy_tags ON hierarchy_tags.id = hierarchy_links.tag_id
+                WHERE hierarchy_tags.slug = tags.slug
+                   OR hierarchy_tags.slug LIKE tags.slug || '/%'
+            ) AS item_count,
             COALESCE(tag_configs.auto_apply_enabled, 0) AS auto_apply_enabled
          FROM tags
-         LEFT JOIN clipboard_item_tags ON clipboard_item_tags.tag_id = tags.id
          LEFT JOIN tag_configs ON tag_configs.tag_id = tags.id
          {filter_sql}
-         GROUP BY tags.id, tag_configs.id
          ORDER BY tags.pinned DESC, tags.sort_order IS NULL, tags.sort_order ASC, item_count DESC, tags.label COLLATE NOCASE ASC"
     );
     let mut statement = conn
@@ -6038,13 +6042,15 @@ mod tests {
     #[test]
     fn parent_tag_search_matches_only_its_nested_tags() {
         let storage = test_storage_with_migrations();
-        insert_test_text_item(&storage, 1, 40_001, "first nested tag item");
-        insert_test_text_item(&storage, 2, 40_002, "second nested tag item");
-        insert_test_text_item(&storage, 3, 40_003, "similar non-child tag item");
+        insert_test_text_item(&storage, 1, 40_001, "direct parent tag item");
+        insert_test_text_item(&storage, 2, 40_002, "first nested tag item");
+        insert_test_text_item(&storage, 3, 40_003, "second nested tag item");
+        insert_test_text_item(&storage, 4, 40_004, "similar non-child tag item");
         for (item_id, tag) in [
-            (1, "Workspace/Key"),
-            (2, "Workspace/Show"),
-            (3, "Other/Workspace"),
+            (1, "Workspace"),
+            (2, "Workspace/Key"),
+            (3, "Workspace/Show"),
+            (4, "Other/Workspace"),
         ] {
             storage
                 .set_item_tags(SetItemTagsRequest {
@@ -6075,8 +6081,18 @@ mod tests {
             item_ids
         };
 
-        assert_eq!(search_ids("tag:workspace"), vec![1, 2]);
-        assert_eq!(search_ids("tag:workspace/key"), vec![1]);
+        assert_eq!(search_ids("tag:workspace"), vec![1, 2, 3]);
+        assert_eq!(search_ids("tag:workspace/key"), vec![2]);
+
+        let tags = storage.list_tags().expect("nested tags should list");
+        assert_eq!(
+            tags.iter().find(|tag| tag.slug == "workspace").map(|tag| tag.item_count),
+            Some(3),
+        );
+        assert_eq!(
+            tags.iter().find(|tag| tag.slug == "workspace/key").map(|tag| tag.item_count),
+            Some(1),
+        );
     }
 
     #[test]
