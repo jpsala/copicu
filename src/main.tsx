@@ -6834,6 +6834,25 @@ function App() {
                       aria-hidden="true"
                     />
                   </UiIconButton>
+                  {item.is_inbox ? (
+                    <UiUnstyledButton
+                      type="button"
+                      className="item-inbox-indicator"
+                      aria-label="Remove from Inbox"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void removeFromInbox(item);
+                      }}
+                    >
+                      <span>Inbox</span>
+                      <X size={11} strokeWidth={2.5} aria-hidden="true" />
+                    </UiUnstyledButton>
+                  ) : null}
                   <div
                     className={`feed-item${itemIsSelected ? " is-selected" : ""}${
                       itemIsMultiSelected ? " is-multi-selected" : ""
@@ -6891,9 +6910,6 @@ function App() {
                       showItemMenu(item, index, event);
                     }}
                   >
-                    {item.is_inbox ? (
-                      <span className="item-inbox-indicator" aria-label="Inbox item">Inbox</span>
-                    ) : null}
                     <span className="item-main">
                       {item.title ? (
                         <FindHighlightedText

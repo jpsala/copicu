@@ -90,7 +90,7 @@ El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 - Markdown con imagenes se renderiza preservando el orden del origen: bloques de texto y lineas `![...](...)` aparecen en la misma secuencia;
 - imagenes Markdown se muestran en el punto donde aparecen, no reordenadas arriba;
 - items `image` usan el PNG principal como preview visible grande; el thumbnail chico queda solo como artefacto auxiliar, no como preview principal del picker.
-- `Inbox` es estado durable del item, no una view, tag ni seleccion `marked`: aparece como badge compacto sin aumentar la altura base de la fila.
+- `Inbox` es estado durable del item, no una view, tag ni seleccion `marked`: aparece como pill compacto `Inbox ×` sin aumentar la altura base de la fila. El pill es una accion directa `Remove from Inbox`; quita solo ese estado y nunca borra el item.
 - Los items Inbox se ordenan antes que el historial regular; dentro de cada grupo se conserva el orden mas reciente primero.
 
 CopyQ observado como referencia:

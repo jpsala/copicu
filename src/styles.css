@@ -1598,15 +1598,29 @@ button {
 .item-inbox-indicator {
   position: absolute;
   z-index: 2;
-  bottom: 8px;
+  bottom: 6px;
   left: 39px;
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--accent-soft);
+  padding: 2px 5px 2px 6px;
   color: var(--accent);
-  padding: 1px 5px;
   font-size: 0.58rem;
   font-weight: 850;
-  line-height: 1.35;
+  line-height: 1.2;
+  transition:
+    border-color 100ms ease,
+    background-color 100ms ease;
+}
+
+.item-inbox-indicator:hover,
+.item-inbox-indicator:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-raised));
 }
 
 .selection-action-bar {

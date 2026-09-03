@@ -2913,7 +2913,7 @@ test("Inbox organizer entry applies a valid structured filter", async ({ page })
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("is:inbox");
   await expect(page.getByText("`is:inbox` is not a supported is filter.")).toHaveCount(0);
   await expect(page.locator(".history-feed > li")).toHaveCount(1);
-  await expect(page.locator(".history-feed > li").first().getByLabel("Inbox item")).toBeVisible();
+  await expect(page.locator(".history-feed > li").first().getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
 });
 
 test("picker overlays mount from an inactive shell without a context strip", async ({ page }) => {
@@ -2955,21 +2955,21 @@ test("Inbox item stays pending on catalog cancel and leaves after catalog save",
   await gotoShell(page);
 
   const firstRow = page.locator(".history-feed > li").first();
-  await expect(firstRow.getByLabel("Inbox item")).toBeVisible();
+  await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
 
   const catalogDialog = page.getByRole("dialog", { name: "Edit item metadata" });
   await expect(catalogDialog).toBeVisible();
   await catalogDialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(firstRow.getByLabel("Inbox item")).toBeVisible();
+  await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
 
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
   await catalogDialog.getByRole("textbox", { name: "Metadata" }).fill("#cataloged Inbox review");
   await catalogDialog.getByRole("button", { name: "Save" }).click();
 
-  await expect(firstRow.getByLabel("Inbox item")).toHaveCount(0);
+  await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toHaveCount(0);
   const inboxTransitions = await page.evaluate(() => {
     const testWindow = window as Window & {
       __copicuTestInvocations?: Array<{ cmd: string; args: { itemId?: number; inbox?: boolean } }>;
@@ -2995,7 +2995,23 @@ test("Remove from Inbox preserves the history row", async ({ page }) => {
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Remove from Inbox" }).click();
 
   await expect(row).toBeVisible();
-  await expect(row.getByLabel("Inbox item")).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Remove from Inbox" })).toHaveCount(0);
+});
+
+test("Inbox pill removes the state directly without deleting the row", async ({ page }) => {
+  const inboxItem = {
+    ...syntheticLongHistory[0],
+    is_inbox: true,
+    inbox_at_unix_ms: 1_900_000_000_000,
+  };
+  await mockTauriInvoke(page, [inboxItem]);
+  await gotoShell(page);
+
+  const row = page.locator(".history-feed > li").first();
+  await row.getByRole("button", { name: "Remove from Inbox" }).click();
+
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "Remove from Inbox" })).toHaveCount(0);
 });
 
 test("new item dialog creates a manual history item", async ({ page }) => {
