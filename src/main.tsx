@@ -7676,7 +7676,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>kind:image</code></dt><dd>Text/image/html/file kind.</dd></div>
               <div><dt><code>mime:image/*</code></dt><dd>Primary MIME type.</dd></div>
               <div><dt><code>has:notes</code></dt><dd>Also: title, tags, metadata, mime, blob, image.</dd></div>
-              <div><dt><code>is:marked</code></dt><dd>Also: checked, unmarked, unchecked.</dd></div>
+              <div><dt><code>is:marked</code></dt><dd>Also: checked, unmarked, unchecked, inbox, not-inbox.</dd></div>
             </dl>
           </section>
 

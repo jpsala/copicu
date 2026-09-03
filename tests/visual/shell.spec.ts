@@ -1695,6 +1695,12 @@ async function mockTauriInvoke(
                   if (requestQuery === "-is:marked") {
                     return !item.is_marked;
                   }
+                  if (requestQuery === "is:inbox") {
+                    return Boolean(item.is_inbox);
+                  }
+                  if (["is:not-inbox", "is:not_inbox", "-is:inbox"].includes(requestQuery)) {
+                    return !item.is_inbox;
+                  }
                   return [
                     item.text,
                     item.title ?? "",
@@ -2884,6 +2890,30 @@ test("Organize stays closed on hover and replaces the menu contents on click", a
   await expect(menu.getByRole("menuitem", { name: "Back to picker actions" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "New item" })).toHaveCount(0);
   await expect(page.getByRole("menu")).toHaveCount(1);
+});
+
+test("Inbox organizer entry applies a valid structured filter", async ({ page }) => {
+  const inboxItem = {
+    ...syntheticLongHistory[0],
+    is_inbox: true,
+    inbox_at_unix_ms: 1_900_000_000_000,
+  };
+  const regularItem = {
+    ...syntheticLongHistory[1],
+    is_inbox: false,
+    inbox_at_unix_ms: null,
+  };
+  await mockTauriInvoke(page, [inboxItem, regularItem]);
+  await gotoShell(page);
+
+  const menu = await openPickerOverflow(page);
+  await menu.getByRole("menuitem", { name: "Organize" }).click();
+  await page.getByRole("menuitem", { name: "Inbox" }).click();
+
+  await expect(page.getByLabel("Search clipboard history")).toHaveValue("is:inbox");
+  await expect(page.getByText("`is:inbox` is not a supported is filter.")).toHaveCount(0);
+  await expect(page.locator(".history-feed > li")).toHaveCount(1);
+  await expect(page.locator(".history-feed > li").first().getByLabel("Inbox item")).toBeVisible();
 });
 
 test("picker overlays mount from an inactive shell without a context strip", async ({ page }) => {

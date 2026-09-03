@@ -38,7 +38,7 @@ const OPERATOR_SUGGESTIONS = [
 
 const CLOSED_VALUES: Record<string, string[]> = {
   kind: ["text", "image", "html", "file", "file-list", "unknown"],
-  is: ["marked", "checked", "unmarked", "unchecked"],
+  is: ["marked", "checked", "unmarked", "unchecked", "inbox", "not-inbox", "not_inbox"],
   has: ["text", "title", "note", "notes", "tag", "tags", "metadata", "meta", "mime", "blob", "file", "image"],
   after: ["today", "yesterday", "7d"],
   before: ["today", "yesterday", "7d"],

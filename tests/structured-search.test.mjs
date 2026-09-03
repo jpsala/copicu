@@ -35,6 +35,9 @@ test("closed structured values fail closed while date and free values remain app
   assert.equal(classifyStructuredSearchDraft("kind:file-list").kind, "complete");
   assert.equal(classifyStructuredSearchDraft("has:note").kind, "complete");
   assert.equal(classifyStructuredSearchDraft("has:tag").kind, "complete");
+  assert.equal(classifyStructuredSearchDraft("is:inbox").kind, "complete");
+  assert.equal(classifyStructuredSearchDraft("is:not-inbox").kind, "complete");
+  assert.equal(classifyStructuredSearchDraft("-is:inbox").kind, "complete");
   assert.equal(classifyStructuredSearchDraft('kind:"text"').kind, "complete");
   assert.equal(classifyStructuredSearchDraft("after:2026-08-06").kind, "complete");
   assert.equal(classifyStructuredSearchDraft("mime:text/plain").kind, "complete");
