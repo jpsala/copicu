@@ -177,6 +177,8 @@ Estado diagnosticado 2026-08-29: `StartupApproved\Run\Copicu` seguia enabled, pe
 
 Gotcha 2026-07-09: si la clave de updater tiene password, `tauri build` espera `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; con solo `TAURI_SIGNING_PRIVATE_KEY_PATH` puede quedar detenido en `Decrypting updater signing key, expect a prompt for password`. El script carga el contenido de `TAURI_SIGNING_PRIVATE_KEY_PATH`, pero el password sigue siendo necesario. La clave nueva de `v0.3.7` vive localmente en `.codex-run/secrets/copicu-updater.key` con password en `.codex-run/secrets/copicu-updater.password`; ambos estan ignorados y deben respaldarse juntos fuera del repo. Si el archivo de password tiene BOM UTF-8, decodificarlo como `utf-8-sig` antes de exportarlo: Tauri interpreta el BOM como parte del password y rechaza la clave.
 
+Gotcha 2026-09-03: Windows PowerShell 5.1 agrega BOM al usar `Set-Content -Encoding utf8`; Tauri Updater rechaza ese `latest.json` con `error decoding response body`. `New-UpdaterManifest` debe escribir UTF-8 sin BOM mediante `System.IO.File.WriteAllText`. El asset de `v0.4.10` fue reemplazado sin cambiar su contenido JSON y el check nativo volvio a informar `Copicu is up to date`.
+
 Gotcha 2026-06-23: en PowerShell, `@($json | ConvertFrom-Json | ForEach-Object { $_.tagName })` puede envolver el array de releases como un solo item y hacer que el auto-tag ignore GitHub releases recientes. El helper `scripts/dev/release-windows.ps1` debe primero asignar `$items = $json | ConvertFrom-Json` y luego enumerar `$items | ForEach-Object`; esto evita repetir un tag ya publicado cuando el clon local no tiene tags frescos.
 
 ## Signing
