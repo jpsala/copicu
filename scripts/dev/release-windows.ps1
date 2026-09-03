@@ -85,13 +85,13 @@ function Assert-UpdaterSigningConfigured() {
     return
   }
 
-  if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-    return
-  }
-
   if ($env:TAURI_SIGNING_PRIVATE_KEY_PATH) {
     $signingKeyPath = (Resolve-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY_PATH).Path
     $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content -LiteralPath $signingKeyPath -Raw).Trim()
+    return
+  }
+
+  if ($env:TAURI_SIGNING_PRIVATE_KEY) {
     return
   }
 
