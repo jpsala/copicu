@@ -39,7 +39,7 @@ Inbox is item state, not a tag, saved search, capture context or scenario proper
 - Inbox copy uses the existing native global-shortcut registry and conflict reporting.
 - The configurable shortcut must be a simple global chord.
 - It is reserved against picker, command palette, metadata, active-item navigation, paste-next, saved-search and script shortcuts.
-- Dispatch occurs on shortcut release to avoid leaking held `Ctrl` or `Alt` into the synthesized `Ctrl+C`.
+- The callback runs after chord release and, before synthesizing `Ctrl+C`, waits for Windows to report `Ctrl`, `Alt`, `Shift` and `Win` physically released. If modifiers remain pressed past the bounded wait, it injects no text and arms no capture.
 - A bounded pending request correlates the next clipboard change with Inbox copy. Expired requests cannot affect later ordinary copies.
 
 ## Compact Navigation Cutover

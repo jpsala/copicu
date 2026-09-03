@@ -188,7 +188,7 @@ Navegacion por teclado:
 - `Ctrl+Alt+F11` es el default global configurable de `Paste next`. Se procesa al soltar el chord, pega como maximo un item por ciclo press/release y una cola vacia nunca reutiliza el ultimo item.
 - Quick Actions y el menu batch exponen `Queue selected, bottom to top` desde el mismo registry. La seleccion se entrega en orden visual y el host la invierte; preparar reemplaza pendientes, oculta el picker y restaura la ventana previa sin pegar.
 - La cola sobrevive hide/show, pero no reinicios. Un item ausente o un fallo de focus/paste queda pendiente y produce feedback fuera del picker sin tomar foco.
-- `Ctrl+Alt+I` es el default global configurable de `Send to Inbox`. Al soltar el chord, Copicu dispara un `Ctrl+C` normal en la app enfocada y marca exactamente la captura correlacionada como Inbox; si el clipboard no cambia, no reutiliza ni marca el item anterior.
+- `Ctrl+Alt+I` es el default global configurable de `Send to Inbox`. El callback espera de forma acotada a que Windows reporte todos los modificadores fisicamente liberados antes de sintetizar `Ctrl+C`; asi `Alt` no contamina la copia como `Ctrl+Alt+C`/`©`. Luego marca exactamente la captura correlacionada como Inbox; si los modificadores siguen presionados o el clipboard no cambia, no reutiliza ni marca el item anterior.
 - Repetir `Send to Inbox` sobre contenido deduplicado devuelve el item existente a Inbox y actualiza su prioridad. Los items Inbox quedan protegidos de retention automatica.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 

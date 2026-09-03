@@ -5124,13 +5124,20 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         .and_then(|current| current.get())
         .is_some_and(|inbox_shortcut| *shortcut == inbox_shortcut)
     {
-        if let Some(capture) = app.try_state::<clipboard::ClipboardCapture>() {
-            capture.arm_inbox_capture();
-            if let Err(error) = window_focus::send_copy_shortcut() {
-                capture.cancel_inbox_capture();
+        let app = app.clone();
+        thread::spawn(move || {
+            if let Err(error) = window_focus::wait_for_copy_shortcut_modifiers_released() {
                 eprintln!("inbox copy shortcut dispatch failed: {error}");
+                return;
             }
-        }
+            if let Some(capture) = app.try_state::<clipboard::ClipboardCapture>() {
+                capture.arm_inbox_capture();
+                if let Err(error) = window_focus::send_copy_shortcut() {
+                    capture.cancel_inbox_capture();
+                    eprintln!("inbox copy shortcut dispatch failed: {error}");
+                }
+            }
+        });
         return;
     }
     let picker_shortcut = app

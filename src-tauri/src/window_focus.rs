@@ -204,8 +204,20 @@ pub fn is_tauri_window_foreground<R: tauri::Runtime>(window: &tauri::WebviewWind
 }
 #[cfg(target_os = "windows")]
 #[cfg(not(test))]
+pub fn wait_for_copy_shortcut_modifiers_released() -> Result<(), String> {
+    platform::wait_for_copy_shortcut_modifiers_released()
+}
+
+#[cfg(target_os = "windows")]
+#[cfg(not(test))]
 pub fn send_copy_shortcut() -> Result<(), String> {
     platform::send_copy_shortcut()
+}
+
+#[cfg(not(target_os = "windows"))]
+#[cfg(not(test))]
+pub fn wait_for_copy_shortcut_modifiers_released() -> Result<(), String> {
+    Err("copy shortcut injection is only supported on Windows".to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -286,8 +298,9 @@ mod platform {
         },
         UI::{
             Input::KeyboardAndMouse::{
-                SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
-                KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_INSERT, VK_SHIFT,
+                GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+                KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_INSERT,
+                VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
             },
             WindowsAndMessaging::{
                 BringWindowToTop, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
@@ -301,6 +314,8 @@ mod platform {
     const FOCUS_WAIT_TIMEOUT: Duration = Duration::from_millis(700);
     const FOCUS_POLL_INTERVAL: Duration = Duration::from_millis(25);
     const PASTE_DELAY_AFTER_FOCUS: Duration = Duration::from_millis(700);
+    const COPY_MODIFIER_RELEASE_TIMEOUT: Duration = Duration::from_secs(2);
+    const COPY_MODIFIER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
     pub fn foreground_window_id() -> Option<NativeWindowId> {
         let hwnd = unsafe { GetForegroundWindow() };
@@ -504,6 +519,32 @@ mod platform {
         Ok(())
     }
 
+    pub fn wait_for_copy_shortcut_modifiers_released() -> Result<(), String> {
+        let deadline = Instant::now() + COPY_MODIFIER_RELEASE_TIMEOUT;
+        loop {
+            let states = unsafe {
+                [
+                    GetAsyncKeyState(VK_CONTROL.0 as i32),
+                    GetAsyncKeyState(VK_MENU.0 as i32),
+                    GetAsyncKeyState(VK_SHIFT.0 as i32),
+                    GetAsyncKeyState(VK_LWIN.0 as i32),
+                    GetAsyncKeyState(VK_RWIN.0 as i32),
+                ]
+            };
+            if modifiers_released(states) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err("copy shortcut modifiers remained pressed after release".to_string());
+            }
+            thread::sleep(COPY_MODIFIER_POLL_INTERVAL);
+        }
+    }
+
+    fn modifiers_released(states: [i16; 5]) -> bool {
+        states.into_iter().all(|state| state >= 0)
+    }
+
     pub fn send_copy_shortcut() -> Result<(), String> {
         let inputs = [
             key_input(VK_CONTROL, false),
@@ -641,6 +682,13 @@ mod platform {
     mod tests {
         use super::*;
 
+        #[test]
+        fn copy_waits_until_every_modifier_is_released() {
+            assert!(modifiers_released([0; 5]));
+            assert!(!modifiers_released([i16::MIN, 0, 0, 0, 0]));
+            assert!(!modifiers_released([0, i16::MIN, 0, 0, 0]));
+            assert!(!modifiers_released([0, 0, 0, i16::MIN, 0]));
+        }
         #[test]
         fn default_uses_ctrl_v_for_browser_processes() {
             assert!(default_uses_ctrl_v_for_process("chrome.exe"));
