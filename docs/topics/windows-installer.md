@@ -143,6 +143,8 @@ Estado historico 2026-07-09: `v0.3.7` publico con assets `Copicu_0.3.7_x64-setup
 
 Estado 2026-07-30: release estable `v0.4.3`, asset `Copicu_0.4.3_x64-setup.exe`, firma y `latest.json`; SHA256 público `A3E3AEAEBDC3FBD144DF0B355302B004664B60BE85553245A3508E0F5B1AF636`. Restaura el editor compacto de metadata con `#tags` y properties como tokens inline, y mantiene todo visible al redimensionar hasta el mínimo soportado. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.3>.
 
+Estado 2026-09-03: release estable `v0.4.11`, asset `Copicu_0.4.11_x64-setup.exe`, firma y `latest.json`; SHA256 `6C54A2D131FF8E996B47E7A248831E2E41E35169E1B735E6DBE3005451D3B85B`. Corrige el refresh de tags creados desde otra ventana y define busqueda jerarquica por padre para slugs con `/`. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.11>.
+
 La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target y estado de auto-update. `Check now` consulta el manifest firmado y, cuando encuentra una version nueva, habilita `Update now`; esa accion vuelve a validar el canal, descarga, verifica la firma Tauri, instala y relanza aunque `autoUpdate.enabled` este apagado. El modo automatico conserva el mismo pipeline sin quitarle al usuario el control manual.
