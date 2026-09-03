@@ -202,6 +202,17 @@ pub fn is_tauri_window_foreground<R: tauri::Runtime>(window: &tauri::WebviewWind
         .map(platform::is_foreground_window)
         .unwrap_or(false)
 }
+#[cfg(target_os = "windows")]
+#[cfg(not(test))]
+pub fn send_copy_shortcut() -> Result<(), String> {
+    platform::send_copy_shortcut()
+}
+
+#[cfg(not(target_os = "windows"))]
+#[cfg(not(test))]
+pub fn send_copy_shortcut() -> Result<(), String> {
+    Err("copy shortcut injection is only supported on Windows".to_string())
+}
 
 pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {
     platform::foreground_window_snapshot()
@@ -482,7 +493,6 @@ mod platform {
             key_input(shortcut.key, true),
             key_input(shortcut.modifier, true),
         ];
-
         let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
         if sent != inputs.len() as u32 {
             return Err(format!(
@@ -491,6 +501,23 @@ mod platform {
             ));
         }
 
+        Ok(())
+    }
+
+    pub fn send_copy_shortcut() -> Result<(), String> {
+        let inputs = [
+            key_input(VK_CONTROL, false),
+            key_input(VIRTUAL_KEY(b'C' as u16), false),
+            key_input(VIRTUAL_KEY(b'C' as u16), true),
+            key_input(VK_CONTROL, true),
+        ];
+        let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
+        if sent != inputs.len() as u32 {
+            return Err(format!(
+                "SendInput sent {sent} of {} copy events",
+                inputs.len()
+            ));
+        }
         Ok(())
     }
 

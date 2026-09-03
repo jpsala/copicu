@@ -13,12 +13,14 @@ triggers:
   - keyboard navigation
   - mouse interaction
   - tabs
+  - inbox
 primary_refs:
   - ../../specs/001-mvp0-native-spike/spec.md
   - ../../specs/001-mvp0-native-spike/tasks.md
   - ../topics/product-direction.md
   - ../topics/windows-focus-and-paste.md
   - ../topics/copyq-technical-baseline.md
+  - ../../specs/010-inbox-copy/spec.md
 ---
 
 # Picker Interaction
@@ -88,6 +90,8 @@ El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 - Markdown con imagenes se renderiza preservando el orden del origen: bloques de texto y lineas `![...](...)` aparecen en la misma secuencia;
 - imagenes Markdown se muestran en el punto donde aparecen, no reordenadas arriba;
 - items `image` usan el PNG principal como preview visible grande; el thumbnail chico queda solo como artefacto auxiliar, no como preview principal del picker.
+- `Inbox` es estado durable del item, no una view, tag ni seleccion `marked`: aparece como badge compacto sin aumentar la altura base de la fila.
+- Los items Inbox se ordenan antes que el historial regular; dentro de cada grupo se conserva el orden mas reciente primero.
 
 CopyQ observado como referencia:
 
@@ -144,6 +148,7 @@ Query syntax actual 2026-06-05:
 - `-has:notes` y filtros negados equivalentes;
 - `after:YYYY-MM-DD`, `before:YYYY-MM-DD`, `on:YYYY-MM-DD`;
 - `after:today`, `after:yesterday` y relativos simples como `after:7d`.
+- `is:inbox` y `is:not-inbox` filtran por catalogacion pendiente.
 
 Limitaciones actuales:
 
@@ -183,6 +188,8 @@ Navegacion por teclado:
 - `Ctrl+Alt+F11` es el default global configurable de `Paste next`. Se procesa al soltar el chord, pega como maximo un item por ciclo press/release y una cola vacia nunca reutiliza el ultimo item.
 - Quick Actions y el menu batch exponen `Queue selected, bottom to top` desde el mismo registry. La seleccion se entrega en orden visual y el host la invierte; preparar reemplaza pendientes, oculta el picker y restaura la ventana previa sin pegar.
 - La cola sobrevive hide/show, pero no reinicios. Un item ausente o un fallo de focus/paste queda pendiente y produce feedback fuera del picker sin tomar foco.
+- `Ctrl+Alt+I` es el default global configurable de `Send to Inbox`. Al soltar el chord, Copicu dispara un `Ctrl+C` normal en la app enfocada y marca exactamente la captura correlacionada como Inbox; si el clipboard no cambia, no reutiliza ni marca el item anterior.
+- Repetir `Send to Inbox` sobre contenido deduplicado devuelve el item existente a Inbox y actualiza su prioridad. Los items Inbox quedan protegidos de retention automatica.
 - `Ctrl+Enter`: submit en formularios/dialogs donde aplica (crear item, editar contenido/metadata, batch metadata, settings, prompts).
 
 Crear item manual:
@@ -226,8 +233,15 @@ Mouse y acciones contextuales:
 - Right click o tres puntitos por item abre acciones.
 - El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Ctrl+D`, `Shift+Delete` o trash icon.
 - Las acciones hover por item aparecen al pasar por la fila; el trash icon borra sin confirmacion el item bajo hover o, si hay multiseleccion activa, los items seleccionados.
+- En un item Inbox, `Catalog Inbox item` abre metadata; guardar metadata lo quita de Inbox y cancelar lo conserva. `Remove from Inbox` solo limpia ese estado y nunca borra el historial.
 - Acciones esperadas restantes: Copy, Paste, Paste as plain text, Pin/unpin, Open full preview/editor, Show details/formats, Move to tab.
 - Click fuera/focus lost debe respetar setting de ventana.
+
+Organizacion:
+
+- El menu principal usa un unico submenu `Organize`; no agrega una entrada top-level por cada filtro o contexto guardado.
+- `Saved searches` es el nombre visible de las consultas pasivas persistidas; `Capture modes`, el de las sesiones activas que aplican metadata a nuevas capturas.
+- `Inbox`, `Saved searches`, `Capture modes` y `Tags` comparten esa superficie compacta. Las listas crecientes se abren desde el command palette o Settings.
 
 ## Comportamiento De Ventana
 

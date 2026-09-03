@@ -77,15 +77,15 @@ export function SavedHistoryViews({
         </div>
       ))}
       {!creating ? (
-        <button type="button" disabled={loading} onClick={() => setCreating(true)}>New saved view</button>
+        <button type="button" disabled={loading} onClick={() => setCreating(true)}>New saved search</button>
       ) : (
         <div className="saved-history-view-form">
           <label>Title<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Query<textarea value={draft.query} onChange={(event) => setDraft({ ...draft, query: event.target.value })} /></label>
           <label>Optional global hotkey<input value={draft.hotkey} placeholder="Ctrl+Shift+W" onChange={(event) => setDraft({ ...draft, hotkey: event.target.value })} /></label>
-          <label><input type="checkbox" checked={draft.pinned} onChange={(event) => setDraft({ ...draft, pinned: event.target.checked })} /> Pin view</label>
+          <label><input type="checkbox" checked={draft.pinned} onChange={(event) => setDraft({ ...draft, pinned: event.target.checked })} /> Pin search</label>
           <div>
-            <button type="button" disabled={busy} onClick={() => void save()}>{editingId === null ? "Create view" : "Save view"}</button>
+            <button type="button" disabled={busy} onClick={() => void save()}>{editingId === null ? "Create search" : "Save search"}</button>
             <button type="button" onClick={() => { setCreating(false); setEditingId(null); setDraft(emptyDraft()); }}>Cancel</button>
           </div>
         </div>

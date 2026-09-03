@@ -140,8 +140,8 @@ const ENABLE_COMPOUND_GLOBAL_SHORTCUTS: bool = true;
 #[cfg(not(test))]
 const ENABLE_COMPOUND_TEMPORARY_NEXT_STEPS: bool = false;
 
-fn should_dispatch_global_shortcut(is_paste_next: bool, is_pressed: bool) -> bool {
-    if is_paste_next {
+fn should_dispatch_global_shortcut(is_release_dispatch: bool, is_pressed: bool) -> bool {
+    if is_release_dispatch {
         !is_pressed
     } else {
         is_pressed
@@ -268,6 +268,7 @@ struct AppShortcutStatus {
     pin: NativeShortcutStatus,
     external_editor: NativeShortcutStatus,
     paste_next: NativeShortcutStatus,
+    inbox: NativeShortcutStatus,
 }
 
 #[cfg(not(test))]
@@ -378,7 +379,26 @@ struct CurrentExternalEditorShortcut(CurrentPickerPinShortcut);
 
 #[cfg(not(test))]
 #[derive(Clone, Default)]
+struct CurrentInboxShortcut(CurrentPickerPinShortcut);
+
+#[cfg(not(test))]
+#[derive(Clone, Default)]
 struct CurrentPasteNextShortcut(CurrentPickerPinShortcut);
+#[cfg(not(test))]
+impl CurrentInboxShortcut {
+    fn get(&self) -> Option<Shortcut> {
+        self.0.get()
+    }
+    fn set(&self, shortcut: Option<Shortcut>) {
+        self.0.set(shortcut);
+    }
+    fn status(&self) -> NativeShortcutStatus {
+        self.0.status()
+    }
+    fn set_status(&self, status: NativeShortcutStatus) {
+        self.0.set_status(status);
+    }
+}
 
 #[cfg(not(test))]
 #[derive(Clone)]
@@ -1011,11 +1031,22 @@ fn get_app_shortcut_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> AppSh
             error: Some("paste next shortcut state unavailable".to_string()),
         });
 
+    let inbox = app
+        .try_state::<CurrentInboxShortcut>()
+        .map(|current| current.status())
+        .unwrap_or_else(|| NativeShortcutStatus {
+            label: String::new(),
+            registered: false,
+            supported: false,
+            error: Some("inbox shortcut state unavailable".to_string()),
+        });
+
     AppShortcutStatus {
         picker,
         pin,
         external_editor,
         paste_next,
+        inbox,
     }
 }
 
@@ -2091,6 +2122,17 @@ fn get_history_item(
 ) -> Result<storage::HistoryItem, String> {
     storage.get_item(id)
 }
+#[cfg(not(test))]
+#[tauri::command]
+fn set_history_item_inbox(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    item_id: i64,
+    inbox: bool,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_history_item_inbox")?;
+    storage.set_history_item_inbox(item_id, inbox)
+}
 
 #[cfg(not(test))]
 #[tauri::command]
@@ -2109,6 +2151,11 @@ fn update_settings(
     require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "update_settings")?;
     settings.general.global_shortcut =
         normalize_picker_global_shortcut(&settings.general.global_shortcut)?;
+    settings.general.inbox_shortcut =
+        normalize_optional_single_shortcut(&settings.general.inbox_shortcut, "inbox")?;
+    if settings.general.inbox_shortcut.is_empty() {
+        return Err("inbox shortcut cannot be empty".to_string());
+    }
     settings.general.paste_next_shortcut =
         normalize_optional_single_shortcut(&settings.general.paste_next_shortcut, "paste next")?;
     if settings.general.paste_next_shortcut.is_empty() {
@@ -2125,8 +2172,15 @@ fn update_settings(
         "external editor",
     )?;
     let current_settings = storage.get_settings()?;
+    validate_inbox_shortcut(&app, &storage, &settings)?;
     validate_paste_next_shortcut(&app, &storage, &settings)?;
-    apply_paste_next_shortcut_from_settings(&app, &settings)?;
+    apply_inbox_shortcut_from_settings(&app, &settings)?;
+    if let Err(error) = apply_paste_next_shortcut_from_settings(&app, &settings) {
+        if let Err(restore_error) = apply_inbox_shortcut_from_settings(&app, &current_settings) {
+            eprintln!("inbox shortcut restore failed after paste next error: {restore_error}");
+        }
+        return Err(error);
+    }
     let requested_launch_on_startup = settings.general.launch_on_startup;
     if let Err(error) = sync_autostart_setting(
         &app,
@@ -2136,6 +2190,9 @@ fn update_settings(
         if let Err(restore_error) = apply_paste_next_shortcut_from_settings(&app, &current_settings)
         {
             eprintln!("paste next shortcut restore failed after autostart error: {restore_error}");
+        }
+        if let Err(restore_error) = apply_inbox_shortcut_from_settings(&app, &current_settings) {
+            eprintln!("inbox shortcut restore failed after autostart error: {restore_error}");
         }
         return Err(error);
     }
@@ -2148,6 +2205,10 @@ fn update_settings(
                 eprintln!(
                     "paste next shortcut restore failed after settings error: {restore_error}"
                 );
+            }
+            if let Err(restore_error) = apply_inbox_shortcut_from_settings(&app, &current_settings)
+            {
+                eprintln!("inbox shortcut restore failed after settings error: {restore_error}");
             }
             if let Err(restore_error) = sync_autostart_setting(
                 &app,
@@ -2463,7 +2524,7 @@ fn validate_paste_next_shortcut<R: tauri::Runtime>(
     let label = &settings.general.paste_next_shortcut;
     let conflicting_app_shortcuts = [
         settings.general.global_shortcut.as_str(),
-        settings.picker.pin_toggle_shortcut.as_str(),
+        settings.general.inbox_shortcut.as_str(),
         settings.picker.settings_shortcut.as_str(),
         settings.picker.preview_shortcut.as_str(),
         settings.picker.external_editor_shortcut.as_str(),
@@ -2519,6 +2580,120 @@ fn validate_paste_next_shortcut<R: tauri::Runtime>(
         format!("paste next shortcut registration cleanup failed for {label}: {error}")
     })
 }
+#[cfg(not(test))]
+fn validate_inbox_shortcut<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    storage: &storage::AppStorage,
+    settings: &storage::AppSettings,
+) -> Result<(), String> {
+    let label = settings.general.inbox_shortcut.as_str();
+    let candidates = [
+        settings.general.global_shortcut.as_str(),
+        settings.general.paste_next_shortcut.as_str(),
+        settings.picker.pin_toggle_shortcut.as_str(),
+        settings.picker.settings_shortcut.as_str(),
+        settings.picker.preview_shortcut.as_str(),
+        settings.picker.external_editor_shortcut.as_str(),
+        COMMAND_PALETTE_SHORTCUT_LABEL,
+        METADATA_SHORTCUT_LABEL,
+        ACTIVE_PREVIOUS_SHORTCUT_LABEL,
+        ACTIVE_NEXT_SHORTCUT_LABEL,
+    ];
+    if candidates
+        .iter()
+        .any(|candidate| !candidate.is_empty() && *candidate == label)
+    {
+        return Err(format!(
+            "inbox shortcut conflicts with an app shortcut: {label}"
+        ));
+    }
+    if storage
+        .list_saved_history_views()?
+        .iter()
+        .any(|view| view.hotkey.as_deref() == Some(label))
+    {
+        return Err(format!(
+            "inbox shortcut conflicts with a saved view: {label}"
+        ));
+    }
+    if actions::list_actions(storage)?.iter().any(|action| {
+        actions::normalize_shortcut_string(action.shortcut.as_deref()).as_deref() == Some(label)
+    }) {
+        return Err(format!(
+            "inbox shortcut conflicts with a script action: {label}"
+        ));
+    }
+    let shortcut =
+        shortcut_from_label(label).ok_or_else(|| format!("unsupported inbox shortcut: {label}"))?;
+    let current = app
+        .try_state::<CurrentInboxShortcut>()
+        .and_then(|state| state.get());
+    if current == Some(shortcut) && app.global_shortcut().is_registered(shortcut) {
+        return Ok(());
+    }
+    if app.global_shortcut().is_registered(shortcut) {
+        return Err(format!("inbox shortcut is already registered: {label}"));
+    }
+    app.global_shortcut()
+        .register(shortcut)
+        .map_err(|error| format!("inbox shortcut registration failed for {label}: {error}"))?;
+    app.global_shortcut()
+        .unregister(shortcut)
+        .map_err(|error| format!("inbox shortcut registration cleanup failed for {label}: {error}"))
+}
+#[cfg(not(test))]
+fn apply_inbox_shortcut_from_settings<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    settings: &storage::AppSettings,
+) -> Result<(), String> {
+    let current = app
+        .try_state::<CurrentInboxShortcut>()
+        .ok_or_else(|| "inbox shortcut state not ready".to_string())?;
+    let label = settings.general.inbox_shortcut.trim();
+    let next =
+        shortcut_from_label(label).ok_or_else(|| format!("unsupported inbox shortcut: {label}"))?;
+    let previous = current.get();
+    if previous == Some(next) && app.global_shortcut().is_registered(next) {
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: true,
+            supported: true,
+            error: None,
+        });
+        return Ok(());
+    }
+    if app.global_shortcut().is_registered(next) {
+        let error = format!("inbox shortcut is already registered: {label}");
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: false,
+            supported: true,
+            error: Some(error.clone()),
+        });
+        return Err(error);
+    }
+    app.global_shortcut().register(next).map_err(|error| {
+        let message = format!("inbox shortcut registration failed for {label}: {error}");
+        current.set_status(NativeShortcutStatus {
+            label: label.to_string(),
+            registered: false,
+            supported: true,
+            error: Some(message.clone()),
+        });
+        message
+    })?;
+    if let Some(previous) = previous.filter(|value| *value != next) {
+        let _ = app.global_shortcut().unregister(previous);
+    }
+    current.set(Some(next));
+    current.set_status(NativeShortcutStatus {
+        label: label.to_string(),
+        registered: true,
+        supported: true,
+        error: None,
+    });
+    Ok(())
+}
 
 #[cfg(not(test))]
 fn normalize_saved_view_hotkey<R: tauri::Runtime>(
@@ -2541,6 +2716,7 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
         .ok_or_else(|| format!("unsupported saved view shortcut: {normalized}"))?;
     let settings = storage.get_settings()?;
     if normalized == settings.general.global_shortcut
+        || normalized == settings.general.inbox_shortcut
         || normalized == settings.general.paste_next_shortcut
         || normalized == settings.picker.pin_toggle_shortcut
         || normalized == settings.picker.settings_shortcut
@@ -3220,12 +3396,17 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
-                    let is_paste_next = app
+                    let is_inbox = app
+                        .try_state::<CurrentInboxShortcut>()
+                        .and_then(|current| current.get())
+                        .is_some_and(|inbox_shortcut| *shortcut == inbox_shortcut);
+                    let is_release_dispatch = app
                         .try_state::<CurrentPasteNextShortcut>()
                         .and_then(|current| current.get())
-                        .is_some_and(|paste_next_shortcut| *shortcut == paste_next_shortcut);
+                        .is_some_and(|paste_next_shortcut| *shortcut == paste_next_shortcut)
+                        || is_inbox;
                     if should_dispatch_global_shortcut(
-                        is_paste_next,
+                        is_release_dispatch,
                         event.state == ShortcutState::Pressed,
                     ) {
                         handle_global_shortcut(app, shortcut);
@@ -3458,6 +3639,7 @@ pub fn run() {
             create_history_item,
             delete_history_item,
             get_history_item,
+            set_history_item_inbox,
             get_settings,
             update_settings,
             set_external_editor_shortcut,
@@ -3551,6 +3733,7 @@ pub fn run() {
             app.manage(CurrentPickerPinShortcut::default());
             app.manage(CurrentExternalEditorShortcut::default());
             app.manage(CurrentPasteNextShortcut::default());
+            app.manage(CurrentInboxShortcut::default());
             app.manage(paste_queue::PasteQueue::default());
             app.manage(ui_host::UiHostState::default());
             app.manage(AiOutputState::default());
@@ -4936,6 +5119,20 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         return;
     }
 
+    if app
+        .try_state::<CurrentInboxShortcut>()
+        .and_then(|current| current.get())
+        .is_some_and(|inbox_shortcut| *shortcut == inbox_shortcut)
+    {
+        if let Some(capture) = app.try_state::<clipboard::ClipboardCapture>() {
+            capture.arm_inbox_capture();
+            if let Err(error) = window_focus::send_copy_shortcut() {
+                capture.cancel_inbox_capture();
+                eprintln!("inbox copy shortcut dispatch failed: {error}");
+            }
+        }
+        return;
+    }
     let picker_shortcut = app
         .try_state::<CurrentPickerShortcut>()
         .map(|current| current.get())
@@ -5434,6 +5631,9 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
     refresh_picker_shortcut_from_settings(app, settings);
     refresh_picker_pin_shortcut_from_settings(app, settings);
     refresh_external_editor_shortcut_from_settings(app, settings);
+    if let Err(error) = apply_inbox_shortcut_from_settings(app, settings) {
+        eprintln!("inbox shortcut refresh failed: {error}");
+    }
     if let Err(error) = apply_paste_next_shortcut_from_settings(app, settings) {
         eprintln!("paste next shortcut refresh failed: {error}");
     }

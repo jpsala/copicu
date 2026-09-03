@@ -41,7 +41,7 @@ export function SavedViewCreator({
       className="scenario-switcher-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Save current search as view"
+      aria-label="Save current search"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -50,10 +50,10 @@ export function SavedViewCreator({
         <header className="scenario-switcher-header">
           <div>
             <strong>Save current search</strong>
-            <span>Name this filter so you can open it again from Views.</span>
+            <span>Name this filter so you can reopen it from Saved searches.</span>
           </div>
-          <UiTooltip label="Close saved view creator">
-            <UiIconButton type="button" variant="subtle" aria-label="Close saved view creator" onClick={onClose}>
+          <UiTooltip label="Close saved search creator">
+            <UiIconButton type="button" variant="subtle" aria-label="Close saved search creator" onClick={onClose}>
               <X size={14} strokeWidth={2.3} aria-hidden="true" />
             </UiIconButton>
           </UiTooltip>
@@ -73,8 +73,8 @@ export function SavedViewCreator({
           <UiTextInput
             autoFocus
             required
-            label="View name"
-            aria-label="Saved view name"
+            label="Saved search name"
+            aria-label="Saved search name"
             value={title}
             placeholder="Recent project images"
             leftSection={<Bookmark size={14} strokeWidth={2.2} aria-hidden="true" />}
@@ -82,7 +82,7 @@ export function SavedViewCreator({
           />
           <div className="scenario-create-actions">
             <UiButton type="button" variant="default" disabled={busy} onClick={onClose}>Cancel</UiButton>
-            <UiButton type="submit" variant="filled" loading={busy} disabled={!title.trim()}>Save view</UiButton>
+            <UiButton type="submit" variant="filled" loading={busy} disabled={!title.trim()}>Save search</UiButton>
           </div>
         </form>
       </div>

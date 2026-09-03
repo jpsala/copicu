@@ -125,11 +125,11 @@ export function Scenarios({
       <div className="scenario-settings scenario-editor-screen" data-testid="scenario-settings">
         <header className="scenario-editor-header">
           <UiButton type="button" variant="subtle" leftSection={<ArrowLeft size={15} />} onClick={closeEditor}>
-            All scenarios
+            All capture modes
           </UiButton>
           <div>
-            <strong>{editingId === null ? "Create scenario" : "Edit scenario"}</strong>
-            <span>A scenario remembers a picker filter and optional labels for new clips.</span>
+            <strong>{editingId === null ? "Create capture mode" : "Edit capture mode"}</strong>
+            <span>A capture mode remembers a picker filter and optional labels for new clips.</span>
           </div>
         </header>
 
@@ -138,16 +138,16 @@ export function Scenarios({
             autoFocus
             label="Name"
             description="The name shown in the picker, for example “Copicu development”."
-            aria-label="Scenario name"
+            aria-label="Capture mode name"
             value={draft.name}
             placeholder="Copicu development"
             onChange={(event) => setDraft({ ...draft, name: event.currentTarget.value })}
           />
 
           <UiTextInput
-            label="What should this scenario show?"
+            label="What should this capture mode show?"
             description="Enter the same search you would use in the picker. Leave it empty to show all history."
-            aria-label="Scenario query"
+            aria-label="Capture mode query"
             value={draft.query}
             placeholder="tag:copicu"
             onChange={(event) => setDraft({ ...draft, query: event.currentTarget.value })}
@@ -161,24 +161,24 @@ export function Scenarios({
 
           <label className="scenario-tags-field">
             <span>Tags for new clips (optional)</span>
-            <small>While this scenario is active, these tags are added to every new capture.</small>
-            <TagInput tags={draft.tags} availableTags={availableTags} ariaLabel="Scenario tags" onChange={(tags) => setDraft({ ...draft, tags })} />
+            <small>While this capture mode is active, these tags are added to every new capture.</small>
+            <TagInput tags={draft.tags} availableTags={availableTags} ariaLabel="Capture mode tags" onChange={(tags) => setDraft({ ...draft, tags })} />
           </label>
 
           <details className="scenario-advanced">
             <summary>Advanced metadata</summary>
             <p>Use these only if you want structured fields in addition to tags. They do not control which clips appear.</p>
             <div className="scenario-property-grid">
-              <UiTextInput label="Client" description="Who the work is for, such as ACME." aria-label="Scenario client values" value={draft.client} placeholder="ACME" onChange={(event) => setDraft({ ...draft, client: event.currentTarget.value })} />
-              <UiTextInput label="Project" description="The product or workstream, such as Website." aria-label="Scenario project values" value={draft.project} placeholder="Website" onChange={(event) => setDraft({ ...draft, project: event.currentTarget.value })} />
-              <UiTextInput label="Activity" description="The kind of work, such as Review." aria-label="Scenario activity values" value={draft.activity} placeholder="Development" onChange={(event) => setDraft({ ...draft, activity: event.currentTarget.value })} />
+              <UiTextInput label="Client" description="Who the work is for, such as ACME." aria-label="Capture mode client values" value={draft.client} placeholder="ACME" onChange={(event) => setDraft({ ...draft, client: event.currentTarget.value })} />
+              <UiTextInput label="Project" description="The product or workstream, such as Website." aria-label="Capture mode project values" value={draft.project} placeholder="Website" onChange={(event) => setDraft({ ...draft, project: event.currentTarget.value })} />
+              <UiTextInput label="Activity" description="The kind of work, such as Review." aria-label="Capture mode activity values" value={draft.activity} placeholder="Development" onChange={(event) => setDraft({ ...draft, activity: event.currentTarget.value })} />
             </div>
             <small>Separate multiple values with commas.</small>
           </details>
 
           <div className="scenario-form-actions">
             <UiButton type="button" variant="filled" loading={busy} disabled={!draft.name.trim()} onClick={() => void save()}>
-              {editingId === null ? "Create scenario" : "Save changes"}
+              {editingId === null ? "Create capture mode" : "Save changes"}
             </UiButton>
             <UiButton type="button" variant="default" onClick={closeEditor}>Cancel</UiButton>
           </div>
@@ -190,26 +190,26 @@ export function Scenarios({
   return (
     <div className="scenario-settings" data-testid="scenario-settings">
       <div className="scenario-explainer">
-        <strong>Scenarios are workspaces for the picker</strong>
-        <p>Each scenario remembers what the picker should show. It can also tag new clips automatically while active.</p>
+        <strong>Capture modes are workspaces for the picker</strong>
+        <p>Each mode remembers what the picker should show and can tag new clips while active.</p>
       </div>
 
       <div className={`scenario-session-summary${activeSession ? " is-active" : ""}`} aria-live="polite">
         {activeSession ? <CheckCircle2 size={17} strokeWidth={2.2} aria-hidden="true" /> : <Circle size={17} strokeWidth={2} aria-hidden="true" />}
         <div>
-          <span>Current scenario</span>
+          <span>Current capture mode</span>
           <strong>{activeSession?.scenarioName ?? "None active"}</strong>
         </div>
-        {activeSession ? <UiButton type="button" size="xs" variant="default" onClick={() => void onStop()}>Stop scenario</UiButton> : null}
+        {activeSession ? <UiButton type="button" size="xs" variant="default" onClick={() => void onStop()}>Stop capture mode</UiButton> : null}
       </div>
 
       <div className="scenario-library-header">
         <div>
-          <strong>Your scenarios</strong>
-          <span>{scenarios.length === 1 ? "1 scenario" : `${scenarios.length} scenarios`}</span>
+          <strong>Your capture modes</strong>
+          <span>{scenarios.length === 1 ? "1 capture mode" : `${scenarios.length} capture modes`}</span>
         </div>
         <UiButton type="button" variant="default" leftSection={<Plus size={14} />} disabled={loading} onClick={beginCreate}>
-          New scenario
+          New capture mode
         </UiButton>
       </div>
 

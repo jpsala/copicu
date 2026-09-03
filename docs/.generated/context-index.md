@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-08-29T23:17:45.533Z
+Generated: 2026-09-03T13:28:15.038Z
 
 ## Topics
 
@@ -58,6 +58,7 @@ Generated: 2026-08-29T23:17:45.533Z
 - [007-architecture-hardening](../../specs/007-architecture-hardening/)
 - [008-clipboard-enrichment](../../specs/008-clipboard-enrichment/)
 - [009-saved-history-views](../../specs/009-saved-history-views/)
+- [010-inbox-copy](../../specs/010-inbox-copy/)
 
 ## Skills
 

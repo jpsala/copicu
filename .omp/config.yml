@@ -1,3 +1,5 @@
 computer:
   enabled: true
   display: all
+tools:
+  approvalMode: write

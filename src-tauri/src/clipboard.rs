@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 const COALESCE_WINDOW: Duration = Duration::from_millis(150);
 const SELF_WRITE_SUPPRESSION_WINDOW: Duration = Duration::from_millis(1500);
 const MAX_CAPTURE_EVENTS: usize = 80;
+const INBOX_CAPTURE_WINDOW: Duration = Duration::from_millis(2_000);
 const MAX_TEXT_PREVIEW_CHARS: usize = 700;
 const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
 const CLIPBOARD_RETRY_DELAYS: [Duration; 4] = [
@@ -107,9 +108,14 @@ struct ClipboardCaptureState {
     events: VecDeque<CaptureEvent>,
 }
 
+struct PendingInboxCapture {
+    expires_at: Instant,
+}
+
 pub struct ClipboardCapture {
     state: Arc<Mutex<ClipboardCaptureState>>,
     enabled: Arc<AtomicBool>,
+    pending_inbox: Arc<Mutex<Option<PendingInboxCapture>>>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -167,16 +173,15 @@ impl CaptureTagContextState {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct SelfWriteSuppression {
-    pending: Arc<Mutex<Option<PendingSelfWrite>>>,
-}
-
 struct PendingSelfWrite {
     normalized_hash: String,
     expires_at: Instant,
 }
 
+#[derive(Clone, Default)]
+pub struct SelfWriteSuppression {
+    pending: Arc<Mutex<Option<PendingSelfWrite>>>,
+}
 struct TextClipboardHandler<R: Runtime> {
     app: AppHandle<R>,
     clipboard: ClipboardContext,
@@ -187,6 +192,7 @@ struct TextClipboardHandler<R: Runtime> {
     previous_window: crate::window_focus::PreviousWindow,
     capture_tag_context: CaptureTagContextState,
     active_scenario: crate::scenario::ActiveScenarioState,
+    pending_inbox: Arc<Mutex<Option<PendingInboxCapture>>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -207,6 +213,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
         previous_window: crate::window_focus::PreviousWindow,
         capture_tag_context: CaptureTagContextState,
         active_scenario: crate::scenario::ActiveScenarioState,
+        pending_inbox: Arc<Mutex<Option<PendingInboxCapture>>>,
     ) -> clipboard_rs::Result<Self> {
         Ok(Self {
             app,
@@ -218,7 +225,20 @@ impl<R: Runtime> TextClipboardHandler<R> {
             previous_window,
             capture_tag_context,
             active_scenario,
+            pending_inbox,
         })
+    }
+}
+impl<R: Runtime> TextClipboardHandler<R> {
+    fn take_inbox_request(&self) -> bool {
+        let mut pending = self
+            .pending_inbox
+            .lock()
+            .expect("inbox pending mutex poisoned");
+        let Some(request) = pending.take() else {
+            return false;
+        };
+        Instant::now() <= request.expires_at
     }
 }
 
@@ -336,13 +356,24 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             dev_log(format_args!("clipboard image ignored: text_available"));
         }
 
-        let outcome = record_candidate(
-            &self.state,
-            hash.clone(),
-            probe_result.clone(),
-            Some(preview),
-            CaptureOutcome::CapturedText,
-        );
+        let inbox_requested = self.take_inbox_request();
+        let outcome = if inbox_requested {
+            record_forced_candidate(
+                &self.state,
+                hash.clone(),
+                probe_result.clone(),
+                Some(preview),
+                CaptureOutcome::CapturedText,
+            )
+        } else {
+            record_candidate(
+                &self.state,
+                hash.clone(),
+                probe_result.clone(),
+                Some(preview),
+                CaptureOutcome::CapturedText,
+            )
+        };
         match outcome {
             CaptureOutcome::CapturedText => {
                 let capture_context = capture_context_from_probe("clipboard", &probe_result);
@@ -362,6 +393,11 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                     active_scenario,
                 ) {
                     Ok(item_id) => {
+                        if inbox_requested {
+                            if let Err(error) = self.storage.set_history_item_inbox(item_id, true) {
+                                eprintln!("inbox state update failed: {error}");
+                            }
+                        }
                         self.apply_builtin_enrichment(item_id, &normalized);
                         self.emit_history_changed(item_id, "text");
                         self.run_clipboard_change_actions(item_id);
@@ -448,13 +484,24 @@ impl<R: Runtime> TextClipboardHandler<R> {
             return;
         }
 
-        let outcome = record_candidate(
-            &self.state,
-            image.normalized_hash.clone(),
-            probe_result.clone(),
-            None,
-            CaptureOutcome::CapturedImage,
-        );
+        let inbox_requested = self.take_inbox_request();
+        let outcome = if inbox_requested {
+            record_forced_candidate(
+                &self.state,
+                image.normalized_hash.clone(),
+                probe_result.clone(),
+                None,
+                CaptureOutcome::CapturedImage,
+            )
+        } else {
+            record_candidate(
+                &self.state,
+                image.normalized_hash.clone(),
+                probe_result.clone(),
+                None,
+                CaptureOutcome::CapturedImage,
+            )
+        };
         match outcome {
             CaptureOutcome::CapturedImage => {
                 let capture_context = capture_context_from_probe("clipboard", &probe_result);
@@ -473,6 +520,11 @@ impl<R: Runtime> TextClipboardHandler<R> {
                     active_scenario,
                 ) {
                     Ok(item_id) => {
+                        if inbox_requested {
+                            if let Err(error) = self.storage.set_history_item_inbox(item_id, true) {
+                                eprintln!("inbox state update failed: {error}");
+                            }
+                        }
                         self.emit_history_changed(item_id, "image");
                         self.run_clipboard_change_actions(item_id);
                         persistent_log(
@@ -613,6 +665,23 @@ impl ClipboardCapture {
             events: state.events.iter().cloned().rev().collect(),
         }
     }
+    #[cfg(not(test))]
+    pub fn arm_inbox_capture(&self) {
+        let mut pending = self
+            .pending_inbox
+            .lock()
+            .expect("inbox pending mutex poisoned");
+        *pending = Some(PendingInboxCapture {
+            expires_at: Instant::now() + INBOX_CAPTURE_WINDOW,
+        });
+    }
+
+    #[cfg(not(test))]
+    pub fn cancel_inbox_capture(&self) {
+        if let Ok(mut pending) = self.pending_inbox.lock() {
+            *pending = None;
+        }
+    }
 }
 
 impl SelfWriteSuppression {
@@ -647,20 +716,16 @@ impl SelfWriteSuppression {
             .pending
             .lock()
             .expect("self-write suppression mutex poisoned");
-
         let Some(current) = pending.as_ref() else {
             return false;
         };
-
         if Instant::now() > current.expires_at {
             *pending = None;
             return false;
         }
-
         if current.normalized_hash != normalized_hash {
             return false;
         }
-
         *pending = None;
         true
     }
@@ -677,6 +742,7 @@ pub fn spawn_text_watcher<R: Runtime>(
 ) -> clipboard_rs::Result<ClipboardCapture> {
     let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
     let capture_enabled = Arc::new(AtomicBool::new(enabled));
+    let pending_inbox = Arc::new(Mutex::new(None));
     let handler = TextClipboardHandler::new(
         app,
         Arc::clone(&state),
@@ -686,12 +752,14 @@ pub fn spawn_text_watcher<R: Runtime>(
         previous_window,
         capture_tag_context,
         active_scenario,
+        Arc::clone(&pending_inbox),
     )?;
     let mut watcher = ClipboardWatcherContext::<TextClipboardHandler<R>>::new()?;
     watcher.add_handler(handler);
     let capture = ClipboardCapture {
         state: Arc::clone(&state),
         enabled: capture_enabled,
+        pending_inbox,
     };
 
     thread::Builder::new()
@@ -957,6 +1025,23 @@ fn record_candidate(
     push_event(&mut state, captured_outcome.clone(), probe_result, preview);
     captured_outcome
 }
+fn record_forced_candidate(
+    state: &Arc<Mutex<ClipboardCaptureState>>,
+    hash: String,
+    probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>,
+    preview: Option<TextPreview>,
+    outcome: CaptureOutcome,
+) -> CaptureOutcome {
+    let mut state = state.lock().expect("clipboard state mutex poisoned");
+    state.last_hash = Some(hash);
+    state.last_change_at = Some(Instant::now());
+    state.captured_count += 1;
+    if matches!(outcome, CaptureOutcome::CapturedImage) {
+        state.captured_image_count += 1;
+    }
+    push_event(&mut state, outcome.clone(), probe_result, preview);
+    outcome
+}
 
 fn record_event(
     state: &Arc<Mutex<ClipboardCaptureState>>,
@@ -1124,6 +1209,7 @@ mod tests {
         let capture = ClipboardCapture {
             state: Arc::new(Mutex::new(ClipboardCaptureState::default())),
             enabled: Arc::new(AtomicBool::new(true)),
+            pending_inbox: Arc::new(Mutex::new(None)),
         };
 
         assert!(capture.is_enabled());

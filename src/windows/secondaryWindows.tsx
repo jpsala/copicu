@@ -110,9 +110,10 @@ type HistoryItem = {
   use_count: number;
   content_hash: string;
   title: string | null;
-  tags: string | null;
   notes: string | null;
   is_marked: boolean;
+  is_inbox: boolean;
+  inbox_at_unix_ms: number | null;
 };
 
 type CaptureContextEvent = {
@@ -154,6 +155,7 @@ type NativeShortcutStatus = {
 
 type AppShortcutStatus = {
   picker: NativeShortcutStatus;
+  inbox: NativeShortcutStatus;
   pasteNext: NativeShortcutStatus;
   pin: NativeShortcutStatus;
   externalEditor: NativeShortcutStatus;
@@ -289,7 +291,7 @@ function captureContextRows(event: CaptureContextEvent) {
     ["Captured", formatCaptureTimestamp(event.capturedAtUnixMs)],
     ["Source", event.sourceKind],
     [
-      "Scenario",
+      "Capture mode",
       event.scenarioId === null
         ? "—"
         : `#${event.scenarioId} · revision ${event.scenarioRevision ?? "—"} · ${event.scenarioSessionId ?? "session unavailable"}`,
@@ -349,7 +351,7 @@ function metadataProperties(entries: MetadataPropertyEntry[]) {
 function metadataSourceLabel(source: string) {
   const normalized = source.trim().toLocaleLowerCase();
   if (normalized.includes("scenario")) {
-    return "Scenario";
+    return "Capture mode";
   }
   if (normalized.includes("context") || normalized.includes("capture")) {
     return "Context";
@@ -2095,6 +2097,7 @@ function SettingsPanel({
   ].join(" ");
   const hotkeySearchText = [
     draft.general.globalShortcut,
+    draft.general.inboxShortcut,
     draft.picker.pinToggleShortcut,
     draft.picker.settingsShortcut,
     draft.picker.externalEditorShortcut,
@@ -2130,7 +2133,7 @@ function SettingsPanel({
     updateStatusMessage(updateStatus),
   ].join(" ");
   const scenarioSearchText = [
-    "scenarios scenario client project activity context picker view saved view",
+    "capture modes capture mode scenarios scenario client project activity context picker saved search saved view",
     ...scenarios.map((scenario) => [
       scenario.name,
       scenario.query,
@@ -2169,11 +2172,11 @@ function SettingsPanel({
     {
       id: "history",
       label: "History",
-      description: "Storage, retention and saved views",
+      description: "Storage, retention and saved searches",
     },
     {
       id: "scenarios",
-      label: "Scenarios",
+      label: "Capture modes",
       description: "Project context and picker views",
     },
     {
@@ -2398,7 +2401,7 @@ function SettingsPanel({
                 {visible("hotkeys", "Shortcut summary", "Global local script editable inventory") ? (
                   <SettingRow label="Shortcut summary" description="Current hotkey surface across the app and discovered scripts.">
                     <div className="action-summary" aria-label="Hotkey summary">
-                      <UiBadge className="settings-summary-badge" variant="light">5 editable app shortcuts</UiBadge>
+                      <UiBadge className="settings-summary-badge" variant="light">6 editable app shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">6 picker shortcuts</UiBadge>
                       <UiBadge className="settings-summary-badge" variant="light">
                         {scriptActions.filter((action) => Boolean(normalizeShortcutString(action.shortcut ?? ""))).length} script shortcuts
@@ -2414,9 +2417,19 @@ function SettingsPanel({
                   >
                     <AppShortcutInventory
                       pickerShortcut={draft.general.globalShortcut}
+                      inboxShortcut={draft.general.inboxShortcut}
                       pasteNextShortcut={draft.general.pasteNextShortcut}
                       pinShortcut={draft.picker.pinToggleShortcut}
                       settingsShortcut={draft.picker.settingsShortcut}
+                      onInboxShortcutChange={(inboxShortcut) =>
+                        onDraftChange({
+                          ...draft,
+                          general: {
+                            ...draft.general,
+                            inboxShortcut,
+                          },
+                        })
+                      }
                       externalEditorShortcut={draft.picker.externalEditorShortcut}
                       shortcutStatus={shortcutStatus}
                       onPickerShortcutChange={(globalShortcut) =>
@@ -3014,8 +3027,8 @@ function SettingsPanel({
             ) : null}
 
             {displayedSections.some((section) => section.id === "history") ? (
-              <SettingsSection title="Saved history views" description="Reusable browse scopes with optional native global hotkeys.">
-                <SettingRow label="Saved views" description="Queries are validated before saving. A blank query explicitly means all history; editing the picker query returns to a manual search.">
+              <SettingsSection title="Saved searches" description="Reusable browse scopes with optional native global hotkeys.">
+                <SettingRow label="Saved searches" description="Queries are validated before saving. A blank query explicitly means all history; editing the picker query returns to a manual search.">
                   <SavedHistoryViews
                     views={savedViews}
                     loading={savedViewsLoading}
@@ -3029,7 +3042,7 @@ function SettingsPanel({
             ) : null}
 
             {displayedSections.some((section) => section.id === "scenarios") ? (
-              <SettingsSection title="Scenarios" description="Switch projects without losing the filter or context that belongs to each one.">
+              <SettingsSection title="Capture modes" description="Switch projects without losing the filter or context that belongs to each one.">
                 <Scenarios
                   scenarios={scenarios}
                   availableTags={tags}
@@ -3570,12 +3583,14 @@ function ReadOnlyStatus({
 
 function AppShortcutInventory({
   pickerShortcut,
+  inboxShortcut,
   pasteNextShortcut,
   pinShortcut,
   settingsShortcut,
   externalEditorShortcut,
   shortcutStatus,
   onPickerShortcutChange,
+  onInboxShortcutChange,
   onPasteNextShortcutChange,
   onPinShortcutChange,
   onSettingsShortcutChange,
@@ -3583,12 +3598,14 @@ function AppShortcutInventory({
 }: {
   pickerShortcut: string;
   pasteNextShortcut: string;
+  inboxShortcut: string;
   pinShortcut: string;
   settingsShortcut: string;
   externalEditorShortcut: string;
   shortcutStatus: AppShortcutStatus | null;
   onPickerShortcutChange: (value: string) => void;
   onPasteNextShortcutChange: (value: string) => void;
+  onInboxShortcutChange: (value: string) => void;
   onPinShortcutChange: (value: string) => void;
   onSettingsShortcutChange: (value: string) => void;
   onExternalEditorShortcutChange: (value: string) => void;
@@ -3611,6 +3628,25 @@ function AppShortcutInventory({
           value={pickerShortcut}
           allowSequences={false}
           onChange={onPickerShortcutChange}
+        />
+      </section>
+      <section className="hotkey-inventory-item">
+        <div className="hotkey-inventory-copy">
+          <div className="hotkey-inventory-header">
+            <strong>Send to Inbox</strong>
+            <div className="hotkey-meta">
+              <ShortcutRegistrationStatusBadge status={shortcutStatus?.inbox ?? null} />
+              <ReadOnlyStatus value="Editable" />
+            </div>
+          </div>
+          <p>{shortcutStatusDescription(shortcutStatus?.inbox ?? null, "Global shortcut that captures the next clipboard change into Inbox without focusing Copicu.")}</p>
+        </div>
+        <HotkeyField
+          label="Send to Inbox shortcut"
+          value={inboxShortcut}
+          allowSequences={false}
+          helpText="Global shortcut. Ctrl+Alt+I by default."
+          onChange={onInboxShortcutChange}
         />
       </section>
 

@@ -1595,6 +1595,20 @@ button {
   opacity: 1;
 }
 
+.item-inbox-indicator {
+  position: absolute;
+  z-index: 2;
+  bottom: 8px;
+  left: 39px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 1px 5px;
+  font-size: 0.58rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
 .selection-action-bar {
   display: flex;
   min-width: 0;

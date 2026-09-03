@@ -140,6 +140,8 @@ pub struct HistoryItem {
     tags: Option<String>,
     is_marked: bool,
     marked_at_unix_ms: Option<i64>,
+    is_inbox: bool,
+    inbox_at_unix_ms: Option<i64>,
 }
 
 impl HistoryItem {
@@ -718,6 +720,8 @@ pub struct AppSettings {
 #[serde(rename_all = "camelCase")]
 pub struct GeneralSettings {
     pub global_shortcut: String,
+    #[serde(default = "default_inbox_shortcut")]
+    pub inbox_shortcut: String,
     #[serde(default = "default_paste_next_shortcut")]
     pub paste_next_shortcut: String,
     #[serde(default)]
@@ -917,6 +921,7 @@ impl Default for AppSettings {
             schema_version: SETTINGS_SCHEMA_VERSION,
             general: GeneralSettings {
                 global_shortcut: default_global_shortcut(),
+                inbox_shortcut: default_inbox_shortcut(),
                 paste_next_shortcut: default_paste_next_shortcut(),
                 launch_on_startup: false,
                 capture_enabled: default_capture_enabled(),
@@ -983,6 +988,9 @@ fn default_global_shortcut() -> String {
         .filter(|value| !value.as_os_str().is_empty())
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| DEFAULT_GLOBAL_SHORTCUT.to_string())
+}
+fn default_inbox_shortcut() -> String {
+    "Ctrl+Alt+I".to_string()
 }
 
 fn default_paste_next_shortcut() -> String {
@@ -2045,6 +2053,26 @@ impl AppStorage {
 
     pub fn mark_copied(&self, id: i64) -> Result<(), String> {
         self.promote_to_top(id)
+    }
+    pub fn set_history_item_inbox(&self, id: i64, inbox: bool) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let updated = conn
+            .execute(
+                "UPDATE clipboard_items
+                 SET is_inbox = ?1,
+                     inbox_at_unix_ms = CASE WHEN ?1 != 0 THEN ?2 ELSE NULL END
+                 WHERE id = ?3",
+                params![inbox as i64, now_unix_ms(), id],
+            )
+            .map_err(|error| format!("failed to update inbox state: {error}"))?;
+        if updated == 0 {
+            return Err(format!("clipboard item not found: {id}"));
+        }
+        self.bump_mutation_epoch();
+        Ok(())
     }
 
     pub fn set_items_marked(&self, request: SetHistoryItemsMarkedRequest) -> Result<(), String> {
@@ -3417,6 +3445,8 @@ where
                 tags: row.get(19)?,
                 is_marked: row.get(20)?,
                 marked_at_unix_ms: row.get(21)?,
+                is_inbox: row.get::<_, i64>(22)? != 0,
+                inbox_at_unix_ms: row.get(23)?,
             })
         })
         .map_err(|error| format!("failed to query clipboard history: {error}"))?;
@@ -4561,9 +4591,14 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
         .query_row(
             "SELECT COUNT(*) FROM clipboard_items
              WHERE id NOT IN (
-                SELECT id FROM clipboard_items
-                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
-                LIMIT ?1
+                SELECT id FROM clipboard_items WHERE is_inbox != 0
+                UNION ALL
+                SELECT id FROM (
+                    SELECT id FROM clipboard_items
+                    WHERE is_inbox = 0
+                    ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                    LIMIT ?1
+                )
              )",
             params![limit],
             |row| row.get::<_, i64>(0),
@@ -4575,9 +4610,14 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
     conn.execute(
         "DELETE FROM clipboard_item_tags
          WHERE item_id NOT IN (
-            SELECT id FROM clipboard_items
-            ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
-            LIMIT ?1
+            SELECT id FROM clipboard_items WHERE is_inbox != 0
+            UNION ALL
+            SELECT id FROM (
+                SELECT id FROM clipboard_items
+                WHERE is_inbox = 0
+                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                LIMIT ?1
+            )
          )",
         params![limit],
     )
@@ -4586,9 +4626,14 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
     conn.execute(
         "DELETE FROM clipboard_items
          WHERE id NOT IN (
-            SELECT id FROM clipboard_items
-            ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
-            LIMIT ?1
+            SELECT id FROM clipboard_items WHERE is_inbox != 0
+            UNION ALL
+            SELECT id FROM (
+                SELECT id FROM clipboard_items
+                WHERE is_inbox = 0
+                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                LIMIT ?1
+            )
          )",
         params![limit],
     )
@@ -4609,9 +4654,14 @@ fn pruned_blob_paths_from_conn(
             "SELECT blob_path, thumbnail_path
              FROM clipboard_items
              WHERE id NOT IN (
-                SELECT id FROM clipboard_items
-                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
-                LIMIT ?1
+                SELECT id FROM clipboard_items WHERE is_inbox != 0
+                UNION ALL
+                SELECT id FROM (
+                    SELECT id FROM clipboard_items
+                    WHERE is_inbox = 0
+                    ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                    LIMIT ?1
+                )
              )
              AND (
                 (blob_path IS NOT NULL AND TRIM(blob_path) != '')
@@ -7127,7 +7177,7 @@ mod tests {
     fn scenario_query_migration_preserves_existing_scenarios_and_saved_views() {
         let mut conn = Connection::open_in_memory().expect("in-memory sqlite should open");
         let migrations_before_independent_scenarios =
-            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 1]);
+            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 2]);
         migrations_before_independent_scenarios
             .to_latest(&mut conn)
             .expect("legacy scenario migrations should run");

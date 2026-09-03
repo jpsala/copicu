@@ -57,6 +57,8 @@ pub struct SearchPlanFiltersV1 {
     #[serde(default)]
     pub marked: Option<bool>,
     #[serde(default)]
+    pub inbox: Option<bool>,
+    #[serde(default)]
     pub date: Vec<SearchPlanDateFilterV1>,
     #[serde(default)]
     pub source_app: Vec<String>,
@@ -208,6 +210,7 @@ pub(super) struct ParsedHistoryQuery {
     pub(super) has_filters: Vec<HasFilter>,
     pub(super) missing_filters: Vec<HasFilter>,
     pub(super) marked_filters: Vec<bool>,
+    pub(super) inbox_filters: Vec<bool>,
     pub(super) after_unix_ms: Option<i64>,
     pub(super) before_unix_ms: Option<i64>,
     pub(super) source_apps: Vec<String>,
@@ -514,7 +517,6 @@ fn push_is_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool) {
     if value.is_empty() {
         return;
     }
-
     match value.as_str() {
         "marked" | "checked" => {
             parsed.marked_filters.push(!negated);
@@ -522,6 +524,8 @@ fn push_is_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool) {
         "unmarked" | "unchecked" => {
             parsed.marked_filters.push(negated);
         }
+        "inbox" => parsed.inbox_filters.push(!negated),
+        "not-inbox" | "not_inbox" => parsed.inbox_filters.push(negated),
         _ => push_text_filter(parsed, &format!("is:{value}"), negated),
     }
 }
@@ -640,6 +644,9 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
         .iter()
         .filter_map(|filter| SearchPlanMissingV1::try_from(*filter).ok())
         .collect();
+    if let Some(inbox) = query.inbox_filters.last() {
+        filters.inbox = Some(*inbox);
+    }
     if let Some(marked) = query.marked_filters.last() {
         filters.marked = Some(*marked);
     }
@@ -703,6 +710,7 @@ impl SearchPlanFiltersV1 {
             && self.not_tags.is_empty()
             && self.has.is_empty()
             && self.missing.is_empty()
+            && self.inbox.is_none()
             && self.marked.is_none()
             && self.date.is_empty()
             && self.source_app.is_empty()
@@ -791,6 +799,13 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
         }
         for filter in &filters.missing {
             clauses.push(has_filter_sql((*filter).into(), true));
+        }
+        if let Some(inbox) = filters.inbox {
+            clauses.push(if inbox {
+                "is_inbox != 0".to_string()
+            } else {
+                "is_inbox = 0".to_string()
+            });
         }
         if let Some(marked) = filters.marked {
             clauses.push(if marked {
@@ -973,7 +988,7 @@ pub(super) fn history_item_select_columns(include_content: bool) -> String {
          normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
          COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
          mime_primary, blob_path, thumbnail_path, byte_size, width, height,
-         title, notes, tags, is_marked, marked_at_unix_ms"
+         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms"
     )
 }
 
@@ -994,10 +1009,10 @@ fn clean_values(values: &[String]) -> impl Iterator<Item = &str> {
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
 }
-
 fn compile_order_sql(sort: &[SearchPlanSortV1]) -> String {
     if sort.is_empty() {
-        return "COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC".to_string();
+        return "is_inbox DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC"
+            .to_string();
     }
 
     let mut parts = sort
@@ -1529,7 +1544,13 @@ pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation 
                 "is" => values.iter().all(|value| {
                     matches!(
                         value.trim().to_ascii_lowercase().as_str(),
-                        "marked" | "checked" | "unmarked" | "unchecked"
+                        "marked"
+                            | "checked"
+                            | "unmarked"
+                            | "unchecked"
+                            | "inbox"
+                            | "not-inbox"
+                            | "not_inbox"
                     )
                 }),
                 "has" => values.iter().all(|value| parse_has_filter(value).is_some()),
@@ -1748,7 +1769,7 @@ fn is_leap_year(year: i64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_iso_datetime_unix_ms, search_query_explanation};
+    use super::{compile_order_sql, parse_iso_datetime_unix_ms, search_query_explanation};
 
     #[test]
     fn iso_datetime_applies_explicit_timezone_offset() {
@@ -1757,6 +1778,14 @@ mod tests {
             parse_iso_datetime_unix_ms("2026-06-07T14:32:00-03:00").expect("offset datetime");
 
         assert_eq!(buenos_aires, utc + 3 * 3_600_000);
+    }
+
+    #[test]
+    fn default_order_prioritizes_recent_inbox_entries() {
+        assert_eq!(
+            compile_order_sql(&[]),
+            "is_inbox DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC"
+        );
     }
 
     #[test]
@@ -1783,6 +1812,14 @@ mod tests {
             .any(
                 |diagnostic| diagnostic.code == "unknownFilter" && diagnostic.severity == "warning"
             ));
+    }
+
+    #[test]
+    fn explanation_accepts_inbox_state_filters() {
+        let explanation = search_query_explanation("is:inbox is:not-inbox");
+
+        assert!(explanation.diagnostics.is_empty());
+        assert_eq!(explanation.chips.len(), 2);
     }
 
     #[test]

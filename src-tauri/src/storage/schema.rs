@@ -457,5 +457,14 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
     ALTER TABLE scenarios_independent RENAME TO scenarios;
     "#,
     ),
+    M::up(
+        r#"
+    ALTER TABLE clipboard_items ADD COLUMN is_inbox INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE clipboard_items ADD COLUMN inbox_at_unix_ms INTEGER;
+
+    CREATE INDEX idx_clipboard_items_inbox
+        ON clipboard_items(is_inbox DESC, inbox_at_unix_ms DESC);
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

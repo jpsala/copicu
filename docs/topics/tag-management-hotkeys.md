@@ -346,8 +346,8 @@ Decision 2026-07-25: `#` queda reservado para tags en el textarea de metadata, s
 3. Hotkey/secuencia por tag abre picker filtrado.
 4. Renombrar/merge/delete tags con operaciones batch seguras.
 5. Smart tagger interno como action/command `clipboardChange`, default off.
-6. Copy inteligente opcional con hotkey no destructivo.
-7. Saved filters/smart collections como concepto separado de tags manuales.
+6. Implementado fuera del modelo de tags: `Send to Inbox` (`Ctrl+Alt+I` configurable) crea una bandeja durable de catalogacion pendiente sin interceptar el copy ordinario.
+7. Saved searches/smart collections permanecen separadas de tags manuales y del estado Inbox.
 
 ## Preguntas Abiertas
 
