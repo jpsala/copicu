@@ -83,76 +83,38 @@ Criterios acordados:
 - Diagnósticos: `picker.open.shortcut`, `prepare`, `shell-committed`, `shell`, `query`, `query-resolved`, `dom-commit` y `frame-opportunity`. `window.show.done` sólo mide la presentación nativa; ni ese evento ni rAF prueban el primer frame visible. Comparar con screenshots de la superficie real.
 - Smoke mínimo: varias copias sintéticas con picker oculto -> hotkey desde una app externa -> feed vacío/carga -> primera fila nueva y activa; repetir con captura durante consulta, hide/reopen, filtro fijo, capture mode, query explícita durante carga y Retry. Conservar el delay nativo de 90 ms y el retry condicional de foco de 60 ms hasta medir una alternativa: teclear antes de que Windows entregue el foco puede ir a la aplicación anterior.
 
-## Prioridad De Trabajo
+## Contratos Y Riesgos De Rendimiento
 
-### P0: Reducir Payload Del Feed
+### Payload Del Feed
 
-Problema observado:
+El contrato de preview ya está implementado; no tratarlo como un P0 pendiente:
 
-- `HistorySearchRequest.include_content` existe, pero `storage.history_search` lo ignora.
-- Las queries de paginas traen `text` completo para todos los items.
-- La UI necesita preview para el feed, y contenido completo solo para editar, activar, scripts o vista expandida.
+- Las páginas con `includeContent=false` usan texto truncado y metadata de preview.
+- El contenido completo se obtiene bajo demanda para editar, expandir o ejecutar acciones; scripts que lo solicitan deben conservar ese acceso.
+- Validar con clips largos que la página inicial no transporte todo el contenido, sin romper activación ni edición.
 
-Pattern recomendado:
+### Imágenes Del Feed
 
-- Introducir un DTO de pagina distinto de `HistoryItem` si hace falta.
-- Para `includeContent=false`, devolver preview truncado y metadata suficiente:
-  - `id`, `contentKind`, `previewText`, `textCharCount`, timestamps, flags, MIME/blob/thumbnail metadata, title/notes/tags.
-- Mantener `get_item(id)` o una ruta equivalente para contenido completo bajo demanda.
-- No romper scripts: `copicu.history.search(..., { content: true })` debe seguir obteniendo contenido cuando lo pide.
+El feed usa `thumbnail_path`, no el PNG principal. El original queda reservado para copy-back y preview completo.
 
-Validacion esperada:
+Riesgo a medir: cada refresh vuelve a leer y codificar los thumbnails como data URLs. Que sean thumbnails no vuelve gratuito el I/O ni el IPC. Considerar cache o una ruta segura de blobs sólo si una medición con páginas de imágenes justifica el cambio; conservar la calidad del preview y el original para copiar.
 
-- Feed sigue renderizando texto, metadata e imagenes.
-- Edit/activate/scripts con content siguen funcionando.
-- Items largos no cruzan completos por IPC en la pagina inicial.
+### Actualización E Idle
 
-### P0: Thumbnails Reales Para Imagenes
+El historial se actualiza por eventos y por el flujo de [apertura fresca](#apertura-fresca-del-picker), no por un intervalo permanente del feed.
 
-Problema observado:
+- El polling de snapshot/probe y WhichKey queda condicionado al modo debug; los heartbeats dependen del modo de diagnóstico. No confundir una medición con diagnósticos activos con el idle normal.
+- No asumir que toda mutación backend emite el evento: comprobar también las rutas de actualización explícita de la UI.
+- Validar captura visible y reapertura tras capturas ocultas, además de CPU/IPC en idle con diagnósticos desactivados.
+- La entrega de eventos desde callbacks nativos sensibles conserva los gates de foco y threading; no cambiarla sólo para reducir llamadas.
 
-- Para imagenes, `thumbnail_data_url` usa `blob_path` principal en vez de `thumbnail_path`.
-- Cada pagina puede leer PNG grande, base64-encodearlo y mandarlo por IPC.
-
-Pattern recomendado:
-
-- Usar `thumbnail_path` para el feed.
-- Reservar `blob_path` principal para copy-back, preview detallada o export.
-- Considerar servir blobs por protocolo/ruta segura en vez de `data:` si el base64 sigue siendo caro.
-
-Validacion esperada:
-
-- Imagenes capturadas siguen visibles en el picker.
-- Copy-back usa el PNG principal.
-- La pagina inicial no incluye PNGs grandes como data URL.
-
-### P0: Idle Event-Driven
-
-Problema observado:
-
-- El renderer refresca historial por intervalo.
-- El renderer consulta snapshot/probe por intervalo.
-- WhichKey tiene polling propio.
-- Los diagnosticos renderer mandan heartbeats constantes.
-
-Pattern recomendado:
-
-- Emitir eventos backend cuando cambia historial: capture, edit, delete, mark, tag, import.
-- Refrescar al mostrar/focalizar el picker y al recibir evento.
-- Mantener polling solo como fallback dev/debug, con intervalos mas largos y cancelado cuando la ventana no esta visible.
-- Evitar `emit` hacia `main` desde callbacks global-shortcut sensibles: para ese camino se mantiene la regla vigente de invertir direccion con consulta renderer.
-
-Validacion esperada:
-
-- Con app quieta, no hay IPC constante de historial/probe/diagnosticos en produccion.
-- Una copia sintetica aparece sin esperar polling largo cuando el picker esta visible o se abre.
 
 ### P1: Busqueda Escalable
 
 Problema observado:
 
 - Texto libre usa `LIKE '%term%'` sobre varios campos.
-- Los conteos total/filtrado se calculan en cada busqueda.
+- La primera página pide conteos; la paginación incremental puede omitirlos. Sin filtro, el total se reutiliza como conteo filtrado. Medir el costo adicional con filtros antes de introducir cache o diferir conteos.
 
 Pattern recomendado:
 

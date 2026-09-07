@@ -89,7 +89,7 @@ El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 - texto normal se muestra como preview monospace;
 - Markdown con imagenes se renderiza preservando el orden del origen: bloques de texto y lineas `![...](...)` aparecen en la misma secuencia;
 - imagenes Markdown se muestran en el punto donde aparecen, no reordenadas arriba;
-- items `image` usan el PNG principal como preview visible grande; el thumbnail chico queda solo como artefacto auxiliar, no como preview principal del picker.
+- items `image` mantienen una preview útil dentro del feed; el contrato de thumbnails y acceso al original vive en [Performance And Memory](performance-and-memory.md#imágenes-del-feed).
 - `Inbox` es estado durable del item, no una view, tag ni seleccion `marked`: aparece como pill compacto `Inbox ×` sin aumentar la altura base de la fila. El pill es una accion directa `Remove from Inbox`; quita solo ese estado y nunca borra el item.
 - Los items Inbox se ordenan antes que el historial regular; dentro de cada grupo se conserva el orden mas reciente primero.
 

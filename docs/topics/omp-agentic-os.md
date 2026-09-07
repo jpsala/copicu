@@ -8,6 +8,8 @@ triggers:
   - frontera aos omp
   - computer use
   - gates
+  - retorno automatico
+  - sesiones hijas
 primary_refs:
   - AGENTS.md
   - .omp/config.yml
@@ -22,6 +24,8 @@ primary_refs:
 AOS conserva conocimiento durable y continuidad local: docs, índice, `WORKING_MEMORY.md`, topics, tracks, decisiones, specs, skills y gates propios de Copicu. OMP gobierna modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime.
 
 La capa local no define defaults, fallbacks ni lifecycle para esas capacidades. El comando opt-in `/research` adapta el proceso durable de investigación; no es una ruta cotidiana ni un control plane.
+
+Para sesiones hijas que terminaron sin retornar, estado `waiting`/`blocked` o cierre de panes, consultar el [contrato canónico de Habitat](file:///C:/dev/omp/docs/topics/agent-runtime-habitat.md#retorno-automático-y-estado-observable). Su diagnóstico y corrección pertenecen a OMP; Copicu no mantiene una implementación ni un procedimiento espejo.
 
 ## Computer Local
 
