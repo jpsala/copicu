@@ -74,6 +74,15 @@ Criterios acordados:
 - No perseguir micro-optimizaciones del bundle/render si ponen en riesgo el picker.
 - Medir crecimiento con historiales grandes e imagenes para detectar leaks o previews pesados; eso no implica cambiar la decision de mantener picker caliente.
 
+## Apertura Fresca Del Picker
+
+- El host asigna un ID a cada apertura oculta. `picker_renderer_ready` recupera una apertura cuyo evento llegó antes del listener; `present_picker` sólo acepta el ID vigente. Hide invalida la apertura y un watchdog de tres segundos libera una petición no respondida con un error nativo recuperable.
+- Antes de presentar la WebView persistente, el renderer hace commit síncrono de un feed vacío en carga. Las primeras filas provienen de una consulta nueva: no se reutiliza la página anterior como placeholder. No esperar `requestAnimationFrame` mientras la WebView está oculta.
+- Focus y visibility comparten una apertura coordinada; los cambios de historial durante la consulta invalidan su resultado y se coalescen en una nueva consulta. Las generaciones de interacción siguen protegiendo query, selección y respuestas de aperturas canceladas.
+- Los tags se refrescan después del historial, fuera de la cadena de apertura; sus conteos SQLite corren en `spawn_blocking`, no en el hilo nativo de UI. Esto no elimina la contención del mutex de storage.
+- Diagnósticos: `picker.open.shortcut`, `prepare`, `shell-committed`, `shell`, `query`, `query-resolved`, `dom-commit` y `frame-opportunity`. `window.show.done` sólo mide la presentación nativa; ni ese evento ni rAF prueban el primer frame visible. Comparar con screenshots de la superficie real.
+- Smoke mínimo: varias copias sintéticas con picker oculto -> hotkey desde una app externa -> feed vacío/carga -> primera fila nueva y activa; repetir con captura durante consulta, hide/reopen, filtro fijo, capture mode, query explícita durante carga y Retry. Conservar el delay nativo de 90 ms y el retry condicional de foco de 60 ms hasta medir una alternativa: teclear antes de que Windows entregue el foco puede ir a la aplicación anterior.
+
 ## Prioridad De Trabajo
 
 ### P0: Reducir Payload Del Feed

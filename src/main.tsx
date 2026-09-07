@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import {
   MantineProvider,
@@ -1280,6 +1280,9 @@ function App() {
   const compoundHotkeyArmedAtRef = useRef(0);
   const whichKeyRevealTimerRef = useRef<number | null>(null);
   const pickerWasHiddenRef = useRef(false);
+  const pickerOpeningFrameRef = useRef<{ id: number; committed: boolean } | null>(null);
+  const pickerHistoryRevisionRef = useRef(0);
+  const cancelPickerRefreshRef = useRef<() => void>(() => undefined);
   const filterLockedRef = useRef(filterLocked);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
   const fullContentFetchIdsRef = useRef<Set<number>>(new Set());
@@ -1433,6 +1436,18 @@ function App() {
 
   useEffect(() => {
     historyRef.current = history;
+  }, [history]);
+
+  useLayoutEffect(() => {
+    const opening = pickerOpeningFrameRef.current;
+    if (!opening?.committed) return;
+    recordRendererDiagnostic("picker.open.dom-commit", `opening_id=${opening.id}`);
+    const frame = requestAnimationFrame(() => {
+      // A rendering opportunity, not proof that the compositor displayed it.
+      recordRendererDiagnostic("picker.open.frame-opportunity", `opening_id=${opening.id}`);
+      if (pickerOpeningFrameRef.current === opening) pickerOpeningFrameRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
   }, [history]);
 
   useEffect(() => {
@@ -2479,6 +2494,7 @@ function App() {
   }, [closeTransientEditors]);
 
   const hidePickerWindow = useCallback(() => {
+    cancelPickerRefreshRef.current();
     pickerWasHiddenRef.current = true;
     resetPickerSession();
     void recordWindowChromeEvent("hide-picker-command-start");
@@ -3081,6 +3097,11 @@ function App() {
       });
 
       let page: HistoryPage;
+      const queryStarted = performance.now();
+      const openingRevision = pickerHistoryRevisionRef.current;
+      if (pickerOpeningFrameRef.current) {
+        recordRendererDiagnostic("picker.open.query", `opening_id=${pickerOpeningFrameRef.current.id} request_seq=${requestSeq}`);
+      }
       try {
         page = await historySearch({
           query: descriptorRequest?.query ?? searchInput.query,
@@ -3158,6 +3179,14 @@ function App() {
         requestSeq !== historyRequestSeqRef.current
         || (foreground && intentGeneration !== searchIntentGenerationRef.current && !allowStaleInitial)
       ) {
+        return;
+      }
+      if (pickerOpeningFrameRef.current && openingRevision !== pickerHistoryRevisionRef.current) {
+        if (foregroundSearchOwnerSeqRef.current === requestSeq) {
+          foregroundSearchOwnerSeqRef.current = null;
+          foregroundSearchInFlightRef.current = false;
+          setForegroundSearchInFlight(false);
+        }
         return;
       }
       if (foreground) {
@@ -3272,6 +3301,11 @@ function App() {
 
       historyRef.current = page.items;
       setHistory(page.items);
+      if (pickerOpeningFrameRef.current) {
+        pickerOpeningFrameRef.current.committed = true;
+        recordRendererDiagnostic("picker.open.query-resolved", `opening_id=${pickerOpeningFrameRef.current.id} request_seq=${requestSeq} query_ms=${performance.now() - queryStarted}`);
+      }
+      setHistoryPending(false);
       setHistoryNextCursor(page.nextCursor);
       historyPaginationBlockedRef.current = null;
       setHistoryPaginationBlocked(null);
@@ -5120,16 +5154,48 @@ function App() {
     }
 
     let active = true;
-    let unlisten: (() => void) | null = null;
-    const activatePendingHistoryItem = () => {
+    let refreshing = false;
+    let historyDirty = false;
+    let focusHandled = false;
+    let tagsRefreshing = false;
+    const unlisteners: (() => void)[] = [];
+    let refreshRun = 0;
+    let preparingShell = false;
+    const cancelRefresh = () => {
+      refreshRun += 1;
+      refreshing = false;
+      focusHandled = false;
+      historyDirty = false;
+      pickerWasHiddenRef.current = true;
+      pickerOpeningFrameRef.current = null;
+      historyRequestSeqRef.current += 1;
+      historyLoadMoreSeqRef.current += 1;
+      foregroundSearchOwnerSeqRef.current = null;
+      foregroundSearchInFlightRef.current = false;
+      setForegroundSearchInFlight(false);
+      setHistoryPending(false);
+    };
+    cancelPickerRefreshRef.current = cancelRefresh;
+    let lastOpeningId: number | undefined;
+    const refreshTags = () => {
+      if (tagsRefreshing || !active) return;
+      tagsRefreshing = true;
+      void listTags().then((tags) => {
+        if (active) {
+          setKnownTagSlugs(tags.map((tag) => tag.slug));
+          setPaletteTags(tags);
+        }
+      }).catch(() => undefined).finally(() => { tagsRefreshing = false; });
+    };
+    const activatePendingHistoryItem = (selectionSeq: number, querySeq: number) => {
       const itemId = pendingHistoryActivationItemIdRef.current;
-      if (itemId === null) {
+      if (itemId === null) return;
+      if (selectionSeq !== selectionInteractionSeqRef.current || querySeq !== queryInteractionSeqRef.current) {
+        pendingHistoryActivationItemIdRef.current = null;
         return;
       }
       const targetIndex = historyRef.current.findIndex((item) => item.id === itemId);
-      if (targetIndex < 0) {
-        return;
-      }
+      if (targetIndex < 0) return;
       pendingHistoryActivationItemIdRef.current = null;
       const emptySelection = new Set<number>();
       selectedIdsRef.current = emptySelection;
@@ -5137,120 +5203,158 @@ function App() {
       selectionAnchorItemIdRef.current = itemId;
       setSelectedIds(emptySelection);
       setSelectedItemId(itemId);
-      if (targetIndex === 0) {
-        historyScrollRef.current?.scrollTo({ top: 0 });
-      }
+      if (targetIndex === 0) historyScrollRef.current?.scrollTo({ top: 0 });
     };
-    void listen<{ itemId: number; contentKind: "text" | "image"; activate?: boolean }>(
-      HISTORY_CHANGED_EVENT,
-      (event) => {
-        if (!active) {
+    const refresh = async (openingId?: number, historyOnly = false) => {
+      if (!active) return;
+      if (refreshing) {
+        if (historyOnly) historyDirty = true;
+        return;
+      }
+      refreshing = true;
+      const run = ++refreshRun;
+      const current = () => active && run === refreshRun;
+      const started = performance.now();
+      let selectionSeq = selectionInteractionSeqRef.current;
+      const querySeq = queryInteractionSeqRef.current;
+      const requestSeq = historyRequestSeqRef.current;
+      try {
+        if (openingId !== undefined) {
+          preparingShell = true;
+          pickerWasHiddenRef.current = false;
+          pickerOpeningFrameRef.current = { id: openingId, committed: false };
+          // Commit an empty shell before showing; never await a hidden rAF.
+          flushSync(() => {
+            pickerEventHandlersRef.current.resetPickerSession();
+            selectionSeq = selectionInteractionSeqRef.current;
+            historyRef.current = [];
+            setHistory([]);
+            setHistoryNextCursor(null);
+            setHistoryLoadingMore(false);
+            setHistoryPending(true);
+            setHistoryError(null);
+          });
+          const presented = await invoke<boolean>("present_picker", { openingId });
+          if (!current()) return;
+          preparingShell = false;
+          if (!presented) {
+            cancelRefresh();
+            return;
+          }
+          recordRendererDiagnostic("picker.open.shell", `opening_id=${openingId} elapsed_ms=${performance.now() - started}`);
+        } else if (!(await getCurrentWindow().isVisible())) {
+          if (current()) cancelRefresh();
           return;
         }
-        if (event.payload.activate) {
-          pendingHistoryActivationItemIdRef.current = event.payload.itemId;
-        }
-        void getCurrentWindow().isVisible().then((visible) => {
-          if (!active) {
-            return;
-          }
-          if (!visible) {
-            pickerWasHiddenRef.current = true;
-            return;
-          }
-          return pickerEventHandlersRef.current.refreshAppliedHistory({
-            respectManualScroll: true,
-            showPending: false,
-          }).then(activatePendingHistoryItem);
-        }).catch((error) => {
-          if (active) {
-            setHistoryPending(false);
-            setHistoryError(String(error));
-          }
-        });
-      },
-    ).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
-    });
-
-    const refreshOnFocus = () => {
-      if (!active) {
-        return;
-      }
-      if (document.visibilityState === "hidden") {
-        pickerWasHiddenRef.current = true;
-        return;
-      }
-
-      const focusSelectionSeq = selectionInteractionSeqRef.current;
-      const focusQueryInteractionSeq = queryInteractionSeqRef.current;
-      const focusRequestSeq = historyRequestSeqRef.current;
-      void (async () => {
+        if (!current()) return;
         let resetFromHost = false;
-        try {
-          if (!(await getCurrentWindow().isVisible())) {
-            pickerWasHiddenRef.current = true;
-            return;
-          }
+        if (!historyOnly) {
           try {
-            const tags = await listTags();
-            if (active) {
-              setKnownTagSlugs(tags.map((tag) => tag.slug));
-              setPaletteTags(tags);
+            const activationRevision = pickerHistoryRevisionRef.current;
+            const session = await consumePickerSessionSnapshot();
+            if (!current()) return;
+            resetFromHost = session.reset;
+            if (session.pendingActivationItemId !== null
+              && activationRevision === pickerHistoryRevisionRef.current) {
+              pendingHistoryActivationItemIdRef.current = session.pendingActivationItemId;
             }
-          } catch {
-            // History refresh remains usable when tag suggestions cannot be refreshed.
+          } catch (error) {
+            // Activation metadata failure must not prevent loading the feed.
+            console.warn("consume picker session failed", error);
           }
-          const session = await consumePickerSessionSnapshot();
-          resetFromHost = session.reset;
-          if (session.pendingActivationItemId !== null) {
-            pendingHistoryActivationItemIdRef.current = session.pendingActivationItemId;
-          }
-        } catch (error) {
-          console.warn("consume picker session failed", error);
         }
-        if (!active) {
-          return;
-        }
-        if (resetFromHost) {
-          pickerWasHiddenRef.current = true;
-        }
-        const pendingHiddenReset = pickerWasHiddenRef.current;
-        const resetAfterHidden =
-          pendingHiddenReset &&
-          focusSelectionSeq === selectionInteractionSeqRef.current &&
-          focusQueryInteractionSeq === queryInteractionSeqRef.current &&
-          focusRequestSeq === historyRequestSeqRef.current;
+        if (!current()) return;
+        const resetAfterHidden = !historyOnly
+          && (openingId !== undefined || resetFromHost || pickerWasHiddenRef.current)
+          && selectionSeq === selectionInteractionSeqRef.current
+          && querySeq === queryInteractionSeqRef.current
+          && (openingId !== undefined || requestSeq === historyRequestSeqRef.current);
         pickerWasHiddenRef.current = false;
-        if (resetAfterHidden) {
+        if (resetAfterHidden && openingId === undefined) {
           pickerEventHandlersRef.current.resetPickerSession();
+          selectionSeq = selectionInteractionSeqRef.current;
         }
-        const refresh = resetAfterHidden
-          ? pickerEventHandlersRef.current.refreshHistory({
+        do {
+          historyDirty = false;
+          if (resetAfterHidden && querySeq === queryInteractionSeqRef.current) {
+            await pickerEventHandlersRef.current.refreshHistory({
               resetScroll: true,
               showPending: false,
-              queryOverride: filterLockedRef.current ? historyInputQueryRef.current : "",
+              queryOverride: filterLockedRef.current || activeScenarioSessionRef.current
+                ? historyInputQueryRef.current : "",
               allowAi: false,
-            })
-          : pickerEventHandlersRef.current.refreshAppliedHistory({
-              respectManualScroll: true,
+            });
+          } else {
+            await pickerEventHandlersRef.current.refreshAppliedHistory({
+              respectManualScroll: openingId === undefined,
               showPending: false,
             });
-        void refresh.then(activatePendingHistoryItem).catch((error) => {
-          if (active) {
-            setHistoryPending(false);
-            setHistoryError(String(error));
           }
-        });
-      })();
+          if (!current()) return;
+          if (!historyDirty) activatePendingHistoryItem(selectionSeq, querySeq);
+        } while (historyDirty && current());
+      } catch (error) {
+        if (current()) {
+          setHistoryPending(false);
+          setHistoryError(String(error));
+        }
+      } finally {
+        if (current()) {
+          refreshing = false;
+          preparingShell = false;
+          if (!foregroundSearchInFlightRef.current) {
+            setHistoryPending(false);
+            if (!historyOnly) refreshTags();
+          }
+        }
+      }
     };
+    const refreshOnFocus = () => {
+      if (!active) return;
+      if (document.visibilityState === "hidden") {
+        if (!preparingShell) cancelRefresh();
+        return;
+      }
+      if (focusHandled) return;
+      focusHandled = true;
+      void refresh();
+    };
+    const onBlur = () => { focusHandled = false; };
+    const prepareOpening = (openingId: number) => {
+      if (!active || (lastOpeningId !== undefined && openingId <= lastOpeningId)) return;
+      lastOpeningId = openingId;
+      cancelRefresh();
+      focusHandled = true;
+      void refresh(openingId);
+    };
+    const register = async () => {
+      const historyUnlisten = await listen<{ itemId: number; contentKind: "text" | "image"; activate?: boolean }>(
+        HISTORY_CHANGED_EVENT,
+        (event) => {
+          if (!active) return;
+          pickerHistoryRevisionRef.current += 1;
+          if (event.payload.activate) pendingHistoryActivationItemIdRef.current = event.payload.itemId;
+          void refresh(undefined, true);
+        },
+      );
+      if (!active) { historyUnlisten(); return; }
+      unlisteners.push(historyUnlisten);
+      const prepareUnlisten = await listen<number>("copicu://picker/prepare", (event) => prepareOpening(event.payload));
+      if (!active) { prepareUnlisten(); return; }
+      unlisteners.push(prepareUnlisten);
+      const openingId = await invoke<number | null>("picker_renderer_ready");
+      if (active && openingId !== null) prepareOpening(openingId);
+    };
+    void register().catch((error) => { if (active) setHistoryError(String(error)); });
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", refreshOnFocus);
-
     return () => {
       active = false;
-      unlisten?.();
+      cancelPickerRefreshRef.current = () => undefined;
+      for (const unlisten of unlisteners) unlisten();
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
   }, []);

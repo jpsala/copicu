@@ -1561,6 +1561,32 @@ fn consume_picker_session_snapshot(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn picker_renderer_ready(
+    window: tauri::WebviewWindow,
+    session: tauri::State<PickerSessionController>,
+) -> Result<Option<u64>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "picker_renderer_ready")?;
+    session.renderer_ready()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn present_picker(
+    window: tauri::WebviewWindow,
+    session: tauri::State<PickerSessionController>,
+    opening_id: u64,
+) -> Result<bool, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "present_picker")?;
+    if let Some(opening) = session.take_opening(opening_id)? {
+        diag_log("picker.open.shell-committed", format!("opening_id={opening_id}"));
+        present_main_window(window.app_handle(), opening.focus)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     thread::spawn(move || {
         let app_for_main_thread = app.clone();
@@ -2773,8 +2799,11 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn list_tags(storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::TagSummary>, String> {
-    storage.list_tags()
+async fn list_tags(app: tauri::AppHandle) -> Result<Vec<storage::TagSummary>, String> {
+    // Hierarchical counts can be expensive; never occupy the native UI thread.
+    tauri::async_runtime::spawn_blocking(move || app.state::<storage::AppStorage>().list_tags())
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(not(test))]
@@ -3607,6 +3636,8 @@ pub fn run() {
             hide_picker,
             quit_app,
             consume_picker_session_snapshot,
+            picker_renderer_ready,
+            present_picker,
             open_settings_window,
             open_scenario_settings,
             open_saved_views_settings,
@@ -4360,7 +4391,6 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
     remember_previous: bool,
     focus_window: bool,
 ) -> Result<(), String> {
-    let started = Instant::now();
     diag_log(
         "window.show.start",
         format!("remember_previous={remember_previous} focus={focus_window}"),
@@ -4379,6 +4409,45 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
     if let Some(initial_hide) = app.try_state::<InitialMainWindowHide>() {
         initial_hide.cancel();
     }
+
+    if !window.is_visible().map_err(|error| error.to_string())? {
+        let session = app.state::<PickerSessionController>();
+        let (opening, notify) = session.request_opening(focus_window)?;
+        diag_log("picker.open.prepare", format!("opening_id={} notify={notify}", opening.id));
+        if notify {
+            // Emitting to WebView2 from the native window callback can deadlock.
+            // Readiness also pulls the pending id, so a pre-listener event is safe.
+            let app = app.clone();
+            thread::spawn(move || {
+                let result = app.emit_to(MAIN_WINDOW_LABEL, "copicu://picker/prepare", opening.id);
+                if result.is_ok() {
+                    thread::sleep(Duration::from_secs(3));
+                }
+                let session = app.state::<PickerSessionController>();
+                if session.take_opening(opening.id).ok().flatten().is_some() {
+                    diag_log("picker.open.failed", format!("opening_id={} error={result:?}", opening.id));
+                    use tauri_plugin_dialog::DialogExt;
+                    app.dialog()
+                        .message("The picker did not respond. Try opening it again. If this persists, restart Copicu.")
+                        .title("Copicu: picker unavailable")
+                        .show(|_| {});
+                }
+            });
+        }
+        return Ok(());
+    }
+    present_main_window(app, focus_window)
+}
+
+#[cfg(not(test))]
+fn present_main_window<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    focus_window: bool,
+) -> Result<(), String> {
+    let started = Instant::now();
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        return Err("main window not found".to_string());
+    };
 
     if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
         if let Err(error) = registry.restore(&window, window_state::RestoreTarget::CursorMonitor) {
@@ -5146,6 +5215,7 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         .unwrap_or_else(picker_shortcut);
     if *shortcut == picker_shortcut {
         eprintln!("global shortcut pressed: {shortcut:?}");
+        diag_log("picker.open.shortcut", format!("shortcut={shortcut:?}"));
         if std::env::var_os("COPICU_PICKER_NO_ACTIVATE").is_some() {
             spawn_toggle_main_window_without_focus(app.clone());
         } else {

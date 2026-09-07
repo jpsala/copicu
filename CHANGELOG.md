@@ -2,6 +2,12 @@
 
 All notable changes to Copicu are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Reopen the picker with an empty loading feed before displaying fresh history, instead of flashing the previous page. Coordinate focus/visibility refreshes, keep tag counts off the opening path, and reject late results after new captures or cancellation.
+
 ## [0.4.1-rc.2] - 2026-07-28
 
 ### Fixed

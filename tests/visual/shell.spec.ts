@@ -2151,6 +2151,17 @@ async function mockTauriInvoke(
               marked_at_unix_ms: null,
             }));
             return null;
+          case "picker_renderer_ready":
+            return null;
+          case "present_picker":
+            (window as any).__copicuTestPresentedRows = Array.from(
+              document.querySelectorAll(".history-feed.has-items > li"),
+              (item) => item.textContent,
+            );
+            (window as any).__copicuTestWindowVisible = true;
+            window.dispatchEvent(new Event("focus"));
+            document.dispatchEvent(new Event("visibilitychange"));
+            return true;
           case "consume_picker_session_snapshot": {
             const delayMs = (window as any).__copicuTestMockOptions?.pickerSessionDelayMs ?? 0;
             if (delayMs > 0) {
@@ -3683,6 +3694,7 @@ test("active capture mode remains visible through picker hide and reopen until S
   await page.evaluate(async () => {
     const session = await (window as any).__TAURI_INTERNALS__.invoke("get_active_scenario_session");
     await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
+    await (window as OpeningSmokeWindow).__copicuTestEmitEvent("copicu://picker/prepare", 1);
   });
   await expect(sessionBar).toContainText("Capture mode active");
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
@@ -5595,6 +5607,13 @@ test("filter lock survives picker hides and unlock restores normal reset", async
 
   await page.getByLabel("Hide Copicu").click();
   await expect(search).toHaveValue("long");
+  await page.evaluate(async () => {
+    await (window as OpeningSmokeWindow).__copicuTestEmitEvent("copicu://picker/prepare", 1);
+  });
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toHaveCount(0);
+  await expect(search).toHaveValue("long");
 
   await search.focus();
   await page.keyboard.press("Control+Shift+l");
@@ -5977,7 +5996,7 @@ test("hiding picker resets transient selection but preserves durable marks", asy
 });
 
 test("capture while picker is hidden becomes the active first item on reopen", async ({ page }) => {
-  await mockTauriInvoke(page);
+  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 250 });
   await gotoShell(page);
 
   await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
@@ -6010,14 +6029,165 @@ test("capture while picker is hidden becomes the active first item on reopen", a
       contentKind: "text",
       activate: true,
     });
-    (window as any).__copicuTestWindowVisible = true;
-    window.dispatchEvent(new Event("focus"));
+    (window as any).__copicuTestInvocations = [];
+    await (window as any).__copicuTestEmitEvent("copicu://picker/prepare", 1);
   }, { newItemId });
 
   const capturedItem = page.getByRole("button", { name: newItemText });
   await expect(capturedItem).toBeVisible();
   await expect(capturedItem).toHaveAttribute("aria-current", "true");
   await expect(page.locator(".history-feed.has-items > li").first()).toContainText(newItemText);
+  expect(await page.evaluate(() => (window as any).__copicuTestPresentedRows)).toEqual([]);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter(
+    (call: any) => call.cmd === "consume_picker_session_snapshot",
+  ).length)).toBe(1);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter(
+    (call: any) => call.cmd === "history_search" && !call.args.request.cursor,
+  ).length)).toBe(1);
+});
+
+type OpeningSmokeWindow = typeof window & {
+  __TAURI_INTERNALS__: {
+    invoke: (cmd: string, args?: { request?: { cursor?: unknown } }) => Promise<unknown>;
+  };
+  __copicuTestEmitEvent: (event: string, payload: unknown) => Promise<void>;
+  __copicuTestHistoryItems: Array<(typeof syntheticLongHistory)[number] & { preview_text?: string }>;
+  __copicuTestPickerSessionSnapshots: Array<{ reset: boolean; generation: number; pendingActivationItemId: number }>;
+  __copicuTestMockOptions: { historySearchFailNext?: boolean };
+  __openingRows: Array<string | null>;
+  __openingObserver: MutationObserver;
+  __openingQueryHeld: boolean;
+  __releaseOpeningQuery: () => void;
+};
+
+async function holdNextOpeningResponse(page: Page) {
+  await page.evaluate(() => {
+    const w = window as OpeningSmokeWindow;
+    const invoke = w.__TAURI_INTERNALS__.invoke;
+    const gate = Promise.withResolvers<void>();
+    w.__releaseOpeningQuery = gate.resolve;
+    w.__openingQueryHeld = false;
+    w.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+      const result = await invoke(cmd, args);
+      if (cmd === "history_search" && !args?.request?.cursor && !w.__openingQueryHeld) {
+        w.__openingQueryHeld = true;
+        await gate.promise;
+      }
+      return result;
+    };
+  });
+}
+
+test("capture during opening discards the older query before rendering any rows", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await expect(page.locator(".history-feed.has-items > li").first()).toBeVisible();
+  await page.getByLabel("Hide Copicu").click();
+  await holdNextOpeningResponse(page);
+  await page.evaluate(async () => {
+    const w = window as OpeningSmokeWindow;
+    w.__openingRows = [];
+    const observer = new MutationObserver(() => {
+      const row = document.querySelector(".history-feed.has-items > li");
+      if (row) w.__openingRows.push(row.id);
+    });
+    observer.observe(document.getElementById("root")!, { childList: true, subtree: true });
+    w.__openingObserver = observer;
+    await w.__copicuTestEmitEvent("copicu://picker/prepare", 1);
+  });
+  await page.waitForFunction(() => (window as OpeningSmokeWindow).__openingQueryHeld);
+  await page.evaluate(async () => {
+    const w = window as OpeningSmokeWindow;
+    const source = w.__copicuTestHistoryItems;
+    w.__copicuTestHistoryItems = [{
+      ...source[0], id: 9902, text: "COPICU_SYNTH_DURING_OPEN", preview_text: "COPICU_SYNTH_DURING_OPEN",
+    }, ...source];
+    await w.__copicuTestEmitEvent("copicu://history/changed", {
+      itemId: 9902, contentKind: "text", activate: true,
+    });
+    w.__releaseOpeningQuery();
+  });
+  await expect(page.getByRole("button", { name: "COPICU_SYNTH_DURING_OPEN" })).toHaveAttribute("aria-current", "true");
+  const firstRows = await page.evaluate(() => {
+    (window as OpeningSmokeWindow).__openingObserver.disconnect();
+    return (window as OpeningSmokeWindow).__openingRows;
+  });
+  expect(firstRows[0]).toBe("history-item-9902");
+});
+
+test("reopening preempts an older in-flight refresh and rejects its late selection", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await expect(page.locator(".history-feed.has-items > li").first()).toBeVisible();
+  await page.getByLabel("Hide Copicu").click();
+  await holdNextOpeningResponse(page);
+  await page.evaluate(async () => {
+    const w = window as OpeningSmokeWindow;
+    w.__copicuTestPickerSessionSnapshots.push({ reset: true, generation: 1, pendingActivationItemId: 100 });
+    await w.__copicuTestEmitEvent("copicu://picker/prepare", 1);
+  });
+  await page.waitForFunction(() => (window as OpeningSmokeWindow).__openingQueryHeld);
+  await page.getByLabel("Hide Copicu").click();
+  await page.evaluate(async () => {
+    const w = window as OpeningSmokeWindow;
+    const source = w.__copicuTestHistoryItems;
+    w.__copicuTestHistoryItems = [{
+      ...source[0], id: 9903, text: "COPICU_SYNTH_REOPEN", preview_text: "COPICU_SYNTH_REOPEN",
+    }, ...source];
+    w.__copicuTestPickerSessionSnapshots.push({ reset: true, generation: 2, pendingActivationItemId: 9903 });
+    await w.__copicuTestEmitEvent("copicu://picker/prepare", 2);
+  });
+  const current = page.getByRole("button", { name: "COPICU_SYNTH_REOPEN" });
+  await expect(current).toHaveAttribute("aria-current", "true");
+  await page.evaluate(async () => {
+    (window as OpeningSmokeWindow).__releaseOpeningQuery();
+    const frame = Promise.withResolvers<void>();
+    requestAnimationFrame(() => requestAnimationFrame(() => frame.resolve()));
+    await frame.promise;
+  });
+  await expect(current).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".history-feed.has-items > li").first()).toHaveAttribute("id", "history-item-9903");
+});
+
+test("opening accepts an explicit query while session metadata and tags are delayed", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    pickerSessionDelayMs: 250,
+    searchTriggerMode: "enter",
+  });
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  await page.getByLabel("Hide Copicu").click();
+  await page.evaluate(async () => {
+    const w = window as OpeningSmokeWindow;
+    const invoke = w.__TAURI_INTERNALS__.invoke;
+    w.__TAURI_INTERNALS__.invoke = (cmd, args) =>
+      cmd === "list_tags" ? Promise.withResolvers<unknown>().promise : invoke(cmd, args);
+    w.__copicuTestPickerSessionSnapshots.push({ reset: true, generation: 1, pendingActivationItemId: 100 });
+    await w.__copicuTestEmitEvent("copicu://picker/prepare", 1);
+  });
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("unbroken");
+  await search.press("Enter");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+  await page.waitForTimeout(350);
+  await expect(search).toHaveValue("unbroken");
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toHaveAttribute("aria-current", "true");
+});
+
+test("opening query failure shows an empty recoverable feed instead of previous rows", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  await page.getByLabel("Hide Copicu").click();
+  await page.evaluate(async () => {
+    const w = window as OpeningSmokeWindow;
+    w.__copicuTestMockOptions.historySearchFailNext = true;
+    await w.__copicuTestEmitEvent("copicu://picker/prepare", 1);
+  });
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(page.locator(".history-feed.has-items > li")).toHaveCount(0);
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
 test("active item action uses current item even with multi selection", async ({ page }) => {
