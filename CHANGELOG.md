@@ -13,6 +13,10 @@ All notable changes to Copicu are documented here.
 - Block remote clipboard images in feed and full preview, harden dialog/listener lifecycles, and retain keyboard access to feed controls.
 - Publish blobs without truncating existing originals, restore missing thumbnails on recapture, and preserve tag relationships when deletion fails.
 
+### Changed
+
+- Future captures and recaptures retain only the clip's three most recent capture events, using timestamp and event ID for stable ordering, without an age limit or distinct-origin quota. Search context is rebuilt transactionally from retained events; content and editable metadata/provenance are preserved. Untouched historical clips are not pruned, but their next recapture applies the limit to their full capture history.
+
 ## [0.4.1-rc.2] - 2026-07-28
 
 ### Fixed

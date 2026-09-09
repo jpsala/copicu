@@ -1,6 +1,6 @@
 ---
 id: picker-reliability
-status: waiting_gate
+status: complete
 updated: 2026-09-09
 ---
 
@@ -12,9 +12,10 @@ Correcciones autorizadas e implementadas; verificadas en regresiones sinteticas
 y dev aislado. No hay una causa unica probada del hang ni reproduccion del
 paste historico al destino equivocado. Este track no reabre Architecture Hardening.
 
-Gate restante: decidir retencion de contexto/eventos sin descartar historial
-buscable implicitamente. Reparar thumbnails/datos instalados e instalar esta
-version requieren alcance y autorizacion propios. RPC no forma parte del corte.
+Gate funcional de retencion resuelto por JP e implementado: ultimas 3 capturas
+por clip, no 3 procedencias ni limite por edad. El corte autorizado esta cerrado.
+Reparar thumbnails/datos instalados e instalar esta version requieren alcance
+y autorizacion propios. RPC no forma parte del corte.
 
 ## Contratos Implementados
 
@@ -44,11 +45,17 @@ version requieren alcance y autorizacion propios. RPC no forma parte del corte.
 - Blobs usan temp completo + sync + rename; rollback limpia archivos nuevos sin
   referencias. Recaptura restaura thumbnails ausentes. Borrado SQL usa cascada FK
   atomica. Filas accesibles conservan controles anidados y navegacion por teclado.
+- Texto, imagen y creacion manual/dedupe insertan el evento, conservan los 3 mas
+  recientes por `captured_at_unix_ms DESC, id DESC` y reconstruyen contexto
+  buscable dentro de la misma transaccion. Find invalida snapshots al podar.
+  La primera recaptura de un clip historico reduce todo su historial de eventos
+  a ese limite; clips no tocados no se podan. Metadata/provenance y referencias
+  ajenas al historial de captura permanecen intactas.
 
 ## Verificacion Reusable
 
 - `npm run build` y build nativo Tauri GNU del dev aislado.
-- `npm run rust:test`: 219 pasan, 1 ignorado. Incluye drift/concurrencia,
+- `npm run rust:test`: 223 pasan, 1 ignorado. Incluye drift/concurrencia,
   dedupe/tags, keyset mixto con NULL, preview acotado, fault injection FS/SQL,
   captura/suppression, enrichment stale y UiHost.
 - `bun test tests/metadata-text.test.ts`: 6 pasan; Node search/snapshot: 20 pasan.
@@ -64,6 +71,14 @@ version requieren alcance y autorizacion propios. RPC no forma parte del corte.
 - Edicion nativa con F2 conservo tag jerarquico/notas. Feed y preview Markdown
   completo mostraron imagen bloqueada; servidor loopback controlado registro
   cero solicitudes. MIME Markdown se preparo solo en la base sintetica.
+- Retencion: regresiones de storage cubren timestamps iguales y fuera de orden,
+  procedencias repetidas/distintas, plain/regex/ctx/filtros por eventos,
+  invalidacion de Find, metadata/provenance/suppression, rollback antes/despues
+  de reconstruir contexto, manual/dedupe e imagenes con blobs intactos.
+- Smoke ejecutable contra SQLite temporal: cinco capturas, empates, busquedas
+  antiguas ausentes/recientes presentes, tags, rollback manual y reapertura.
+  Base sintetica y fuente temporal del smoke retiradas. Build frontend y
+  reinicio built-dev aislado con watcher deshabilitado verificados.
 
 ## Limites De Interpretacion
 
@@ -72,8 +87,8 @@ version requieren alcance y autorizacion propios. RPC no forma parte del corte.
 - Los probes nativos verificaron foreign keys activas, busy timeout configurado
   y borrado sin eventos huerfanos: no aplicar un parche generico de PRAGMAs.
 - No adoptar FTS5, migrar datos ni atribuir hangs a una ruta solo por inspeccion.
-- Contexto/eventos siguen append-only hasta definir retencion. No se repararon
-  datos instalados ni se creo instalador.
+- No hay poda retroactiva global: solo la futura recaptura aplica el limite de
+  eventos al clip tocado. No se repararon datos instalados ni se creo instalador.
 - Keyset garantiza recorrido de dataset estable, no snapshot frente a cambios
   concurrentes del orden. Un self-write y copia externa del mismo hash pueden
   ser indistinguibles dentro de la ventana de suppression.

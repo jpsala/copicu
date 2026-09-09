@@ -91,8 +91,20 @@ Hardening implementado:
   1500 ms y consumo por match. Una copia externa del mismo hash puede coincidir.
 - Blobs se publican completos con temp/sync/rename; recaptura restaura thumbnail
   ausente. Rollback normal limpia archivos sin referencias; crash puede dejarlos.
-- Contexto/eventos permanecen append-only hasta decidir politica de retencion.
-  No reparar datos instalados ni eliminar historial buscable implicitamente.
+- Cada captura/recaptura persistida conserva las 3 capturas mas recientes del clip,
+  ordenadas por `captured_at_unix_ms DESC, id DESC`. Sin limite por edad ni
+  distincion de procedencias: tres capturas del mismo origen desplazan los otros.
+- Insercion, poda del clip y reconstruccion de `context_search_text` desde las
+  columnas de los eventos retenidos comparten la transaccion de texto, imagen
+  o creacion manual/dedupe. Error revierte tambien recencia, tags y metadata de
+  esa operacion. Find invalida sus snapshots al podar eventos.
+- No hay migracion ni poda global de eventos: un clip historico puede conservar
+  mas de 3 hasta su siguiente captura, que aplica el limite al historial completo
+  de ese clip. Abrir/leer/editar contenido o metadata no aplica esta poda.
+- La retencion de eventos no elimina contenido, notas, tags, properties,
+  provenance, suppression ni referencias a blobs. El contador de copias sigue
+  siendo acumulativo. Retencion global de items es una politica independiente.
+- Reparacion de datos instalados e instalacion requieren gates propios.
 
 Regresiones sinteticas cubren rafagas, lecturas malformadas, self-writes y fallos
 FS/SQL. Lectura/conversion/persistencia aun corren sincronicas en el watcher.

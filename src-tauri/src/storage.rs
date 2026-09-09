@@ -1376,7 +1376,7 @@ impl AppStorage {
             if let Some(scenario) = active_scenario.as_ref() {
                 apply_scenario_patch(&tx, item_id, scenario)?;
             }
-            record_capture_event(
+            let context_pruned = record_capture_event(
                 &tx,
                 item_id,
                 now,
@@ -1392,7 +1392,7 @@ impl AppStorage {
             let after_projection = existing_id
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
-            let projection_changed = before_projection != after_projection;
+            let projection_changed = context_pruned || before_projection != after_projection;
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard text capture: {error}"))?;
@@ -1553,7 +1553,7 @@ impl AppStorage {
                 let projection_changed =
                     before_projection != item_projection_signature(&conn, existing_id)?;
 
-                record_capture_event(
+                let context_pruned = record_capture_event(
                     &conn,
                     existing_id,
                     now,
@@ -1566,6 +1566,7 @@ impl AppStorage {
                     Some(&manual_context),
                     None,
                 )?;
+                let projection_changed = projection_changed || context_pruned;
                 let prune_outcome = prune_history_from_conn(&conn)?;
                 conn.commit()
                     .map_err(|error| format!("failed to commit manual item creation: {error}"))?;
@@ -1735,7 +1736,7 @@ impl AppStorage {
             if let Some(scenario) = active_scenario.as_ref() {
                 apply_scenario_patch(&tx, item_id, scenario)?;
             }
-            record_capture_event(
+            let context_pruned = record_capture_event(
                 &tx,
                 item_id,
                 now,
@@ -1751,7 +1752,7 @@ impl AppStorage {
             let after_projection = existing_id
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
-            let projection_changed = before_projection != after_projection;
+            let projection_changed = context_pruned || before_projection != after_projection;
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard image capture: {error}"))?;
@@ -4170,6 +4171,8 @@ fn apply_scenario_patch(
     Ok(())
 }
 
+// All writers call this inside their capture transaction. The result tells Find
+// that existing result membership may have shrunk even without editable changes.
 fn record_capture_event(
     conn: &Connection,
     item_id: i64,
@@ -4182,7 +4185,7 @@ fn record_capture_event(
     domain: Option<&str>,
     capture_context: Option<&CaptureContext>,
     active_scenario: Option<&ActiveScenarioSession>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let fallback_context;
     let context = if let Some(context) = capture_context {
         context
@@ -4260,26 +4263,75 @@ fn record_capture_event(
     )
     .map_err(|error| format!("failed to insert capture context: {error}"))?;
 
-    let next_context_text = capture_context_search_text(
-        captured_at_unix_ms,
-        content_kind,
-        mime_primary,
-        byte_size,
-        text_char_count,
-        line_count,
-        domain,
-        context,
-        &formats_text,
-    );
+    let removed = conn
+        .execute(
+            "DELETE FROM clipboard_item_capture_events
+         WHERE item_id = ?1 AND id NOT IN (
+             SELECT id FROM clipboard_item_capture_events WHERE item_id = ?1
+             ORDER BY captured_at_unix_ms DESC, id DESC LIMIT 3
+         )",
+            params![item_id],
+        )
+        .map_err(|error| format!("failed to prune capture context: {error}"))?;
+
+    // Rebuild from authoritative columns, not accumulated text or event JSON.
+    // The same timestamp/ID order is used by retention and the metadata reader.
+    let mut statement = conn
+        .prepare(
+            "SELECT captured_at_unix_ms, content_kind, mime_primary, byte_size,
+                text_char_count, line_count, domain, source_kind, source_app_name,
+                source_app_path, source_process_id, source_window_id,
+                source_window_title, clipboard_platform, clipboard_sequence_number,
+                clipboard_format_count, COALESCE(clipboard_formats_text, '')
+         FROM clipboard_item_capture_events WHERE item_id = ?1
+         ORDER BY captured_at_unix_ms DESC, id DESC",
+        )
+        .map_err(|error| format!("failed to prepare retained capture context: {error}"))?;
+    let rows = statement
+        .query_map(params![item_id], |row| {
+            let context = CaptureContext {
+                source_kind: row.get(7)?,
+                source_app_name: row.get(8)?,
+                source_app_path: row.get(9)?,
+                source_process_id: row.get(10)?,
+                source_window_id: row.get(11)?,
+                source_window_title: row.get(12)?,
+                clipboard_platform: row.get(13)?,
+                clipboard_sequence_number: row.get(14)?,
+                clipboard_format_count: row.get(15)?,
+                ..CaptureContext::default()
+            };
+            Ok(capture_context_search_text(
+                row.get(0)?,
+                &row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?.as_deref(),
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get::<_, Option<String>>(6)?.as_deref(),
+                &context,
+                &row.get::<_, String>(16)?,
+            ))
+        })
+        .map_err(|error| format!("failed to query retained capture context: {error}"))?;
+    let mut next_context_text = String::new();
+    for row in rows {
+        let text =
+            row.map_err(|error| format!("failed to read retained capture context: {error}"))?;
+        if !next_context_text.is_empty() {
+            next_context_text.push(' ');
+        }
+        next_context_text.push_str(&text);
+    }
     conn.execute(
         "UPDATE clipboard_items
-         SET context_search_text = TRIM(COALESCE(context_search_text, '') || ' ' || ?1)
+         SET context_search_text = ?1
          WHERE id = ?2",
         params![next_context_text, item_id],
     )
     .map_err(|error| format!("failed to update capture context search text: {error}"))?;
 
-    Ok(())
+    Ok(removed > 0)
 }
 
 fn normalize_source_kind(source_kind: &str) -> &str {
@@ -5214,6 +5266,30 @@ mod tests {
             )
             .unwrap();
         assert_eq!(storage.insert_image(&image).unwrap(), id);
+        for sequence in 1..=3 {
+            assert_eq!(
+                storage
+                    .insert_image_with_context(
+                        &image,
+                        Some(CaptureContext {
+                            source_app_name: Some("imageapp".into()),
+                            clipboard_sequence_number: Some(sequence),
+                            ..CaptureContext::default()
+                        }),
+                        &[]
+                    )
+                    .unwrap(),
+                id
+            );
+        }
+        let events = storage.list_capture_context_events(id, 50).unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.clipboard_sequence_number)
+                .collect::<Vec<_>>(),
+            vec![Some(3), Some(2), Some(1)]
+        );
         write_blob(&original, b"must not replace an existing original").unwrap();
         assert_eq!(std::fs::read(&original).unwrap(), image.png_bytes);
         assert_eq!(
@@ -5922,6 +5998,357 @@ mod tests {
         assert_eq!(item.title, None);
         assert_eq!(item.notes, None);
         assert_eq!(item.tags, None);
+    }
+
+    #[test]
+    fn capture_retention_removes_old_search_context_but_preserves_metadata() {
+        let dir = test_app_data_dir();
+        let storage = AppStorage::open(&dir).unwrap();
+        // Equal timestamps must still evict the oldest inserted event.
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER tied_capture_time AFTER INSERT ON clipboard_item_capture_events
+             BEGIN UPDATE clipboard_item_capture_events SET captured_at_unix_ms = 500
+             WHERE id = NEW.id; END;",
+            )
+            .unwrap();
+        let text = "synthetic retention payload";
+        let hash = hash_text(text);
+        let id = storage
+            .insert_text_with_context(
+                text,
+                &hash,
+                Some(CaptureContext {
+                    source_kind: "oldsource".into(),
+                    source_app_name: Some("oldapp".into()),
+                    source_app_path: Some("oldpath".into()),
+                    source_window_title: Some("oldwindow".into()),
+                    clipboard_formats: vec![CaptureFormatContext {
+                        id: 13,
+                        name: "oldformat".into(),
+                        kind: "text".into(),
+                        handle_size_bytes: None,
+                    }],
+                    ..CaptureContext::default()
+                }),
+                &["Retained/Tag".into()],
+            )
+            .unwrap();
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id,
+                title: Some("Editable title".into()),
+                notes: Some("#literal notes".into()),
+                tags: vec!["Retained/Tag".into()],
+                properties: ScenarioProperties::default(),
+            })
+            .unwrap();
+        {
+            let conn = storage.conn.lock().unwrap();
+            add_item_property(&conn, id, "client", "Synthetic client", "scenario").unwrap();
+            suppress_metadata_value(&conn, id, "tag", "", "Removed", "removed").unwrap();
+            conn.execute("UPDATE clipboard_item_capture_events SET domain = 'old.example' WHERE item_id = ?1", params![id]).unwrap();
+        }
+        let before = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
+        let tags = storage.get_item_tag_entries(id).unwrap();
+        let properties = storage.list_item_property_entries(id).unwrap();
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "old context",
+            "ctx:oldapp",
+            AppliedSearchMode::Structured,
+        )
+        .unwrap();
+        assert_eq!(storage.read_find_items(&descriptor).unwrap()[0].id, id);
+        let epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        for sequence in 1..=3 {
+            assert_eq!(
+                storage
+                    .insert_text_with_context(
+                        text,
+                        &hash,
+                        Some(CaptureContext {
+                            source_kind: "newsource".into(),
+                            source_app_name: Some("newapp".into()),
+                            source_window_title: Some("newwindow".into()),
+                            clipboard_sequence_number: Some(sequence),
+                            clipboard_formats: vec![CaptureFormatContext {
+                                id: 13,
+                                name: "newformat".into(),
+                                kind: "text".into(),
+                                handle_size_bytes: None,
+                            }],
+                            ..CaptureContext::default()
+                        }),
+                        &[]
+                    )
+                    .unwrap(),
+                id
+            );
+        }
+        let events = storage.list_capture_context_events(id, 50).unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .map(|e| e.clipboard_sequence_number)
+                .collect::<Vec<_>>(),
+            vec![Some(3), Some(2), Some(1)]
+        );
+        for query in [
+            "oldapp",
+            "ctx:oldapp",
+            "re:oldapp",
+            "ctx:oldpath",
+            "app:oldapp",
+            "window:oldwindow",
+            "domain:old.example",
+            "source:oldsource",
+            "format:oldformat",
+        ] {
+            assert!(
+                storage
+                    .list_page(HistoryPageRequest {
+                        query: query.into(),
+                        cursor: None,
+                        limit: Some(10),
+                    })
+                    .unwrap()
+                    .items
+                    .is_empty(),
+                "{query}"
+            );
+        }
+        for query in [
+            "newapp",
+            "ctx:newapp",
+            "app:newapp",
+            "window:newwindow",
+            "source:newsource",
+            "format:newformat",
+            "-app:oldapp",
+            "tag:retained",
+        ] {
+            assert_eq!(
+                ids(&storage
+                    .list_page(HistoryPageRequest {
+                        query: query.into(),
+                        cursor: None,
+                        limit: Some(10),
+                    })
+                    .unwrap()
+                    .items),
+                vec![id],
+                "{query}"
+            );
+        }
+        assert!(storage.read_find_items(&descriptor).unwrap().is_empty());
+        assert!(
+            storage
+                .read_find_items_cancelable(
+                    &descriptor,
+                    Arc::new(AtomicBool::new(false)),
+                    storage.mutation_epoch(),
+                    epoch
+                )
+                .is_err(),
+            "a Find snapshot referring to removed context must be invalidated"
+        );
+        let mut after = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
+        assert_eq!(after["copy_count"], 4);
+        for key in ["last_copied_at_unix_ms", "copy_count"] {
+            after[key] = before[key].clone();
+        }
+        assert_eq!(after, before);
+        assert_eq!(storage.get_item_tag_entries(id).unwrap(), tags);
+        assert_eq!(storage.list_item_property_entries(id).unwrap(), properties);
+        assert!(metadata_value_is_suppressed(
+            &storage.conn.lock().unwrap(),
+            id,
+            "tag",
+            "",
+            "removed"
+        )
+        .unwrap());
+        drop(storage);
+        let reopened = AppStorage::open(&dir).unwrap();
+        assert!(reopened.read_find_items(&descriptor).unwrap().is_empty());
+        assert_eq!(
+            reopened.list_capture_context_events(id, 50).unwrap().len(),
+            3
+        );
+        drop(reopened);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn capture_retention_only_prunes_recaptured_legacy_items_in_stable_order() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 1, "recaptured");
+        insert_test_text_item(&storage, 2, 1, "untouched");
+        {
+            let conn = storage.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE clipboard_items SET normalized_hash = ?1 WHERE id = 1",
+                params![hash_text("recaptured")],
+            )
+            .unwrap();
+            for item_id in [1, 2] {
+                for (time, app) in [
+                    (100, "ancient"),
+                    (300, "tieolder"),
+                    (200, "middle"),
+                    (300, "tienewer"),
+                    (50, "lateold"),
+                ] {
+                    conn.execute(
+                        "INSERT INTO clipboard_item_capture_events
+                         (item_id, captured_at_unix_ms, source_kind, content_kind, source_app_name, event_json)
+                         VALUES (?1, ?2, 'clipboard', 'text', ?3, '{}')",
+                        params![item_id, time, app],
+                    ).unwrap();
+                }
+                conn.execute("UPDATE clipboard_items SET context_search_text = 'ghostobsolete' WHERE id = ?1",
+                    params![item_id]).unwrap();
+            }
+        }
+        let untouched =
+            serde_json::to_value(storage.list_capture_context_events(2, 50).unwrap()).unwrap();
+        assert_eq!(
+            storage
+                .insert_text("recaptured", &hash_text("recaptured"))
+                .unwrap(),
+            1
+        );
+        let events = storage.list_capture_context_events(1, 50).unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .map(|e| e.source_app_name.as_deref())
+                .collect::<Vec<_>>(),
+            vec![None, Some("tienewer"), Some("tieolder")]
+        );
+        // A delayed event is ranked by its timestamp, not merely by insertion ID.
+        {
+            let mut conn = storage.conn.lock().unwrap();
+            let tx = conn.transaction().unwrap();
+            record_capture_event(
+                &tx, 1, 250, "text", None, None, None, None, None, None, None,
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            serde_json::to_value(storage.list_capture_context_events(1, 50).unwrap()).unwrap(),
+            serde_json::to_value(events).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(storage.list_capture_context_events(2, 50).unwrap()).unwrap(),
+            untouched
+        );
+        assert_eq!(
+            ids(&storage
+                .list_page(HistoryPageRequest {
+                    query: "ctx:ghostobsolete".into(),
+                    cursor: None,
+                    limit: Some(10),
+                })
+                .unwrap()
+                .items),
+            vec![2]
+        );
+    }
+
+    #[test]
+    fn capture_retention_rolls_back_pruning_context_and_dedupe_on_error() {
+        let storage = test_storage_with_migrations();
+        let text = "rollback retention";
+        let hash = hash_text(text);
+        let id = storage.insert_text(text, &hash).unwrap();
+        for _ in 0..2 {
+            storage.insert_text(text, &hash).unwrap();
+        }
+        let before_item = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
+        let before_events =
+            serde_json::to_value(storage.list_capture_context_events(id, 50).unwrap()).unwrap();
+        let before_context: String = storage
+            .conn
+            .lock()
+            .expect("sqlite lock")
+            .query_row(
+                "SELECT context_search_text FROM clipboard_items WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let epoch = storage.mutation_epoch.load(Ordering::SeqCst);
+        for trigger in [
+            "CREATE TRIGGER reject_retention BEFORE DELETE ON clipboard_item_capture_events
+             BEGIN SELECT RAISE(ABORT, 'synthetic retention failure'); END;",
+            "CREATE TRIGGER reject_retention BEFORE UPDATE OF context_search_text ON clipboard_items
+             BEGIN SELECT RAISE(ABORT, 'synthetic retention failure'); END;",
+            "CREATE TRIGGER reject_retention AFTER UPDATE OF context_search_text ON clipboard_items
+             BEGIN SELECT RAISE(ABORT, 'synthetic retention failure'); END;",
+        ] {
+            storage.conn.lock().unwrap().execute_batch(trigger).unwrap();
+            let error = storage.insert_text_with_context(text, &hash, None, &["RolledBack".into()]).unwrap_err();
+            assert!(error.contains("synthetic retention failure"), "{error}");
+            assert_eq!(serde_json::to_value(storage.get_item(id).unwrap()).unwrap(), before_item);
+            assert_eq!(serde_json::to_value(storage.list_capture_context_events(id, 50).unwrap()).unwrap(), before_events);
+            let context: String = storage.conn.lock().expect("sqlite lock").query_row(
+                "SELECT context_search_text FROM clipboard_items WHERE id = ?1", params![id],
+                |row| row.get(0),
+            ).unwrap();
+            assert_eq!(context, before_context);
+            assert!(storage.get_item_tag_entries(id).unwrap().is_empty());
+            assert_eq!(storage.mutation_epoch.load(Ordering::SeqCst), epoch);
+            storage.conn.lock().unwrap().execute_batch("DROP TRIGGER reject_retention").unwrap();
+        }
+    }
+
+    #[test]
+    fn capture_retention_applies_to_manual_dedupe_without_losing_tags() {
+        let storage = test_storage_with_migrations();
+        let text = "manual retention";
+        let id = storage
+            .insert_text_with_context(
+                text,
+                &hash_text(text),
+                Some(CaptureContext {
+                    source_app_name: Some("evictedapp".into()),
+                    ..CaptureContext::default()
+                }),
+                &["Kept".into()],
+            )
+            .unwrap();
+        let tags = storage.get_item_tag_entries(id).unwrap();
+        for _ in 0..3 {
+            let result = storage
+                .create_text_item(CreateHistoryItemRequest {
+                    text: text.into(),
+                    title: None,
+                    notes: None,
+                    tags: None,
+                    mime_primary: None,
+                })
+                .unwrap();
+            assert_eq!(result.id, id);
+            assert!(!result.created);
+        }
+        let events = storage.list_capture_context_events(id, 50).unwrap();
+        assert_eq!(events.len(), 3);
+        assert!(events.iter().all(|event| event.source_kind == "manual"));
+        assert!(storage
+            .list_page(HistoryPageRequest {
+                query: "ctx:evictedapp".into(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .unwrap()
+            .items
+            .is_empty());
+        assert_eq!(storage.get_item_tag_entries(id).unwrap(), tags);
     }
 
     #[test]

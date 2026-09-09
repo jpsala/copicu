@@ -2,6 +2,26 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-09-09 - Conservar tres capturas recientes por clip
+
+Estado: accepted por JP.
+
+Decision: conservar las 3 capturas mas recientes por clip, con orden estable
+`captured_at_unix_ms DESC, id DESC`, sin limite por edad ni agrupacion por origen.
+Tres capturas de una misma procedencia pueden desplazar todas las otras.
+
+Alcance: aplicar en la transaccion de cada captura/recaptura futura; reconstruir
+contexto buscable desde los eventos retenidos. La primera recaptura de un clip
+historico aplica el limite a todos sus eventos. No hacer poda global, migracion
+retroactiva ni cambios directos en la base instalada. Contenido y metadata
+editable, relaciones, provenance y suppression quedan fuera de esta retencion.
+
+Motivo: acotar el historial de captura por clip sin convertirlo en un catalogo de
+procedencias ni acumular terminos que ya no tienen eventos que los respalden.
+No implica una causa probada ni una mejora medida del hang.
+
+Contrato operativo: [clipboard](topics/clipboard.md#pattern-recomendado-para-mvp-0).
+
 ### 2026-06-29 - Issues publicos solo si son reales o curados
 
 Estado: accepted

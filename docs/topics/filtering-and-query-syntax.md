@@ -168,6 +168,16 @@ Texto plain busca en:
 - `content_kind`;
 - `context_search_text` oculto, generado desde eventos de captura (app, ventana, ruta de exe, formatos, dominio, source).
 
+Desde la siguiente captura/recaptura de cada clip, ese campo se reconstruye
+solamente con sus 3 eventos mas recientes (`captured_at_unix_ms DESC, id DESC`).
+`plain`, `re:`, `ctx:` y filtros `app:`, `window:`, `domain:`, `source:` y
+`format:` dejan de encontrar contexto descartado; sus negaciones usan la misma
+autoridad. Un termino aun presente en contenido o metadata editable puede
+seguir matcheando plain: esos campos no se borran. Find invalida snapshots al
+podar eventos para no mantener membresia por procedencias eliminadas.
+Clips historicos no recapturados conservan su contexto sin poda retroactiva.
+Contrato de escritura: [clipboard](clipboard.md#pattern-recomendado-para-mvp-0).
+
 Operadores soportados:
 
 | Query | Significado |
