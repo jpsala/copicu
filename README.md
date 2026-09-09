@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.12](https://github.com/jpsala/copicu/releases/tag/v0.4.12)
-- Asset: `Copicu_0.4.12_x64-setup.exe`
+- [v0.4.13](https://github.com/jpsala/copicu/releases/tag/v0.4.13)
+- Asset: `Copicu_0.4.13_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `A32560794FEB8DA02E34C474EDC074203772E10FD53EDA1A42764855F7892E5B`
+- SHA256: `F90A61E324C440FEE765E0DC9CDEE5F87E4F348DD6E9A580DC4F4F7E15B917C5`
 
-Parent tags now show the combined count of direct items and all nested descendants in Settings.
+Picker reliability: preserve metadata and tags, correct pagination and refresh, harden capture and paste, and block remote preview images. Future recaptures retain the three latest capture events per clip; untouched history is not pruned. The intermittent hang has not been confirmed resolved.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

@@ -215,6 +215,21 @@ Release Windows local todo-en-uno:
 npm run release:windows
 ```
 
+### Separar Codigo, Release E Instalada
+
+Un push a `main` no publica un instalador ni actualiza la app de uso diario.
+El cierre de un track de implementacion tampoco demuestra distribucion:
+
+- `npm run install:current` promueve el codigo local a la instalada; no equivale
+  a publicar un release para otros usuarios.
+- `npm run release:windows` publica el corte y sus assets firmados; comprobar
+  la version efectivamente instalada por separado, no inferirla del tag.
+- Mantener cambios aun no distribuidos en `CHANGELOG.md` Unreleased y su estado
+  operativo en `WORKING_MEMORY.md`; no duplicar ese inventario en este topic.
+- Las notas de release deben distinguir defectos corregidos de sintomas cuya
+  desaparicion no fue medida. Pruebas en dev aislado no prueban la resolucion
+  de un hang intermitente en la instalada.
+
 Antes de cortar release publico, refrescar tags para evitar resolver un tag viejo si el clon local esta desactualizado:
 
 ```powershell

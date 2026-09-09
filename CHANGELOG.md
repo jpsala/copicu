@@ -4,6 +4,8 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-09-09
+
 ### Fixed
 
 - Preserve concurrent metadata and normalized tag relationships when editing content; keep deduplication and tag writes transactional.
