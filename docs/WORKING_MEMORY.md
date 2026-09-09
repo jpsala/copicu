@@ -12,20 +12,20 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 - **Estado:** `complete`.
 - **Referencia:** `docs/tracks/035-picker-reliability.md`.
-- **Siguiente acción:** corte autorizado cerrado, incluida retencion de las ultimas 3 capturas por clip en futuras capturas/recapturas, sin poda global. Reparacion de datos instalados e instalacion siguen con gates propios. No se atribuye una causa unica ni mejora medida al hang; RPC permanece separado.
+- **Siguiente acción:** verificar uso cotidiano del corte distribuido; no se atribuye causa unica ni mejora medida al hang. Reparacion masiva de datos requiere alcance propio; RPC permanece separado.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
-| Confiabilidad picker / metadata | complete | `docs/tracks/035-picker-reliability.md` | Fixes, retencion de 3 capturas y verificaciones completos. Historicos se limitan solo al recapturarse. Reparacion instalada e instalacion requieren alcance propio. |
+| Confiabilidad picker / metadata | complete | `docs/tracks/035-picker-reliability.md` | Fixes y retencion verificados; historicos se limitan solo al recapturarse. Ver estado de distribucion debajo. |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | RPC / automatizacion externa | planned | `docs/tracks/034-local-rpc-cli.md`, `docs/topics/actions-and-scripting-api.md` | Implementar V1 en una pasada; PowerShell y AutoHotkey usan CLI sobre Named Pipe, sin SQL/Tauri/Host passthrough. |
 | Actions/scripts/hotkeys | complete | `docs/tracks/012-tags-and-hotkeys.md`, `docs/topics/tag-management-hotkeys.md`, `docs/tracks/004-actions-scripting.md` | Installer distribuye solo `030` Extract URLs y `031` Join Markdown, sin sobrescribir; ejemplos restantes quedan como fixtures del repo. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | active/dogfood | `docs/topics/filtering-and-query-syntax.md`, `docs/tracks/008-filtering-search-foundation.md`, `specs/005-search-plan-engine/` | Triggers, chips/explain, diagnostico y autocomplete local de tags/operadores aplicados; luego saved searches o highlighting. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/topics/windows-installer.md` | Estable: `v0.4.12`. Confiabilidad/retencion en `main` y Unreleased, aun sin release ni instalacion. Acordar promocion local o publica y verificar uso real; hang no confirmado resuelto. |
+| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.13` estable publicado e instalado localmente; NSIS, firma y feed comprobados. Seguir dogfood real sin declarar resuelto el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 
@@ -35,7 +35,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Decisiones Vigentes
 
-Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust y SQLite, UI keyboard-first y rapida. `Clipboard capture` puede pausarse desde Settings o tray sin detener el watcher ni bloquear copy/paste manual de items existentes. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run/dev-isolated`; release estable `v0.4.12`; sin candidate posterior activo. Settings permite comprobar e instalar una version firmada manualmente aunque auto-update este apagado. Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad. Copicu …
+Copicu es CopyQ-inspired (no compatible), stack Tauri 2 + React/Vite/TS + Rust y SQLite, UI keyboard-first y rapida. `Clipboard capture` puede pausarse desde Settings o tray sin detener el watcher ni bloquear copy/paste manual de items existentes. Instalada diaria: `%APPDATA%\dev.jpsala.copicu`; dev aislado: `.codex-run/dev-isolated`. Settings permite comprobar e instalar una version firmada manualmente aunque auto-update este apagado. Scripts/AI usan host APIs/capabilities, no SQL/shell/fs/network crudo. Clipboard enrichment v1 es interna post-capture; `metadata` standalone queda `CachedHidden` + prewarm salvo evidencia. Skills canonicas en `docs/skills/`; `.agents/skills` es compatibilidad.
 
 ## Riesgos / Pendientes Tecnicos
 

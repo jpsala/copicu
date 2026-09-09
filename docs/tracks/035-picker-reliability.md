@@ -14,8 +14,8 @@ paste historico al destino equivocado. Este track no reabre Architecture Hardeni
 
 Gate funcional de retencion resuelto por JP e implementado: ultimas 3 capturas
 por clip, no 3 procedencias ni limite por edad. El corte autorizado esta cerrado.
-Reparar thumbnails/datos instalados e instalar esta version requieren alcance
-y autorizacion propios. RPC no forma parte del corte.
+Distribucion completada; estado de release/instalada en `WORKING_MEMORY.md`.
+Reparar thumbnails/datos historicos en masa requiere alcance propio. RPC queda fuera.
 
 ## Contratos Implementados
 
@@ -88,7 +88,7 @@ y autorizacion propios. RPC no forma parte del corte.
   y borrado sin eventos huerfanos: no aplicar un parche generico de PRAGMAs.
 - No adoptar FTS5, migrar datos ni atribuir hangs a una ruta solo por inspeccion.
 - No hay poda retroactiva global: solo la futura recaptura aplica el limite de
-  eventos al clip tocado. No se repararon datos instalados ni se creo instalador.
+  eventos al clip tocado. No se ejecutaron reparaciones masivas de datos instalados.
 - Keyset garantiza recorrido de dataset estable, no snapshot frente a cambios
   concurrentes del orden. Un self-write y copia externa del mismo hash pueden
   ser indistinguibles dentro de la ventana de suppression.
