@@ -102,6 +102,8 @@ export type PickerSearchAction<Item, Cursor = unknown> =
       generation: number;
       descriptor: AppliedSearchDescriptor;
       page?: Pick<AppliedSearchPage<Item, Cursor>, "nextCursor" | "totalCount" | "filteredCount">;
+      items?: Item[];
+      intentGeneration?: number;
       source?: PickerSearchApplySource;
     }
   | { type: "pageFailed"; generation: number; error: string; source?: PickerSearchApplySource }
@@ -315,7 +317,10 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
     case "applyRetained":
       if (
         !state.applied
-        || action.generation !== state.generation
+        || (action.source === "background"
+          ? action.generation !== state.generation
+          : action.generation <= state.generation
+            || intentGenerationForAction(action) !== state.intentGeneration)
         || !isAppliedSearchDescriptor(action.descriptor)
         || action.descriptor.fingerprint !== state.applied.descriptor.fingerprint
       ) {
@@ -323,9 +328,11 @@ export function pickerSearchReducer<Item, Cursor = unknown>(
       }
       return {
         ...state,
+        generation: action.generation,
         applied: {
           ...state.applied,
           generation: action.generation,
+          items: action.items ?? state.applied.items,
           totalCount: action.page?.totalCount ?? state.applied.totalCount,
           filteredCount: action.page?.filteredCount ?? state.applied.filteredCount,
         },

@@ -64,16 +64,23 @@ Abrir picker con shortcut global, seleccionar item, volver a la ventana previa y
   - `Win32_UI_WindowsAndMessaging`
   - `Win32_UI_Input_KeyboardAndMouse`
 - Capturar handle de ventana previa con `GetForegroundWindow` antes de mostrar picker.
-- Mantener un tracker liviano de ultimo foreground no propio mientras la app corre; esto cubre casos donde un comando IPC o tray puede alterar foreground antes de mostrar picker.
+- Mantener un tracker liviano de ultimo foreground no propio mientras la app corre; excluir todas las superficies de Copicu, no solo el picker. Al comenzar una activacion, fijar un destino externo que el tracker no pueda cambiar durante esa accion.
 - En paste:
   1. escribir texto seleccionado al clipboard;
   2. usar `host::write_item`, que ya activa self-write suppression por hash normalizado;
   3. intentar restaurar foco previo;
-  4. esperar/verificar que el foreground sea el esperado, con timeout corto;
-  5. enviar `Ctrl+V` con `SendInput`;
+  4. esperar con timeout corto y revalidar identidad/foreground del mismo destino justo antes de inyectar, despues de cualquier delay;
+  5. si el destino cambio, fallo o desaparecio, abortar sin redirigir silenciosamente; solo con el destino validado enviar `Ctrl+V` con `SendInput`;
   6. registrar fallo metadata-only si algo falla.
 - Probar manualmente Notepad, browser input y editor.
 - No prometer confiabilidad universal hasta medir.
+
+El guard de destino esta implementado con identidad HWND/PID/TID inmutable por
+activacion; todas las ventanas del PID propio quedan excluidas. Se valida
+identidad/visibilidad/foreground tras la espera y justo antes de SendInput.
+El ultimo check y SendInput no son atomicos en Win32. Un probe de storage,
+`Responding=true` o un log de ventana mostrada no prueban recepcion de teclado.
+Mantener el [oracle C0](picker-interaction.md) y targets sinteticos.
 - Si `SendInput` directo consume demasiado tiempo, evaluar `enigo` como fallback de key injection, manteniendo `windows` para handles/focus.
 
 ## Implementacion Actual
@@ -86,6 +93,14 @@ Abrir picker con shortcut global, seleccionar item, volver a la ventana previa y
 - `Shift+Enter` en el picker ejecuta copy + hide + focus previous + paste. `Enter` mantiene copy + hide.
 - Delay post-focus antes de enviar paste: 700 ms en MVP 0, elegido de forma conservadora tras pruebas manuales. Convertir a setting/regla por app cuando se trabaje polish de paste.
 - `Shift+Insert` sintetico marca `Insert` como extended key para parecerse mas al teclado fisico en apps terminal/Electron.
+- Mostrar/focalizar picker no duerme esperando eventos del mismo hilo UI.
+  La espera y delay de paste permanecen fuera de ese hilo.
+
+Validacion sintetica aislada 2026-09-09: C0 recibio token por hotkey/type global
+sin targetear picker; `Shift+Enter` pego contenido exacto en TextBox externo.
+Reabrir picker durante los 700 ms aborto antes de SendInput con error visible,
+sin modificar el destino. No prueba confiabilidad universal ni la causa del
+reporte historico de paste equivocado.
 
 ## Validacion 2026-06-05
 

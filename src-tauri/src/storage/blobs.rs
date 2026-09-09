@@ -13,13 +13,49 @@ pub(super) fn path_to_db_string(path: &Path) -> String {
 }
 
 pub(super) fn write_blob(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("failed to create blob dir {}: {error}", parent.display()))?;
     }
-
-    std::fs::write(path, bytes)
-        .map_err(|error| format!("failed to write blob {}: {error}", path.display()))
+    // Content-addressed destinations are immutable. Publish only a complete file,
+    // so an interrupted write cannot truncate an original still referenced by SQL.
+    if path.is_file() {
+        return Ok(());
+    }
+    let (temp, mut file) = loop {
+        let temp = path.with_extension(format!(
+            "png.{}.{}.tmp",
+            std::process::id(),
+            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(file) => break (temp, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("failed to stage blob {}: {error}", path.display())),
+        }
+    };
+    let result = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        match std::fs::rename(&temp, path) {
+            Ok(()) => Ok(()),
+            Err(_) if path.is_file() => Ok(()),
+            Err(error) => Err(error),
+        }
+    })();
+    let _ = std::fs::remove_file(&temp);
+    result.map_err(|error: std::io::Error| {
+        format!("failed to publish blob {}: {error}", path.display())
+    })
 }
 
 pub(super) fn resolve_relative_blob_path(

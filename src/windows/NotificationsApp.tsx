@@ -76,7 +76,8 @@ export function NotificationsApp() {
         window.setTimeout(() => dismissToast(toast.id), toast.durationMs);
       }
     }).then((value) => {
-      unlisten = value;
+      if (active) unlisten = value;
+      else value();
     });
 
     return () => {

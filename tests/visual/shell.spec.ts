@@ -1,14 +1,38 @@
 import { expect, test, type Page } from "@playwright/test";
 
-declare const Buffer: {
-  from(input: string): { toString(encoding: "base64"): string };
-};
+import { Buffer } from "node:buffer";
+import { deflateSync } from "node:zlib";
 declare const process: { platform: string };
 
-const svgDataUrl = (width: number, height: number, color: string) =>
-  `data:image/svg+xml;base64,${Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="${color}"/><circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 4}" fill="white"/></svg>`,
-  ).toString("base64")}`;
+function pngDataUrl(width: number, height: number, color: string) {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const checksum = Buffer.alloc(4);
+    checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, checksum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  const rgb = Buffer.from(color.slice(1), "hex");
+  const pixels = Buffer.alloc(height * (1 + width * 3));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) rgb.copy(pixels, y * (1 + width * 3) + 1 + x * 3);
+  }
+  return `data:image/png;base64,${Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", header), chunk("IDAT", deflateSync(pixels)), chunk("IEND", Buffer.alloc(0)),
+  ]).toString("base64")}`;
+}
 
 const syntheticLongHistory = [
   {
@@ -17,9 +41,9 @@ const syntheticLongHistory = [
     text: [
       "## COPICU_SYNTH_MARKDOWN",
       "",
-      "![large](" + svgDataUrl(760, 420, "#245f53") + ")",
-      "![small](" + svgDataUrl(180, 120, "#69747a") + ")",
-      "![medium](" + svgDataUrl(420, 240, "#374047") + ")",
+      "![large](" + pngDataUrl(760, 420, "#245f53") + ")",
+      "![small](" + pngDataUrl(180, 120, "#69747a") + ")",
+      "![medium](" + pngDataUrl(420, 240, "#374047") + ")",
       "",
       "| Area | Estado |",
       "| --- | --- |",
@@ -140,7 +164,7 @@ const syntheticCompactPreviewHistory = [
     mime_primary: "image/png",
     width,
     height,
-    thumbnail_data_url: svgDataUrl(width, height, color),
+    thumbnail_data_url: pngDataUrl(width, height, color),
     title: null,
     notes: null,
     tags: null,
@@ -1739,6 +1763,8 @@ async function mockTauriInvoke(
               nextCursor:
                 hasNextPage && cursorItem
                   ? {
+                      afterIsInbox: Boolean(cursorItem.is_inbox),
+                      afterInboxAtUnixMs: cursorItem.inbox_at_unix_ms ?? null,
                       afterSortUnixMs: cursorItem.last_copied_at_unix_ms ?? cursorItem.created_at_unix_ms,
                       afterId: cursorItem.id,
                     }
@@ -1764,6 +1790,12 @@ async function mockTauriInvoke(
               nextCursor: response.nextCursor,
             });
             return response;
+          }
+          case "get_history_items_preview": {
+            const ids = new Set(args.ids);
+            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
+            return sourceItems.filter((item: any) => ids.has(item.id))
+              .map((item: any) => withHistoryPreview(item, false));
           }
           case "get_history_item": {
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
@@ -2061,6 +2093,22 @@ async function mockTauriInvoke(
           case "close_metadata_window":
           case "activate_item":
             return null;
+          case "pending_ui_host_request":
+            return null;
+          case "resolve_ui_host_request": {
+            const state = window as Window & { __copicuTestRejectUiHost?: boolean };
+            if (state.__copicuTestRejectUiHost) {
+              state.__copicuTestRejectUiHost = false;
+              throw new Error("Synthetic response failure");
+            }
+            return null;
+          }
+          case "update_history_item_text": {
+            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
+            (window as any).__copicuTestHistoryItems = sourceItems.map((item: any) =>
+              item.id === args.id ? { ...item, text: args.text, preview_text: args.text, includes_content: true } : item);
+            return null;
+          }
           case "update_history_item": {
             const request = args?.request ?? {};
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
@@ -2258,24 +2306,24 @@ async function openPickerOverflow(page: Page) {
 
 async function waitForDefaultHistoryReady(page: Page) {
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toHaveClass(/is-selected/);
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_MARKDOWN/ })).toHaveClass(/is-selected/);
 }
 
 async function selectLongSingleLine(page: Page) {
   await waitForDefaultHistoryReady(page);
-  const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
+  const item = page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.click();
   await expect(item).toHaveClass(/is-selected/);
 }
 
 async function selectLongSingleLineAndUnbroken(page: Page) {
   await selectLongSingleLine(page);
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click({
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click({
     modifiers: ["Control"],
   });
-  const unbroken = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
+  const unbroken = page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
   await unbroken.click({ modifiers: ["Control"] });
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-multi-selected/);
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-multi-selected/);
   await expect(unbroken).toHaveClass(/is-multi-selected/);
 }
 
@@ -3033,17 +3081,12 @@ test("new item dialog creates a manual history item", async ({ page }) => {
   await dialog.getByRole("button", { name: "Create" }).click();
 
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MANUAL_ITEM/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MANUAL_ITEM/ })).toHaveClass(/is-selected/);
-  const createCall = await page.evaluate(() =>
-    (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "create_history_item"),
-  );
-  expect(createCall.args.request).toMatchObject({
-    text: "COPICU_SYNTH_MANUAL_ITEM",
-    notes: "#manual created from Copicu",
-    tags: "#manual",
-    mimePrimary: "text/plain",
-  });
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_MANUAL_ITEM/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_MANUAL_ITEM/ })).toHaveClass(/is-selected/);
+  const created = page.getByRole("group", { name: /COPICU_SYNTH_MANUAL_ITEM/ });
+  await expect(created).toContainText("#manual");
+  await expect(created).toContainText("created from Copicu");
+  await expect(created.locator(".item-metadata")).not.toContainText("#manual #manual");
 });
 
 test("new item duplicate promotes the existing history item", async ({ page }) => {
@@ -3962,7 +4005,7 @@ test("long synthetic history stays contained", async ({ page }) => {
   await gotoShell(page);
 
   await expect(
-    page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }),
+    page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }),
   ).toBeVisible();
 
   for (const viewport of [
@@ -4029,7 +4072,7 @@ test("delayed history loading uses row-shaped skeleton geometry", async ({ page 
   expect(skeleton.children[0].width).toBeGreaterThanOrEqual(20);
   expect(skeleton.children[3].width).toBeGreaterThanOrEqual(20);
   await expect(page.locator(".history-skeleton-row")).toHaveCount(0, { timeout: 3000 });
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
 test("compact previews expose only real overflow and keep inline editing stable", async ({ page }) => {
@@ -4082,23 +4125,14 @@ test("compact previews expose only real overflow and keep inline editing stable"
   await inlineEditor.press("Control+Enter");
   await expect(inlineEditor).toBeHidden();
   await expect(longRow.locator(".feed-item")).toHaveAttribute("aria-current", "true");
-  await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.some(
-      (entry: any) => entry.cmd === "update_history_item" && entry.args.request.text === "COPICU_INLINE_SAVED\nsecond line",
-    ),
-  );
-
-  const updatesAfterSave = await page.evaluate(() =>
-    (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "update_history_item").length,
-  );
+  await expect(longRow).toContainText("COPICU_INLINE_SAVED");
   await longRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   await inlineEditor.fill("COPICU_INLINE_CANCELLED");
   await inlineEditor.press("Escape");
   await expect(inlineEditor).toBeHidden();
-  expect(await page.evaluate(() =>
-    (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "update_history_item").length,
-  )).toBe(updatesAfterSave);
+  await expect(longRow).toContainText("COPICU_INLINE_SAVED");
+  await expect(longRow).not.toContainText("COPICU_INLINE_CANCELLED");
 
   for (const viewport of [
     { width: 900, height: 620, imageMaxHeight: 181 },
@@ -4147,7 +4181,7 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   ]);
   await gotoShell(page);
 
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_FULL_CONTENT_START/ })).toBeVisible();
   await expect(page.getByText("COPICU_SYNTH_FULL_CONTENT_END")).toHaveCount(0);
 
   const initialSearch = await page.waitForFunction(() => {
@@ -4157,7 +4191,7 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   const initialSearchCall = await initialSearch.jsonValue() as any;
   expect(initialSearchCall.args.request.includeContent).toBe(false);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click();
   await page.getByLabel("Search clipboard history").click();
   await page.keyboard.press("Shift+F2");
   const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
@@ -4227,16 +4261,11 @@ test("F2, Ctrl+F2, and Shift+F2 route to content, external, and metadata editors
   await expect(contentEditor.getByText("Modified")).toBeVisible();
   await page.keyboard.press("Control+s");
   await expect(contentEditor).toBeHidden();
-  const contentUpdate = await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.find(
-      (entry: any) => entry.cmd === "update_history_item" && entry.args.request.text.includes(" edited"),
-    ),
-  );
-  expect((await contentUpdate.jsonValue() as any).args.request.id).toBe(syntheticLongHistory[0].id);
 
   await search.focus();
   await page.keyboard.press("F2");
   await expect(contentEditor).toBeVisible();
+  await expect(contentInput).toContainText(" edited");
   await page.keyboard.press("Escape");
   await expect(contentEditor).toBeHidden();
 
@@ -4371,7 +4400,7 @@ test("scrolling to the loader fetches the next history page", async ({ page }) =
   });
 
   await expect(resultCount).toHaveText("80 total");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
 });
 
 test("failed pagination stops automatic retries", async ({ page }) => {
@@ -4434,7 +4463,7 @@ test("pagination recovery survives a held draft discard", async ({ page }) => {
   await feed.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
   });
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
@@ -4480,10 +4509,14 @@ test("retained boundary refresh keeps cursor bridge continuity", async ({ page }
   await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
 
   const cursorA = {
+    afterIsInbox: false,
+    afterInboxAtUnixMs: null,
     afterSortUnixMs: syntheticPagedHistory[59].created_at_unix_ms,
     afterId: syntheticPagedHistory[59].id,
   };
   const cursorB = {
+    afterIsInbox: false,
+    afterInboxAtUnixMs: null,
     afterSortUnixMs: syntheticPagedHistory[60].created_at_unix_ms,
     afterId: syntheticPagedHistory[60].id,
   };
@@ -4503,9 +4536,9 @@ test("retained boundary refresh keeps cursor bridge continuity", async ({ page }
 
   const continuity = await page.evaluate(() => {
     const responses = (window as any).__copicuTestHistoryResponses as Array<{
-      cursor: { afterSortUnixMs: number; afterId: number } | null;
+      cursor: { afterIsInbox: boolean; afterInboxAtUnixMs: number | null; afterSortUnixMs: number; afterId: number } | null;
       ids: number[];
-      nextCursor: { afterSortUnixMs: number; afterId: number } | null;
+      nextCursor: { afterIsInbox: boolean; afterInboxAtUnixMs: number | null; afterSortUnixMs: number; afterId: number } | null;
     }>;
     const firstPage = [...responses].reverse().find((response) => response.cursor === null);
     const pagedResponses = responses.filter((response) => response.cursor !== null);
@@ -4548,7 +4581,7 @@ test("initial history failure uses contextual copy and Retry recovers", async ({
   attemptsBeforeRetry);
   await expect(alert).toHaveCount(0, { timeout: 5000 });
   await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_MARKDOWN/ })).toBeVisible();
 });
 
 test("loaded page count stays stable while idle", async ({ page }) => {
@@ -4571,7 +4604,7 @@ test("loaded page count stays stable while idle", async ({ page }) => {
   await page.waitForTimeout(1800);
 
   await expect(resultCount).toHaveText("80 total");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
   const after = await feed.evaluate((element) => ({ top: element.scrollTop, height: element.scrollHeight }));
   expect(after).toEqual(before);
 });
@@ -4595,7 +4628,7 @@ test("explicit search survives a delayed picker reset snapshot", async ({ page }
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
   await page.waitForTimeout(180);
   await expect(search).toHaveValue("unbroken");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
 test("keyboard selection survives delayed picker reset refresh", async ({ page }) => {
@@ -4617,8 +4650,8 @@ test("keyboard selection survives delayed picker reset refresh", async ({ page }
 
   await page.waitForTimeout(350);
 
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_06/ })).toHaveClass(/is-selected/);
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_01/ })).not.toHaveClass(/is-selected/);
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_06/ })).toHaveClass(/is-selected/);
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_01/ })).not.toHaveClass(/is-selected/);
 });
 
 test("picker navigation clears a pending compound shortcut without consuming ArrowDown", async ({ page }) => {
@@ -4650,7 +4683,7 @@ test("picker navigation clears a pending compound shortcut without consuming Arr
   await expect(search).toBeFocused();
   await search.press("ArrowDown");
 
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-selected/);
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-selected/);
   const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
   expect(calls.filter((call: any) => call.cmd === "clear_compound_hotkey_pending")).toHaveLength(1);
   expect(calls.filter((call: any) => call.cmd === "handle_compound_hotkey_step")).toHaveLength(0);
@@ -4661,7 +4694,7 @@ test("manual scroll keeps moving downward while variable rows are measured", asy
   await gotoShell(page);
 
   const feed = page.locator(".history-feed-scroll");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_SCROLL_01/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_SCROLL_01/ })).toBeVisible();
 
   let previous = await feed.evaluate((element) => element.scrollTop);
   for (let index = 0; index < 8; index += 1) {
@@ -4679,7 +4712,7 @@ test("selected item survives history reorder by id", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
   await page.locator(".history-feed-scroll").evaluate((element) => {
     element.scrollTop = 0;
   });
@@ -4693,7 +4726,7 @@ test("selected item survives history reorder by id", async ({ page }) => {
     document.querySelector(".feed-item")?.textContent?.includes("COPICU_SYNTH_LONG_UNBROKEN"),
   );
 
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toHaveClass(
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toHaveClass(
     /is-selected/,
   );
   await page.keyboard.press("Enter");
@@ -4723,7 +4756,7 @@ test("ai search shows interpretation and keeps activation enabled", async ({ pag
   await expect(page.getByText("AI interpreted", { exact: true })).toBeVisible();
   await expect(page.locator(".search-interpretation-query")).toHaveText("long");
   await expect(page.getByText("Synthetic unsupported source filter ignored.")).toBeVisible();
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toBeVisible();
 
   await page.keyboard.press("Enter");
   await page.waitForFunction(() =>
@@ -4961,8 +4994,8 @@ test("regex search, literal search, and invalid patterns keep the picker coheren
   await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
-  const markdownItem = page.getByRole("button", { name: /COPICU_SYNTH_MARKDOWN/ });
-  const unbrokenItem = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
+  const markdownItem = page.getByRole("group", { name: /COPICU_SYNTH_MARKDOWN/ });
+  const unbrokenItem = page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
 
   await search.fill("re:^## COPICU_SYNTH_MARKDOWN");
   await expect(markdownItem).toBeVisible();
@@ -4988,7 +5021,7 @@ test("plain query in AI composer still runs local search", async ({ page }) => {
   await page.keyboard.press("Enter");
 
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
   await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
 });
 
@@ -5002,7 +5035,7 @@ test("plain query in AI composer search button still runs local search", async (
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
   await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
 });
 
@@ -5118,7 +5151,7 @@ test("pagination keeps using the applied query while an Enter draft is pending",
       .at(-1).args.request.query,
   );
   expect(pagedQuery).toBe("");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached();
 });
 
 test("overlapping first-page refresh does not leave pagination stuck", async ({ page }) => {
@@ -5154,7 +5187,7 @@ test("overlapping first-page refresh does not leave pagination stuck", async ({ 
   await page.waitForFunction((before) =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length > before,
   callsBeforeFinalPage);
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached({ timeout: 5000 });
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached({ timeout: 5000 });
 });
 
 test("background refresh deferred during realtime search is replayed", async ({ page }) => {
@@ -5529,7 +5562,7 @@ test("single click selects item without activating it", async ({ page }) => {
   await gotoShell(page);
 
   await waitForDefaultHistoryReady(page);
-  const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
+  const item = page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.click();
 
   await expect(item).toHaveClass(/is-selected/);
@@ -5544,7 +5577,7 @@ test("double click activates selected item", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
 
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "activate_item"),
@@ -5568,7 +5601,7 @@ test("pinned picker keeps filter when activating item", async ({ page }) => {
   await pinButton.click();
   await expect(page.getByRole("button", { name: "Unpin window from top" })).toHaveAttribute("aria-pressed", "true");
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).dblclick();
 
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "activate_item"),
@@ -5682,7 +5715,7 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const item = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
+  const item = page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
   await item.scrollIntoViewIfNeeded();
   const box = await item.boundingBox();
   expect(box).not.toBeNull();
@@ -5734,7 +5767,7 @@ test("URL action appears only when selected text contains an URL", async ({ page
   await gotoShell(page);
 
   await expect(page.locator("[title='Result count']")).toHaveText("1 total");
-  const item = page.getByRole("button", { name: /https:\/\/example\.test\/copicu/ });
+  const item = page.getByRole("group", { name: /https:\/\/example\.test\/copicu/ });
   await item.click({ button: "right" });
 
   const menu = page.getByRole("menu", { name: "Item actions" });
@@ -5780,7 +5813,7 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
 
@@ -5802,7 +5835,7 @@ test("built-in action uses ids only and shows stacked toast", async ({ page }) =
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
   await page.getByRole("menuitem", { name: "Join selected" }).click();
@@ -5825,7 +5858,7 @@ test("command palette runs ready built-in and script actions", async ({ page }) 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.keyboard.press("Control+K");
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await expect(palette).toBeVisible();
@@ -5891,8 +5924,8 @@ test("quick actions handles multi-selected legacy text clips without MIME", asyn
   ]);
   await gotoShell(page);
 
-  const first = page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
-  const second = page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
+  const first = page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ });
+  const second = page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ });
   await first.click({ modifiers: ["Control"] });
   await second.click({ modifiers: ["Control"] });
   await expect(first).toHaveClass(/is-multi-selected/);
@@ -5909,13 +5942,13 @@ test("action filter effect settles history instead of leaving Filtering", async 
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ }).click();
   await page.keyboard.press("Control+K");
   await page.getByRole("option", { name: /url-open-or-filter/ }).click();
 
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("unbroken");
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
-  await expect(page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
 test("local shortcut runs matching ready script with shortcut context", async ({ page }) => {
@@ -5947,7 +5980,7 @@ test("hiding picker resets transient selection but preserves durable marks", asy
   await gotoShell(page);
 
   await page.getByLabel("Mark item").first().click();
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
   await expect(page.getByLabel("Search clipboard history")).toBeFocused();
   await page.keyboard.press("Escape");
 
@@ -5980,7 +6013,7 @@ test("capture while picker is hidden becomes the active first item on reopen", a
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
   await page.getByLabel("Hide Copicu").click();
 
   const newItemId = 9901;
@@ -6014,7 +6047,7 @@ test("capture while picker is hidden becomes the active first item on reopen", a
     window.dispatchEvent(new Event("focus"));
   }, { newItemId });
 
-  const capturedItem = page.getByRole("button", { name: newItemText });
+  const capturedItem = page.getByRole("group", { name: newItemText });
   await expect(capturedItem).toBeVisible();
   await expect(capturedItem).toHaveAttribute("aria-current", "true");
   await expect(page.locator(".history-feed.has-items > li").first()).toContainText(newItemText);
@@ -6056,7 +6089,7 @@ test("local shortcut does not run when selected input kind is incompatible", asy
   ]);
   await gotoShell(page);
 
-  await page.getByRole("button", { name: /COPICU_SYNTH_IMAGE_ONLY/ }).click();
+  await page.getByRole("group", { name: /COPICU_SYNTH_IMAGE_ONLY/ }).click();
   await expect(page.getByLabel("Search clipboard history")).toBeFocused();
   await page.keyboard.press("Control+Alt+J");
   await page.waitForTimeout(150);
@@ -6453,8 +6486,8 @@ test("item preview renders complete Markdown without loading remote media", asyn
 });
 
 test("item preview swaps thumbnail for the full image and exposes zoom reset", async ({ page }) => {
-  const thumbnail = svgDataUrl(120, 80, "#69747a");
-  const fullImage = svgDataUrl(1200, 800, "#245f53");
+  const thumbnail = pngDataUrl(120, 80, "#69747a");
+  const fullImage = pngDataUrl(1200, 800, "#245f53");
   await mockTauriInvoke(page, [{
     id: 901,
     content_kind: "image",
@@ -6659,4 +6692,136 @@ test("metadata window keeps tags and properties inline at its minimum size", asy
       })),
   );
   expect(overflowing).toEqual([]);
+});
+
+for (const mode of ["full", "inline"] as const) {
+test(`${mode} content editing preserves metadata changed while the editor is open`, async ({ page }) => {
+  const item = { ...syntheticLongHistory[1], id: 9201, text: "SYNTH_CONTENT_BEFORE", notes: "literal #unassigned", tags: "#work/project", title: "Original title" };
+  await mockTauriInvoke(page, [item]);
+  await gotoShell(page);
+  const row = page.locator("#history-item-9201");
+  await row.locator(".feed-item").click();
+  if (mode === "full") {
+    await page.keyboard.press("F2");
+  } else {
+    await row.getByRole("button", { name: "Open item actions" }).click();
+    await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
+  }
+  const editor = mode === "full" ? page.locator(".cm-content") : row.getByRole("textbox", { name: "Quick edit item 9201" });
+  await expect(editor).toBeVisible();
+  await editor.fill("SYNTH_CONTENT_AFTER");
+  await page.evaluate(() => {
+    const state = window as Window & { __copicuTestHistoryItems: Array<{ id: number; notes: string; tags: string; title: string }> };
+    const item = state.__copicuTestHistoryItems.find((entry) => entry.id === 9201)!;
+    item.notes = "Concurrent literal #not-assigned";
+    item.tags = "#Équipe/東京";
+    item.title = "Concurrent title";
+  });
+  await editor.press(mode === "full" ? "Control+s" : "Control+Enter");
+  await expect(editor).toBeHidden();
+  await expect(row).toContainText("SYNTH_CONTENT_AFTER");
+  await expect(row).toContainText("Concurrent title");
+  await expect(row).toContainText("#Équipe/東京");
+  await expect(row).toContainText("Concurrent literal #not-assigned");
+});
+}
+
+test("retained refresh updates rows beyond the first page without moving the visible anchor", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory);
+  await gotoShell(page);
+  const feed = page.locator(".history-feed-scroll");
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await expect.poll(async () => {
+    await feed.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    return page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ }).count();
+  }).toBe(1);
+  await feed.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const anchor = await feed.evaluate((element) => {
+    const top = element.getBoundingClientRect().top;
+    const row = [...element.querySelectorAll<HTMLElement>("li[data-index]")]
+      .find((candidate) => candidate.getBoundingClientRect().bottom > top)!;
+    return { id: Number(row.id.replace("history-item-", "")), offset: row.getBoundingClientRect().top - top };
+  });
+  await page.evaluate(async (id) => {
+    const state = window as Window & {
+      __copicuTestHistoryItems: Array<{ id: number; title: string | null; tags: string | null }>;
+      __copicuTestEmitEvent: (name: string, payload: unknown) => Promise<unknown>;
+    };
+    const item = state.__copicuTestHistoryItems.find((entry) => entry.id === id)!;
+    item.title = "SYNTH_RETAINED_METADATA";
+    item.tags = "#work/deep";
+    await state.__copicuTestEmitEvent("copicu://history/changed", { itemId: id, contentKind: "text" });
+  }, anchor.id);
+  const row = page.locator(`#history-item-${anchor.id}`);
+  await expect(row).toContainText("SYNTH_RETAINED_METADATA");
+  await expect(row).toContainText("#work/deep");
+  await expect.poll(() => row.evaluate((element) =>
+    element.getBoundingClientRect().top - element.closest(".history-feed-scroll")!.getBoundingClientRect().top,
+  )).toBeCloseTo(anchor.offset, 0);
+});
+
+test("rendering clipboard Markdown never requests remote media in feed or full preview", async ({ page }) => {
+  const requests: string[] = [];
+  await page.route("**/copicu-privacy-probe/**", (route) => route.abort());
+  page.on("request", (request) => {
+    if (request.url().includes("/copicu-privacy-probe/")) requests.push(request.url());
+  });
+  await mockTauriInvoke(page, [{
+    ...syntheticLongHistory[0],
+    text: "# Synthetic privacy\n\n![remote](https://remote.invalid/copicu-privacy-probe/pixel.png)\n![relative](//remote.invalid/copicu-privacy-probe/second.png)\n<img src=\"https://remote.invalid/copicu-privacy-probe/raw.png\">",
+  }]);
+  await gotoShell(page);
+  await expect(page.getByText("Remote image blocked: remote")).toBeVisible();
+  await expect(page.locator(".markdown-preview img")).toHaveCount(0);
+  await gotoShell(page, "/?window=item-preview");
+  await expect(page.getByRole("heading", { name: "Synthetic privacy" })).toBeVisible();
+  await expect(page.locator(".item-preview-markdown img")).toHaveCount(0);
+  expect(requests).toEqual([]);
+});
+
+test("focused feed groups activate with the keyboard without hiding nested controls", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  const first = page.locator(".feed-item").first();
+  await first.focus();
+  await first.press("ArrowDown");
+  const next = page.locator(".feed-item").nth(1);
+  await expect(next).toBeFocused();
+  await expect(next).toHaveAttribute("aria-current", "true");
+  await expect(page.locator(".history-feed > li").nth(1).getByRole("button", { name: "Open item actions" })).toBeAttached();
+  await next.press("Enter");
+  await expect.poll(() => page.evaluate(() => {
+    const state = window as Window & { __copicuTestInvocations: Array<{ cmd: string; args: { request?: { itemId?: number } } }> };
+    return state.__copicuTestInvocations.filter((entry) => entry.cmd === "activate_item").map((entry) => entry.args.request?.itemId);
+  })).toEqual([syntheticLongHistory[1].id]);
+});
+
+test("UiHost retains editable input after a failed response and ignores duplicate delivery", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=ui-host");
+  await page.waitForFunction(() => {
+    const state = window as Window & { __copicuTestInvocations: Array<{ cmd: string }> };
+    return state.__copicuTestInvocations.some((entry) => entry.cmd === "pending_ui_host_request");
+  });
+  const request = { id: "synthetic-prompt", kind: "input", title: "Synthetic prompt", body: "", defaultValue: "Initial", submitLabel: "Submit", placeholder: null, confirmLabel: null, cancelLabel: "Cancel" };
+  await page.evaluate(async (request) => {
+    const state = window as Window & { __copicuTestEmitEvent: (name: string, payload: unknown) => Promise<unknown> };
+    await state.__copicuTestEmitEvent("copicu://ui-host/request", request);
+  }, request);
+  const input = page.getByRole("textbox", { name: "Synthetic prompt" });
+  await input.fill("Keep edited input");
+  await page.evaluate(async (request) => {
+    const state = window as Window & {
+      __copicuTestEmitEvent: (name: string, payload: unknown) => Promise<unknown>;
+      __copicuTestRejectUiHost: boolean;
+    };
+    await state.__copicuTestEmitEvent("copicu://ui-host/request", request);
+    state.__copicuTestRejectUiHost = true;
+  }, request);
+  await expect(input).toHaveValue("Keep edited input");
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Synthetic response failure");
+  await expect(input).toHaveValue("Keep edited input");
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(input).toBeHidden();
 });

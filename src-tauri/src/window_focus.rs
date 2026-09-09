@@ -16,11 +16,31 @@ pub struct ForegroundWindowSnapshot {
 
 #[derive(Clone, Default)]
 pub struct PreviousWindow {
-    hwnd: Arc<Mutex<Option<NativeWindowId>>>,
-    own_windows: Arc<Mutex<Vec<NativeWindowId>>>,
+    hwnd: Arc<Mutex<Option<WindowIdentity>>>,
 }
 
 type NativeWindowId = isize;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WindowIdentity {
+    window_id: NativeWindowId,
+    process_id: u32,
+    thread_id: u32,
+}
+
+pub struct PasteTarget(WindowIdentity);
+
+impl PasteTarget {
+    pub fn focus_previous(&self) -> Result<(), String> {
+        platform::validate_target(self.0, false)?;
+        platform::focus_window(self.0.window_id)?;
+        platform::validate_target(self.0, true)
+    }
+
+    pub fn send_paste_shortcut(&self, shortcut: &PasteShortcut) -> Result<(), String> {
+        platform::send_paste_shortcut(self.0, shortcut)
+    }
+}
 
 #[cfg(target_os = "windows")]
 pub(crate) fn process_name_for_window(window_id: NativeWindowId) -> Option<String> {
@@ -37,24 +57,6 @@ fn dev_log(args: std::fmt::Arguments<'_>) {
 fn dev_log(_args: std::fmt::Arguments<'_>) {}
 
 impl PreviousWindow {
-    #[cfg(not(test))]
-    pub fn register_own_window<R: tauri::Runtime>(
-        &self,
-        own_window: &tauri::WebviewWindow<R>,
-    ) -> Result<(), String> {
-        let Some(own_id) = own_window_id(own_window) else {
-            return Ok(());
-        };
-        let mut own_windows = self
-            .own_windows
-            .lock()
-            .map_err(|_| "own windows mutex poisoned".to_string())?;
-        if !own_windows.contains(&own_id) {
-            own_windows.push(own_id);
-        }
-        Ok(())
-    }
-
     pub fn spawn_foreground_tracker(&self) {
         let previous_window = self.clone();
         thread::Builder::new()
@@ -85,23 +87,14 @@ impl PreviousWindow {
         Ok(())
     }
 
-    pub fn focus_previous(&self) -> Result<(), String> {
-        let hwnd = self.current()?;
-        dev_log(format_args!("previous window focus requested"));
-        platform::focus_window(hwnd)
-    }
-
-    pub fn send_paste_shortcut(&self, shortcut: &PasteShortcut) -> Result<(), String> {
-        let hwnd = self.current()?;
-        dev_log(format_args!("paste shortcut requested: {shortcut:?}"));
-        platform::send_paste_shortcut(hwnd, shortcut)
-    }
-
-    fn current(&self) -> Result<NativeWindowId, String> {
-        self.hwnd
+    pub fn snapshot_target(&self) -> Result<PasteTarget, String> {
+        let target = self
+            .hwnd
             .lock()
             .map_err(|_| "previous window mutex poisoned".to_string())?
-            .ok_or_else(|| "previous window is not recorded".to_string())
+            .ok_or_else(|| "previous window is not recorded".to_string())?;
+        platform::validate_target(target, false)?;
+        Ok(PasteTarget(target))
     }
 
     fn remember_current_foreground(&self) {
@@ -117,12 +110,18 @@ impl PreviousWindow {
     }
 
     fn set_previous(&self, foreground_id: NativeWindowId) -> Result<(), String> {
+        let Some(identity) = platform::window_identity(foreground_id) else {
+            return Ok(());
+        };
+        if identity.process_id == std::process::id() {
+            return Ok(());
+        }
         let mut hwnd = self
             .hwnd
             .lock()
             .map_err(|_| "previous window mutex poisoned".to_string())?;
-        if *hwnd != Some(foreground_id) {
-            *hwnd = Some(foreground_id);
+        if *hwnd != Some(identity) {
+            *hwnd = Some(identity);
             if let Some(process_id) = platform::window_process_id(foreground_id) {
                 dev_log(format_args!("previous window updated: pid={process_id}"));
             }
@@ -131,10 +130,8 @@ impl PreviousWindow {
     }
 
     fn is_own_window(&self, foreground_id: NativeWindowId) -> bool {
-        self.own_windows
-            .lock()
-            .map(|own_windows| own_windows.contains(&foreground_id))
-            .unwrap_or(false)
+        platform::window_process_id(foreground_id)
+            .is_none_or(|process_id| process_id == std::process::id())
     }
 }
 
@@ -282,7 +279,7 @@ fn own_window_id<R: tauri::Runtime>(_window: &tauri::WebviewWindow<R>) -> Option
 
 #[cfg(target_os = "windows")]
 mod platform {
-    use super::{dev_log, ForegroundWindowSnapshot, NativeWindowId};
+    use super::{dev_log, ForegroundWindowSnapshot, NativeWindowId, WindowIdentity};
     use crate::host::PasteShortcut;
     use std::{
         mem::size_of,
@@ -355,7 +352,9 @@ mod platform {
         }
 
         let _ = unsafe { BringWindowToTop(hwnd) };
-        wait_until_foreground(hwnd)
+        // This path runs on Tauri's UI thread. Waiting for its focus events
+        // here prevents that same thread from processing them.
+        Ok(())
     }
 
     pub fn show_window_no_activate(window_id: NativeWindowId) -> Result<(), String> {
@@ -401,6 +400,46 @@ mod platform {
         let thread_id =
             unsafe { GetWindowThreadProcessId(hwnd_from_id(window_id), Some(&mut process_id)) };
         (thread_id != 0 && process_id != 0).then_some(process_id)
+    }
+
+    pub(super) fn window_identity(window_id: NativeWindowId) -> Option<WindowIdentity> {
+        if !valid_window(hwnd_from_id(window_id)) {
+            return None;
+        }
+        let mut process_id = 0;
+        let thread_id =
+            unsafe { GetWindowThreadProcessId(hwnd_from_id(window_id), Some(&mut process_id)) };
+        (process_id != 0 && thread_id != 0).then_some(WindowIdentity {
+            window_id,
+            process_id,
+            thread_id,
+        })
+    }
+
+    pub(super) fn validate_target(target: WindowIdentity, foreground: bool) -> Result<(), String> {
+        validate_target_observation(
+            target,
+            window_identity(target.window_id),
+            if foreground {
+                foreground_window_id()
+            } else {
+                Some(target.window_id)
+            },
+        )
+    }
+
+    fn validate_target_observation(
+        target: WindowIdentity,
+        current: Option<WindowIdentity>,
+        foreground: Option<NativeWindowId>,
+    ) -> Result<(), String> {
+        if current != Some(target) || target.process_id == std::process::id() {
+            return Err("paste target identity is no longer valid".into());
+        }
+        if foreground != Some(target.window_id) {
+            return Err("paste target is no longer foreground".into());
+        }
+        Ok(())
     }
 
     pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {
@@ -475,11 +514,12 @@ mod platform {
         (!trimmed.is_empty()).then(|| trimmed.to_string())
     }
 
-    pub fn send_paste_shortcut(
-        window_id: NativeWindowId,
+    pub(super) fn send_paste_shortcut(
+        target: WindowIdentity,
         shortcut: &PasteShortcut,
     ) -> Result<(), String> {
-        let resolved = resolve_paste_shortcut(window_id, shortcut);
+        validate_target(target, true)?;
+        let resolved = resolve_paste_shortcut(target.window_id, shortcut);
         eprintln!(
             "paste shortcut resolved: {:?} -> {:?}{}",
             shortcut,
@@ -508,6 +548,7 @@ mod platform {
             key_input(shortcut.key, true),
             key_input(shortcut.modifier, true),
         ];
+        validate_target(target, true)?;
         let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
         if sent != inputs.len() as u32 {
             return Err(format!(
@@ -683,6 +724,41 @@ mod platform {
         use super::*;
 
         #[test]
+        fn paste_guard_rejects_closed_reused_own_and_displaced_targets() {
+            let target = WindowIdentity {
+                window_id: 42,
+                process_id: u32::MAX,
+                thread_id: 7,
+            };
+            assert!(validate_target_observation(target, Some(target), Some(42)).is_ok());
+            assert!(validate_target_observation(target, None, Some(42)).is_err());
+            assert!(validate_target_observation(
+                target,
+                Some(WindowIdentity {
+                    thread_id: 8,
+                    ..target
+                }),
+                Some(42)
+            )
+            .is_err());
+            assert!(validate_target_observation(
+                target,
+                Some(WindowIdentity {
+                    process_id: 8,
+                    ..target
+                }),
+                Some(42)
+            )
+            .is_err());
+            assert!(validate_target_observation(target, Some(target), Some(43)).is_err());
+            let own = WindowIdentity {
+                process_id: std::process::id(),
+                ..target
+            };
+            assert!(validate_target_observation(own, Some(own), Some(42)).is_err());
+        }
+
+        #[test]
         fn copy_waits_until_every_modifier_is_released() {
             assert!(modifiers_released([0; 5]));
             assert!(!modifiers_released([i16::MIN, 0, 0, 0, 0]));
@@ -719,7 +795,7 @@ mod platform {
 
 #[cfg(not(target_os = "windows"))]
 mod platform {
-    use super::{ForegroundWindowSnapshot, NativeWindowId};
+    use super::{ForegroundWindowSnapshot, NativeWindowId, WindowIdentity};
     use crate::host::PasteShortcut;
 
     pub fn foreground_window_id() -> Option<NativeWindowId> {
@@ -730,8 +806,8 @@ mod platform {
         Err("focusPrevious is only implemented on Windows".to_string())
     }
 
-    pub fn send_paste_shortcut(
-        _window_id: NativeWindowId,
+    pub(super) fn send_paste_shortcut(
+        _target: WindowIdentity,
         _shortcut: &PasteShortcut,
     ) -> Result<(), String> {
         Err("sendPasteShortcut is only implemented on Windows".to_string())
@@ -739,6 +815,17 @@ mod platform {
 
     pub fn window_process_id(_window_id: NativeWindowId) -> Option<u32> {
         None
+    }
+
+    pub(super) fn window_identity(_window_id: NativeWindowId) -> Option<WindowIdentity> {
+        None
+    }
+
+    pub(super) fn validate_target(
+        _target: WindowIdentity,
+        _foreground: bool,
+    ) -> Result<(), String> {
+        Err("paste target validation is only implemented on Windows".into())
     }
 
     pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {

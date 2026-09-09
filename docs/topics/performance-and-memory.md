@@ -76,141 +76,27 @@ Criterios acordados:
 
 ## Prioridad De Trabajo
 
-### P0: Reducir Payload Del Feed
+El corte inicial de preview DTO, thumbnails separados, refresh event-driven y
+code splitting ya existe. No volver a tratarlo como implementacion pendiente
+ni reintroducir texto completo/PNG principal por pagina para ocultar otro bug.
 
-Problema observado:
+El corte de confiabilidad esta implementado y verificado en
+[`035-picker-reliability`](../tracks/035-picker-reliability.md); quedan gates de
+retencion/reparacion instalada. SQL/decode/activacion del picker usan workers
+bloqueantes reales; el hilo UI no espera eventos de foco. Refresh renueva previews
+retenidos por ID sin cargar contenido completo ni perder el ancla.
+La medicion/lifecycle permanece en [`014-performance-memory`](../tracks/014-performance-memory.md).
 
-- `HistorySearchRequest.include_content` existe, pero `storage.history_search` lo ignora.
-- Las queries de paginas traen `text` completo para todos los items.
-- La UI necesita preview para el feed, y contenido completo solo para editar, activar, scripts o vista expandida.
+Orden de evaluacion, no autorizacion de una reescritura:
 
-Pattern recomendado:
-
-- Introducir un DTO de pagina distinto de `HistoryItem` si hace falta.
-- Para `includeContent=false`, devolver preview truncado y metadata suficiente:
-  - `id`, `contentKind`, `previewText`, `textCharCount`, timestamps, flags, MIME/blob/thumbnail metadata, title/notes/tags.
-- Mantener `get_item(id)` o una ruta equivalente para contenido completo bajo demanda.
-- No romper scripts: `copicu.history.search(..., { content: true })` debe seguir obteniendo contenido cuando lo pide.
-
-Validacion esperada:
-
-- Feed sigue renderizando texto, metadata e imagenes.
-- Edit/activate/scripts con content siguen funcionando.
-- Items largos no cruzan completos por IPC en la pagina inicial.
-
-### P0: Thumbnails Reales Para Imagenes
-
-Problema observado:
-
-- Para imagenes, `thumbnail_data_url` usa `blob_path` principal en vez de `thumbnail_path`.
-- Cada pagina puede leer PNG grande, base64-encodearlo y mandarlo por IPC.
-
-Pattern recomendado:
-
-- Usar `thumbnail_path` para el feed.
-- Reservar `blob_path` principal para copy-back, preview detallada o export.
-- Considerar servir blobs por protocolo/ruta segura en vez de `data:` si el base64 sigue siendo caro.
-
-Validacion esperada:
-
-- Imagenes capturadas siguen visibles en el picker.
-- Copy-back usa el PNG principal.
-- La pagina inicial no incluye PNGs grandes como data URL.
-
-### P0: Idle Event-Driven
-
-Problema observado:
-
-- El renderer refresca historial por intervalo.
-- El renderer consulta snapshot/probe por intervalo.
-- WhichKey tiene polling propio.
-- Los diagnosticos renderer mandan heartbeats constantes.
-
-Pattern recomendado:
-
-- Emitir eventos backend cuando cambia historial: capture, edit, delete, mark, tag, import.
-- Refrescar al mostrar/focalizar el picker y al recibir evento.
-- Mantener polling solo como fallback dev/debug, con intervalos mas largos y cancelado cuando la ventana no esta visible.
-- Evitar `emit` hacia `main` desde callbacks global-shortcut sensibles: para ese camino se mantiene la regla vigente de invertir direccion con consulta renderer.
-
-Validacion esperada:
-
-- Con app quieta, no hay IPC constante de historial/probe/diagnosticos en produccion.
-- Una copia sintetica aparece sin esperar polling largo cuando el picker esta visible o se abre.
-
-### P1: Busqueda Escalable
-
-Problema observado:
-
-- Texto libre usa `LIKE '%term%'` sobre varios campos.
-- Los conteos total/filtrado se calculan en cada busqueda.
-
-Pattern recomendado:
-
-- Agregar FTS5 para texto/title/notes/tags cuando el contrato de preview ya este claro.
-- Mantener filtros estructurados en columnas normalizadas e indices normales.
-- Hacer conteos bajo demanda, diferidos o cacheados por query cuando el costo sea visible.
-
-Validacion esperada:
-
-- Buscar entre muchos items sinteticos sigue respondiendo rapido.
-- Query syntax existente conserva resultados.
-
-### P1: Scripts Sin Reescaneo Innecesario
-
-Problema observado:
-
-- `list_actions` redescubre scripts y reescribe cache cada vez.
-- Ya existe un thread de refresh por firma de carpeta.
-- `clipboardChange` puede terminar pagando discovery/listado en cada captura.
-
-Pattern recomendado:
-
-- `list_actions` debe leer cache por defecto.
-- Discovery/cache refresh en startup, cambio de settings, cambio de firma o refresh explicito.
-- Para `clipboardChange`, filtrar candidatos desde cache antes de ejecutar cualquier trabajo caro.
-
-Validacion esperada:
-
-- Settings/command palette siguen viendo scripts nuevos tras cambio de carpeta o archivo.
-- Clipboard capture sin scripts candidatos no escanea carpeta ni reescribe SQLite por captura.
-
-### P1/P2: Runner De Scripts
-
-Problema observado:
-
-- Cada accion script levanta un proceso Node.
-
-Pattern recomendado:
-
-- Mantener proceso por ejecucion para acciones manuales mientras el costo sea aceptable.
-- Si `clipboardChange` o local/global shortcuts frecuentes se sienten lentos, evaluar worker persistente o pool chico.
-- No adelantar complejidad hasta medir.
-
-### P2: Bundle Y Superficies UI
-
-Problema observado:
-
-- Build actual genera un chunk JS grande y CSS grande.
-- Todas las ventanas comparten `src/main.tsx`, aunque varias superficies no necesitan picker/settings/markdown/etc.
-
-Pattern recomendado:
-
-- Code split por superficies: picker, settings, ui-host, notifications, markdown output, whichkey.
-- Lazy-load markdown renderer/syntax highlight solo en `ai-output` o preview que lo necesite.
-- Evitar cargar settings pesados para abrir rapido el picker.
-
-### P2: Render React Del Feed
-
-Problema observado:
-
-- `markdownImages(item.text)` se recalcula en estimacion y render.
-- Overscan fijo puede ser alto para filas pesadas.
-
-Pattern recomendado:
-
-- Derivar `hasMarkdownImages`/preview metadata en backend o memoizar por `item.id + text`.
-- Ajustar overscan por tipo de contenido o por velocidad de scroll.
+1. Aislar SQL, decode, scripts y esperas nativas del borde interactivo. Convertir
+   un comando a `async` no elimina por si solo trabajo bloqueante ni contencion.
+2. Comprobar orden/indice/cursor y coste de conteos antes de agregar otro motor
+   de texto. FTS por palabras no reemplaza substring `LIKE` con la misma semantica.
+3. Medir por separado crecimiento de texto, contexto por recapturas, eventos,
+   thumbnails y proyecciones de Find; numero de items no alcanza como escala.
+4. Optimizar render/bundle o workers persistentes solo contra un coste medido,
+   preservando picker caliente, ancla de scroll y verificacion de foco.
 
 ## Medicion Recomendada
 
@@ -225,6 +111,17 @@ Antes y despues de cada corte, medir con datos sinteticos:
 - caso con imagenes grandes y thumbnails.
 
 No usar payload real del clipboard en fixtures, logs o screenshots.
+
+Separar tiempos de SQL, `history_search`, serializacion/IPC, aplicacion del
+snapshot y hotkey -> primer input visible. Un benchmark Rust debug no mide
+latencia release del picker; una consulta que devuelve solo IDs no equivale a
+una pagina con DTO/thumbnails. Declarar tamaño de contenido, perfil y cache
+fria/caliente; evitar builds/suites concurrentes durante la medicion.
+
+Para investigar intermitencia, distinguir datos obsoletos, resultados omitidos,
+capturas descartadas y bloqueo real de input. Suites verdes, heartbeats o
+`window.show.done` no reemplazan el oracle nativo de interaccion. Verificar
+defaults efectivos del driver usado antes de atribuir fallos a SQLite generico.
 
 ## Claims Publicos Permitidos
 

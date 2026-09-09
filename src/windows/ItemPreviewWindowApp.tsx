@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { UiAlert, UiIconButton, UiTooltip } from "../ui/controls";
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
+import { localPreviewImageSource } from "../shared/previewMedia";
 
 const ITEM_PREVIEW_OPEN_EVENT = "copicu://item-preview/open";
 const MIN_ZOOM = 0.25;
@@ -87,7 +88,8 @@ export function ItemPreviewWindowApp() {
     void listen<ItemPreviewPayload>(ITEM_PREVIEW_OPEN_EVENT, (event: Event<ItemPreviewPayload>) => {
       if (active) applyPayload(event.payload);
     }).then((cleanup) => {
-      unlisten = cleanup;
+      if (active) unlisten = cleanup;
+      else cleanup();
     });
 
     return () => {
@@ -150,7 +152,7 @@ export function ItemPreviewWindowApp() {
   }, []);
 
   const isMarkdown = payload?.mimePrimary?.toLocaleLowerCase().includes("markdown") ?? false;
-  const imageUrl = fullImageUrl ?? payload?.thumbnailDataUrl ?? null;
+  const imageUrl = localPreviewImageSource(fullImageUrl ?? payload?.thumbnailDataUrl);
 
   return (
     <CustomWindowFrame title="Copicu Preview" variant="document">

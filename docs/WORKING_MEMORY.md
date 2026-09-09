@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-08-10. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-09-09. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -10,14 +10,15 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `planned`.
-- **Referencia:** `docs/tracks/034-local-rpc-cli.md`.
-- **Siguiente acción:** implementar el corte V1 completo: Named Pipe seguro por perfil, facade JSON-RPC, `copicu-cli.exe`, cinco metodos semanticos y smoke dev antes del gate de instalacion.
+- **Estado:** `waiting_gate`.
+- **Referencia:** `docs/tracks/035-picker-reliability.md`.
+- **Siguiente acción:** decidir retencion de contexto/eventos; correcciones de confiabilidad implementadas y verificadas en dev aislado, incluida privacidad y paste abortado al cambiar foreground. Reparacion de datos instalados e instalacion siguen con gates propios. No se atribuye una causa unica al hang; RPC permanece separado.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
+| Confiabilidad picker / metadata | waiting_gate | `docs/tracks/035-picker-reliability.md` | Fixes y smoke nativo completos; decidir retencion antes de descartar contexto/eventos. Reparacion instalada e instalacion requieren alcance propio. |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | RPC / automatizacion externa | planned | `docs/tracks/034-local-rpc-cli.md`, `docs/topics/actions-and-scripting-api.md` | Implementar V1 en una pasada; PowerShell y AutoHotkey usan CLI sobre Named Pipe, sin SQL/Tauri/Host passthrough. |
 | Actions/scripts/hotkeys | complete | `docs/tracks/012-tags-and-hotkeys.md`, `docs/topics/tag-management-hotkeys.md`, `docs/tracks/004-actions-scripting.md` | Installer distribuye solo `030` Extract URLs y `031` Join Markdown, sin sobrescribir; ejemplos restantes quedan como fixtures del repo. |

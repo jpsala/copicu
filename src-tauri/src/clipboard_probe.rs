@@ -74,7 +74,6 @@ mod windows_probe {
             },
             Memory::{GlobalLock, GlobalSize, GlobalUnlock},
         },
-        UI::Shell::{DragQueryFileW, HDROP},
     };
 
     const CF_TEXT: u32 = 1;
@@ -113,11 +112,8 @@ mod windows_probe {
             previous = next;
         }
 
-        let file_count = if has_format(CF_HDROP) {
-            clipboard_file_count()
-        } else {
-            None
-        };
+        // Asking for HDROP here can synchronously invoke delayed rendering.
+        let file_count = None;
 
         let format_count = formats.len() as u32;
         let trusted_transient_transport = is_trusted_transient_transport(&formats);
@@ -167,7 +163,8 @@ mod windows_probe {
     fn format_probe(id: u32) -> ClipboardFormatProbe {
         let name = format_name(id);
         let kind = classify_format(id, &name);
-        let handle_size_bytes = clipboard_handle_size(id, &name);
+        // Metadata probing must not request delayed rendering of every payload.
+        let handle_size_bytes = None;
 
         ClipboardFormatProbe {
             id,
@@ -181,27 +178,6 @@ mod windows_probe {
         unsafe { IsClipboardFormatAvailable(id).is_ok() }
     }
 
-    fn clipboard_handle_size(id: u32, name: &str) -> Option<usize> {
-        if !is_global_memory_format(id, name) {
-            return None;
-        }
-
-        let handle = unsafe { GetClipboardData(id).ok()? };
-        let size = unsafe { GlobalSize(HGLOBAL(handle.0)) };
-
-        (size > 0).then_some(size)
-    }
-
-    fn is_global_memory_format(id: u32, name: &str) -> bool {
-        let lower_name = name.to_ascii_lowercase();
-
-        matches!(id, CF_TEXT | CF_UNICODETEXT | CF_HDROP)
-            || is_named_format(&lower_name, "html format")
-            || is_named_format(&lower_name, "rich text format")
-            || is_named_format(&lower_name, "png")
-            || lower_name.starts_with("image/")
-    }
-
     fn is_trusted_transient_transport(formats: &[ClipboardFormatProbe]) -> bool {
         let Some(marker_format) = formats
             .iter()
@@ -209,16 +185,16 @@ mod windows_probe {
         else {
             return false;
         };
-        let Some(marker_bytes) = clipboard_format_bytes(marker_format.id) else {
+        if !clipboard_marker_matches(marker_format.id) {
             return false;
-        };
+        }
         let owner_process_name = unsafe { GetClipboardOwner() }
             .ok()
             .filter(|owner| !owner.0.is_null())
             .and_then(|owner| crate::window_focus::process_name_for_window(owner.0 as isize));
         trusted_transient_transport_parts(
             &marker_format.name,
-            &marker_bytes,
+            TRANSIENT_PASTE_MARKER,
             owner_process_name.as_deref(),
         )
     }
@@ -233,28 +209,24 @@ mod windows_probe {
             && owner_process_name == Some("dictation-tauri.exe")
     }
 
-    fn clipboard_format_bytes(id: u32) -> Option<Vec<u8>> {
-        let handle = unsafe { GetClipboardData(id).ok()? };
+    fn clipboard_marker_matches(id: u32) -> bool {
+        let Ok(handle) = (unsafe { GetClipboardData(id) }) else {
+            return false;
+        };
         let global = HGLOBAL(handle.0);
         let size = unsafe { GlobalSize(global) };
-        if size == 0 {
-            return None;
+        if size != TRANSIENT_PASTE_MARKER.len() {
+            return false;
         }
         let ptr = unsafe { GlobalLock(global) } as *const u8;
         if ptr.is_null() {
-            return None;
+            return false;
         }
-        let bytes = unsafe { std::slice::from_raw_parts(ptr, size) }.to_vec();
+        let matches = unsafe { std::slice::from_raw_parts(ptr, size) } == TRANSIENT_PASTE_MARKER;
         unsafe {
             let _ = GlobalUnlock(global);
         }
-        Some(bytes)
-    }
-    fn clipboard_file_count() -> Option<u32> {
-        let handle = unsafe { GetClipboardData(CF_HDROP).ok()? };
-        let count = unsafe { DragQueryFileW(HDROP(handle.0), u32::MAX, None) };
-
-        Some(count)
+        matches
     }
 
     fn format_name(id: u32) -> String {

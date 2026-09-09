@@ -1087,41 +1087,55 @@ fn get_autostart_status<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Autostar
 
 #[cfg(not(test))]
 #[tauri::command]
-fn list_recent_items(
+async fn list_recent_items(
     storage: State<'_, storage::AppStorage>,
 ) -> Result<Vec<storage::HistoryItem>, String> {
-    storage.list_recent()
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_recent())
+        .await
+        .map_err(|error| format!("history worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn search_items(
+async fn search_items(
     storage: State<'_, storage::AppStorage>,
     query: String,
 ) -> Result<Vec<storage::HistoryItem>, String> {
-    storage.search(&query)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.search(&query))
+        .await
+        .map_err(|error| format!("search worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn list_history_page(
+async fn list_history_page(
     storage: State<'_, storage::AppStorage>,
     request: storage::HistoryPageRequest,
 ) -> Result<storage::HistoryPage, String> {
-    storage.list_page(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_page(request))
+        .await
+        .map_err(|error| format!("history page worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn history_search(
+async fn history_search(
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
     request: storage::HistorySearchRequest,
 ) -> Result<storage::HistoryPage, String> {
-    if request.mode == storage::HistorySearchMode::Ai && request.applied_descriptor.is_none() {
-        return history_search_with_ai_planner(&app, &storage, request);
-    }
-    storage.history_search(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if request.mode == storage::HistorySearchMode::Ai && request.applied_descriptor.is_none() {
+            return history_search_with_ai_planner(&app, &storage, request);
+        }
+        storage.history_search(request)
+    })
+    .await
+    .map_err(|error| format!("history search worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -1148,22 +1162,32 @@ fn find_navigate(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn find_matches_for_items(
+async fn find_matches_for_items(
     storage: State<'_, storage::AppStorage>,
     sessions: State<'_, find::FindSessionStore>,
     request: find::FindMatchesForItemsRequest,
 ) -> Result<find::FindMatchesForItemsResponse, String> {
-    sessions.matches_for_items_materialized(storage.inner(), request)
+    let storage = storage.inner().clone();
+    let sessions = sessions.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        sessions.matches_for_items_materialized(&storage, request)
+    })
+    .await
+    .map_err(|error| format!("find matches worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn find_target(
+async fn find_target(
     storage: State<'_, storage::AppStorage>,
     sessions: State<'_, find::FindSessionStore>,
     request: find::FindTargetRequest,
 ) -> Result<find::FindTargetResponse, String> {
-    sessions.target_materialized(storage.inner(), request)
+    let storage = storage.inner().clone();
+    let sessions = sessions.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || sessions.target_materialized(&storage, request))
+        .await
+        .map_err(|error| format!("find target worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -1809,14 +1833,19 @@ fn close_metadata_window(window: tauri::WebviewWindow) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
-fn open_item_preview(
+async fn open_item_preview(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
     request: OpenItemPreviewRequest,
 ) -> Result<bool, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_item_preview")?;
-    dispatch_item_preview_open(app, storage.get_item_preview(request.item_id)?);
+    let storage = storage.inner().clone();
+    let payload =
+        tauri::async_runtime::spawn_blocking(move || storage.get_item_preview(request.item_id))
+            .await
+            .map_err(|error| format!("preview worker failed: {error}"))??;
+    dispatch_item_preview_open(app, payload);
     Ok(true)
 }
 
@@ -1880,7 +1909,7 @@ fn pending_item_preview(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn load_item_preview_image(
+async fn load_item_preview_image(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     item_id: i64,
@@ -1890,7 +1919,10 @@ fn load_item_preview_image(
         &[ITEM_PREVIEW_WINDOW_LABEL],
         "load_item_preview_image",
     )?;
-    storage.read_item_preview_image_data_url(item_id)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.read_item_preview_image_data_url(item_id))
+        .await
+        .map_err(|error| format!("preview image worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -1983,13 +2015,14 @@ fn resolve_ui_host_request(
     request: ui_host::UiHostResolveRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[UI_HOST_WINDOW_LABEL], "resolve_ui_host_request")?;
-    ui_host.resolve(request)?;
-    if let Some(window) = app.get_webview_window(UI_HOST_WINDOW_LABEL) {
-        if let Err(error) = window.hide() {
-            eprintln!("ui-host hide after resolve failed: {error}");
+    ui_host.resolve(request, || {
+        if let Some(window) = app.get_webview_window(UI_HOST_WINDOW_LABEL) {
+            window
+                .hide()
+                .map_err(|error| format!("ui-host hide failed: {error}"))?;
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 #[cfg(not(test))]
@@ -2015,45 +2048,65 @@ fn write_history_item(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn mark_history_item_used(storage: State<'_, storage::AppStorage>, id: i64) -> Result<(), String> {
-    host::mark_used(&storage, id)
+async fn mark_history_item_used(
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+) -> Result<(), String> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || host::mark_used(&storage, id))
+        .await
+        .map_err(|error| format!("mark used worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn set_history_items_marked(
+async fn set_history_items_marked(
     storage: State<'_, storage::AppStorage>,
     request: storage::SetHistoryItemsMarkedRequest,
 ) -> Result<(), String> {
-    storage.set_items_marked(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.set_items_marked(request))
+        .await
+        .map_err(|error| format!("mark items worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn set_history_query_marked(
+async fn set_history_query_marked(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::SetHistoryQueryMarkedRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_history_query_marked")?;
-    storage.set_query_marked(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.set_query_marked(request))
+        .await
+        .map_err(|error| format!("mark query worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn clear_marked_history_items(storage: State<'_, storage::AppStorage>) -> Result<(), String> {
-    storage.clear_marked()
+async fn clear_marked_history_items(storage: State<'_, storage::AppStorage>) -> Result<(), String> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.clear_marked())
+        .await
+        .map_err(|error| format!("clear marks worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn count_marked_history_items(storage: State<'_, storage::AppStorage>) -> Result<i64, String> {
-    storage.count_marked()
+async fn count_marked_history_items(
+    storage: State<'_, storage::AppStorage>,
+) -> Result<i64, String> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.count_marked())
+        .await
+        .map_err(|error| format!("count marks worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn update_history_item(
+async fn update_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::UpdateHistoryItemRequest,
@@ -2063,12 +2116,30 @@ fn update_history_item(
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "update_history_item",
     )?;
-    storage.update_item(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.update_item(request))
+        .await
+        .map_err(|error| format!("edit item worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn update_item_metadata(
+async fn update_history_item_text(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    id: i64,
+    text: String,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "update_history_item_text")?;
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.update_item_text(id, text))
+        .await
+        .map_err(|error| format!("content edit worker failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn update_item_metadata(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::UpdateItemMetadataRequest,
@@ -2078,19 +2149,25 @@ fn update_item_metadata(
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "update_item_metadata",
     )?;
-    storage.update_item_metadata(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.update_item_metadata(request))
+        .await
+        .map_err(|error| format!("metadata worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn create_history_item(
+async fn create_history_item(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     storage: State<'_, storage::AppStorage>,
     request: storage::CreateHistoryItemRequest,
 ) -> Result<storage::CreateHistoryItemResult, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_history_item")?;
-    let result = storage.create_text_item(request)?;
+    let storage = storage.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || storage.create_text_item(request))
+        .await
+        .map_err(|error| format!("create item worker failed: {error}"))??;
     if let Err(error) = app.emit(
         HISTORY_CHANGED_EVENT,
         serde_json::json!({
@@ -2105,39 +2182,68 @@ fn create_history_item(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn delete_history_item(
+async fn delete_history_item(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     id: i64,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "delete_history_item")?;
-    storage.delete_item(id)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.delete_item(id))
+        .await
+        .map_err(|error| format!("delete item worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn get_history_item(
+async fn get_history_item(
     storage: State<'_, storage::AppStorage>,
     id: i64,
 ) -> Result<storage::HistoryItem, String> {
-    storage.get_item(id)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.get_item(id))
+        .await
+        .map_err(|error| format!("load item worker failed: {error}"))?
 }
+
 #[cfg(not(test))]
 #[tauri::command]
-fn set_history_item_inbox(
+async fn get_history_items_preview(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    ids: Vec<i64>,
+) -> Result<Vec<storage::HistoryItem>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_history_items_preview")?;
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.get_items_preview(ids))
+        .await
+        .map_err(|error| format!("preview refresh worker failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn set_history_item_inbox(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     item_id: i64,
     inbox: bool,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_history_item_inbox")?;
-    storage.set_history_item_inbox(item_id, inbox)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.set_history_item_inbox(item_id, inbox))
+        .await
+        .map_err(|error| format!("inbox worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn get_settings(storage: State<'_, storage::AppStorage>) -> Result<storage::AppSettings, String> {
-    storage.get_settings()
+async fn get_settings(
+    storage: State<'_, storage::AppStorage>,
+) -> Result<storage::AppSettings, String> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.get_settings())
+        .await
+        .map_err(|error| format!("settings worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -2773,8 +2879,13 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn list_tags(storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::TagSummary>, String> {
-    storage.list_tags()
+async fn list_tags(
+    storage: State<'_, storage::AppStorage>,
+) -> Result<Vec<storage::TagSummary>, String> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_tags())
+        .await
+        .map_err(|error| format!("tags worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -3115,35 +3226,44 @@ fn normalize_hotkey_sequence(input: String) -> HotkeyNormalizationResult {
 
 #[cfg(not(test))]
 #[tauri::command]
-fn get_item_tags(
+async fn get_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     id: i64,
 ) -> Result<Vec<String>, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_item_tags")?;
-    storage.get_item_tags(id)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.get_item_tags(id))
+        .await
+        .map_err(|error| format!("item tags worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn set_item_tags(
+async fn set_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::SetItemTagsRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_item_tags")?;
-    storage.set_item_tags(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.set_item_tags(request))
+        .await
+        .map_err(|error| format!("set tags worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn apply_item_tags(
+async fn apply_item_tags(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     request: storage::ApplyItemTagsRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "apply_item_tags")?;
-    storage.apply_item_tags(request)
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.apply_item_tags(request))
+        .await
+        .map_err(|error| format!("apply tags worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -3366,7 +3486,7 @@ fn hide_whichkey_window(window: tauri::WebviewWindow) -> Result<(), String> {
 
 #[cfg(not(test))]
 #[tauri::command]
-fn activate_item(
+async fn activate_item(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
@@ -3375,14 +3495,21 @@ fn activate_item(
     request: host::ActivateItemRequest,
 ) -> Result<(), String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "activate_item")?;
-    host::activate_item(
-        &app,
-        Some(&window),
-        &storage,
-        &suppression,
-        &previous_window,
-        request,
-    )
+    let storage = storage.inner().clone();
+    let suppression = suppression.inner().clone();
+    let previous_window = previous_window.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        host::activate_item(
+            &app,
+            Some(&window),
+            &storage,
+            &suppression,
+            &previous_window,
+            request,
+        )
+    })
+    .await
+    .map_err(|error| format!("activation worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -3596,6 +3723,8 @@ pub fn run() {
             search_items,
             list_history_page,
             history_search,
+            update_history_item_text,
+            get_history_items_preview,
             find_start,
             find_navigate,
             find_matches_for_items,
@@ -3764,9 +3893,6 @@ pub fn run() {
                 log_main_window_startup_state(&window);
                 initial_main_window_hide.schedule(window.clone());
                 schedule_dev_empty_root_recovery(window.clone());
-                if let Err(error) = previous_window.register_own_window(&window) {
-                    eprintln!("own window registration failed: {error}");
-                }
             }
             if let Err(error) = setup_notifications_window(app.handle()) {
                 eprintln!("notifications window prewarm failed: {error}");
@@ -4404,21 +4530,6 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
                 eprintln!("window native focus failed: {error}");
             } else {
                 diag_log("window.show.step", "native focus ok");
-            }
-        }
-        if !window.is_focused().unwrap_or(false) {
-            thread::sleep(Duration::from_millis(60));
-            if let Err(error) = window.set_focus() {
-                eprintln!("window delayed focus failed: {error}");
-            } else {
-                diag_log("window.show.step", "delayed set_focus requested");
-            }
-            if !window.is_focused().unwrap_or(false) {
-                if let Err(error) = window_focus::focus_tauri_window(&window) {
-                    eprintln!("window delayed native focus failed: {error}");
-                } else {
-                    diag_log("window.show.step", "delayed native focus ok");
-                }
             }
         }
     } else if let Err(error) = window_focus::show_tauri_window_no_activate(&window) {

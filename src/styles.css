@@ -1547,8 +1547,9 @@ button {
   border-color: color-mix(in srgb, var(--warning) 52%, var(--line));
 }
 
-.feed-item:focus {
-  outline: none;
+.feed-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .item-selection-button,

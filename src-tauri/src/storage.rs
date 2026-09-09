@@ -66,6 +66,24 @@ type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 fn add_regexp_function(conn: &Connection) -> Result<(), String> {
     conn.create_scalar_function(
+        "legacy_tag_matches",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let legacy = ctx.get::<String>(0)?;
+            let slug = ctx.get::<String>(1)?;
+            Ok(legacy_tags_to_values(Some(&legacy)).iter().any(|value| {
+                normalize_tag_label(value).is_ok_and(|(candidate, _)| {
+                    candidate == slug
+                        || candidate
+                            .strip_prefix(&slug)
+                            .is_some_and(|tail| tail.starts_with('/'))
+                })
+            }))
+        },
+    )
+    .map_err(|error| format!("failed to register SQLite legacy tag matcher: {error}"))?;
+    conn.create_scalar_function(
         "regexp",
         2,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
@@ -318,6 +336,8 @@ pub struct SetHistoryQueryMarkedRequest {
 pub struct HistoryPageCursor {
     after_sort_unix_ms: i64,
     after_id: i64,
+    after_is_inbox: bool,
+    after_inbox_at_unix_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1352,9 +1372,7 @@ impl AppStorage {
             for (slug, label) in &normalized_capture_tags {
                 add_item_tag_relation(&tx, item_id, slug, label, "context", None)?;
             }
-            if !normalized_capture_tags.is_empty() {
-                sync_legacy_tags_for_item(&tx, item_id)?;
-            }
+            sync_legacy_tags_for_item(&tx, item_id)?;
             if let Some(scenario) = active_scenario.as_ref() {
                 apply_scenario_patch(&tx, item_id, scenario)?;
             }
@@ -1472,6 +1490,7 @@ impl AppStorage {
         let title = normalize_optional_text(request.title);
         let notes = normalize_optional_text(request.notes);
         let tags = normalize_optional_text(request.tags);
+        let normalized_tags = normalize_tag_values(&legacy_tags_to_values(tags.as_deref()))?;
         let mime_primary = normalize_optional_text(request.mime_primary)
             .or_else(|| Some("text/plain".to_string()));
         let normalized_hash = hash_text(&text);
@@ -1488,10 +1507,13 @@ impl AppStorage {
                 .conn
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+            let conn = conn
+                .unchecked_transaction()
+                .map_err(|error| format!("failed to begin manual item creation: {error}"))?;
 
             let existing = conn
                 .query_row(
-                    "SELECT id, title, notes, tags, mime_primary
+                    "SELECT id, title, notes, mime_primary
                      FROM clipboard_items
                      WHERE normalized_hash = ?1",
                     params![normalized_hash],
@@ -1501,28 +1523,20 @@ impl AppStorage {
                             row.get::<_, Option<String>>(1)?,
                             row.get::<_, Option<String>>(2)?,
                             row.get::<_, Option<String>>(3)?,
-                            row.get::<_, Option<String>>(4)?,
                         ))
                     },
                 )
                 .optional()
                 .map_err(|error| format!("failed to inspect existing manual item: {error}"))?;
 
-            if let Some((
-                existing_id,
-                existing_title,
-                existing_notes,
-                existing_tags,
-                existing_mime,
-            )) = existing
-            {
-                let next_title = title.or(existing_title.clone());
-                let next_notes = append_optional_notes(existing_notes.clone(), notes);
-                let next_tags = merge_optional_tags(existing_tags.clone(), tags);
-                let next_mime = mime_primary.or(existing_mime.clone());
-                let projection_changed = existing_title != next_title
-                    || existing_notes != next_notes
-                    || existing_tags != next_tags;
+            if let Some((existing_id, existing_title, existing_notes, existing_mime)) = existing {
+                let before_projection = item_projection_signature(&conn, existing_id)?;
+                let next_title = title.or(existing_title);
+                let next_notes = append_optional_notes(existing_notes, notes);
+                for (slug, label) in &normalized_tags {
+                    add_item_tag_relation(&conn, existing_id, slug, label, "manual", None)?;
+                }
+                let next_mime = mime_primary.or(existing_mime);
                 let event_mime = next_mime.clone();
                 conn.execute(
                     "UPDATE clipboard_items
@@ -1530,19 +1544,14 @@ impl AppStorage {
                          copy_count = COALESCE(copy_count, 1) + 1,
                          title = ?2,
                          notes = ?3,
-                         tags = ?4,
-                         mime_primary = ?5
-                     WHERE id = ?6",
-                    params![
-                        now,
-                        next_title,
-                        next_notes,
-                        next_tags,
-                        next_mime,
-                        existing_id
-                    ],
+                         mime_primary = ?4
+                     WHERE id = ?5",
+                    params![now, next_title, next_notes, next_mime, existing_id],
                 )
                 .map_err(|error| format!("failed to update existing manual item: {error}"))?;
+                sync_legacy_tags_for_item(&conn, existing_id)?;
+                let projection_changed =
+                    before_projection != item_projection_signature(&conn, existing_id)?;
 
                 record_capture_event(
                     &conn,
@@ -1558,6 +1567,8 @@ impl AppStorage {
                     None,
                 )?;
                 let prune_outcome = prune_history_from_conn(&conn)?;
+                conn.commit()
+                    .map_err(|error| format!("failed to commit manual item creation: {error}"))?;
                 (
                     CreateHistoryItemResult {
                         id: existing_id,
@@ -1586,6 +1597,10 @@ impl AppStorage {
                 .map_err(|error| format!("failed to create manual text item: {error}"))?;
 
                 let item_id = conn.last_insert_rowid();
+                for (slug, label) in &normalized_tags {
+                    add_item_tag_relation(&conn, item_id, slug, label, "manual", None)?;
+                }
+                sync_legacy_tags_for_item(&conn, item_id)?;
                 record_capture_event(
                     &conn,
                     item_id,
@@ -1600,6 +1615,8 @@ impl AppStorage {
                     None,
                 )?;
                 let prune_outcome = prune_history_from_conn(&conn)?;
+                conn.commit()
+                    .map_err(|error| format!("failed to commit manual item creation: {error}"))?;
                 (
                     CreateHistoryItemResult {
                         id: item_id,
@@ -1651,7 +1668,7 @@ impl AppStorage {
         );
         let image_path = self.app_data_dir.join(&image_relative_path);
         let thumbnail_path = self.app_data_dir.join(&thumbnail_relative_path);
-        let (item_id, prune_outcome, projection_changed) = {
+        let capture_result = (|| -> Result<_, String> {
             let mut conn = self
                 .conn
                 .lock()
@@ -1664,11 +1681,21 @@ impl AppStorage {
             let before_projection = existing_id
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
+            write_blob(&image_path, &image.png_bytes)?;
+            write_blob(&thumbnail_path, &image.thumbnail_png_bytes)?;
             let item_id = if let Some(existing_id) = existing_id {
+                tx.execute(
+                    "UPDATE clipboard_items SET blob_path = ?1, thumbnail_path = ?2
+                     WHERE id = ?3 AND content_kind = 'image'",
+                    params![
+                        path_to_db_string(&image_relative_path),
+                        path_to_db_string(&thumbnail_relative_path),
+                        existing_id
+                    ],
+                )
+                .map_err(|error| format!("failed to restore image paths on recapture: {error}"))?;
                 existing_id
             } else {
-                write_blob(&image_path, &image.png_bytes)?;
-                write_blob(&thumbnail_path, &image.thumbnail_png_bytes)?;
                 tx.execute(
                     "INSERT INTO clipboard_items (
                         content_kind,
@@ -1704,9 +1731,7 @@ impl AppStorage {
             for (slug, label) in &normalized_capture_tags {
                 add_item_tag_relation(&tx, item_id, slug, label, "context", None)?;
             }
-            if !normalized_capture_tags.is_empty() {
-                sync_legacy_tags_for_item(&tx, item_id)?;
-            }
+            sync_legacy_tags_for_item(&tx, item_id)?;
             if let Some(scenario) = active_scenario.as_ref() {
                 apply_scenario_patch(&tx, item_id, scenario)?;
             }
@@ -1730,7 +1755,17 @@ impl AppStorage {
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard image capture: {error}"))?;
-            (item_id, prune_outcome, projection_changed)
+            Ok((item_id, prune_outcome, projection_changed))
+        })();
+        let (item_id, prune_outcome, projection_changed) = match capture_result {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.remove_blob_paths([ItemBlobPaths {
+                    blob_path: Some(path_to_db_string(&image_relative_path)),
+                    thumbnail_path: Some(path_to_db_string(&thumbnail_relative_path)),
+                }]);
+                return Err(error);
+            }
         };
 
         if projection_changed || prune_outcome.removed_items > 0 {
@@ -1868,11 +1903,21 @@ impl AppStorage {
             (None, None)
         };
         if let Some(cursor) = request.cursor {
-            query_params.push(Value::Integer(cursor.after_sort_unix_ms));
+            let inbox_at = cursor
+                .after_is_inbox
+                .then_some(cursor.after_inbox_at_unix_ms)
+                .flatten();
+            query_params.push(Value::Integer(i64::from(cursor.after_is_inbox)));
+            query_params.push(Value::Integer(i64::from(inbox_at.is_some())));
+            query_params.push(Value::Integer(inbox_at.unwrap_or(0)));
             query_params.push(Value::Integer(cursor.after_sort_unix_ms));
             query_params.push(Value::Integer(cursor.after_id));
-            let cursor_clause = "(COALESCE(last_copied_at_unix_ms, created_at_unix_ms) < ?
-                OR (COALESCE(last_copied_at_unix_ms, created_at_unix_ms) = ? AND id < ?))";
+            let cursor_clause = "(
+                (is_inbox != 0),
+                (CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END IS NOT NULL),
+                COALESCE(CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END, 0),
+                COALESCE(last_copied_at_unix_ms, created_at_unix_ms), id
+            ) < (?, ?, ?, ?, ?)";
             let next_where_sql = if where_sql.is_empty() {
                 format!("WHERE {cursor_clause}")
             } else {
@@ -1922,6 +1967,32 @@ impl AppStorage {
         drop(conn);
         self.attach_thumbnail_data_urls(&mut page.items);
         Ok(page)
+    }
+
+    pub fn get_items_preview(&self, ids: Vec<i64>) -> Result<Vec<HistoryItem>, String> {
+        if ids.len() > MAX_HISTORY_PAGE_LIMIT as usize {
+            return Err("item preview request cannot exceed 100 IDs".to_string());
+        }
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; ids.len()].join(",");
+        let mut items = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+            self.query_items(
+                &conn,
+                &format!(
+                    "SELECT {} FROM clipboard_items WHERE id IN ({placeholders}) ORDER BY id",
+                    history_item_select_columns(false),
+                ),
+                params_from_iter(ids.iter()),
+            )?
+        };
+        self.attach_thumbnail_data_urls(&mut items);
+        Ok(items)
     }
 
     pub fn get_item(&self, id: i64) -> Result<HistoryItem, String> {
@@ -2196,100 +2267,51 @@ impl AppStorage {
     }
 
     pub fn update_item(&self, request: UpdateHistoryItemRequest) -> Result<(), String> {
-        let existing = self.get_item(request.id)?;
-        let next_text = normalize_text_for_storage(&request.text);
-        if next_text.is_empty() {
-            return Err("clipboard item text cannot be empty".to_string());
-        }
-
-        let existing_hash = existing.normalized_hash.clone();
-        let next_hash = if existing.content_kind == "text" {
-            hash_text(&next_text)
-        } else {
-            existing_hash.clone()
-        };
-
         let conn = self
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        if next_hash != existing_hash {
-            let duplicate_id = conn
-                .query_row(
-                    "SELECT id
-                     FROM clipboard_items
-                     WHERE normalized_hash = ?1 AND id != ?2
-                     LIMIT 1",
-                    params![next_hash, request.id],
-                    |row| row.get::<_, i64>(0),
-                )
-                .map(Some)
-                .or_else(|error| {
-                    if matches!(error, rusqlite::Error::QueryReturnedNoRows) {
-                        Ok(None)
-                    } else {
-                        Err(error)
-                    }
-                })
-                .map_err(|error| format!("failed to check duplicate clipboard item: {error}"))?;
-            if let Some(duplicate_id) = duplicate_id {
-                return Err(format!(
-                    "clipboard item text duplicates existing item: {duplicate_id}"
-                ));
-            }
-        }
-
-        let next_tags = normalize_optional_text(request.tags);
-        let updated = conn
-            .execute(
-                "UPDATE clipboard_items
-                 SET text = ?1,
-                     normalized_hash = ?2,
-                     title = ?3,
-                     notes = ?4,
-                     tags = ?5,
-                     mime_primary = ?6,
-                     is_marked = ?7,
-                     marked_at_unix_ms = ?8
-                 WHERE id = ?9",
-                params![
-                    next_text,
-                    next_hash,
-                    normalize_optional_text(request.title),
-                    normalize_optional_text(request.notes),
-                    next_tags,
-                    normalize_optional_text(request.mime_primary),
-                    request.marked.unwrap_or(existing.is_marked) as i64,
-                    match request.marked {
-                        Some(true) => Some(now_unix_ms()),
-                        Some(false) => None,
-                        None => existing.marked_at_unix_ms,
-                    },
-                    request.id
-                ],
-            )
-            .map_err(|error| format!("failed to update clipboard item: {error}"))?;
-
-        if updated == 0 {
-            Err(format!("clipboard item not found: {}", request.id))
-        } else {
-            sync_item_tags_from_legacy_string(&conn, request.id, next_tags.as_deref())?;
-            self.bump_mutation_epoch();
-            Ok(())
-        }
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to begin item update: {error}"))?;
+        update_item_text_from_conn(&tx, request.id, &request.text)?;
+        tx.execute(
+            "UPDATE clipboard_items
+             SET title = ?1, notes = ?2, mime_primary = ?3,
+                 is_marked = COALESCE(?4, is_marked),
+                 marked_at_unix_ms = CASE WHEN ?4 IS NULL THEN marked_at_unix_ms
+                     WHEN ?4 != 0 THEN ?5 ELSE NULL END
+             WHERE id = ?6",
+            params![
+                normalize_optional_text(request.title),
+                normalize_optional_text(request.notes),
+                normalize_optional_text(request.mime_primary),
+                request.marked.map(i64::from),
+                now_unix_ms(),
+                request.id,
+            ],
+        )
+        .map_err(|error| format!("failed to update clipboard item: {error}"))?;
+        sync_item_tags_from_legacy_string(&tx, request.id, request.tags.as_deref())?;
+        tx.commit()
+            .map_err(|error| format!("failed to commit item update: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(())
     }
 
     pub fn update_item_text(&self, id: i64, text: String) -> Result<(), String> {
-        let existing = self.get_item(id)?;
-        self.update_item(UpdateHistoryItemRequest {
-            id,
-            text,
-            title: existing.title,
-            notes: existing.notes,
-            tags: existing.tags,
-            mime_primary: existing.mime_primary,
-            marked: None,
-        })
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to begin text update: {error}"))?;
+        update_item_text_from_conn(&tx, id, &text)?;
+        tx.commit()
+            .map_err(|error| format!("failed to commit text update: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(())
     }
 
     pub fn update_item_metadata(&self, request: UpdateItemMetadataRequest) -> Result<(), String> {
@@ -2364,22 +2386,6 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-
-        conn.execute(
-            "DELETE FROM clipboard_item_tags WHERE item_id = ?1",
-            params![id],
-        )
-        .map_err(|error| format!("failed to delete clipboard item tags: {error}"))?;
-        conn.execute(
-            "DELETE FROM clipboard_item_properties WHERE item_id = ?1",
-            params![id],
-        )
-        .map_err(|error| format!("failed to delete clipboard item properties: {error}"))?;
-        conn.execute(
-            "DELETE FROM clipboard_item_metadata_suppressions WHERE item_id = ?1",
-            params![id],
-        )
-        .map_err(|error| format!("failed to delete clipboard item suppressions: {error}"))?;
 
         let deleted = conn
             .execute("DELETE FROM clipboard_items WHERE id = ?1", params![id])
@@ -2759,6 +2765,9 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let conn = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to begin tag creation: {error}"))?;
 
         conn.execute(
             "INSERT INTO tags (slug, label, color, created_at_unix_ms, updated_at_unix_ms)
@@ -2771,9 +2780,14 @@ impl AppStorage {
         )
         .map_err(|error| format!("failed to create tag: {error}"))?;
         let tag_id = tag_id_by_slug(&conn, &slug)?;
-        query_tag_summaries(&conn, Some(tag_id))?
+        sync_legacy_tags_for_tag(&conn, tag_id)?;
+        let summary = query_tag_summaries(&conn, Some(tag_id))?
             .pop()
-            .ok_or_else(|| format!("tag not found after create: {slug}"))
+            .ok_or_else(|| format!("tag not found after create: {slug}"))?;
+        conn.commit()
+            .map_err(|error| format!("failed to commit tag creation: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(summary)
     }
 
     pub fn update_tag_config(&self, request: UpdateTagConfigRequest) -> Result<TagSummary, String> {
@@ -2782,6 +2796,9 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let conn = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to begin tag update: {error}"))?;
         let existing = query_tag_summaries(&conn, Some(request.tag_id))?
             .pop()
             .ok_or_else(|| format!("tag not found: {}", request.tag_id))?;
@@ -2866,6 +2883,8 @@ impl AppStorage {
         let summary = query_tag_summaries(&conn, Some(request.tag_id))?
             .pop()
             .ok_or_else(|| format!("tag not found after update: {}", request.tag_id))?;
+        conn.commit()
+            .map_err(|error| format!("failed to commit tag update: {error}"))?;
         self.bump_mutation_epoch();
         Ok(summary)
     }
@@ -2990,8 +3009,13 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let conn = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to begin item tags update: {error}"))?;
         ensure_item_exists(&conn, request.item_id)?;
         set_item_tags_from_values(&conn, request.item_id, &request.tags)?;
+        conn.commit()
+            .map_err(|error| format!("failed to commit item tags update: {error}"))?;
         self.bump_mutation_epoch();
         Ok(())
     }
@@ -3063,6 +3087,7 @@ impl AppStorage {
     pub fn apply_builtin_enrichment(
         &self,
         item_id: i64,
+        expected_hash: &str,
         tags: &[crate::enrichment::BuiltinEnrichmentMatch],
     ) -> Result<Vec<String>, String> {
         if tags.is_empty() {
@@ -3073,7 +3098,20 @@ impl AppStorage {
             .conn
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        ensure_item_exists(&conn, item_id)?;
+        let conn = conn
+            .unchecked_transaction()
+            .map_err(|error| format!("failed to begin enrichment: {error}"))?;
+        let current_hash: Option<String> = conn
+            .query_row(
+                "SELECT normalized_hash FROM clipboard_items WHERE id = ?1",
+                [item_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| format!("failed to verify enrichment content: {error}"))?;
+        if current_hash.as_deref() != Some(expected_hash) {
+            return Ok(Vec::new());
+        }
 
         let mut applied = Vec::new();
         for tag in tags {
@@ -3090,8 +3128,10 @@ impl AppStorage {
                 applied.push(slug.to_string());
             }
         }
+        sync_legacy_tags_for_item(&conn, item_id)?;
+        conn.commit()
+            .map_err(|error| format!("failed to commit enrichment: {error}"))?;
         if !applied.is_empty() {
-            sync_legacy_tags_for_item(&conn, item_id)?;
             self.bump_mutation_epoch();
         }
         Ok(applied)
@@ -3521,6 +3561,8 @@ fn query_tag_summaries(conn: &Connection, tag_id: Option<i64>) -> Result<Vec<Tag
 }
 
 fn normalize_tag_label(value: &str) -> Result<(String, String), String> {
+    // Installed slugs use ASCII folding only. Preserve non-ASCII case (É != é)
+    // and hierarchy separators; changing Unicode identity requires collision review.
     let label = value.trim().trim_start_matches('#').trim().to_string();
     if label.is_empty() {
         return Err("tag label cannot be empty".to_string());
@@ -3591,6 +3633,46 @@ fn legacy_tag_string_from_labels(labels: &[String]) -> Option<String> {
     )
 }
 
+// Content edits must never reconstruct metadata from the compatibility cache.
+fn update_item_text_from_conn(conn: &Connection, id: i64, text: &str) -> Result<(), String> {
+    let text = normalize_text_for_storage(text);
+    if text.is_empty() {
+        return Err("clipboard item text cannot be empty".to_string());
+    }
+    let content_kind: String = conn
+        .query_row(
+            "SELECT content_kind FROM clipboard_items WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to read clipboard item: {error}"))?
+        .ok_or_else(|| format!("clipboard item not found: {id}"))?;
+    let next_hash = (content_kind == "text").then(|| hash_text(&text));
+    if let Some(hash) = next_hash.as_deref() {
+        let duplicate_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM clipboard_items WHERE normalized_hash = ?1 AND id != ?2 LIMIT 1",
+                params![hash, id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| format!("failed to check duplicate clipboard item: {error}"))?;
+        if let Some(duplicate_id) = duplicate_id {
+            return Err(format!(
+                "clipboard item text duplicates existing item: {duplicate_id}"
+            ));
+        }
+    }
+    conn.execute(
+        "UPDATE clipboard_items SET text = ?1, normalized_hash = COALESCE(?2, normalized_hash)
+         WHERE id = ?3",
+        params![text, next_hash, id],
+    )
+    .map_err(|error| format!("failed to update clipboard item text: {error}"))?;
+    Ok(())
+}
+
 fn ensure_item_exists(conn: &Connection, item_id: i64) -> Result<(), String> {
     let count: i64 = conn
         .query_row(
@@ -3634,9 +3716,7 @@ fn add_item_tag_relation(
     conn.execute(
         "INSERT INTO tags (slug, label, created_at_unix_ms, updated_at_unix_ms)
          VALUES (?1, ?2, ?3, ?3)
-         ON CONFLICT(slug) DO UPDATE SET
-            label = CASE WHEN excluded.label != '' THEN excluded.label ELSE tags.label END,
-            updated_at_unix_ms = excluded.updated_at_unix_ms",
+         ON CONFLICT(slug) DO NOTHING",
         params![slug, label, now],
     )
     .map_err(|error| format!("failed to upsert tag: {error}"))?;
@@ -4357,24 +4437,6 @@ fn append_optional_notes(existing: Option<String>, addition: Option<String>) -> 
     }
 }
 
-fn merge_optional_tags(existing: Option<String>, addition: Option<String>) -> Option<String> {
-    let mut tags = BTreeSet::new();
-    for value in [existing, addition].into_iter().flatten() {
-        for tag in value.split_whitespace() {
-            let trimmed = tag.trim();
-            if !trimmed.is_empty() {
-                tags.insert(trimmed.to_string());
-            }
-        }
-    }
-
-    if tags.is_empty() {
-        None
-    } else {
-        Some(tags.into_iter().collect::<Vec<_>>().join(" "))
-    }
-}
-
 pub(crate) fn hash_text(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -4775,6 +4837,402 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn reliability_text_edit_preserves_drifted_metadata_and_provenance() {
+        let storage = test_storage_with_migrations();
+        let id = storage.insert_text("before", &hash_text("before")).unwrap();
+        {
+            let conn = storage.conn.lock().unwrap();
+            add_item_tag_relation(
+                &conn,
+                id,
+                "work/project",
+                "Work/Project",
+                "context",
+                Some(0.8),
+            )
+            .unwrap();
+            add_item_property(&conn, id, "client", "Synthetic client", "scenario").unwrap();
+            suppress_metadata_value(&conn, id, "tag", "", "Removed", "removed").unwrap();
+            conn.execute(
+                "UPDATE clipboard_items SET title = 'Title', notes = '#removed stays a note',
+                 tags = '#ghost', mime_primary = 'text/markdown', is_marked = 1,
+                 marked_at_unix_ms = 7, is_inbox = 1, inbox_at_unix_ms = 8 WHERE id = ?1",
+                params![id],
+            )
+            .unwrap();
+        }
+        let tags = storage.get_item_tag_entries(id).unwrap();
+        let properties = storage.list_item_property_entries(id).unwrap();
+        let before = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
+        storage.update_item_text(id, "after".into()).unwrap();
+        let mut after = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
+        assert_eq!(after["text"], "after");
+        assert_eq!(after["normalized_hash"], hash_text("after"));
+        for key in ["text", "preview_text", "text_char_count", "normalized_hash"] {
+            after[key] = before[key].clone();
+        }
+        assert_eq!(after, before);
+        assert_eq!(storage.get_item_tag_entries(id).unwrap(), tags);
+        assert_eq!(storage.list_item_property_entries(id).unwrap(), properties);
+        let conn = storage.conn.lock().unwrap();
+        assert!(metadata_value_is_suppressed(&conn, id, "tag", "", "removed").unwrap());
+        assert!(!metadata_value_is_suppressed(&conn, id, "tag", "", "work/project").unwrap());
+    }
+
+    #[test]
+    fn reliability_concurrent_content_and_metadata_edits_keep_both_results() {
+        let storage = test_storage_with_migrations();
+        let id = storage
+            .insert_text("initial", &hash_text("initial"))
+            .unwrap();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let editor = storage.clone();
+        let editor_barrier = barrier.clone();
+        let thread = std::thread::spawn(move || {
+            editor_barrier.wait();
+            for index in 0..32 {
+                editor
+                    .update_item_text(id, format!("content-{index}"))
+                    .unwrap();
+            }
+        });
+        barrier.wait();
+        for index in 0..32 {
+            storage
+                .update_item_metadata(UpdateItemMetadataRequest {
+                    id,
+                    title: Some(format!("title-{index}")),
+                    notes: Some(format!("#unassigned notes-{index}")),
+                    tags: vec![format!("work/{index}")],
+                    properties: ScenarioProperties::default(),
+                })
+                .unwrap();
+        }
+        thread.join().unwrap();
+        let item = storage.get_item(id).unwrap();
+        assert_eq!(item.text, "content-31");
+        assert_eq!(item.title.as_deref(), Some("title-31"));
+        assert_eq!(item.notes.as_deref(), Some("#unassigned notes-31"));
+        assert_eq!(storage.get_item_tags(id).unwrap(), vec!["work/31"]);
+    }
+
+    #[test]
+    fn reliability_create_dedupe_tags_and_notes_have_distinct_authority() {
+        let storage = test_storage_with_migrations();
+        let request = |tags: Option<&str>| CreateHistoryItemRequest {
+            text: "synthetic manual".into(),
+            title: None,
+            notes: Some("#unassigned".into()),
+            tags: tags.map(str::to_string),
+            mime_primary: None,
+        };
+        let first = storage
+            .create_text_item(request(Some("#Work/Project")))
+            .unwrap();
+        {
+            let conn = storage.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE clipboard_items SET tags = '#ghost' WHERE id = ?1",
+                params![first.id],
+            )
+            .unwrap();
+        }
+        let second = storage
+            .create_text_item(request(Some("#Équipe/One")))
+            .unwrap();
+        assert_eq!(second.id, first.id);
+        let slugs = storage
+            .list_tags()
+            .unwrap()
+            .into_iter()
+            .map(|tag| tag.slug)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            slugs,
+            BTreeSet::from(["work/project".into(), "Équipe/one".into()])
+        );
+        for (query, expected) in [
+            ("tag:work", vec![first.id]),
+            ("tag:Équipe", vec![first.id]),
+            ("tag:équipe", vec![]),
+            ("tag:ghost", vec![]),
+            ("tag:unassigned", vec![]),
+            ("-tag:work", vec![]),
+            ("Work/Project", vec![first.id]),
+        ] {
+            let page = storage
+                .list_page(HistoryPageRequest {
+                    query: query.into(),
+                    cursor: None,
+                    limit: Some(10),
+                })
+                .unwrap();
+            assert_eq!(ids(&page.items), expected, "{query}");
+        }
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: first.id,
+                tags: vec![],
+            })
+            .unwrap();
+        storage.create_text_item(request(None)).unwrap();
+        assert!(storage.get_item_tags(first.id).unwrap().is_empty());
+        assert_eq!(
+            storage.get_item(first.id).unwrap().notes.as_deref(),
+            Some("#unassigned")
+        );
+    }
+
+    #[test]
+    fn reliability_tag_write_failure_rolls_back_content_catalog_and_relations() {
+        let storage = test_storage_with_migrations();
+        let id = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "original".into(),
+                title: None,
+                notes: None,
+                tags: Some("#Keep".into()),
+                mime_primary: None,
+            })
+            .unwrap()
+            .id;
+        let before = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
+        let entries = storage.get_item_tag_entries(id).unwrap();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER reject_tag_cache BEFORE UPDATE OF tags ON clipboard_items
+             BEGIN SELECT RAISE(ABORT, 'synthetic cache failure'); END;",
+            )
+            .unwrap();
+        assert!(storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: id,
+                tags: vec!["Ghost".into()]
+            })
+            .is_err());
+        assert!(storage
+            .update_item(UpdateHistoryItemRequest {
+                id,
+                text: "changed".into(),
+                title: Some("changed".into()),
+                notes: None,
+                tags: Some("#Ghost".into()),
+                mime_primary: None,
+                marked: Some(true),
+            })
+            .is_err());
+        for text in ["original", "new item"] {
+            assert!(storage
+                .create_text_item(CreateHistoryItemRequest {
+                    text: text.into(),
+                    title: Some("changed".into()),
+                    notes: None,
+                    tags: Some("#Ghost".into()),
+                    mime_primary: None,
+                })
+                .is_err());
+        }
+        assert_eq!(
+            serde_json::to_value(storage.get_item(id).unwrap()).unwrap(),
+            before
+        );
+        assert_eq!(storage.get_item_tag_entries(id).unwrap(), entries);
+        assert_eq!(
+            storage
+                .list_tags()
+                .unwrap()
+                .into_iter()
+                .map(|tag| tag.slug)
+                .collect::<Vec<_>>(),
+            vec!["keep"]
+        );
+        let conn = storage.conn.lock().unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert!(!metadata_value_is_suppressed(&conn, id, "tag", "", "keep").unwrap());
+    }
+
+    #[test]
+    fn reliability_keyset_visits_every_mixed_inbox_item_once() {
+        let storage = test_storage_with_migrations();
+        for id in 1..=7 {
+            insert_test_text_item(&storage, id, 100 + id, &format!("item-{id}"));
+        }
+        storage.conn.lock().unwrap().execute_batch(
+            "UPDATE clipboard_items SET last_copied_at_unix_ms = 10;
+             UPDATE clipboard_items SET is_inbox = 1, inbox_at_unix_ms = 200 WHERE id IN (3, 4);
+             UPDATE clipboard_items SET is_inbox = 1, inbox_at_unix_ms = -1 WHERE id = 5;
+             UPDATE clipboard_items SET is_inbox = 1, inbox_at_unix_ms = NULL, last_copied_at_unix_ms = 500 WHERE id = 6;
+             UPDATE clipboard_items SET last_copied_at_unix_ms = 1000, inbox_at_unix_ms = 9999 WHERE id = 7;
+             UPDATE clipboard_items SET last_copied_at_unix_ms = NULL WHERE id = 2;"
+        ).unwrap();
+        for limit in [1, 2, 3] {
+            let mut cursor = None;
+            let mut visited = Vec::new();
+            loop {
+                let page = storage
+                    .list_page(HistoryPageRequest {
+                        query: String::new(),
+                        cursor,
+                        limit: Some(limit),
+                    })
+                    .unwrap();
+                visited.extend(ids(&page.items));
+                assert!(visited.len() <= 7, "cursor repeated items");
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            assert_eq!(visited, vec![4, 3, 5, 6, 7, 2, 1]);
+        }
+    }
+
+    #[test]
+    fn reliability_legacy_tags_match_hierarchy_not_substrings_or_notes() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 1, "legacy");
+        storage.conn.lock().unwrap().execute(
+            "UPDATE clipboard_items SET tags = '#Work/Project,#Équipe/One', notes = '#unassigned' WHERE id = 1", [],
+        ).unwrap();
+        for (query, matches) in [
+            ("tag:work", true),
+            ("tag:Work/Project", true),
+            ("tag:project", false),
+            ("tag:wor", false),
+            ("tag:Équipe", true),
+            ("tag:équipe", false),
+            ("tag:unassigned", false),
+            ("-tag:work", false),
+        ] {
+            let page = storage
+                .list_page(HistoryPageRequest {
+                    query: query.into(),
+                    cursor: None,
+                    limit: Some(10),
+                })
+                .unwrap();
+            assert_eq!(
+                ids(&page.items),
+                if matches { vec![1] } else { vec![] },
+                "{query}"
+            );
+        }
+    }
+
+    #[test]
+    fn reliability_preview_refresh_is_bounded_and_omits_missing_items() {
+        let storage = test_storage_with_migrations();
+        let text = "é".repeat(HISTORY_PREVIEW_CHAR_LIMIT as usize + 37);
+        let id = storage.insert_text(&text, &hash_text(&text)).unwrap();
+        let other = storage
+            .insert_text("not requested", &hash_text("not requested"))
+            .unwrap();
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id,
+                title: Some("Fresh title".into()),
+                notes: Some("Fresh notes".into()),
+                tags: vec!["Fresh/Tag".into()],
+                properties: ScenarioProperties::default(),
+            })
+            .unwrap();
+        let preview = storage.get_items_preview(vec![id, other + 1, id]).unwrap();
+        assert_eq!(ids(&preview), vec![id]);
+        assert!(!preview[0].includes_content);
+        assert_eq!(
+            preview[0].text,
+            "é".repeat(HISTORY_PREVIEW_CHAR_LIMIT as usize)
+        );
+        assert_eq!(preview[0].preview_text, preview[0].text);
+        assert_eq!(preview[0].text_char_count, HISTORY_PREVIEW_CHAR_LIMIT + 37);
+        assert_eq!(preview[0].title.as_deref(), Some("Fresh title"));
+        assert_eq!(preview[0].notes.as_deref(), Some("Fresh notes"));
+        assert_eq!(preview[0].tags.as_deref(), Some("#Fresh/Tag"));
+        assert!(storage.get_items_preview(vec![]).unwrap().is_empty());
+        assert_eq!(
+            ids(&storage.get_items_preview(vec![id; 100]).unwrap()),
+            vec![id]
+        );
+        assert!(storage.get_items_preview(vec![id; 101]).is_err());
+    }
+
+    #[test]
+    fn reliability_image_failure_cleans_uncommitted_blobs_and_recapture_restores_thumbnail() {
+        let mut storage = test_storage_with_migrations();
+        storage.app_data_dir.push("reliability-image");
+        let image = crate::image_capture::CapturedImage {
+            width: 1,
+            height: 1,
+            png_bytes: b"synthetic original".to_vec(),
+            thumbnail_png_bytes: b"synthetic thumbnail".to_vec(),
+            normalized_hash: "synthetic-image".into(),
+        };
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER reject_capture BEFORE INSERT ON clipboard_item_capture_events
+             BEGIN SELECT RAISE(ABORT, 'synthetic event failure'); END;",
+            )
+            .unwrap();
+        assert!(storage.insert_image(&image).is_err());
+        let original = storage
+            .app_data_dir
+            .join(relative_blob_path(IMAGE_BLOB_DIR, &image.normalized_hash));
+        let thumbnail = storage.app_data_dir.join(relative_blob_path(
+            THUMBNAIL_BLOB_DIR,
+            &image.normalized_hash,
+        ));
+        assert!(!original.exists());
+        assert!(!thumbnail.exists());
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TRIGGER reject_capture")
+            .unwrap();
+        let id = storage.insert_image(&image).unwrap();
+        std::fs::remove_file(&thumbnail).unwrap();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE clipboard_items SET thumbnail_path = NULL WHERE id = ?1",
+                params![id],
+            )
+            .unwrap();
+        assert_eq!(storage.insert_image(&image).unwrap(), id);
+        write_blob(&original, b"must not replace an existing original").unwrap();
+        assert_eq!(std::fs::read(&original).unwrap(), image.png_bytes);
+        assert_eq!(
+            std::fs::read(&thumbnail).unwrap(),
+            image.thumbnail_png_bytes
+        );
+        assert_eq!(
+            storage.get_items_preview(vec![id]).unwrap()[0]
+                .thumbnail_data_url
+                .as_deref()
+                .unwrap(),
+            format!(
+                "data:image/png;base64,{}",
+                BASE64_STANDARD.encode(&image.thumbnail_png_bytes)
+            )
+        );
+        storage.delete_item(id).unwrap();
+        let _ = std::fs::remove_dir_all(&storage.app_data_dir);
+    }
     use std::time::Instant;
 
     #[test]
@@ -5108,6 +5566,8 @@ mod tests {
             Some(HistoryPageCursor {
                 after_sort_unix_ms: 10_004,
                 after_id: 4,
+                after_is_inbox: false,
+                after_inbox_at_unix_ms: None,
             })
         );
 
@@ -5832,6 +6292,8 @@ mod tests {
             Some(HistoryPageCursor {
                 after_sort_unix_ms: 50_003,
                 after_id: 3,
+                after_is_inbox: false,
+                after_inbox_at_unix_ms: None,
             })
         );
         assert_eq!(page.total_count, None);
@@ -6086,11 +6548,15 @@ mod tests {
 
         let tags = storage.list_tags().expect("nested tags should list");
         assert_eq!(
-            tags.iter().find(|tag| tag.slug == "workspace").map(|tag| tag.item_count),
+            tags.iter()
+                .find(|tag| tag.slug == "workspace")
+                .map(|tag| tag.item_count),
             Some(3),
         );
         assert_eq!(
-            tags.iter().find(|tag| tag.slug == "workspace/key").map(|tag| tag.item_count),
+            tags.iter()
+                .find(|tag| tag.slug == "workspace/key")
+                .map(|tag| tag.item_count),
             Some(1),
         );
     }
@@ -6251,6 +6717,51 @@ mod tests {
     }
 
     #[test]
+    fn failed_item_delete_preserves_tag_relationships() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "synthetic delete failure");
+        storage
+            .set_item_tags(SetItemTagsRequest {
+                item_id: 1,
+                tags: vec!["Keep".into()],
+            })
+            .unwrap();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER fail_item_delete BEFORE DELETE ON clipboard_items
+             BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;",
+            )
+            .unwrap();
+        assert!(storage.delete_item(1).is_err());
+        assert_eq!(storage.get_item_tags(1).unwrap(), vec!["Keep"]);
+        assert_eq!(storage.get_item(1).unwrap().tags.as_deref(), Some("#Keep"));
+    }
+
+    #[test]
+    fn stale_enrichment_does_not_apply_tags_after_content_edit() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "/usr/local/bin/copicu");
+        let captured_hash = storage.get_item(1).unwrap().normalized_hash;
+        storage
+            .update_item_text(1, "plain revised content".into())
+            .unwrap();
+        let tags = [crate::enrichment::BuiltinEnrichmentMatch {
+            detector: crate::enrichment::BuiltinDetector::Path,
+            tag: crate::enrichment::BuiltinTag::Path,
+            confidence: 1.0,
+        }];
+        assert!(storage
+            .apply_builtin_enrichment(1, &captured_hash, &tags)
+            .unwrap()
+            .is_empty());
+        assert!(storage.get_item_tags(1).unwrap().is_empty());
+        assert!(storage.list_tags().unwrap().is_empty());
+    }
+
+    #[test]
     fn apply_builtin_enrichment_adds_rule_tag_without_replacing_existing_tags() {
         let storage = test_storage_with_migrations();
         insert_test_text_item(&storage, 1, 40_001, r"C:\dev\chat\copyq-tauri\src\main.tsx");
@@ -6264,6 +6775,7 @@ mod tests {
         let applied = storage
             .apply_builtin_enrichment(
                 1,
+                &storage.get_item(1).unwrap().normalized_hash,
                 &[crate::enrichment::BuiltinEnrichmentMatch {
                     detector: crate::enrichment::BuiltinDetector::Path,
                     tag: crate::enrichment::BuiltinTag::Path,
@@ -6293,6 +6805,7 @@ mod tests {
         let first = storage
             .apply_builtin_enrichment(
                 1,
+                &storage.get_item(1).unwrap().normalized_hash,
                 &[crate::enrichment::BuiltinEnrichmentMatch {
                     detector: crate::enrichment::BuiltinDetector::Path,
                     tag: crate::enrichment::BuiltinTag::Path,
@@ -6303,6 +6816,7 @@ mod tests {
         let second = storage
             .apply_builtin_enrichment(
                 1,
+                &storage.get_item(1).unwrap().normalized_hash,
                 &[crate::enrichment::BuiltinEnrichmentMatch {
                     detector: crate::enrichment::BuiltinDetector::Path,
                     tag: crate::enrichment::BuiltinTag::Path,
@@ -7033,6 +7547,8 @@ mod tests {
             cursor: Some(HistoryPageCursor {
                 after_sort_unix_ms: 30_001,
                 after_id: 1,
+                after_is_inbox: false,
+                after_inbox_at_unix_ms: None,
             }),
             limit: Some(1),
             plan: Some(SearchPlanV1 {
@@ -7571,6 +8087,7 @@ mod tests {
         storage
             .apply_builtin_enrichment(
                 item_id,
+                &hash,
                 &[crate::enrichment::BuiltinEnrichmentMatch {
                     detector: crate::enrichment::BuiltinDetector::Path,
                     tag: crate::enrichment::BuiltinTag::Path,
@@ -8135,9 +8652,18 @@ mod tests {
         assert_eq!(retained, MIN_RETENTION_COUNT);
     }
 
+    fn test_app_data_dir() -> PathBuf {
+        static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
+        std::env::temp_dir().join(format!(
+            "copicu-storage-test-{}-{}-{}",
+            std::process::id(),
+            now_unix_ms(),
+            NEXT_DIR.fetch_add(1, Ordering::Relaxed),
+        ))
+    }
+
     fn test_storage() -> AppStorage {
-        let app_data_dir =
-            std::env::temp_dir().join(format!("copicu-storage-test-{}", now_unix_ms()));
+        let app_data_dir = test_app_data_dir();
         let conn = Connection::open_in_memory().expect("in-memory sqlite should open");
         add_regexp_function(&conn).expect("regexp function should register");
 
@@ -8152,8 +8678,7 @@ mod tests {
     }
 
     fn test_storage_with_migrations() -> AppStorage {
-        let app_data_dir =
-            std::env::temp_dir().join(format!("copicu-storage-test-{}", now_unix_ms()));
+        let app_data_dir = test_app_data_dir();
         let mut conn = Connection::open_in_memory().expect("in-memory sqlite should open");
         MIGRATIONS
             .to_latest(&mut conn)

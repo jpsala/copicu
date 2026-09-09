@@ -1,3 +1,12 @@
+// Matches storage::normalize_tag_label without migrating Unicode identities.
+export function tagKey(value: string): string {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "").replace(/^#+/, "").replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "")
+    .replace(/[A-Z]/g, (letter) => letter.toLowerCase())
+    .replace(/[^\p{Alphabetic}\p{N}_/\p{White_Space}-]/gu, "")
+    .replace(/\p{White_Space}+/gu, "-")
+    .split("-").filter(Boolean).join("-");
+}
+
 const STRUCTURED_FILTER_KEYS = new Set([
   "tag", "tags", "kind", "type", "is", "mime", "has", "meta", "metadata", "title", "note", "notes", "ctx", "context", "app", "program", "process", "window", "domain", "site", "source", "format", "fmt", "after", "since", "before", "until", "on",
 ]);
@@ -400,10 +409,10 @@ export function shouldHoldStructuredSearchDraft(
 }
 
 function matchingTags(prefix: string, tags: string[], replacement: (tag: string) => string) {
-  const normalizedPrefix = prefix.toLocaleLowerCase();
+  const normalizedPrefix = tagKey(prefix);
   return [...new Set(tags)]
     .filter((tag) => {
-      const normalizedTag = tag.toLocaleLowerCase();
+      const normalizedTag = tagKey(tag);
       return normalizedTag.startsWith(normalizedPrefix) && normalizedTag !== normalizedPrefix;
     })
     .slice(0, 8)
@@ -471,7 +480,7 @@ export function positiveTagFilters(query: string) {
         ? token.slice(separator + 1)
         : "";
     const normalized = value.trim().replace(/^#/, "");
-    const identity = normalized.toLocaleLowerCase();
+    const identity = tagKey(normalized);
     if (normalized && !seen.has(identity)) {
       seen.add(identity);
       tags.push(normalized);

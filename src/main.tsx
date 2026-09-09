@@ -107,10 +107,12 @@ import type {
   WhichKeyState,
 } from "./shared/contracts";
 import { setupAutomaticUpdates, type AutoUpdateStatus } from "./autoUpdate";
+import { localPreviewImageSource } from "./shared/previewMedia";
 import {
   classifyStructuredSearchDraft,
   replaceActiveSearchToken,
   searchSuggestions,
+  tagKey,
   shouldHoldStructuredSearchDraft,
 } from "./shared/search";
 import {
@@ -147,7 +149,7 @@ import { ShortcutBadge } from "./ui/ShortcutBadge";
 import { ToastStack } from "./ui/ToastStack";
 import { ScenarioCreator } from "./ui/ScenarioSwitcher";
 import { SavedViewCreator } from "./ui/SavedViewCreator";
-import { TagEditor, type TagEditorMode } from "./ui/TagEditor";
+import { formatMetadataText, parseMetadataText, TagEditor, type TagEditorMode } from "./ui/TagEditor";
 import {
   PickerContextStrip,
   PickerFeed,
@@ -279,6 +281,8 @@ type HistoryItem = {
 };
 
 type HistoryPageCursor = {
+  afterIsInbox: boolean;
+  afterInboxAtUnixMs: number | null;
   afterSortUnixMs: number;
   afterId: number;
 };
@@ -291,6 +295,8 @@ type HistoryPaginationBlock = {
 const sameHistoryPageCursor = (left: HistoryPageCursor | null, right: HistoryPageCursor | null) =>
   left !== null
   && right !== null
+  && left.afterIsInbox === right.afterIsInbox
+  && left.afterInboxAtUnixMs === right.afterInboxAtUnixMs
   && left.afterSortUnixMs === right.afterSortUnixMs
   && left.afterId === right.afterId;
 
@@ -1283,6 +1289,13 @@ function App() {
   const filterLockedRef = useRef(filterLocked);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
   const fullContentFetchIdsRef = useRef<Set<number>>(new Set());
+  const retainedScrollAnchorRef = useRef<{
+    id: number;
+    offset: number;
+    scrollTop: number;
+    requestSeq: number;
+    selectionSeq: number;
+  } | null>(null);
   const findStateRef = useRef<FindUiState | null>(findState);
   const findGenerationRef = useRef(0);
   const findRequestSeqRef = useRef(0);
@@ -1420,6 +1433,27 @@ function App() {
     overscan: 24,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  useLayoutEffect(() => {
+    const anchor = retainedScrollAnchorRef.current;
+    retainedScrollAnchorRef.current = null;
+    const scrollElement = historyScrollRef.current;
+    if (!anchor || !scrollElement) return;
+    for (const row of scrollElement.querySelectorAll<HTMLElement>("li[data-index]")) {
+      rowVirtualizer.measureElement(row);
+    }
+    const frame = window.requestAnimationFrame(() => {
+      if (anchor.requestSeq !== historyRequestSeqRef.current
+        || anchor.selectionSeq !== selectionInteractionSeqRef.current
+        || scrollElement.scrollTop !== anchor.scrollTop) return;
+      const row = document.getElementById(`history-item-${anchor.id}`);
+      if (row) {
+        scrollElement.scrollTop += row.getBoundingClientRect().top
+          - scrollElement.getBoundingClientRect().top - anchor.offset;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [history, rowVirtualizer]);
 
   const measureImageRow = useCallback(
     (event: SyntheticEvent<HTMLImageElement>) => {
@@ -2657,7 +2691,8 @@ function App() {
         syncWhichKeyPending(event.payload);
       }
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
     window.addEventListener("focus", syncPending);
     document.addEventListener("visibilitychange", syncPending);
@@ -2685,7 +2720,8 @@ function App() {
         openCommandPalette();
       }
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
 
     return () => {
@@ -3229,6 +3265,60 @@ function App() {
       const canRetainAppliedSnapshot =
         appliedDescriptorRef.current?.fingerprint === committedDescriptor.fingerprint;
       if (respectManualScroll && scrollTop > 24 && canRetainAppliedSnapshot) {
+        const retainedIds = historyRef.current.map((item) => item.id);
+        const refreshedById = new Map<number, HistoryItem>();
+        try {
+          for (let offset = 0; offset < retainedIds.length; offset += 100) {
+            const refreshed = await invoke<HistoryItem[]>("get_history_items_preview", {
+              ids: retainedIds.slice(offset, offset + 100),
+            });
+            if (requestSeq !== historyRequestSeqRef.current
+              || (foreground && intentGeneration !== searchIntentGenerationRef.current)
+              || appliedDescriptorRef.current?.fingerprint !== committedDescriptor.fingerprint) return;
+            for (const item of refreshed) refreshedById.set(item.id, item);
+          }
+        } catch (error) {
+          if (requestSeq !== historyRequestSeqRef.current) return;
+          if (foreground) {
+            setHistoryPending(false);
+            setAiPlanning(false);
+          }
+          setHistoryError(String(error));
+          dispatchSearch({ type: "applyFailed", generation: snapshotGeneration, intentGeneration, source, error: String(error) });
+          return;
+        }
+        const retainedItems = historyRef.current.flatMap((item) => {
+          const refreshed = refreshedById.get(item.id);
+          if (!refreshed) return [];
+          return [item.includes_content && item.normalized_hash === refreshed.normalized_hash
+            ? { ...refreshed, text: item.text, includes_content: true }
+            : refreshed];
+        });
+        const scrollElement = historyScrollRef.current;
+        if (scrollElement) {
+          const viewportTop = scrollElement.getBoundingClientRect().top;
+          const anchorRow = Array.from(scrollElement.querySelectorAll<HTMLElement>("li[data-index]"))
+            .find((row) => row.getBoundingClientRect().bottom > viewportTop
+              && refreshedById.has(Number(row.id.replace("history-item-", ""))));
+          if (anchorRow) retainedScrollAnchorRef.current = {
+            id: Number(anchorRow.id.replace("history-item-", "")),
+            offset: anchorRow.getBoundingClientRect().top - viewportTop,
+            scrollTop: scrollElement.scrollTop,
+            requestSeq,
+            selectionSeq: selectionInteractionSeqRef.current,
+          };
+        }
+        historyRef.current = retainedItems;
+        setHistory(retainedItems);
+        const retainedSelection = new Set([...selectedIdsRef.current].filter((id) => refreshedById.has(id)));
+        selectedIdsRef.current = retainedSelection;
+        setSelectedIds(retainedSelection);
+        if (selectedItemIdRef.current !== null && !refreshedById.has(selectedItemIdRef.current)) {
+          const nextId = retainedScrollAnchorRef.current?.id ?? retainedItems[0]?.id ?? null;
+          selectedItemIdRef.current = nextId;
+          selectionAnchorItemIdRef.current = nextId;
+          setSelectedItemId(nextId);
+        }
         const retainedPaginationBlock = historyPaginationBlockedRef.current;
         const retainedPaginationBlockMatches = retainedPaginationBlock !== null
           && page.nextCursor !== null
@@ -3265,6 +3355,8 @@ function App() {
           generation: snapshotGeneration,
           descriptor: committedDescriptor,
           page,
+          items: retainedItems,
+          intentGeneration,
           source,
         });
         return;
@@ -3408,6 +3500,7 @@ function App() {
       refreshMarkedCount,
       searchInterpretation,
       searchState.applied,
+      rowVirtualizer,
       updateDeferredAppliedRefresh,
       updateClearSearchPending,
     ],
@@ -3608,7 +3701,8 @@ function App() {
         allowAi: false,
       }).then(() => pickerEventHandlersRef.current.focusSearch());
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
 
     void listen<ActiveScenarioSession | null>(SCENARIO_SESSION_CHANGED_EVENT, (event) => {
@@ -3618,7 +3712,8 @@ function App() {
       activeScenarioSessionRef.current = event.payload;
       setActiveScenarioSession(event.payload);
     }).then((nextUnlisten) => {
-      unlistenScenario = nextUnlisten;
+      if (active) unlistenScenario = nextUnlisten;
+      else nextUnlisten();
     });
 
     return () => {
@@ -4089,19 +4184,11 @@ function App() {
       return;
     }
     const draft = inlineEditDraft;
-    const request: UpdateHistoryItemRequest = {
-      id: draft.id,
-      text: draft.text,
-      title: nullableTrim(draft.title),
-      notes: nullableTrim(draft.notes),
-      tags: metadataTags(draft.notes),
-      mimePrimary: nullableTrim(draft.mimePrimary),
-    };
 
     try {
       setInlineEditSaving(true);
       setEditError(null);
-      await invoke("update_history_item", { request });
+      await invoke("update_history_item_text", { id: draft.id, text: draft.text });
       mutateRowLayout(draft.id, () => setInlineEditDraft(null));
       await refreshAppliedHistory();
       rebaseFind();
@@ -4141,7 +4228,9 @@ function App() {
           mode,
           text: fullItem.text,
           title: fullItem.title ?? "",
-          notes: fullItem.notes ?? "",
+          notes: mode === "metadata"
+            ? formatMetadataText(fullItem.title, fullItem.notes, await getItemTags(fullItem.id))
+            : fullItem.notes ?? "",
           tags: fullItem.tags ?? "",
           mimePrimary: fullItem.mime_primary ?? "",
         });
@@ -4224,24 +4313,36 @@ function App() {
     if (!isTauriRuntime()) {
       return undefined;
     }
+    let active = true;
     let unlisten: (() => void) | null = null;
-    void listen(METADATA_EDIT_ACTIVE_EVENT, openActiveMetadata).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+    void listen(METADATA_EDIT_ACTIVE_EVENT, () => {
+      if (active) openActiveMetadata();
+    }).then((nextUnlisten) => {
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
-    return () => unlisten?.();
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, [openActiveMetadata]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
       return undefined;
     }
+    let active = true;
     let unlisten: (() => void) | null = null;
     void listen(EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT, () => {
-      void openActiveExternalEditor();
+      if (active) void openActiveExternalEditor();
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
-    return () => unlisten?.();
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, [openActiveExternalEditor]);
 
   const deleteItems = useCallback(
@@ -4580,18 +4681,23 @@ function App() {
       return;
     }
 
-    const request: UpdateHistoryItemRequest = {
-      id: editDraft.id,
-      text: textOverride ?? editDraft.text,
-      title: nullableTrim(editDraft.title),
-      notes: nullableTrim(editDraft.notes),
-      tags: metadataTags(editDraft.notes),
-      mimePrimary: nullableTrim(editDraft.mimePrimary),
-    };
 
     try {
       setEditError(null);
-      await invoke("update_history_item", { request });
+      if (editDraft.mode === "content") {
+        await invoke("update_history_item_text", { id: editDraft.id, text: textOverride ?? editDraft.text });
+      } else {
+        const parsed = parseMetadataText(editDraft.notes, paletteTags);
+        const request: UpdateHistoryItemRequest = {
+          id: editDraft.id,
+          text: editDraft.text,
+          title: parsed.title,
+          notes: nullableTrim(parsed.notes),
+          tags: parsed.tags.map((tag) => `#${tagKey(tag)}`).join(" ") || null,
+          mimePrimary: nullableTrim(editDraft.mimePrimary),
+        };
+        await invoke("update_history_item", { request });
+      }
       if (catalogItemIdRef.current === editDraft.id) {
         await setHistoryItemInbox(editDraft.id, false);
         catalogItemIdRef.current = null;
@@ -4604,7 +4710,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [editDraft, focusSearch, rebaseFind, refreshAppliedHistory]);
+  }, [paletteTags, editDraft, focusSearch, rebaseFind, refreshAppliedHistory]);
 
   const catalogItem = useCallback((item: HistoryItem) => {
     catalogItemIdRef.current = item.id;
@@ -4627,11 +4733,12 @@ function App() {
       return;
     }
 
+    const parsed = parseMetadataText(createItemDraft.metadata, paletteTags);
     const request: CreateHistoryItemRequest = {
       text: createItemDraft.text,
-      title: null,
-      notes: nullableTrim(createItemDraft.metadata),
-      tags: metadataTags(createItemDraft.metadata),
+      title: parsed.title,
+      notes: nullableTrim(parsed.notes),
+      tags: parsed.tags.map((tag) => `#${tagKey(tag)}`).join(" ") || null,
       mimePrimary: "text/plain",
     };
 
@@ -4658,7 +4765,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [createItemDraft, focusSearch, leaveOpenedSavedView, pushToast, refreshHistory]);
+  }, [paletteTags, createItemDraft, focusSearch, leaveOpenedSavedView, pushToast, refreshHistory]);
 
   const saveBatchMetadata = useCallback(async () => {
     if (!batchMetadataDraft) {
@@ -4681,13 +4788,17 @@ function App() {
       setEditError(null);
       const fullItemsToUpdate = await Promise.all(itemsToUpdate.map(ensureFullHistoryItem));
       for (const item of fullItemsToUpdate) {
-        const nextNotes = applyBatchMetadata(item.notes, nextMetadata, batchMetadataDraft.mode);
+        const assignedTags = await getItemTags(item.id);
+        const parsed = parseMetadataText(nextMetadata, paletteTags);
+        const nextNotes = applyBatchMetadata(item.notes, parsed.notes, batchMetadataDraft.mode);
         const request: UpdateHistoryItemRequest = {
           id: item.id,
           text: item.text,
           title: item.title,
           notes: nextNotes,
-          tags: metadataTags(nextNotes),
+          tags: (batchMetadataDraft.mode === "replace"
+            ? parsed.tags
+            : [...new Set([...assignedTags, ...parsed.tags])]).map((tag) => `#${tagKey(tag)}`).join(" ") || null,
           mimePrimary: item.mime_primary,
         };
         await invoke("update_history_item", { request });
@@ -4700,7 +4811,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, rebaseFind, refreshAppliedHistory]);
+  }, [paletteTags, batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, rebaseFind, refreshAppliedHistory]);
 
   const saveTagEditor = useCallback(async (tags: string[], removeTags: string[]) => {
     if (!tagEditorDraft || tagEditorSaving) {
@@ -4832,7 +4943,8 @@ function App() {
         setSettingsError(null);
       }
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
 
     return () => {
@@ -5170,7 +5282,8 @@ function App() {
         });
       },
     ).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
 
     const refreshOnFocus = () => {
@@ -6868,9 +6981,26 @@ function App() {
                     }${
                       item.content_kind === "image" ? " is-image" : ""
                     }${item.is_inbox ? " is-inbox" : ""}${itemIsFindTarget ? " has-find-target" : ""}`}
-                    role="button"
-                    tabIndex={-1}
+                    role="group"
+                    tabIndex={itemIsSelected ? 0 : -1}
                     aria-current={itemIsSelected ? "true" : undefined}
+                    aria-label={[item.title, item.text.slice(0, 160)].filter(Boolean).join(" ") || "Clipboard image"}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void activateItem(item);
+                      } else if (event.key === " ") {
+                        event.preventDefault();
+                        setSingleSelection(index);
+                      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        const nextIndex = Math.max(0, Math.min(history.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+                        setSingleSelection(nextIndex);
+                        rowVirtualizer.scrollToIndex(nextIndex, { align: "auto" });
+                        window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`#history-item-${history[nextIndex]?.id} .feed-item`)?.focus());
+                      }
+                    }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={(event) => {
                       const imageWasClicked = event.target instanceof Element
@@ -6996,8 +7126,8 @@ function App() {
                     ) : item.content_kind === "image" && item.thumbnail_data_url ? (
                       <span className="image-preview" title="Open full preview">
                         <img
-                          src={item.thumbnail_data_url}
-                          alt=""
+                          src={localPreviewImageSource(item.thumbnail_data_url)}
+                          alt={item.title || "Clipboard image"}
                           width={imageWidth}
                           height={imageHeight}
                           onLoad={measureImageRow}
@@ -8570,12 +8700,6 @@ function nullableTrim(value: string) {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function metadataTags(value: string | null) {
-  const tags = new Set(
-    Array.from(value?.matchAll(/(^|\s)#([\p{L}\p{N}_-]+)/gu) ?? [], (match) => `#${match[2]}`),
-  );
-  return tags.size === 0 ? null : Array.from(tags).join(" ");
-}
 
 function appendMetadata(existing: string | null, metadataToAdd: string) {
   const trimmedExisting = existing?.trim() ?? "";
@@ -8601,34 +8725,15 @@ function applyBatchMetadata(existing: string | null, metadata: string, mode: Bat
 }
 
 function mergeMetadata(existing: string | null, metadataToMerge: string) {
-  const existingLines = metadataLines(existing);
-  const lineKeys = new Set(existingLines.map(metadataLineKey));
-  const tagKeys = new Set(
-    Array.from((existing ?? "").matchAll(/#[\p{L}\p{N}_-]+/gu), (match) => match[0].toLocaleLowerCase()),
-  );
-  const mergedLines = [...existingLines];
-
+  const mergedLines = metadataLines(existing);
+  const lineKeys = new Set(mergedLines.map(metadataLineKey));
   for (const line of metadataLines(metadataToMerge)) {
-    const tags = Array.from(line.matchAll(/#[\p{L}\p{N}_-]+/gu), (match) => match[0]);
-    const isTagOnlyLine = tags.length > 0 && line.replace(/#[\p{L}\p{N}_-]+/gu, "").trim().length === 0;
-
-    if (isTagOnlyLine) {
-      const missingTags = tags.filter((tag) => !tagKeys.has(tag.toLocaleLowerCase()));
-      if (missingTags.length > 0) {
-        missingTags.forEach((tag) => tagKeys.add(tag.toLocaleLowerCase()));
-        mergedLines.push(missingTags.join(" "));
-      }
-      continue;
-    }
-
     const key = metadataLineKey(line);
     if (!lineKeys.has(key)) {
       lineKeys.add(key);
-      tags.forEach((tag) => tagKeys.add(tag.toLocaleLowerCase()));
       mergedLines.push(line);
     }
   }
-
   return mergedLines.join("\n").trim();
 }
 
@@ -8643,22 +8748,8 @@ function metadataLineKey(value: string) {
   return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
 }
 
-function metadataNotesPreview(notes: string | null, tags: string | null) {
-  const tagSet = new Set(
-    Array.from(tags?.matchAll(/#[\p{L}\p{N}_-]+/gu) ?? [], (match) => match[0]),
-  );
-  if (tagSet.size === 0) {
-    return notes?.trim() ?? "";
-  }
-
-  return (notes ?? "")
-    .replace(/(^|\s)#[\p{L}\p{N}_-]+/gu, (match, prefix: string) => {
-      const tag = match.trim();
-      return tagSet.has(tag) ? prefix : match;
-    })
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function metadataNotesPreview(notes: string | null, _tags: string | null) {
+  return notes?.trim() ?? "";
 }
 
 function estimateTextRowSize(item: HistoryItem) {
@@ -8840,6 +8931,7 @@ function MarkdownPreview({
     <span className="markdown-preview">
       {segments.map((segment, index) => {
         if (segment.kind === "image") {
+          const imageSource = localPreviewImageSource(segment.image.src);
           const imageSegment = segment.canonicalSegment ?? null;
           const altMatches = imageAltMatches
             && imageSegment !== null
@@ -8856,11 +8948,17 @@ function MarkdownPreview({
               className={`markdown-image-frame${altMatches?.ranges.length ? " has-find-alt" : ""}`}
               key={`${segment.image.src}-${index}`}
             >
-              <img
-                src={segment.image.src}
-                alt={segment.image.alt}
-                onLoad={onImageLoad}
-              />
+              {imageSource ? (
+                <img
+                  src={imageSource}
+                  alt={segment.image.alt}
+                  onLoad={onImageLoad}
+                />
+              ) : (
+                <span className="item-preview-remote-media">
+                  Remote image blocked{!altMatches?.ranges.length && segment.image.alt ? `: ${segment.image.alt}` : ""}
+                </span>
+              )}
               {altMatches?.ranges.length ? (
                 <span className="markdown-image-alt" aria-label={`Image alt: ${segment.image.alt}`}>
                   <FindHighlightedText

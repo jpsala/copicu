@@ -7,6 +7,7 @@ use std::{
     error::Error,
     sync::{
         atomic::{AtomicBool, Ordering},
+        mpsc::{self, SyncSender, TrySendError},
         Arc, Mutex,
     },
     thread,
@@ -16,7 +17,6 @@ use std::{
 use tauri::Manager;
 use tauri::{AppHandle, Emitter, Runtime};
 
-const COALESCE_WINDOW: Duration = Duration::from_millis(150);
 const SELF_WRITE_SUPPRESSION_WINDOW: Duration = Duration::from_millis(1500);
 const MAX_CAPTURE_EVENTS: usize = 80;
 const INBOX_CAPTURE_WINDOW: Duration = Duration::from_millis(2_000);
@@ -95,7 +95,6 @@ pub enum CaptureOutcome {
 #[derive(Default)]
 struct ClipboardCaptureState {
     last_hash: Option<String>,
-    last_change_at: Option<Instant>,
     captured_count: u64,
     captured_image_count: u64,
     ignored_duplicate_count: u64,
@@ -180,7 +179,7 @@ struct PendingSelfWrite {
 
 #[derive(Clone, Default)]
 pub struct SelfWriteSuppression {
-    pending: Arc<Mutex<Option<PendingSelfWrite>>>,
+    pending: Arc<Mutex<VecDeque<PendingSelfWrite>>>,
 }
 struct TextClipboardHandler<R: Runtime> {
     app: AppHandle<R>,
@@ -189,7 +188,7 @@ struct TextClipboardHandler<R: Runtime> {
     enabled: Arc<AtomicBool>,
     suppression: SelfWriteSuppression,
     storage: crate::storage::AppStorage,
-    previous_window: crate::window_focus::PreviousWindow,
+    post_capture: SyncSender<PostCaptureJob>,
     capture_tag_context: CaptureTagContextState,
     active_scenario: crate::scenario::ActiveScenarioState,
     pending_inbox: Arc<Mutex<Option<PendingInboxCapture>>>,
@@ -201,6 +200,19 @@ struct HistoryChangedEvent {
     item_id: i64,
     content_kind: &'static str,
     activate: bool,
+}
+
+struct PostCaptureJob {
+    item_id: i64,
+    normalized_hash: String,
+    content_kind: &'static str,
+}
+
+struct PostCaptureProcessor<R: Runtime> {
+    app: AppHandle<R>,
+    storage: crate::storage::AppStorage,
+    suppression: SelfWriteSuppression,
+    previous_window: crate::window_focus::PreviousWindow,
 }
 
 impl<R: Runtime> TextClipboardHandler<R> {
@@ -215,6 +227,20 @@ impl<R: Runtime> TextClipboardHandler<R> {
         active_scenario: crate::scenario::ActiveScenarioState,
         pending_inbox: Arc<Mutex<Option<PendingInboxCapture>>>,
     ) -> clipboard_rs::Result<Self> {
+        let (post_capture, receiver) = mpsc::sync_channel::<PostCaptureJob>(128);
+        let processor = PostCaptureProcessor {
+            app: app.clone(),
+            storage: storage.clone(),
+            suppression: suppression.clone(),
+            previous_window,
+        };
+        thread::Builder::new()
+            .name("copicu-clipboard-post-capture".into())
+            .spawn(move || {
+                while let Ok(job) = receiver.recv() {
+                    processor.process(job);
+                }
+            })?;
         Ok(Self {
             app,
             clipboard: ClipboardContext::new()?,
@@ -222,7 +248,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
             enabled,
             suppression,
             storage,
-            previous_window,
+            post_capture,
             capture_tag_context,
             active_scenario,
             pending_inbox,
@@ -334,12 +360,7 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
         };
         let hash = hash_text(&normalized);
         if self.suppression.consume_if_matches(&hash) {
-            record_event(
-                &self.state,
-                CaptureOutcome::SelfWriteSuppressed,
-                probe_result,
-                Some(preview),
-            );
+            record_self_write(&self.state, hash, probe_result, Some(preview));
             persistent_log(
                 "clipboard.event.end",
                 format!(
@@ -398,9 +419,8 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
                                 eprintln!("inbox state update failed: {error}");
                             }
                         }
-                        self.apply_builtin_enrichment(item_id, &normalized);
                         self.emit_history_changed(item_id, "text");
-                        self.run_clipboard_change_actions(item_id);
+                        self.queue_post_capture(item_id, hash.clone(), "text");
                         persistent_log(
                             "clipboard.event.end",
                             format!(
@@ -466,9 +486,9 @@ impl<R: Runtime> TextClipboardHandler<R> {
         };
 
         if self.suppression.consume_if_matches(&image.normalized_hash) {
-            record_event(
+            record_self_write(
                 &self.state,
-                CaptureOutcome::SelfWriteSuppressed,
+                image.normalized_hash.clone(),
                 probe_result,
                 None,
             );
@@ -526,7 +546,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
                             }
                         }
                         self.emit_history_changed(item_id, "image");
-                        self.run_clipboard_change_actions(item_id);
+                        self.queue_post_capture(item_id, image.normalized_hash.clone(), "image");
                         persistent_log(
                             "clipboard.event.end",
                             format!(
@@ -578,6 +598,71 @@ impl<R: Runtime> TextClipboardHandler<R> {
         };
     }
 
+    fn queue_post_capture(
+        &self,
+        item_id: i64,
+        normalized_hash: String,
+        content_kind: &'static str,
+    ) {
+        match self.post_capture.try_send(PostCaptureJob {
+            item_id,
+            normalized_hash,
+            content_kind,
+        }) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => persistent_log(
+                "clipboard.post_capture.skipped",
+                format!("item_id={item_id} queue_full=true"),
+            ),
+            Err(TrySendError::Disconnected(_)) => persistent_log(
+                "clipboard.post_capture.skipped",
+                format!("item_id={item_id} worker_disconnected=true"),
+            ),
+        }
+    }
+
+    fn emit_history_changed(&self, item_id: i64, content_kind: &'static str) {
+        #[cfg(not(test))]
+        if let Some(session) = self.app.try_state::<crate::PickerSessionController>() {
+            session.remember_activation_if_hidden(item_id);
+        }
+        if let Err(error) = self.app.emit(
+            HISTORY_CHANGED_EVENT,
+            HistoryChangedEvent {
+                item_id,
+                content_kind,
+                activate: true,
+            },
+        ) {
+            eprintln!("history changed emit failed: {error}");
+        }
+    }
+}
+
+impl<R: Runtime> PostCaptureProcessor<R> {
+    fn process(&self, job: PostCaptureJob) {
+        let Ok(item) = self.storage.get_item(job.item_id) else {
+            return;
+        };
+        if item.normalized_hash() != job.normalized_hash {
+            return;
+        }
+        if job.content_kind == "text" {
+            self.apply_builtin_enrichment(job.item_id, item.text(), &job.normalized_hash);
+        }
+        self.run_clipboard_change_actions(job.item_id);
+        if let Err(error) = self.app.emit(
+            HISTORY_CHANGED_EVENT,
+            HistoryChangedEvent {
+                item_id: job.item_id,
+                content_kind: job.content_kind,
+                activate: false,
+            },
+        ) {
+            eprintln!("post-capture history changed emit failed: {error}");
+        }
+    }
+
     fn run_clipboard_change_actions(&self, item_id: i64) {
         #[cfg(not(test))]
         crate::actions::run_clipboard_change_actions(
@@ -591,7 +676,7 @@ impl<R: Runtime> TextClipboardHandler<R> {
         let _ = item_id;
     }
 
-    fn apply_builtin_enrichment(&self, item_id: i64, text: &str) {
+    fn apply_builtin_enrichment(&self, item_id: i64, text: &str, expected_hash: &str) {
         let settings = match self.storage.get_settings() {
             Ok(settings) => settings.enrichment,
             Err(error) => {
@@ -610,7 +695,10 @@ impl<R: Runtime> TextClipboardHandler<R> {
             return;
         }
 
-        match self.storage.apply_builtin_enrichment(item_id, &tags) {
+        match self
+            .storage
+            .apply_builtin_enrichment(item_id, expected_hash, &tags)
+        {
             Ok(applied) if !applied.is_empty() => {
                 dev_log(format_args!(
                     "clipboard builtin enrichment applied: item_id={item_id} tags={}",
@@ -619,23 +707,6 @@ impl<R: Runtime> TextClipboardHandler<R> {
             }
             Ok(_) => {}
             Err(error) => eprintln!("clipboard builtin enrichment failed: {error}"),
-        }
-    }
-
-    fn emit_history_changed(&self, item_id: i64, content_kind: &'static str) {
-        #[cfg(not(test))]
-        if let Some(session) = self.app.try_state::<crate::PickerSessionController>() {
-            session.remember_activation_if_hidden(item_id);
-        }
-        if let Err(error) = self.app.emit(
-            HISTORY_CHANGED_EVENT,
-            HistoryChangedEvent {
-                item_id,
-                content_kind,
-                activate: true,
-            },
-        ) {
-            eprintln!("history changed emit failed: {error}");
         }
     }
 }
@@ -691,9 +762,14 @@ impl SelfWriteSuppression {
             .lock()
             .expect("self-write suppression mutex poisoned");
 
-        *pending = Some(PendingSelfWrite {
+        let now = Instant::now();
+        pending.retain(|write| now <= write.expires_at);
+        if pending.len() == 256 {
+            pending.pop_front();
+        }
+        pending.push_back(PendingSelfWrite {
             normalized_hash,
-            expires_at: Instant::now() + SELF_WRITE_SUPPRESSION_WINDOW,
+            expires_at: now + SELF_WRITE_SUPPRESSION_WINDOW,
         });
     }
 
@@ -703,11 +779,11 @@ impl SelfWriteSuppression {
             .lock()
             .expect("self-write suppression mutex poisoned");
 
-        if pending
-            .as_ref()
-            .is_some_and(|pending| pending.normalized_hash == normalized_hash)
+        if let Some(index) = pending
+            .iter()
+            .rposition(|write| write.normalized_hash == normalized_hash)
         {
-            *pending = None;
+            pending.remove(index);
         }
     }
 
@@ -716,17 +792,15 @@ impl SelfWriteSuppression {
             .pending
             .lock()
             .expect("self-write suppression mutex poisoned");
-        let Some(current) = pending.as_ref() else {
+        let now = Instant::now();
+        pending.retain(|write| now <= write.expires_at);
+        let Some(index) = pending
+            .iter()
+            .position(|write| write.normalized_hash == normalized_hash)
+        else {
             return false;
         };
-        if Instant::now() > current.expires_at {
-            *pending = None;
-            return false;
-        }
-        if current.normalized_hash != normalized_hash {
-            return false;
-        }
-        *pending = None;
+        pending.remove(index);
         true
     }
 }
@@ -860,7 +934,13 @@ mod windows_clipboard_text {
             return Err("lock CF_UNICODETEXT failed".into());
         }
 
-        let result = unsafe { read_null_terminated_utf16(ptr as *const u16) };
+        let size = unsafe { GlobalSize(global) };
+        let result = if size < 2 || size > isize::MAX as usize || size % 2 != 0 {
+            Err("CF_UNICODETEXT has invalid global memory size".into())
+        } else {
+            let units = unsafe { std::slice::from_raw_parts(ptr as *const u16, size / 2) };
+            read_null_terminated_utf16(units)
+        };
         unsafe {
             let _ = GlobalUnlock(global);
         }
@@ -904,14 +984,12 @@ mod windows_clipboard_text {
         }
     }
 
-    unsafe fn read_null_terminated_utf16(ptr: *const u16) -> clipboard_rs::Result<String> {
-        let mut len = 0usize;
-        while unsafe { *ptr.add(len) } != 0 {
-            len += 1;
-        }
-
-        let units = unsafe { std::slice::from_raw_parts(ptr, len) };
-        Ok(String::from_utf16_lossy(units))
+    fn read_null_terminated_utf16(units: &[u16]) -> clipboard_rs::Result<String> {
+        let len = units
+            .iter()
+            .position(|unit| *unit == 0)
+            .ok_or("CF_UNICODETEXT is not terminated within global memory")?;
+        Ok(String::from_utf16_lossy(&units[..len]))
     }
 
     unsafe fn read_null_terminated_bytes(
@@ -919,8 +997,8 @@ mod windows_clipboard_text {
         ptr: *const u8,
     ) -> clipboard_rs::Result<Vec<u8>> {
         let size = unsafe { GlobalSize(global) };
-        if size == 0 {
-            return Err("CF_TEXT has empty global memory".into());
+        if size == 0 || size > isize::MAX as usize {
+            return Err("CF_TEXT has invalid global memory size".into());
         }
 
         let bytes = unsafe { std::slice::from_raw_parts(ptr, size) };
@@ -937,10 +1015,19 @@ mod windows_clipboard_text {
         fn decodes_accented_unicode_text() {
             let mut units: Vec<u16> = "áéíóú, hola".encode_utf16().collect();
             units.push(0);
-            let decoded = unsafe { super::read_null_terminated_utf16(units.as_ptr()) }
-                .expect("utf16 should decode");
+            let decoded = super::read_null_terminated_utf16(&units).expect("utf16 should decode");
 
             assert_eq!(decoded, "áéíóú, hola");
+        }
+
+        #[test]
+        fn rejects_unterminated_utf16_without_reading_past_allocation() {
+            assert!(super::read_null_terminated_utf16(&[]).is_err());
+            assert!(super::read_null_terminated_utf16(&[65, 66]).is_err());
+            assert_eq!(
+                super::read_null_terminated_utf16(&[65, 0, 66]).unwrap(),
+                "A"
+            );
         }
 
         #[test]
@@ -998,15 +1085,10 @@ fn record_candidate(
     captured_outcome: CaptureOutcome,
 ) -> CaptureOutcome {
     let mut state = state.lock().expect("clipboard state mutex poisoned");
-    let now = Instant::now();
     let duplicate = state.last_hash.as_ref() == Some(&hash);
-    let coalesced = state
-        .last_change_at
-        .is_some_and(|last_change_at| now.duration_since(last_change_at) <= COALESCE_WINDOW);
 
-    if duplicate || coalesced {
+    if duplicate {
         state.ignored_duplicate_count += 1;
-        state.last_change_at = Some(now);
         push_event(
             &mut state,
             CaptureOutcome::IgnoredDuplicateOrCoalesced,
@@ -1017,7 +1099,6 @@ fn record_candidate(
     }
 
     state.last_hash = Some(hash);
-    state.last_change_at = Some(now);
     state.captured_count += 1;
     if matches!(captured_outcome, CaptureOutcome::CapturedImage) {
         state.captured_image_count += 1;
@@ -1034,13 +1115,29 @@ fn record_forced_candidate(
 ) -> CaptureOutcome {
     let mut state = state.lock().expect("clipboard state mutex poisoned");
     state.last_hash = Some(hash);
-    state.last_change_at = Some(Instant::now());
     state.captured_count += 1;
     if matches!(outcome, CaptureOutcome::CapturedImage) {
         state.captured_image_count += 1;
     }
     push_event(&mut state, outcome.clone(), probe_result, preview);
     outcome
+}
+
+fn record_self_write(
+    state: &Arc<Mutex<ClipboardCaptureState>>,
+    hash: String,
+    probe_result: Result<crate::clipboard_probe::ClipboardProbe, String>,
+    preview: Option<TextPreview>,
+) {
+    let mut state = state.lock().expect("clipboard state mutex poisoned");
+    state.last_hash = Some(hash);
+    state.self_write_suppressed_count += 1;
+    push_event(
+        &mut state,
+        CaptureOutcome::SelfWriteSuppressed,
+        probe_result,
+        preview,
+    );
 }
 
 fn record_event(
@@ -1145,12 +1242,6 @@ mod tests {
     }
 
     #[test]
-    fn hash_text_is_stable() {
-        assert_eq!(hash_text("same"), hash_text("same"));
-        assert_ne!(hash_text("same"), hash_text("other"));
-    }
-
-    #[test]
     fn retry_clipboard_operation_retries_until_success() {
         let mut attempts = 0;
 
@@ -1239,5 +1330,61 @@ mod tests {
 
         assert!(!suppression.consume_if_matches(&hash_text("other")));
         assert!(suppression.consume_if_matches(&hash));
+    }
+
+    #[test]
+    fn captures_distinct_contents_in_a_burst_including_return_to_first() {
+        let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
+        for text in ["first", "second", "first"] {
+            assert!(matches!(
+                record_candidate(
+                    &state,
+                    hash_text(text),
+                    Err("synthetic".into()),
+                    None,
+                    CaptureOutcome::CapturedText,
+                ),
+                CaptureOutcome::CapturedText
+            ));
+        }
+    }
+
+    #[test]
+    fn suppression_tracks_multiple_writes_without_consuming_external_content() {
+        let suppression = SelfWriteSuppression::default();
+        suppression.suppress_hash("a".into());
+        suppression.suppress_hash("b".into());
+        assert!(!suppression.consume_if_matches("external"));
+        assert!(suppression.consume_if_matches("a"));
+        assert!(suppression.consume_if_matches("b"));
+        assert!(!suppression.consume_if_matches("a"));
+        suppression.suppress_hash("a".into());
+        suppression.suppress_hash("a".into());
+        suppression.clear_if_hash("a");
+        assert!(suppression.consume_if_matches("a"));
+        assert!(!suppression.consume_if_matches("a"));
+    }
+
+    #[test]
+    fn external_copy_after_different_self_write_is_not_a_consecutive_duplicate() {
+        let state = Arc::new(Mutex::new(ClipboardCaptureState::default()));
+        record_candidate(
+            &state,
+            "a".into(),
+            Err("synthetic".into()),
+            None,
+            CaptureOutcome::CapturedText,
+        );
+        record_self_write(&state, "b".into(), Err("synthetic".into()), None);
+        assert!(matches!(
+            record_candidate(
+                &state,
+                "a".into(),
+                Err("synthetic".into()),
+                None,
+                CaptureOutcome::CapturedText
+            ),
+            CaptureOutcome::CapturedText
+        ));
     }
 }

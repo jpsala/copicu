@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-09-03T17:57:44.734Z
+Generated: 2026-09-09T14:43:00.432Z
 
 ## Topics
 
@@ -45,7 +45,8 @@ Generated: 2026-09-03T17:57:44.734Z
 
 ## Tracks
 
-- No focused track. Search `docs/tracks/` on demand.
+- waiting_gate: [Picker Reliability](../tracks/035-picker-reliability.md)
+- Other tracks are omitted from the hot index; search `docs/tracks/` on demand.
 
 ## Specs
 

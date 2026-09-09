@@ -1,3 +1,4 @@
+import { tagKey } from "../shared/search";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import {
   forwardRef,
@@ -61,23 +62,14 @@ type MetadataTagDraft = {
   query: string;
 };
 
-const METADATA_TOKEN_PATTERN = /(^|\s)(?:#([\p{L}\p{N}_/-]+)|(client|project|activity):(?:"((?:\\.|[^"\\])*)"|([^\s]+)))/giu;
+const METADATA_TOKEN_PATTERN = /(^|\p{White_Space})(?:#([\p{Alphabetic}\p{N}_/-]+)|(client|project|activity):(?:"((?:\\.|[^"\\])*)"|([^\p{White_Space}]+)))/giu;
 const METADATA_PROPERTY_KEYS = ["client", "project", "activity"] as const;
 
 type MetadataPropertyKey = (typeof METADATA_PROPERTY_KEYS)[number];
 
-function tagKey(value: string) {
-  return cleanTagInput(value)
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}_/\s-]/gu, "")
-    .replace(/\s+/g, "-")
-    .split("-")
-    .filter(Boolean)
-    .join("-");
-}
 
 function cleanTagInput(value: string) {
-  return value.trim().replace(/^#+/, "").trim();
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "").replace(/^#+/, "").replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
 }
 
 function uniqueTags(tags: string[]) {
@@ -129,7 +121,11 @@ export function formatMetadataText(
   const propertyTokens = METADATA_PROPERTY_KEYS.flatMap((key) =>
     uniquePropertyValues(properties[key]).map((value) => `${key}:${formatPropertyValue(value)}`),
   );
-  return [titleDirective, [...tagTokens, ...propertyTokens].join(" "), notes?.trim() ?? ""]
+  // Escape literal note syntax before combining it with editable metadata tokens.
+  const escapedNotes = (notes?.trim() ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/(^|\p{White_Space})(?=#|@title:|(?:client|project|activity):)/giu, "$1\\");
+  return [titleDirective, [...tagTokens, ...propertyTokens].join(" "), escapedNotes]
     .filter(Boolean)
     .join("\n");
 }
@@ -182,7 +178,7 @@ export function parseMetadataText(
       const next = source[offset + match.length] ?? "";
       return /[ \t]/.test(prefix) && /[ \t]/.test(next) ? "" : prefix;
     },
-  ).trim();
+  ).trim().replace(/\\([\\#]|@title:|(?:client|project|activity):)/giu, "$1");
 
   for (const key of METADATA_PROPERTY_KEYS) {
     properties[key] = uniquePropertyValues(properties[key]);
@@ -193,7 +189,7 @@ export function parseMetadataText(
 
 function metadataTagDraftAt(value: string, caret: number): MetadataTagDraft | null {
   const prefix = value.slice(0, caret);
-  const match = /(?:^|\s)#([\p{L}\p{N}_/-]*)$/u.exec(prefix);
+  const match = /(?:^|\p{White_Space})#([\p{Alphabetic}\p{N}_/-]*)$/u.exec(prefix);
   if (!match) {
     return null;
   }

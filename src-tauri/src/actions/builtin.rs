@@ -135,6 +135,7 @@ pub(super) fn queue_selected_bottom_to_top<R: tauri::Runtime + 'static>(
 ) -> Result<String, String> {
     use tauri::Manager;
 
+    let target = previous_window.snapshot_target()?;
     let item_ids = require_one_or_more_selected(&request.context)?;
     let queue = app
         .try_state::<crate::paste_queue::PasteQueue>()
@@ -144,7 +145,7 @@ pub(super) fn queue_selected_bottom_to_top<R: tauri::Runtime + 'static>(
         let window =
             window.ok_or_else(|| "picker window is required to prepare Paste Queue".to_string())?;
         crate::host::hide_picker(window)?;
-        previous_window.focus_previous()
+        target.focus_previous()
     })();
     if let Err(error) = prepare_result {
         crate::emit_paste_queue_toast(
@@ -187,6 +188,7 @@ pub(super) fn paste_plain<R: tauri::Runtime>(
 ) -> Result<String, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
 
+    let target = previous_window.snapshot_target()?;
     let item_id = require_one_selected(&request.context)?;
     let item = storage.get_item(item_id)?;
     if item.content_kind() != "text" {
@@ -205,8 +207,8 @@ pub(super) fn paste_plain<R: tauri::Runtime>(
     if let Some(window) = window {
         crate::host::hide_picker(window)?;
     }
-    previous_window.focus_previous()?;
-    previous_window.send_paste_shortcut(&crate::host::PasteShortcut::Default)?;
+    target.focus_previous()?;
+    target.send_paste_shortcut(&crate::host::PasteShortcut::Default)?;
 
     Ok("Pasted plain text".to_string())
 }

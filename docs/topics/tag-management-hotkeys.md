@@ -139,7 +139,31 @@ Reglas:
 - `confidence` queda disponible para smart tagging.
 - No inferir tags desde texto capturado con `#`; solo metadata explicita o acciones de enrichment.
 
-El primer corte debe migrar tags existentes desde `clipboard_items.tags` hacia `tags` + `clipboard_item_tags`, y mantener fallback hasta que UI/API/search dejen de depender del string viejo.
+### Integridad De Edicion
+
+Contratos implementados y protegidos por regresiones sinteticas:
+
+- Editar contenido no modifica notas, tags, properties, provenance ni
+  suppressions; tampoco puede sobrescribir una edicion concurrente de metadata.
+- Full/inline usan `update_history_item_text` y SQL parcial, no reconstruyen
+  relaciones desde el cache. Enrichment revalida el hash en su transaccion para
+  no aplicar resultados de una version anterior.
+- Notas libres y tags asignados son campos distintos. Un hashtag que permanece
+  en notas puede ser buscable como texto sin ser un tag. Quitar un tag y luego
+  abrir/guardar metadata sin cambios no debe volver a asignarlo desde esas notas.
+- Creacion/dedupe y escrituras de tags/config son transaccionales; las relaciones
+  son autoridad y el cache se deriva de ellas. UI/Rust conservan `/` y Unicode,
+  con case-fold ASCII solamente; no hay migracion NFC/NFKC ni case-fold Unicode.
+- Una discrepancia entre notas y relaciones no autoriza a convertir hashtags
+  en tags ni a borrarlos automaticamente. La intencion de los datos requiere
+  revision; reparacion de datos e instalacion son gates separados del fix.
+
+Smokes de regresion: editar solo contenido con cache sana y discrepante; editar
+metadata mientras se guarda contenido; quitar tag y guardar metadata sin
+cambios; crear/deduplicar y buscar el tag resultante desde otro editor. El oracle
+es el conjunto de relaciones y su provenance, no solo la cadena visible.
+
+El modelo normalizado ya existe; `clipboard_items.tags` conserva compatibilidad. El pendiente es asegurar coherencia en todas las rutas de escritura, no repetir la migracion inicial.
 
 Agregar una entidad de configuracion por tag sin romper el campo actual:
 
@@ -334,7 +358,9 @@ Usar `tag:<slug>` para abrir. Si hay espacios o caracteres especiales en el labe
 - al filtrar, usar `tag:<slug>`;
 - al editar metadata, seguir aceptando `#slug`.
 
-Decision 2026-07-25: `#` queda reservado para tags en el textarea de metadata, sin distinguir hashtags de prosa. Los tokens aceptan letras, numeros, `_`, `/` y `-`; un mecanismo de escape y futuros prefijos `@` / `*` se decidiran solo cuando exista un caso real.
+En metadata, `#token` asigna tags explicitos con letras, numeros, `_`, `/` y `-`.
+El formateador escapa hashtags y barras literales de notas para que abrir/guardar
+sin cambios no asigne tags nuevos. El contenido del clip nunca usa este parser.
 
 ## Privacidad
 

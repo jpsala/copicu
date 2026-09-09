@@ -1011,7 +1011,7 @@ fn clean_values(values: &[String]) -> impl Iterator<Item = &str> {
 }
 fn compile_order_sql(sort: &[SearchPlanSortV1]) -> String {
     if sort.is_empty() {
-        return "is_inbox DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC"
+        return "(is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC"
             .to_string();
     }
 
@@ -1306,7 +1306,7 @@ fn push_tag_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, value: &s
                 FROM clipboard_item_tags any_item_tag
                 WHERE any_item_tag.item_id = clipboard_items.id
             )
-            AND COALESCE(clipboard_items.tags, '') LIKE ? ESCAPE '\\'
+            AND legacy_tag_matches(COALESCE(clipboard_items.tags, ''), ?)
         )
     )";
     if negated {
@@ -1316,7 +1316,7 @@ fn push_tag_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, value: &s
     }
     params.push(Value::Text(slug.clone()));
     params.push(Value::Text(format!("{}/%", escape_like(&slug))));
-    params.push(Value::Text(like_contains_pattern(value)));
+    params.push(Value::Text(slug));
 }
 
 fn push_capture_event_clause(
@@ -1420,6 +1420,8 @@ pub(super) fn finish_history_page(
         items.last().map(|item| HistoryPageCursor {
             after_sort_unix_ms: item.last_copied_at_unix_ms,
             after_id: item.id,
+            after_is_inbox: item.is_inbox,
+            after_inbox_at_unix_ms: item.inbox_at_unix_ms,
         })
     } else {
         None
@@ -1780,7 +1782,7 @@ fn is_leap_year(year: i64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_order_sql, parse_iso_datetime_unix_ms, search_query_explanation};
+    use super::{parse_iso_datetime_unix_ms, search_query_explanation};
 
     #[test]
     fn iso_datetime_applies_explicit_timezone_offset() {
@@ -1789,14 +1791,6 @@ mod tests {
             parse_iso_datetime_unix_ms("2026-06-07T14:32:00-03:00").expect("offset datetime");
 
         assert_eq!(buenos_aires, utc + 3 * 3_600_000);
-    }
-
-    #[test]
-    fn default_order_prioritizes_recent_inbox_entries() {
-        assert_eq!(
-            compile_order_sql(&[]),
-            "is_inbox DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC"
-        );
     }
 
     #[test]

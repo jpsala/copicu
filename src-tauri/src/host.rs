@@ -35,6 +35,11 @@ pub fn activate_item<R: Runtime>(
     previous_window: &crate::window_focus::PreviousWindow,
     request: ActivateItemRequest,
 ) -> Result<(), String> {
+    let target = if request.focus_previous || request.paste {
+        Some(previous_window.snapshot_target()?)
+    } else {
+        None
+    };
     if request.copy {
         write_item(app, storage, suppression, request.item_id)?;
     }
@@ -47,10 +52,16 @@ pub fn activate_item<R: Runtime>(
         hide_picker(window)?;
     }
     if request.focus_previous {
-        previous_window.focus_previous()?;
+        target
+            .as_ref()
+            .expect("focus target captured")
+            .focus_previous()?;
     }
     if request.paste {
-        previous_window.send_paste_shortcut(&request.paste_shortcut)?;
+        target
+            .as_ref()
+            .expect("paste target captured")
+            .send_paste_shortcut(&request.paste_shortcut)?;
     }
 
     Ok(())
@@ -64,7 +75,6 @@ pub fn write_item<R: Runtime>(
     item_id: i64,
 ) -> Result<(), String> {
     let item = storage.get_item(item_id)?;
-    suppression.suppress_hash(item.normalized_hash().to_string());
 
     if item.content_kind() == "image" {
         let png_bytes = storage.read_blob_for_item(&item)?;
@@ -75,6 +85,7 @@ pub fn write_item<R: Runtime>(
             .to_rgba8()
             .map_err(|error| format!("failed to convert stored PNG to RGBA: {error}"))?;
         let image = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+        suppression.suppress_hash(item.normalized_hash().to_string());
         crate::image_capture::retry_clipboard_operation(
             || app.clipboard().write_image(&image),
             &[
@@ -90,6 +101,7 @@ pub fn write_item<R: Runtime>(
             format!("image clipboard write failed: {error}")
         })?;
     } else {
+        suppression.suppress_hash(item.normalized_hash().to_string());
         app.clipboard().write_text(item.text()).map_err(|error| {
             suppression.clear_if_hash(item.normalized_hash());
             format!("failed to write selected item to clipboard: {error}")

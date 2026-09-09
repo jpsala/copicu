@@ -75,9 +75,27 @@ Camino principal:
 
 1. Usar `clipboard-rs` watcher en thread separado para recibir eventos de cambio.
 2. En cada evento, leer texto plano y enviarlo al core de historial.
-3. Mantener suppression window para escrituras propias.
-4. Debounce/coalesce corto porque algunas apps escriben multiples formatos en secuencia.
+3. Correlacionar escrituras propias sin confundir una copia externa del mismo contenido con self-write.
+4. Coalescer publicaciones del mismo evento/contenido; la proximidad temporal por si sola no permite descartar un contenido distinto. Si se difiere una lectura, conservar el cambio pendiente.
 5. Registrar errores metadata-only.
+
+Hardening implementado:
+
+- UTF-16 termina dentro de `GlobalSize`; marker se compara en el bloque acotado
+  sin copiarlo entero. El probe no fuerza lectura de payloads para medir tamano.
+- Solo se deduplica contenido consecutivo, sin coalescing temporal de distintos.
+- Enrichment/scripts corren en FIFO acotado de 128 jobs con ID/hash/tipo.
+  Saturacion omite postprocesamiento con diagnostico, no la captura persistida.
+  Enrichment vuelve a verificar hash dentro de la transaccion de escritura.
+- Suppression conserva hasta 256 self-writes, expiracion independiente de
+  1500 ms y consumo por match. Una copia externa del mismo hash puede coincidir.
+- Blobs se publican completos con temp/sync/rename; recaptura restaura thumbnail
+  ausente. Rollback normal limpia archivos sin referencias; crash puede dejarlos.
+- Contexto/eventos permanecen append-only hasta decidir politica de retencion.
+  No reparar datos instalados ni eliminar historial buscable implicitamente.
+
+Regresiones sinteticas cubren rafagas, lecturas malformadas, self-writes y fallos
+FS/SQL. Lectura/conversion/persistencia aun corren sincronicas en el watcher.
 
 Fallback Windows-first:
 

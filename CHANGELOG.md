@@ -2,6 +2,17 @@
 
 All notable changes to Copicu are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Preserve concurrent metadata and normalized tag relationships when editing content; keep deduplication and tag writes transactional.
+- Correct Inbox-aware keyset pagination and refresh retained rows without losing the scroll anchor.
+- Move blocking picker work off the UI thread; preserve distinct rapid captures and isolate capture postprocessing.
+- Bind paste to a validated external window identity and abort when foreground changes during the delay.
+- Block remote clipboard images in feed and full preview, harden dialog/listener lifecycles, and retain keyboard access to feed controls.
+- Publish blobs without truncating existing originals, restore missing thumbnails on recapture, and preserve tag relationships when deletion fails.
+
 ## [0.4.1-rc.2] - 2026-07-28
 
 ### Fixed

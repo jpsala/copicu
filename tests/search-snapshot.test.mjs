@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 import {
   appliedQueryMutationFields,
   appliedSearchRequestFields,
@@ -9,10 +7,6 @@ import {
   pickerSearchReducer,
 } from "../src/shared/searchSnapshot.ts";
 
-const mainSource = readFileSync(
-  fileURLToPath(new URL("../src/main.tsx", import.meta.url)),
-  "utf8",
-);
 
 const descriptor = {
   schemaVersion: 1,
@@ -37,7 +31,7 @@ const otherDescriptor = {
 function page(items = [{ id: 1 }], overrides = {}) {
   return {
     items,
-    nextCursor: { afterId: 1 },
+    nextCursor: { afterIsInbox: false, afterInboxAtUnixMs: null, afterSortUnixMs: 100, afterId: 1 },
     totalCount: 3,
     filteredCount: 1,
     ...overrides,
@@ -316,14 +310,15 @@ test("manual-scroll refresh settles the generation while retaining the snapshot"
     generation: 1,
     descriptor,
     page: { nextCursor: { afterId: 2 }, totalCount: 4, filteredCount: 2 },
+    items: [{ id: 1, title: "Updated metadata", tags: "#work/project" }],
     source: "background",
   });
 
   assert.equal(retained.filterStatus, "held");
   assert.equal(retained.draftQuery, "tag:");
   assert.equal(retained.generation, 1);
-  assert.deepEqual(retained.applied.items, [{ id: 1 }]);
-  assert.deepEqual(retained.applied.nextCursor, { afterId: 1 });
+  assert.deepEqual(retained.applied.items, [{ id: 1, title: "Updated metadata", tags: "#work/project" }]);
+  assert.deepEqual(retained.applied.nextCursor, applied.applied.nextCursor);
   assert.equal(retained.applied.totalCount, 4);
   assert.equal(retained.applied.filteredCount, 2);
 });
@@ -368,15 +363,25 @@ test("AI refresh and mark-all wiring keep display identity and canonical plan", 
   });
 });
 
-test("real pagination/background callers use applied identity, not draft intent", () => {
-  assert.match(mainSource, /const appliedSnapshotGenerationRef = useRef\(0\)/);
-  assert.match(mainSource, /const firstPageGeneration = appliedSnapshot\.generation/);
-  assert.match(mainSource, /firstPageGeneration !== searchState\.applied\?\.generation/);
-  assert.doesNotMatch(
-    mainSource,
-    /searchState\.generation !== historyRequestSeqRef\.current/,
-  );
-  assert.match(mainSource, /type: "applyStarted",[\s\S]{0,180}source,[\s\S]{0,180}descriptor: appliedDescriptorForRequest/);
-  assert.match(mainSource, /if \(foreground\) \{[\s\S]*?setHistoryInputQuery\(visibleDisplayQuery\)/);
-  assert.match(mainSource, /if \(showPending && foreground\) \{\s*setHistoryPending\(true\)/);
+test("retained foreground refresh advances its generation and rejects stale metadata", () => {
+  const started = pickerSearchReducer(createPickerSearchState(), {
+    type: "applyStarted", generation: 1, query: descriptor.displayQuery,
+  });
+  const applied = pickerSearchReducer(started, {
+    type: "applySucceeded", generation: 1, descriptor, page: page([{ id: 2 }, { id: 1 }]),
+  });
+  const refreshing = pickerSearchReducer(applied, {
+    type: "applyStarted", generation: 2, query: descriptor.displayQuery,
+  });
+  const retained = pickerSearchReducer(refreshing, {
+    type: "applyRetained", generation: 2, intentGeneration: 2, descriptor,
+    items: [{ id: 2, tags: "#updated" }, { id: 1, title: "Fresh" }],
+  });
+  assert.equal(retained.generation, 2);
+  assert.equal(retained.filterStatus, "idle");
+  assert.deepEqual(retained.applied.items, [{ id: 2, tags: "#updated" }, { id: 1, title: "Fresh" }]);
+  assert.deepEqual(retained.applied.nextCursor, applied.applied.nextCursor);
+  assert.equal(pickerSearchReducer(retained, {
+    type: "applyRetained", generation: 1, source: "background", descriptor, items: [{ id: 2, tags: "#stale" }],
+  }), retained);
 });

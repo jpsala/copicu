@@ -176,18 +176,21 @@ export function WhichKeyWindowApp() {
   }, []);
 
   useEffect(() => {
+    let active = true;
     syncPending();
     let unlisten: (() => void) | null = null;
     const interval = rendererDebugDiagnosticsEnabled()
       ? window.setInterval(syncPending, 150)
       : null;
     void listen<CompoundHotkeyPendingEvent>(COMPOUND_HOTKEY_PENDING_EVENT, () => {
-      syncPending();
+      if (active) syncPending();
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
     window.addEventListener("focus", syncPending);
     return () => {
+      active = false;
       if (interval !== null) {
         window.clearInterval(interval);
       }

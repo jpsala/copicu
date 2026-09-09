@@ -1,5 +1,3 @@
-#![cfg(not(test))]
-
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -104,6 +102,9 @@ impl UiHostState {
             .pending
             .lock()
             .map_err(|_| "ui-host pending requests lock poisoned".to_string())?;
+        if !pending.is_empty() {
+            return Err("ui-host is already presenting another request".to_string());
+        }
         pending.insert(request_id, sender);
         Ok(())
     }
@@ -142,22 +143,26 @@ impl UiHostState {
             .map(|value| value.clone())
     }
 
-    pub fn resolve(&self, request: UiHostResolveRequest) -> Result<(), String> {
-        let sender = self
+    pub fn resolve(
+        &self,
+        request: UiHostResolveRequest,
+        hide: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut pending = self
             .pending
             .lock()
-            .map_err(|_| "ui-host pending requests lock poisoned".to_string())?
+            .map_err(|_| "ui-host pending requests lock poisoned".to_string())?;
+        if !pending.contains_key(&request.id) {
+            return Err(format!("unknown ui-host request: {}", request.id));
+        }
+        // Keep the request reserved until its window is hidden. A new dialog
+        // must not be hidden by the previous dialog's delayed completion.
+        hide()?;
+        let sender = pending
             .remove(&request.id)
-            .ok_or_else(|| format!("unknown ui-host request: {}", request.id))?;
+            .expect("request checked under lock");
         if let Ok(mut active_request) = self.active_request.lock() {
-            if active_request
-                .as_ref()
-                .and_then(|value| value.get("id"))
-                .and_then(serde_json::Value::as_str)
-                == Some(request.id.as_str())
-            {
-                *active_request = None;
-            }
+            *active_request = None;
         }
         sender
             .send(request.value)
@@ -234,12 +239,30 @@ fn dispatch_request<R: Runtime>(
     let request_id = request.id.clone();
     let (sender, receiver) = mpsc::channel();
     state.insert_pending(request_id.clone(), sender)?;
-    state.set_active_request(&request)?;
+    if let Err(error) = state.set_active_request(&request) {
+        state.remove_pending(&request_id);
+        return Err(error);
+    }
 
     let (dispatch_sender, dispatch_receiver) = mpsc::channel();
     let app_for_main_thread = app.clone();
     let request_for_main_thread = request.clone();
     app.run_on_main_thread(move || {
+        let state = app_for_main_thread.state::<UiHostState>();
+        let pending = match state.pending.lock() {
+            Ok(pending) => pending,
+            Err(_) => {
+                let _ =
+                    dispatch_sender.send(Err("ui-host pending requests lock poisoned".to_string()));
+                return;
+            }
+        };
+        if !pending.contains_key(&request_for_main_thread.id) {
+            let _ = dispatch_sender.send(Err(
+                "ui-host request was canceled before display".to_string()
+            ));
+            return;
+        }
         let result = show_ui_host_window(&app_for_main_thread, height).and_then(|()| {
             app_for_main_thread
                 .emit_to(
@@ -259,15 +282,15 @@ fn dispatch_request<R: Runtime>(
     match dispatch_receiver.recv_timeout(Duration::from_secs(5)) {
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
-            state.remove_pending(&request_id);
+            cancel_request(app, &state, &request_id);
             return Err(error);
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            state.remove_pending(&request_id);
+            cancel_request(app, &state, &request_id);
             return Err("ui-host dispatch timed out".to_string());
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
-            state.remove_pending(&request_id);
+            cancel_request(app, &state, &request_id);
             return Err("ui-host dispatch was canceled".to_string());
         }
     }
@@ -275,13 +298,34 @@ fn dispatch_request<R: Runtime>(
     match receiver.recv_timeout(UI_HOST_TIMEOUT) {
         Ok(value) => Ok(value),
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            state.remove_pending(&request_id);
+            cancel_request(app, &state, &request_id);
             Err("ui-host request timed out".to_string())
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
-            state.remove_pending(&request_id);
+            cancel_request(app, &state, &request_id);
             Err("ui-host request was canceled".to_string())
         }
+    }
+}
+
+fn cancel_request<R: Runtime>(app: &AppHandle<R>, state: &UiHostState, request_id: &str) {
+    state.remove_pending(request_id);
+    let app_for_main_thread = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        let state = app_for_main_thread.state::<UiHostState>();
+        let Ok(pending) = state.pending.lock() else {
+            return;
+        };
+        // A later request owns the window now; cancellation must not hide it.
+        if pending.is_empty() {
+            if let Some(window) = app_for_main_thread.get_webview_window(UI_HOST_WINDOW_LABEL) {
+                if let Err(error) = window.hide() {
+                    eprintln!("ui-host cancellation hide failed: {error}");
+                }
+            }
+        }
+    }) {
+        eprintln!("ui-host cancellation dispatch failed: {error}");
     }
 }
 
@@ -345,4 +389,71 @@ fn compact_text(value: Option<String>, fallback: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlapping_dialog_cannot_replace_or_resolve_the_active_request() {
+        let state = UiHostState::default();
+        let (first_sender, first_receiver) = mpsc::channel();
+        let (second_sender, _) = mpsc::channel();
+        state.insert_pending("first".into(), first_sender).unwrap();
+        assert!(state
+            .insert_pending("second".into(), second_sender)
+            .is_err());
+        assert!(state
+            .resolve(
+                UiHostResolveRequest {
+                    id: "second".into(),
+                    value: true.into()
+                },
+                || panic!("an unknown request must not hide the active dialog"),
+            )
+            .is_err());
+        state
+            .resolve(
+                UiHostResolveRequest {
+                    id: "first".into(),
+                    value: false.into(),
+                },
+                || {
+                    assert!(first_receiver.try_recv().is_err());
+                    Ok(())
+                },
+            )
+            .unwrap();
+        assert_eq!(first_receiver.recv().unwrap(), serde_json::json!(false));
+        let (sender, _) = mpsc::channel();
+        state.insert_pending("next".into(), sender).unwrap();
+    }
+
+    #[test]
+    fn failed_hide_preserves_pending_response_for_retry() {
+        let state = UiHostState::default();
+        let (sender, receiver) = mpsc::channel();
+        state.insert_pending("request".into(), sender).unwrap();
+        assert!(state
+            .resolve(
+                UiHostResolveRequest {
+                    id: "request".into(),
+                    value: true.into()
+                },
+                || Err("synthetic hide failure".into()),
+            )
+            .is_err());
+        assert!(receiver.try_recv().is_err());
+        state
+            .resolve(
+                UiHostResolveRequest {
+                    id: "request".into(),
+                    value: false.into(),
+                },
+                || Ok(()),
+            )
+            .unwrap();
+        assert_eq!(receiver.recv().unwrap(), serde_json::json!(false));
+    }
 }

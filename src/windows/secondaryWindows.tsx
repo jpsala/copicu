@@ -833,6 +833,7 @@ export function MetadataWindowApp() {
     const unlistenPromise = listen<MetadataEditorPayload>(
       METADATA_OPEN_EVENT,
       (event: Event<MetadataEditorPayload>) => {
+        if (!active) return;
         recordRendererDiagnostic("metadata.event.open", `item_id=${event.payload.item.id}`);
         loadPayload(event.payload);
       },
@@ -1698,12 +1699,14 @@ export function SettingsWindowApp() {
         },
       }));
     }).then((nextUnlisten) => {
-      unlisten = nextUnlisten;
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
     });
     void listen<ActiveScenarioSession | null>(SCENARIO_SESSION_CHANGED_EVENT, (event) => {
       if (active) setActiveScenarioSession(event.payload);
     }).then((nextUnlisten) => {
-      unlistenScenario = nextUnlisten;
+      if (active) unlistenScenario = nextUnlisten;
+      else nextUnlisten();
     });
     return () => {
       active = false;
@@ -1789,6 +1792,17 @@ export function UiHostApp() {
   const [request, setRequest] = useState<UiHostRequest | null>(null);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const requestRef = useRef<UiHostRequest | null>(null);
+  const resolvingIdRef = useRef<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const applyRequest = useCallback((next: UiHostRequest) => {
+    if (requestRef.current?.id === next.id) return;
+    requestRef.current = next;
+    setRequest(next);
+    setInputValue(next.defaultValue ?? "");
+    setResolveError(null);
+  }, []);
 
   useEffect(() => {
     document.body.classList.add("ui-host-window");
@@ -1800,7 +1814,7 @@ export function UiHostApp() {
   useEffect(() => {
     if (!isTauriRuntime()) {
       const previewKind = new URLSearchParams(window.location.search).get("prompt");
-      setRequest({
+      applyRequest({
         id: "preview",
         kind: previewKind === "alert" ? "alert" : "input",
         title: previewKind === "alert" ? "Clipboard text" : "Tag selected items",
@@ -1815,22 +1829,26 @@ export function UiHostApp() {
     }
 
     let active = true;
+    let receivedEvent = false;
     let unlisten: (() => void) | null = null;
     void listen<UiHostRequest>(UI_HOST_REQUEST_EVENT, (event: Event<UiHostRequest>) => {
       if (!active) {
         return;
       }
-      setRequest(event.payload);
-      setInputValue(event.payload.defaultValue ?? "");
+      receivedEvent = true;
+      applyRequest(event.payload);
     }).then((value) => {
+      if (!active) {
+        value();
+        return;
+      }
       unlisten = value;
       void pendingUiHostRequest()
         .then((pendingRequest) => {
-          if (!active || !pendingRequest) {
+          if (!active || receivedEvent || !pendingRequest) {
             return;
           }
-          setRequest(pendingRequest);
-          setInputValue(pendingRequest.defaultValue ?? "");
+          applyRequest(pendingRequest);
         })
         .catch((error) => {
           void recordRendererDiagnostic("ui-host-pending-request-failed", String(error), "error");
@@ -1841,27 +1859,34 @@ export function UiHostApp() {
       active = false;
       unlisten?.();
     };
-  }, []);
+  }, [applyRequest]);
 
   useEffect(() => {
     if (request?.kind === "input") {
-      window.setTimeout(() => inputRef.current?.focus(), 0);
+      const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [request]);
 
   const resolve = useCallback(
     async (value: unknown) => {
-      if (!request) {
-        return;
-      }
-      const requestId = request.id;
-      setRequest(null);
-      if (isTauriRuntime()) {
-        try {
-          await resolveUiHostRequest(requestId, value);
-        } catch {
-          // The Rust side owns diagnostics. The prompt should still close locally.
+      const current = requestRef.current;
+      if (!current || current.id !== request?.id || resolvingIdRef.current !== null) return;
+      const requestId = current.id;
+      resolvingIdRef.current = requestId;
+      setResolvingId(requestId);
+      setResolveError(null);
+      try {
+        if (isTauriRuntime()) await resolveUiHostRequest(requestId, value);
+        if (requestRef.current?.id === requestId) {
+          requestRef.current = null;
+          setRequest(null);
         }
+      } catch (error) {
+        if (requestRef.current?.id === requestId) setResolveError(String(error));
+      } finally {
+        resolvingIdRef.current = null;
+        setResolvingId(null);
       }
     },
     [request],
@@ -1926,13 +1951,14 @@ export function UiHostApp() {
             onChange={(event) => setInputValue(event.currentTarget.value)}
           />
         ) : null}
+        {resolveError ? <UiAlert color="red" role="alert">{resolveError}</UiAlert> : null}
         <div className="ui-host-buttons">
           {request.kind !== "alert" ? (
-            <UiButton type="button" variant="default" onClick={() => void resolve(request.kind === "confirm" ? false : null)}>
+            <UiButton type="button" variant="default" disabled={resolvingId !== null} onClick={() => void resolve(request.kind === "confirm" ? false : null)}>
               {cancelLabel}
             </UiButton>
           ) : null}
-          <UiButton type="submit" variant="filled">{submitLabel}</UiButton>
+          <UiButton type="submit" variant="filled" loading={resolvingId === request.id} disabled={resolvingId !== null}>{submitLabel}</UiButton>
         </div>
       </UiPaper>
     </main>
@@ -2263,17 +2289,21 @@ function SettingsPanel({
       return undefined;
     }
 
+    let active = true;
     let unlistenFocus: (() => void) | undefined;
     void listen<SettingSection>(SETTINGS_FOCUS_SECTION_EVENT, (event: Event<SettingSection>) => {
+      if (!active) return;
       setActiveSection(event.payload);
       if (query.length > 0) {
         onQueryChange("");
       }
     }).then((cleanup) => {
-      unlistenFocus = cleanup;
+      if (active) unlistenFocus = cleanup;
+      else cleanup();
     });
 
     return () => {
+      active = false;
       unlistenFocus?.();
     };
   }, [onQueryChange, query.length]);

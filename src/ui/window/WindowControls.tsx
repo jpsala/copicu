@@ -80,7 +80,8 @@ export function WindowControls({
       setIsPinned(event.payload);
       onPinChange?.(event.payload);
     }).then((cleanup) => {
-      unlisten = cleanup;
+      if (active) unlisten = cleanup;
+      else cleanup();
     });
 
     return () => {

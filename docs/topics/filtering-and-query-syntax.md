@@ -94,12 +94,26 @@ React search input
      cualquier otra query: parse_history_query(query)
   -> SearchPlanV1 validado
   -> SQLite COUNT total + COUNT filtrado
-  -> SQLite SELECT paginado por (created_at_unix_ms, id)
+  -> SQLite SELECT paginado con el orden del plan
 ```
 
 La busqueda conserva keyset pagination. No usa `OFFSET`. El snapshot aplicado es dueno de query y cursor: una busqueda explicita conserva ownership de la primera pagina; refreshes de foco/clipboard, actions y paginas siguientes no pueden consumir ni reemplazarla con un draft pendiente. Los refreshes de background diferidos se repiten cuando termina el request foreground. Un fallo de `load more` invalida ese cursor para evitar retries automaticos infinitos.
 
-Mientras el cursor solo codifique orden por ultima copia, un plan con sort custom no devuelve `nextCursor` y cualquier cursor entrante se rechaza. Es una limitacion deliberada hasta tener cursores sort-aware.
+El cursor por defecto codifica Inbox, timestamp Inbox nullable, ultima copia e ID.
+Un plan con sort custom no devuelve `nextCursor` y rechaza cursores entrantes
+hasta tener cursores sort-aware para esos ordenes.
+
+Invariante de keyset: `ORDER BY`, cursor y predicado de continuacion deben
+representar la misma tupla, incluidas prioridades como Inbox y el tratamiento
+de `NULL`. Validar el recorrido completo de un dataset mixto con paginas chicas:
+cada ID debe aparecer una sola vez. Una primera pagina correcta no prueba el
+cursor. La tupla completa viaja en el cursor sin releer su fila; cubre datasets
+estables, no un snapshot frente a cambios concurrentes del orden.
+
+Durante scroll manual, refresh renueva todos los IDs retenidos mediante
+`get_history_items_preview` en lotes de hasta 100, sin reordenar ni reemplazar el
+cursor/ancla. Omite IDs borrados, rechaza respuestas stale y descarta contenido
+expandido si cambio el hash. Ver [`035-picker-reliability`](../tracks/035-picker-reliability.md).
 
 `All results` siempre opera sobre la query aplicada, no sobre el draft visible. El comando bulk esta autorizado solo para la ventana principal y una query no vacia sin filtros efectivos falla cerrada antes de llegar a un `UPDATE` global.
 
@@ -169,9 +183,9 @@ Operadores soportados:
 | `notes:"cliente cloud"` | busca solo en notas/tags editables del item |
 | `ctx:vivaldi` | busca solo en contexto oculto de captura (`context_search_text`) |
 | `context:vivaldi` | alias de `ctx:vivaldi` |
-| `tag:ypf` | filtra items con tag/metadata que contenga `ypf` |
+| `tag:ypf` | filtra el tag normalizado exacto `ypf` y sus descendientes `ypf/...`, no texto libre de notas |
 | `#ypf` | alias de `tag:ypf` |
-| `-tag:private` | excluye tag/metadata `private` |
+| `-tag:private` | excluye el tag normalizado `private` y sus descendientes |
 | `kind:text` | filtra por `content_kind = text` |
 | `kind:image` | filtra por `content_kind = image` |
 | `mime:image/*` | filtra MIME primario por prefijo |
@@ -203,6 +217,12 @@ Operadores soportados:
 
 Valores separados por coma funcionan en algunos filtros, por ejemplo `tag:ypf,sqlite`.
 
+`meta:` y `has:metadata` conservan el alcance documentado de titulo, notas y
+tags. Las properties `client`, `project` y `activity` no participan de esos
+filtros ni de texto plain. Ampliar ese alcance es una decision de producto
+pendiente, no una reparacion implicita: cambia tambien resultados negados y
+debe actualizar ayuda, planner y explicacion junto al compiler.
+
 ## Checked / Marked Items
 
 El estado checked vive en SQLite como `clipboard_items.is_marked` y `marked_at_unix_ms`. En codigo y storage el nombre durable es `marked`; en UI puede aparecer como checked porque el control se usa para seleccionar un batch persistente de items.
@@ -227,17 +247,17 @@ Las operaciones `All results` / `None results` llaman `set_history_query_marked`
 - `list_history_page` sigue existiendo como wrapper compatible, pero el picker ya llama `history_search`.
 - `copicu.history.search()` en scripts usa el mismo contrato host (`storage.history_search`) en vez de una ruta conceptual separada.
 - `mode: "ai"` en el comando Tauri llama al primer AI planner manual; `AppStorage::history_search` sigue deterministico y si se usa directo con `mode: "ai"` mantiene fallback/warning.
-- `explain: true` devuelve un summary inicial simple. El parse tree serializable/chips sigue pendiente.
+- El summary inicial evoluciono a explain versionado con chips y diagnosticos; ver las limitaciones actuales debajo.
 
 ## Limitaciones Actuales
 
 - Usa `LIKE`, no SQLite FTS5 todavia.
-- Tags siguen como string en `clipboard_items.tags`; no hay tablas `tags`/`item_tags`.
+- Tags estan normalizados; `clipboard_items.tags` sigue como cache de compatibilidad. El fallback legacy de busqueda puede tener semantica substring distinta si el item no tiene relaciones. Autoridad e integridad: [tag-management-hotkeys](tag-management-hotkeys.md#modelo-recomendado).
 - `app:`, `window:`, `domain:`, `source:` y `format:` dependen de eventos de captura nuevos; items historicos previos a la migracion solo matchean si se recapturan o se rellenan por migracion futura.
 - Fechas se interpretan como bounds de dia UTC; falta semantica local fina.
 - `history_search(..., explain: true)` devuelve un explain versionado con chips removibles y diagnosticos tipados; el AST interno completo sigue siendo Rust-only.
-- Los chips solo representan filtros estructurados ya aplicados; no existe aun autocompletado ni un query builder visual.
-- No hay ranking por relevancia; el orden sigue siendo reciente: `created_at_unix_ms DESC, id DESC`.
+- Los chips representan filtros estructurados aplicados; existe autocomplete local de tags/operadores, pero no un query builder visual.
+- No hay ranking por relevancia; el orden por defecto prioriza Inbox y luego recencia. El cursor debe cumplir el invariante de keyset anterior.
 - La nomenclatura UI mezcla checked y marked. Decision pendiente: consolidar copy visible sin perder que storage/API usan `marked`.
 
 ## Relacion Con AI

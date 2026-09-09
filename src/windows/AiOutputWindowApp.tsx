@@ -145,6 +145,10 @@ export function AiOutputWindowApp() {
       setStatus(null);
       setError(null);
     }).then((value) => {
+      if (!active) {
+        value();
+        return;
+      }
       unlisten = value;
       void pendingAiOutput()
         .then((payload) => {
@@ -244,7 +248,15 @@ export function AiOutputWindowApp() {
         {status ? <UiAlert className="ai-output-status" color="green" variant="light">{status}</UiAlert> : null}
         <article className="ai-output-document" aria-label="Markdown output">
           {output ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
+              skipHtml
+              components={{
+                img: ({ alt }) => <span className="item-preview-remote-media">Remote image blocked{alt ? `: ${alt}` : ""}</span>,
+                a: ({ children }) => <span className="item-preview-link-text">{children}</span>,
+              }}
+            >
               {output.markdown}
             </ReactMarkdown>
           ) : (

@@ -466,6 +466,7 @@ fn run_script_action_definition<R: Runtime + 'static>(
     action_file: PathBuf,
     context: ActionContext,
 ) -> Result<ScriptOrBuiltinRun, String> {
+    let paste_target = previous_window.snapshot_target();
     if !unsupported_script_capabilities(&action).is_empty() {
         return Err(format!(
             "script action uses unsupported capabilities: {}",
@@ -564,10 +565,16 @@ fn run_script_action_definition<R: Runtime + 'static>(
                 previous_window.remember_foreground_excluding(window)?;
             }
             ScriptOperation::WindowFocusPrevious => {
-                previous_window.focus_previous()?;
+                paste_target
+                    .as_ref()
+                    .map_err(Clone::clone)?
+                    .focus_previous()?;
             }
             ScriptOperation::InputPaste { shortcut } => {
-                previous_window.send_paste_shortcut(&shortcut)?;
+                paste_target
+                    .as_ref()
+                    .map_err(Clone::clone)?
+                    .send_paste_shortcut(&shortcut)?;
             }
         }
     }
@@ -759,21 +766,6 @@ fn open_picker_window_on_main_thread<R: Runtime + 'static>(
                     eprintln!("script picker open native focus failed: {error}");
                 } else {
                     script_diag_log("script.picker.open.step", "native focus ok");
-                }
-            }
-            if !window.is_focused().unwrap_or(false) {
-                std::thread::sleep(std::time::Duration::from_millis(60));
-                if let Err(error) = window.set_focus() {
-                    eprintln!("script picker open delayed focus failed: {error}");
-                } else {
-                    script_diag_log("script.picker.open.step", "delayed set_focus requested");
-                }
-                if !window.is_focused().unwrap_or(false) {
-                    if let Err(error) = crate::window_focus::focus_tauri_window(&window) {
-                        eprintln!("script picker open delayed native focus failed: {error}");
-                    } else {
-                        script_diag_log("script.picker.open.step", "delayed native focus ok");
-                    }
                 }
             }
         }
@@ -1648,7 +1640,7 @@ fn builtin_enrichment_result_for_item(
         };
 
     let newly_applied = if should_apply && !detected.is_empty() {
-        storage.apply_builtin_enrichment(item_id, &detected)?
+        storage.apply_builtin_enrichment(item_id, item.normalized_hash(), &detected)?
     } else {
         Vec::new()
     };
