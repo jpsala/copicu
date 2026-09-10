@@ -64,10 +64,12 @@ import {
   editorFontStack,
   editorLineHeightValue,
   normalizeSettings,
+  SEARCH_SCOPE_OPTIONS,
   type AppSettings,
   type EditorFontFamily,
   type EditorLineHeight,
   type SearchTriggerMode,
+  type SearchScope,
 } from "../shared/settings";
 import {
   UiAlert,
@@ -76,6 +78,7 @@ import {
   UiIconButton,
   UiKbd,
   UiLoader,
+  UiMultiSelect,
   UiNumberInput,
   UiPaper,
   UiSelect,
@@ -2174,6 +2177,7 @@ function SettingsPanel({
   ].join(" ");
   const pickerSearchText = [
     "search trigger realtime enter",
+    "default search scopes all fields content metadata title notes tags capture context",
     "confirm structured filters with enter",
     "in realtime mode tags and conditions wait for enter",
     `item preview full image markdown text zoom context menu magnifier shortcut ${draft.picker.previewShortcut}`,
@@ -2587,6 +2591,32 @@ function SettingsPanel({
                           picker: {
                             ...draft.picker,
                             searchTriggerMode: (value ?? "realtime") as SearchTriggerMode,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("picker", "Default search scopes", "All fields content metadata title notes tags capture context") ? (
+                  <SettingRow
+                    label="Default search scopes"
+                    description="New searches start in these field groups. Leave empty for all searchable fields."
+                  >
+                    <UiMultiSelect
+                      aria-label="Default search scopes"
+                      value={draft.picker.defaultSearchScopes.includes("all") ? [] : draft.picker.defaultSearchScopes}
+                      data={SEARCH_SCOPE_OPTIONS.filter((option) => option.value !== "all")}
+                      searchable
+                      clearable
+                      hidePickedOptions
+                      placeholder="All searchable fields"
+                      nothingFoundMessage="No matching scope"
+                      onChange={(values) =>
+                        onDraftChange({
+                          ...draft,
+                          picker: {
+                            ...draft.picker,
+                            defaultSearchScopes: values.length === 0 ? ["all"] : values as SearchScope[],
                           },
                         })
                       }

@@ -168,6 +168,24 @@ Texto plain busca en:
 - `content_kind`;
 - `context_search_text` oculto, generado desde eventos de captura (app, ventana, ruta de exe, formatos, dominio, source).
 
+El modificador visible `in:scope1,scope2` limita los terminos plain a uno o mas
+grupos de campos. Usa el mismo autocomplete que `tag:` y los demas operadores,
+sin boton ni menu de scopes separado. Tras una coma ofrece los scopes restantes;
+`metadata` ya incluye title, notes y tags. Sin modificador se buscan todos los
+campos. Filtros guardados y scripts conservan la misma semantica.
+`Default search scopes` en Settings define el prefijo visible inicial;
+dejarlo vacio restaura todos los campos.
+Los scopes son:
+
+- `content`: `text`;
+- `metadata`: union de `title`, `notes` y `tags`;
+- `title`, `notes` o `tags`: solo ese campo editable;
+- `context`: `context_search_text`.
+
+Los scopes solo restringen terminos plain, frases y exclusiones plain. Los
+operadores estructurados como `tag:`, `kind:` o fechas conservan su semantica
+propia. Las properties `client`, `project` y `activity` siguen fuera de texto plain.
+
 Desde la siguiente captura/recaptura de cada clip, ese campo se reconstruye
 solamente con sus 3 eventos mas recientes (`captured_at_unix_ms DESC, id DESC`).
 `plain`, `re:`, `ctx:` y filtros `app:`, `window:`, `domain:`, `source:` y
@@ -183,6 +201,8 @@ Operadores soportados:
 | Query | Significado |
 | --- | --- |
 | `sqlite migration` | ambos terminos deben matchear en campos buscables |
+| `in:content invoice` | busca `invoice` solo en el contenido textual |
+| `in:metadata,context invoice` | busca `invoice` en title/notes/tags o contexto de captura |
 | `"sqlite migration"` | frase exacta como un unico termino |
 | `re:^invoice-\d+$` | expresion regular case-insensitive sobre cualquiera de los campos buscables; el prefijo debe iniciar la query |
 | `-draft` | excluye resultados que contengan `draft` |

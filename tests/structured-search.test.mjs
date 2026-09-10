@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyStructuredSearchDraft,
+  queryWithoutSearchScopes,
+  queryWithSearchScopes,
   searchSuggestions,
   shouldHoldStructuredSearchDraft,
 } from "../src/shared/search.ts";
@@ -196,4 +198,24 @@ test("quoted structured values keep parity with the Rust tokenizer", () => {
       assert.equal(actual.operator, expected.operator, expected.query);
     }
   }
+});
+
+test("search scopes are validated, suggested, and replaced as one query modifier", () => {
+  assert.equal(classifyStructuredSearchDraft("in:metadata,content invoice").kind, "complete");
+  assert.equal(classifyStructuredSearchDraft("in:properties invoice").kind, "invalid");
+  assert.equal(classifyStructuredSearchDraft("in:all,content invoice").kind, "invalid");
+  assert.equal(classifyStructuredSearchDraft("in:metadata,").kind, "incomplete");
+  assert.equal(classifyStructuredSearchDraft("in:content,,context").kind, "invalid");
+  assert.equal(classifyStructuredSearchDraft("-in:content invoice").kind, "invalid");
+  assert.ok(searchSuggestions("in:me", []).some((suggestion) => suggestion.replacement === "in:metadata"));
+  assert.ok(searchSuggestions("in:content,me", []).some((suggestion) => suggestion.replacement === "in:content,metadata"));
+  assert.deepEqual(
+    searchSuggestions("in:metadata,", []).map((suggestion) => suggestion.replacement),
+    ["in:metadata,content", "in:metadata,context"],
+  );
+  assert.deepEqual(searchSuggestions("in:all,", []), []);
+
+  assert.equal(queryWithoutSearchScopes("in:title,notes invoice paid"), "invoice paid");
+  assert.equal(queryWithSearchScopes("in:title invoice paid", ["context", "metadata"]), "in:context,metadata invoice paid");
+  assert.equal(queryWithSearchScopes("in:title invoice paid", ["all"]), "invoice paid");
 });

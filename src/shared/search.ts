@@ -1,3 +1,5 @@
+import type { SearchScope } from "./settings";
+
 // Matches storage::normalize_tag_label without migrating Unicode identities.
 export function tagKey(value: string): string {
   return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "").replace(/^#+/, "").replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "")
@@ -8,7 +10,7 @@ export function tagKey(value: string): string {
 }
 
 const STRUCTURED_FILTER_KEYS = new Set([
-  "tag", "tags", "kind", "type", "is", "mime", "has", "meta", "metadata", "title", "note", "notes", "ctx", "context", "app", "program", "process", "window", "domain", "site", "source", "format", "fmt", "after", "since", "before", "until", "on",
+  "tag", "tags", "kind", "type", "is", "mime", "has", "in", "meta", "metadata", "title", "note", "notes", "ctx", "context", "app", "program", "process", "window", "domain", "site", "source", "format", "fmt", "after", "since", "before", "until", "on",
 ]);
 
 export type SearchSuggestion = { label: string; replacement: string };
@@ -40,7 +42,7 @@ type DraftToken = {
 };
 
 const OPERATOR_SUGGESTIONS = [
-  "tag:", "kind:", "is:", "mime:", "has:", "meta:", "title:", "notes:",
+  "in:", "tag:", "kind:", "is:", "mime:", "has:", "meta:", "title:", "notes:",
   "ctx:", "app:", "window:", "domain:", "source:", "format:", "after:",
   "before:", "on:",
 ];
@@ -49,6 +51,7 @@ const CLOSED_VALUES: Record<string, string[]> = {
   kind: ["text", "image", "html", "file", "file-list", "unknown"],
   is: ["marked", "checked", "unmarked", "unchecked", "inbox", "not-inbox", "not_inbox"],
   has: ["text", "title", "note", "notes", "tag", "tags", "metadata", "meta", "mime", "blob", "file", "image"],
+  in: ["all", "content", "metadata", "title", "notes", "tags", "context"],
   after: ["today", "yesterday", "7d"],
   before: ["today", "yesterday", "7d"],
   on: ["today", "yesterday", "7d"],
@@ -61,7 +64,23 @@ const VALUE_KEY_ALIASES: Record<string, string> = {
 };
 
 const DATE_FILTER_KEYS = new Set(["after", "since", "before", "until", "on"]);
-const NON_NEGATABLE_FILTER_KEYS = new Set(["source", "format", "fmt"]);
+const NON_NEGATABLE_FILTER_KEYS = new Set(["in", "source", "format", "fmt"]);
+
+
+export function queryWithoutSearchScopes(query: string) {
+  return query
+    .replace(/(^|\p{White_Space})in:(?:all|(?:content|metadata|title|notes|tags|context)(?:,(?:content|metadata|title|notes|tags|context))*)(?=\p{White_Space}|$)/giu, " ")
+    .trim()
+    .replace(/\p{White_Space}+/gu, " ");
+}
+
+export function queryWithSearchScopes(query: string, scopes: SearchScope[]) {
+  const withoutScopes = queryWithoutSearchScopes(query);
+  const effectiveScopes = scopes.length === 0 || scopes.includes("all") ? [] : [...new Set(scopes)];
+  return effectiveScopes.length === 0
+    ? withoutScopes
+    : `in:${effectiveScopes.join(",")}${withoutScopes ? ` ${withoutScopes}` : ""}`;
+}
 const MIN_I64 = -(1n << 63n);
 const MAX_I64 = (1n << 63n) - 1n;
 const DECIMAL_I64_PATTERN = /^[+-]?\d+$/;
@@ -330,7 +349,7 @@ export function classifyStructuredSearchDraft(
     structured = true;
     const value = rawToken.slice(separator + 1).trim();
     const normalizedValue = value.trim();
-    if (token.hasUnclosedQuote || !normalizedValue) {
+    if (token.hasUnclosedQuote || !normalizedValue || (operator === "in" && normalizedValue.endsWith(","))) {
       incompleteToken ??= token.value;
       incompleteOperator ??= operator;
       incompleteHasUnclosedQuote ||= token.hasUnclosedQuote;
@@ -339,7 +358,7 @@ export function classifyStructuredSearchDraft(
 
     const canonicalKey = VALUE_KEY_ALIASES[operator] ?? operator;
     const values = normalizedValue.split(",").map((part) => part.trim()).filter(Boolean);
-    const closedValues = ["kind", "is", "has"].includes(canonicalKey)
+    const closedValues = ["kind", "is", "has", "in"].includes(canonicalKey)
       ? CLOSED_VALUES[canonicalKey]
       : undefined;
     const invalidDateFilter = DATE_FILTER_KEYS.has(operator)
@@ -349,10 +368,14 @@ export function classifyStructuredSearchDraft(
         || !isValidDateFilterValue(values[0])
       );
     const invalidNegatedFilter = negated && NON_NEGATABLE_FILTER_KEYS.has(operator);
+    const invalidSearchScope = canonicalKey === "in"
+      && (normalizedValue.split(",").some((part) => !part.trim())
+        || (values.length > 1 && values.some((part) => part.toLocaleLowerCase() === "all")));
     if (
       values.length === 0
       || invalidDateFilter
       || invalidNegatedFilter
+      || invalidSearchScope
       || (closedValues && (!values.length || values.some((part) => !closedValues.includes(part.toLocaleLowerCase()))))
     ) {
       invalidToken ??= token.value;
@@ -445,6 +468,19 @@ export function searchSuggestions(query: string, tags: string[]): SearchSuggesti
   const value = rawToken.slice(separator + 1);
   if (key === "tag" || key === "tags") {
     return matchingTags(value, tags, (tag) => `${negated}tag:${tag}`);
+  }
+  if (key === "in" && !negated) {
+    const parts = value.toLocaleLowerCase().split(",");
+    const prefix = parts.pop() ?? "";
+    const selected = new Set(parts.filter(Boolean));
+    return CLOSED_VALUES.in
+      .filter((item) => item !== "all" && !selected.has("all") && !selected.has(item))
+      .filter((item) => !selected.has("metadata") || !["title", "notes", "tags"].includes(item))
+      .filter((item) => item.startsWith(prefix) && item !== prefix)
+      .map((item) => {
+        const replacement = `in:${[...selected, item].join(",")}`;
+        return { label: replacement, replacement };
+      });
   }
 
   const canonicalKey = VALUE_KEY_ALIASES[key] ?? key;

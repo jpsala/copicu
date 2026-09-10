@@ -45,6 +45,7 @@ Primer schema versionado:
 type SearchPlanV1 = {
   schemaVersion: 1;
   text?: {
+    scopes?: Array<"content" | "metadata" | "title" | "notes" | "tags" | "context">;
     all?: string[];
     any?: string[];
     phrases?: string[];
@@ -130,6 +131,10 @@ Reglas:
 4. Cambiar `AI -> SearchPlanV1` en `scripts/ai-query-planner.mjs`.
 5. Mantener `interpretedQuery` por compatibilidad UI, pero agregar `interpretedPlan`/`explanation` cuando convenga.
 6. Extender scripts `copicu.history.search` para aceptar plan ademas de query string.
+7. Exponer scopes de texto combinables: el modificador manual
+   `in:content,metadata`, editable mediante el autocomplete compartido, produce
+   `SearchPlanV1.text.scopes`; un arreglo vacio conserva todos los campos
+   buscables.
 
 ## Primer Slice Implementable
 
@@ -186,6 +191,8 @@ Setting adicional: en `realtime`, una query con sintaxis estructurada explicita 
 - Manual query syntax is converted to `SearchPlanV1` before SQL compilation.
 - The Rust compiler emits only whitelisted SQL fragments plus SQLite parameters.
 - Supported first-slice fields: text, kind, MIME, metadata presence/missing, marked, dates, sort, limit.
+- `text.scopes` restringe terminos plain a la union deduplicada de scopes
+  soportados; el picker usa el prefijo visible y autocomplete sin selector separado.
 - Compatibility fields keep current query syntax exact for tags and negated kind/MIME/tag filters.
 - `explain: true` now exposes a versioned summary with removable chips and typed diagnostics.
 - Pending: update the Node AI planner to return `SearchPlanV1` instead of query syntax.

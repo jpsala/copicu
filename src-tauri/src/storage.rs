@@ -779,6 +779,9 @@ pub struct PickerSettings {
     pub search_trigger_mode: SearchTriggerMode,
     #[serde(default)]
     pub defer_structured_search_until_enter: bool,
+    #[serde(default = "default_search_scopes")]
+    pub default_search_scopes: Vec<SearchDefaultScope>,
+
     #[serde(default = "default_pin_toggle_shortcut")]
     pub pin_toggle_shortcut: String,
     #[serde(default = "default_settings_shortcut")]
@@ -803,6 +806,19 @@ pub enum SearchTriggerMode {
     Realtime,
     Enter,
     Manual,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchDefaultScope {
+    #[default]
+    All,
+    Content,
+    Metadata,
+    Title,
+    Notes,
+    Tags,
+    Context,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -953,6 +969,7 @@ impl Default for AppSettings {
                 promote_active_on_copy: default_promote_active_on_copy(),
                 search_trigger_mode: SearchTriggerMode::Realtime,
                 defer_structured_search_until_enter: false,
+                default_search_scopes: default_search_scopes(),
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
                 settings_shortcut: default_settings_shortcut(),
                 preview_shortcut: default_preview_shortcut(),
@@ -988,6 +1005,10 @@ fn default_auto_update_check_interval_minutes() -> i64 {
 
 fn default_promote_active_on_copy() -> bool {
     true
+}
+
+fn default_search_scopes() -> Vec<SearchDefaultScope> {
+    vec![SearchDefaultScope::All]
 }
 
 fn default_pin_toggle_shortcut() -> String {
@@ -4660,6 +4681,16 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     if settings.picker.search_trigger_mode == SearchTriggerMode::Manual {
         settings.picker.search_trigger_mode = SearchTriggerMode::Enter;
     }
+    if settings.picker.default_search_scopes.len() > 1 {
+        settings
+            .picker
+            .default_search_scopes
+            .retain(|scope| *scope != SearchDefaultScope::All);
+    }
+    if settings.picker.default_search_scopes.is_empty() {
+        settings.picker.default_search_scopes = default_search_scopes();
+    }
+    settings.picker.default_search_scopes.dedup();
     let legacy_vscode_path = settings.tray.vscode_path.trim();
     let scripts_vscode_path = settings.scripts.vscode_path.trim();
     if scripts_vscode_path.is_empty() && !legacy_vscode_path.is_empty() {

@@ -111,6 +111,7 @@ import { localPreviewImageSource } from "./shared/previewMedia";
 import {
   classifyStructuredSearchDraft,
   replaceActiveSearchToken,
+  queryWithSearchScopes,
   searchSuggestions,
   tagKey,
   shouldHoldStructuredSearchDraft,
@@ -1364,6 +1365,7 @@ function App() {
     && sameHistoryPageCursor(historyPaginationBlocked.cursor, historyNextCursor);
   const hasNextHistoryPage = historyNextCursor !== null && !historyPaginationBlockMatchesCurrent;
   const searchTriggerMode = settings.picker.searchTriggerMode;
+  const queryHasSearchTerms = query.trim().length > 0;
   const scenarioCommandQuery = aiComposerMode ? null : scenarioCommandSearch(query);
   const scenarioCommandOptions = useMemo(() => {
     if (scenarioCommandQuery === null) {
@@ -2371,13 +2373,14 @@ function App() {
     setNewClipsAvailable(false);
     autocompleteCommittedQueryRef.current = null;
     if (!filterLockedRef.current && !activeScenarioSessionRef.current) {
-      queryRef.current = "";
-      historyInputQueryRef.current = "";
-      setQuery("");
-      setHistoryInputQuery("");
-      setHistoryQuery("");
+      const defaultQuery = queryWithSearchScopes("", pickerSearchSettingsRef.current.defaultSearchScopes);
+      queryRef.current = defaultQuery;
+      historyInputQueryRef.current = defaultQuery;
+      setQuery(defaultQuery);
+      setHistoryInputQuery(defaultQuery);
+      setHistoryQuery(defaultQuery);
       if (searchRef.current) {
-        searchRef.current.value = "";
+        searchRef.current.value = defaultQuery;
       }
     }
     selectionInteractionSeqRef.current += 1;
@@ -4915,7 +4918,15 @@ function App() {
     invoke<AppSettings>("get_settings")
       .then((nextSettings) => {
         if (active) {
-          setSettings(normalizeSettings(nextSettings));
+          const normalized = normalizeSettings(nextSettings);
+          setSettings(normalized);
+          if (!filterLockedRef.current && !queryRef.current.trim()) {
+            const defaultQuery = queryWithSearchScopes("", normalized.picker.defaultSearchScopes);
+            if (defaultQuery) {
+              queryRef.current = defaultQuery;
+              setQuery(defaultQuery);
+            }
+          }
         }
       })
       .catch((error) => {
@@ -5342,7 +5353,9 @@ function App() {
           ? pickerEventHandlersRef.current.refreshHistory({
               resetScroll: true,
               showPending: false,
-              queryOverride: filterLockedRef.current ? historyInputQueryRef.current : "",
+              queryOverride: filterLockedRef.current
+                ? historyInputQueryRef.current
+                : queryWithSearchScopes("", pickerSearchSettingsRef.current.defaultSearchScopes),
               allowAi: false,
             })
           : pickerEventHandlersRef.current.refreshAppliedHistory({
@@ -5617,12 +5630,13 @@ function App() {
     filterLockedRef.current = false;
     writeLockedFilterQuery(null);
     setFilterLocked(false);
+    const defaultQuery = "";
     autocompleteCommittedQueryRef.current = null;
-    queryRef.current = "";
-    setQuery("");
-    supersedeSearchIntent("", "applying");
+    queryRef.current = defaultQuery;
+    setQuery(defaultQuery);
+    supersedeSearchIntent(defaultQuery, "applying");
     skipNextRealtimeSearchRef.current = {
-      query: "",
+      query: defaultQuery,
       intentGeneration: searchIntentGenerationRef.current,
       appliedGeneration: appliedSnapshotGenerationRef.current,
       reason: "foreground",
@@ -5634,7 +5648,7 @@ function App() {
     setSelectedItemId(null);
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
-    void refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
+    void refreshHistory({ resetScroll: true, queryOverride: defaultQuery, allowAi: false });
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent, updateClearSearchPending]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
@@ -5732,9 +5746,9 @@ function App() {
       ? `search-suggestion-${activeSearchSuggestionIndex}`
       : undefined,
     value: query,
-    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips — re:pattern, meta:work, #tag, ai:find invoices',
+    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips, in:content, meta:work, #tag, re:pattern',
     title:
-      'Search help: use plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
+      'Search help: in: scopes, plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const nextQuery = event.currentTarget.value;
       if (clearSearchPendingRef.current) {
@@ -6137,7 +6151,7 @@ function App() {
               </Menu>
             </div>
           </div>
-          <div className={`search-field${!aiComposerMode && query ? " has-clear-button" : ""}`}>
+          <div className={`search-field${!aiComposerMode && queryHasSearchTerms ? " has-clear-button" : ""}`}>
             {aiComposerMode ? (
               <UiTextarea
                 {...searchTextareaProps}
@@ -6171,7 +6185,7 @@ function App() {
                   variant="subtle"
                   aria-label={filterLocked ? "Unlock persistent filter" : "Lock filter across picker closes"}
                   aria-pressed={filterLocked}
-                  disabled={!filterLocked && !query.trim()}
+                  disabled={!filterLocked && !queryHasSearchTerms}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={toggleFilterLock}
                 >
@@ -6183,7 +6197,7 @@ function App() {
                 </UiIconButton>
               </UiTooltip>
             ) : null}
-            {!aiComposerMode && query ? (
+            {!aiComposerMode && queryHasSearchTerms ? (
               <UiTooltip label="Clear filter">
                 <UiIconButton
                   type="button"
@@ -7811,6 +7825,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>sqlite migration</code></dt><dd>All terms must match.</dd></div>
               <div><dt><code>"exact phrase"</code></dt><dd>Keep words together.</dd></div>
               <div><dt><code>-draft</code></dt><dd>Exclude matching clips.</dd></div>
+              <div><dt><code>in:content,metadata invoice</code></dt><dd>Limit plain terms to one or more scopes. Type in: for suggestions; after a comma, autocomplete offers the remaining scopes.</dd></div>
               <div><dt><code>re:^invoice-\d+$</code></dt><dd>Match a case-insensitive regular expression across searchable fields.</dd></div>
             </dl>
           </section>
@@ -7870,7 +7885,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>Search</code> / <code>Ctrl+Enter</code></dt><dd>Run the current query.</dd></div>
               <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit tags for the active clip or add tags to a selection.</dd></div>
               <div><dt><code>F2</code> / <code>Ctrl+F2</code> / <code>Shift+F2</code></dt><dd>Edit content, use the external editor, or edit metadata.</dd></div>
-              <div><dt><code>Settings → Picker</code></dt><dd>Choose realtime, Enter, or button-triggered search.</dd></div>
+              <div><dt><code>Settings → Picker</code></dt><dd>Choose the default scope and whether typing searches in realtime or waits for Enter.</dd></div>
             </dl>
           </section>
         </div>

@@ -33,6 +33,19 @@ pub struct SearchPlanTextV1 {
     pub exclude: Vec<String>,
     #[serde(default)]
     pub regex: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<SearchPlanTextScopeV1>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SearchPlanTextScopeV1 {
+    Content,
+    Metadata,
+    Title,
+    Notes,
+    Tags,
+    Context,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -201,6 +214,8 @@ pub enum SearchPlanSortDirectionV1 {
 pub(super) struct ParsedHistoryQuery {
     pub(super) text_terms: Vec<String>,
     pub(super) excluded_text_terms: Vec<String>,
+    pub(super) text_scopes: Vec<SearchPlanTextScopeV1>,
+
     pub(super) tags: Vec<String>,
     pub(super) excluded_tags: Vec<String>,
     pub(super) kinds: Vec<String>,
@@ -288,6 +303,13 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
             "has" => {
                 for value in split_filter_values(value) {
                     push_has_filter(&mut parsed, value, negated);
+                }
+            }
+            "in" => {
+                if negated {
+                    push_text_filter(&mut parsed, raw_token, true);
+                } else if let Some(scopes) = parse_text_scopes(value) {
+                    parsed.text_scopes = scopes;
                 }
             }
             "meta" | "metadata" => {
@@ -486,6 +508,32 @@ fn push_text_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool)
     }
 }
 
+fn parse_text_scopes(value: &str) -> Option<Vec<SearchPlanTextScopeV1>> {
+    let values = split_filter_values(value).collect::<Vec<_>>();
+    if values.is_empty() {
+        return None;
+    }
+    if values.len() == 1 && values[0].eq_ignore_ascii_case("all") {
+        return Some(Vec::new());
+    }
+    let mut scopes = Vec::with_capacity(values.len());
+    for value in values {
+        let scope = match value.to_ascii_lowercase().as_str() {
+            "content" => SearchPlanTextScopeV1::Content,
+            "metadata" => SearchPlanTextScopeV1::Metadata,
+            "title" => SearchPlanTextScopeV1::Title,
+            "notes" => SearchPlanTextScopeV1::Notes,
+            "tags" => SearchPlanTextScopeV1::Tags,
+            "context" => SearchPlanTextScopeV1::Context,
+            _ => return None,
+        };
+        if !scopes.contains(&scope) {
+            scopes.push(scope);
+        }
+    }
+    Some(scopes)
+}
+
 fn push_tag_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool) {
     let value = value.trim().trim_start_matches('#');
     if value.is_empty() {
@@ -622,6 +670,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
     let mut text = SearchPlanTextV1::default();
     text.all = query.text_terms;
     text.exclude = query.excluded_text_terms;
+    text.scopes = query.text_scopes;
 
     let mut filters = SearchPlanFiltersV1::default();
     filters.tags = query.tags;
@@ -693,6 +742,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
                 || !text.phrases.is_empty()
                 || !text.exclude.is_empty()
                 || text.regex.is_some()
+                || !text.scopes.is_empty()
         }),
         filters: Some(filters).filter(|filters| !filters.is_empty()),
         sort: Vec::new(),
@@ -745,13 +795,13 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
 
     if let Some(text) = &plan.text {
         for term in clean_values(&text.all) {
-            push_text_like_clause(&mut clauses, &mut params, term, false);
+            push_text_like_clause(&mut clauses, &mut params, term, false, &text.scopes);
         }
         if !text.any.is_empty() {
             let mut any_clauses = Vec::new();
             let mut any_params = Vec::new();
             for term in clean_values(&text.any) {
-                push_text_like_clause(&mut any_clauses, &mut any_params, term, false);
+                push_text_like_clause(&mut any_clauses, &mut any_params, term, false, &text.scopes);
             }
             if !any_clauses.is_empty() {
                 clauses.push(format!("({})", any_clauses.join(" OR ")));
@@ -759,10 +809,10 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
             }
         }
         for phrase in clean_values(&text.phrases) {
-            push_text_like_clause(&mut clauses, &mut params, phrase, false);
+            push_text_like_clause(&mut clauses, &mut params, phrase, false, &text.scopes);
         }
         for term in clean_values(&text.exclude) {
-            push_text_like_clause(&mut clauses, &mut params, term, true);
+            push_text_like_clause(&mut clauses, &mut params, term, true, &text.scopes);
         }
         if let Some(pattern) = text.regex.as_deref() {
             regex::RegexBuilder::new(pattern)
@@ -1221,8 +1271,9 @@ fn push_text_like_clause(
     params: &mut Vec<Value>,
     term: &str,
     negated: bool,
+    scopes: &[SearchPlanTextScopeV1],
 ) {
-    let fields = [
+    let all_fields = [
         "COALESCE(text, '')",
         "COALESCE(title, '')",
         "COALESCE(notes, '')",
@@ -1231,7 +1282,32 @@ fn push_text_like_clause(
         "content_kind",
         "COALESCE(context_search_text, '')",
     ];
-    push_field_like_clause(clauses, params, &fields, term, negated);
+    let mut selected_fields = Vec::with_capacity(all_fields.len());
+    let fields = if scopes.is_empty() {
+        all_fields.as_slice()
+    } else {
+        for scope in scopes {
+            let scope_fields: &[&str] = match scope {
+                SearchPlanTextScopeV1::Content => &["COALESCE(text, '')"],
+                SearchPlanTextScopeV1::Metadata => &[
+                    "COALESCE(title, '')",
+                    "COALESCE(notes, '')",
+                    "COALESCE(tags, '')",
+                ],
+                SearchPlanTextScopeV1::Title => &["COALESCE(title, '')"],
+                SearchPlanTextScopeV1::Notes => &["COALESCE(notes, '')"],
+                SearchPlanTextScopeV1::Tags => &["COALESCE(tags, '')"],
+                SearchPlanTextScopeV1::Context => &["COALESCE(context_search_text, '')"],
+            };
+            for field in scope_fields {
+                if !selected_fields.contains(field) {
+                    selected_fields.push(*field);
+                }
+            }
+        }
+        selected_fields.as_slice()
+    };
+    push_field_like_clause(clauses, params, fields, term, negated);
 }
 
 fn push_text_regex_clause(clauses: &mut Vec<String>, params: &mut Vec<Value>, pattern: &str) {
@@ -1510,6 +1586,7 @@ pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation 
                 | "is"
                 | "mime"
                 | "has"
+                | "in"
                 | "meta"
                 | "metadata"
                 | "title"
@@ -1567,6 +1644,7 @@ pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation 
                     )
                 }),
                 "has" => values.iter().all(|value| parse_has_filter(value).is_some()),
+                "in" => !negated && parse_text_scopes(value).is_some(),
                 "after" | "since" | "before" | "until" | "on" => {
                     !negated
                         && values.len() == 1
@@ -1782,7 +1860,10 @@ fn is_leap_year(year: i64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_iso_datetime_unix_ms, search_query_explanation};
+    use super::{
+        compile_search_plan, parse_iso_datetime_unix_ms, search_plan_from_query,
+        search_query_explanation,
+    };
 
     #[test]
     fn iso_datetime_applies_explicit_timezone_offset() {
@@ -1842,5 +1923,49 @@ mod tests {
         assert_eq!(explanation.chips.len(), 2);
         assert_eq!(explanation.chips[0].label, "-metadata:private");
         assert_eq!(explanation.chips[1].label, "#work");
+    }
+
+    #[test]
+    fn in_scope_limits_plain_terms_to_the_selected_fields() {
+        let content = compile_search_plan(&search_plan_from_query("in:content invoice"))
+            .expect("content-scoped search");
+        assert!(content.where_sql.contains("COALESCE(text, '') LIKE"));
+        assert!(!content.where_sql.contains("COALESCE(title, '') LIKE"));
+        assert_eq!(content.params.len(), 1);
+
+        let metadata = compile_search_plan(&search_plan_from_query("in:metadata invoice"))
+            .expect("metadata-scoped search");
+        assert!(!metadata.where_sql.contains("COALESCE(text, '') LIKE"));
+        assert!(metadata.where_sql.contains("COALESCE(title, '') LIKE"));
+        assert!(metadata.where_sql.contains("COALESCE(notes, '') LIKE"));
+        assert!(metadata.where_sql.contains("COALESCE(tags, '') LIKE"));
+        assert_eq!(metadata.params.len(), 3);
+
+        let content_and_context =
+            compile_search_plan(&search_plan_from_query("in:content,context invoice"))
+                .expect("multi-scope search");
+        assert!(content_and_context
+            .where_sql
+            .contains("COALESCE(text, '') LIKE"));
+        assert!(content_and_context
+            .where_sql
+            .contains("COALESCE(context_search_text, '') LIKE"));
+        assert!(!content_and_context
+            .where_sql
+            .contains("COALESCE(title, '') LIKE"));
+        assert_eq!(content_and_context.params.len(), 2);
+    }
+
+    #[test]
+    fn in_scope_is_explained_and_rejects_unknown_values() {
+        let valid = search_query_explanation("in:context vivaldi");
+        assert!(valid.diagnostics.is_empty());
+        assert_eq!(valid.chips.len(), 1);
+
+        let invalid = search_query_explanation("in:properties vivaldi");
+        assert!(invalid
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "invalidValue" && diagnostic.severity == "error"));
     }
 }

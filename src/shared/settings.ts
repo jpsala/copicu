@@ -2,6 +2,18 @@ import type { EnrichmentSettings, EnterAction } from "./contracts";
 import type { ThemeId, ThemeSetting } from "../themeCatalog";
 
 export type SearchTriggerMode = "realtime" | "enter";
+export type SearchScope = "all" | "content" | "metadata" | "title" | "notes" | "tags" | "context";
+
+export const SEARCH_SCOPE_OPTIONS: Array<{ value: SearchScope; label: string }> = [
+  { value: "all", label: "All searchable fields" },
+  { value: "content", label: "Clip content" },
+  { value: "metadata", label: "Metadata" },
+  { value: "title", label: "Title" },
+  { value: "notes", label: "Notes" },
+  { value: "tags", label: "Tags" },
+  { value: "context", label: "Capture context" },
+];
+
 export type EditorFontFamily = "systemMono" | "cascadiaMono" | "consolas" | "uiSans";
 export type EditorLineHeight = "compact" | "comfortable" | "relaxed";
 
@@ -65,6 +77,7 @@ export type AppSettings = {
     promoteActiveOnCopy: boolean;
     searchTriggerMode: SearchTriggerMode;
     deferStructuredSearchUntilEnter: boolean;
+    defaultSearchScopes: SearchScope[];
     pinToggleShortcut: string;
     settingsShortcut: string;
     previewShortcut: string;
@@ -110,6 +123,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     promoteActiveOnCopy: true,
     searchTriggerMode: "realtime",
     deferStructuredSearchUntilEnter: false,
+    defaultSearchScopes: ["all"],
     pinToggleShortcut: "F8",
     settingsShortcut: "Ctrl+,",
     previewShortcut: "Alt+Enter",
@@ -159,6 +173,20 @@ function normalizeSearchTriggerMode(value: unknown): SearchTriggerMode {
   return value === "enter" || value === "manual" ? "enter" : "realtime";
 }
 
+function normalizeSearchScopes(value: unknown): SearchScope[] {
+  if (!Array.isArray(value)) return ["all"];
+  const scopes = value.filter((scope): scope is SearchScope =>
+    scope === "all"
+    || scope === "content"
+    || scope === "metadata"
+    || scope === "title"
+    || scope === "notes"
+    || scope === "tags"
+    || scope === "context");
+  if (scopes.length === 0 || scopes.includes("all")) return ["all"];
+  return [...new Set(scopes)];
+}
+
 export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSettings {
   const picker = { ...DEFAULT_SETTINGS.picker, ...settings.picker };
   return {
@@ -166,7 +194,11 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
     ...settings,
     general: { ...DEFAULT_SETTINGS.general, ...settings.general },
     autoUpdate: { ...DEFAULT_SETTINGS.autoUpdate, ...settings.autoUpdate },
-    picker: { ...picker, searchTriggerMode: normalizeSearchTriggerMode(picker.searchTriggerMode) },
+    picker: {
+      ...picker,
+      searchTriggerMode: normalizeSearchTriggerMode(picker.searchTriggerMode),
+      defaultSearchScopes: normalizeSearchScopes(picker.defaultSearchScopes),
+    },
     history: { ...DEFAULT_SETTINGS.history, ...settings.history },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...settings.appearance },
     editor: {
