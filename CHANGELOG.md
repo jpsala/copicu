@@ -4,6 +4,14 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Edit effective search fields from the picker strip, save them explicitly as the default, or reset the current query to its inherited default without changing Settings.
+
+### Changed
+
+- Scope autocomplete adds fields to the active selection; manually completed `in:` modifiers remain exact. The strip shows effective fields uniformly, and scope-only saves preserve unrelated Settings drafts and current results.
+
 ## [0.4.13] - 2026-09-09
 
 ### Fixed

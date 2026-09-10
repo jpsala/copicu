@@ -130,8 +130,8 @@ import {
   type AppSettings,
   type SearchTriggerMode,
 } from "./shared/settings";
-import { queryHasExplicitSearchScope, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, type SearchScopeSelection } from "./shared/searchScopes";
-import { SearchScopeOption, SearchScopeSummary } from "./ui/SearchScopeEditor";
+import { queryHasExplicitSearchScope, queryHasValidSearchScope, replaceQueryScopes, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, type SearchScopeSelection } from "./shared/searchScopes";
+import { SearchScopeOption, SearchScopePicker } from "./ui/SearchScopeEditor";
 import {
   UiBadge,
   UiButton,
@@ -1286,10 +1286,14 @@ function App() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [scopeSaveState, setScopeSaveState] = useState<"idle" | "saving" | "error">("idle");
+  const [scopeSaveError, setScopeSaveError] = useState<string | null>(null);
   const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [whichKeyState, setWhichKeyState] = useState<WhichKeyState | null>(null);
   const searchRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const scopePickerOpenRef = useRef(false);
+  const onScopePickerOpenChange = useCallback((opened: boolean) => { scopePickerOpenRef.current = opened; }, []);
   const findInputRef = useRef<HTMLInputElement>(null);
   const catalogItemIdRef = useRef<number | null>(null);
   const editTextRef = useRef<HTMLTextAreaElement>(null);
@@ -1421,9 +1425,15 @@ function App() {
       .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs)
       .filter((scenario) => !normalized || scenario.name.toLocaleLowerCase().includes(normalized));
   }, [scenarioCommandQuery, scenarios]);
+  const autocompleteScopeSelection = useMemo<SearchScopeSelection>(() => queryHasValidSearchScope(query)
+    ? scopeSelectionFromQuery(query)
+    : {
+      included: settings.picker.defaultSearchScopes,
+      excluded: settings.picker.defaultExcludedSearchScopes,
+    }, [query, settings.picker.defaultSearchScopes, settings.picker.defaultExcludedSearchScopes]);
   const autocompleteSuggestions = useMemo(
-    () => (aiComposerMode || scenarioCommandQuery !== null ? [] : searchSuggestions(query, knownTagSlugs)),
-    [aiComposerMode, knownTagSlugs, query, scenarioCommandQuery],
+    () => (aiComposerMode || scenarioCommandQuery !== null ? [] : searchSuggestions(query, knownTagSlugs, autocompleteScopeSelection)),
+    [aiComposerMode, autocompleteScopeSelection, knownTagSlugs, query, scenarioCommandQuery],
   );
   const autocompleteOpen = autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
   const scenarioCommandOpen = scenarioCommandOptions.length > 0 && dismissedAutocompleteQuery !== query;
@@ -1564,7 +1574,9 @@ function App() {
   }, [selectedItemId]);
 
   const focusSearch = useCallback(() => {
-    window.setTimeout(() => searchRef.current?.focus(), 0);
+    window.setTimeout(() => {
+      if (!scopePickerOpenRef.current) searchRef.current?.focus();
+    }, 0);
   }, []);
 
   useEffect(() => {
@@ -5861,17 +5873,17 @@ function App() {
       'Search help: in: scopes, plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const nextQuery = event.currentTarget.value;
-      if (clearSearchPendingRef.current) {
-        updateClearSearchPending(false);
-      }
       if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
         leaveOpenedSavedView();
+      }
+      if (clearSearchPendingRef.current) {
+        updateClearSearchPending(false);
       }
       autocompleteCommittedQueryRef.current = null;
       const nextStructuredDraft = classifyStructuredSearchDraft(nextQuery);
       const nextAutocompleteActive = !aiComposerMode
         && !isScenarioCommand(nextQuery)
-        && searchSuggestions(nextQuery, knownTagSlugs).length > 0;
+        && searchSuggestions(nextQuery, knownTagSlugs, autocompleteScopeSelection).length > 0;
       const nextStructuredHold = shouldHoldStructuredSearchDraft(nextStructuredDraft, {
         draftChanged: nextQuery.trim() !== historyInputQuery,
         searchTriggerMode,
@@ -6109,6 +6121,65 @@ function App() {
       : /^re:/iu.test(query.trim()) ? "Regex" : "Query";
   const visibleFilterChips = visibleSearchInterpretation?.chips
     .filter((chip) => !queryHasExplicitSearchScope(chip.label)) ?? [];
+  const applyScopeSelection = useCallback((nextSelection: SearchScopeSelection) => {
+    if (
+      aiComposerMode
+      || filterLocked
+      || openedSavedView
+      || activeScenarioSession
+      || /^re:/iu.test(query.trim())
+      || scopeEditing
+    ) return;
+    const nextQuery = replaceQueryScopes(query, nextSelection);
+    if (nextQuery === query) return;
+    leaveOpenedSavedView();
+    autocompleteCommittedQueryRef.current = null;
+    queryRef.current = nextQuery;
+    setQuery(nextQuery);
+    setHistoryPending(searchTriggerMode === "realtime");
+    supersedeSearchIntent(nextQuery, searchTriggerMode === "realtime" ? "applying" : "idle");
+    setSearchInterpretation(null);
+  }, [
+    activeScenarioSession,
+    aiComposerMode,
+    filterLocked,
+    leaveOpenedSavedView,
+    openedSavedView,
+    query,
+    scopeEditing,
+    searchTriggerMode,
+    supersedeSearchIntent,
+  ]);
+  const resetScopeToDefault = useCallback(() => {
+    if (!queryHasExplicitSearchScope(query)) return;
+    applyScopeSelection({ included: [], excluded: [] });
+  }, [applyScopeSelection, query]);
+  const saveScopeAsDefault = useCallback(async () => {
+    if (scopeSaveState === "saving" || scopeEditing || filterLocked || openedSavedView || activeScenarioSession
+      || /^re:/iu.test(query.trim())) return;
+    const previousHydratedScope = lastHydratedDefaultScopeRef.current;
+    const targetHydratedScope = scopeQuery(scopeSelection);
+    lastHydratedDefaultScopeRef.current = targetHydratedScope;
+    setScopeSaveState("saving");
+    setScopeSaveError(null);
+    try {
+      const nextSettings = await invoke<AppSettings>("set_picker_default_search_scopes", {
+        included: scopeSelection.included,
+        excluded: scopeSelection.excluded,
+      });
+      const normalized = normalizeSettings(nextSettings);
+      pickerSearchSettingsRef.current = normalized.picker;
+      lastHydratedDefaultScopeRef.current = defaultSearchScopePrefix(normalized.picker);
+      setSettings(normalized);
+      setScopeSaveState("idle");
+    } catch (error) {
+      if (lastHydratedDefaultScopeRef.current === targetHydratedScope) {
+        lastHydratedDefaultScopeRef.current = previousHydratedScope;
+      }
+      setScopeSaveState("error");
+      setScopeSaveError(String(error));
+    }
+  }, [activeScenarioSession, filterLocked, openedSavedView, query, scopeEditing, scopeSaveState, scopeSelection]);
 
   return (
     <main className="app-shell">
@@ -6732,9 +6803,22 @@ function App() {
         {!aiComposerMode && !aiDraftActive ? (
           <div className="search-filter-strip" aria-label="Search fields and filters">
             <span className="search-filter-label">Search in</span>
-            {scopeEditing
-              ? <span className="search-scope-empty">Editing scopes…</span>
-              : <SearchScopeSummary selection={scopeSelection} />}
+            {scopeEditing ? <span className="search-scope-empty">Editing scopes…</span> : <SearchScopePicker
+              selection={scopeSelection}
+              onOpenChange={onScopePickerOpenChange}
+              defaultSelection={{
+                included: settings.picker.defaultSearchScopes,
+                excluded: settings.picker.defaultExcludedSearchScopes,
+              }}
+              onChange={applyScopeSelection}
+              onSaveDefault={() => void saveScopeAsDefault()}
+              onResetDefault={resetScopeToDefault}
+              hasExplicitOverride={queryHasExplicitSearchScope(query)}
+              saveState={scopeSaveState}
+              saveError={scopeSaveError}
+              disabled={scopeEditing || aiComposerMode || filterLocked || Boolean(openedSavedView) || Boolean(activeScenarioSession)
+                || /^re:/iu.test(query.trim())}
+            />}
             {visibleFilterChips.length > 0 ? (
               <span className="search-filter-chips" aria-label="Applied filters">
                 {visibleFilterChips.map((chip) => (

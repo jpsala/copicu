@@ -170,10 +170,15 @@ Texto plain busca en:
 
 El modificador visible `in:scope1,scope2` limita los terminos plain a uno o mas
 grupos de campos. Usa el mismo autocomplete que `tag:` y los demas operadores,
-sin boton ni menu separado. El autocomplete muestra todos los estados, no
-oculta lo elegido: incluido, heredado por otro scope, excluido, disponible o
-parcial. Al escribir un nombre se filtran opciones; `-` permite completar una
-exclusion. `metadata` incluye title, notes y tags.
+sin agregar otra sintaxis. Al iniciar un nuevo `in:`, el autocomplete parte de
+los campos efectivos activos y permite agregar sin perderlos: con Content y
+Title activos, elegir Notes produce `in:content,title,notes`.
+Escribir manualmente un `in:notes` completo sigue significando solo Notes;
+una lista ya escrita es autoritativa. `Only` permite reducir explicitamente
+a un campo. `metadata` incluye title, notes y tags; `-` conserva exclusiones.
+En autocomplete, aceptar un campo ya activo no lo quita; `-` pide una exclusion
+explicita. En la franja, `Remove` quita el campo y `Only` limita la seleccion.
+Agregar un campo excluido lo habilita sin habilitar sus hermanos excluidos.
 
 `in:metadata,-notes` busca en titulo y tags; `in:-context` busca en todos los
 campos menos contexto. Las exclusiones prevalecen sobre inclusiones. Excluir
@@ -186,18 +191,31 @@ Settings agrupa `Default search scopes`, `Search trigger` y `Confirm structured
 filters with Enter` en `Picker > Search & filters`. La representacion de
 estados coincide con el autocomplete. `Only` limita a un scope y `Reset to all`
 restaura todos. El picker hereda estos scopes cuando el draft no declara `in:`;
-los muestra como campos incluidos y excluidos en una franja debajo del buscador,
-sin ocupar ancho del input, y resuelve una query explicita antes de ejecutar.
-Reemplazar todo el texto no elimina el default.
+la franja debajo del buscador muestra los campos efectivos con apariencia
+uniforme, sin ocupar ancho del input. Metadata menos Title y Notes se muestra
+como Tags, no como un grupo parcial. El motor recibe una query explicita;
+reemplazar todo el texto no elimina el default.
 Un `in:` escrito reemplaza el default, no se combina con el; `in:all` permite
 buscar deliberadamente en todos los campos. `re:` conserva su semantica
 exclusiva. Los planes explicitos, filtros guardados y scripts mantienen su
 autoridad y no reciben defaults silenciosos del picker.
-La franja distingue `Default`, `Query`, `Saved` o `Regex`, conserva el estado
-parcial de grupos y comparte espacio con los chips de otros filtros aplicados.
+La franja permite abrir el selector de campos, con la misma seleccion y
+acciones que el autocomplete, y comparte espacio con los otros filtros.
 No repite la query ni una explicacion generica `Interpreted` para busquedas
 deterministicas; mantiene diagnosticos, warnings y explicaciones de AI.
 Quitar otro filtro no convierte el default heredado en un override escrito.
+
+Editar el alcance afecta solo esta busqueda y respeta Realtime/Enter.
+`Save as default` aparece cuando los campos efectivos difieren del default;
+guarda unicamente `defaultSearchScopes` y `defaultExcludedSearchScopes` y
+sincroniza Settings sin tocar shortcuts, autostart ni otros ajustes.
+La operacion es explicita, no hay autosave ni un segundo sistema de presets.
+Guardar no cambia los resultados de la consulta actual.
+`Reset to default` elimina solo el override de scopes, conserva el resto de
+la query y no escribe Settings. La comparacion es semantica: Metadata y
+Title+Notes+Tags equivalen, pero All conserva tambien MIME y Kind.
+El selector conserva foco de teclado al reactivar la ventana; Escape lo cierra
+y devuelve foco al control de la franja, sin aplicar ni borrar la query.
 
 El input contiene el draft. El snapshot aplicado conserva su propia query,
 plan y resultados mientras un draft espera Enter, esta incompleto o falla.

@@ -147,15 +147,27 @@ Reglas:
   como `tag:` conservan su semantica, independiente de los scopes plain.
 - Settings agrupa campos predeterminados, trigger y confirmacion estructurada
   bajo `Picker > Search & filters`. Cuando el draft no declara `in:`, el picker
-  muestra incluidos y excluidos en una franja debajo del buscador, separada
-  del texto editable, y resuelve una query explicita. Reemplazar el texto
-  conserva el default. La franja distingue origen y comparte espacio con los
-  demas filtros sin repetir la query ni explicaciones genericas.
+  muestra los campos efectivos con apariencia uniforme en una franja editable
+  debajo del buscador, separada del texto editable, y resuelve una query
+  explicita. Reemplazar el texto conserva el default. La franja comparte
+  espacio con los demas filtros sin repetir la query ni explicaciones genericas.
   `in:all` lo reemplaza por todos los campos. Regex y planes explicitos
   conservan su propia autoridad; Rust no agrega preferencias ocultas.
 - Settings y autocomplete comparten estados incluido, heredado, excluido,
-  disponible y parcial. Quitar una exclusion y excluir un campo heredado son
-  acciones diferentes y se anuncian antes de ejecutarlas.
+  disponible y parcial. Agregar habilita el campo, incluso si estaba excluido;
+  aceptar uno ya activo no lo quita. Quitar requiere una accion explicita.
+- Un nuevo `in:` en autocomplete empieza con el alcance activo; agregar Notes
+  sobre Content+Title produce `in:content,title,notes`. La sintaxis manual
+  completa sigue siendo exacta y `Only` permite reducir el alcance.
+- El selector de la franja y autocomplete comparten acciones. Editar modifica
+  solo la query actual, con la politica Realtime/Enter vigente.
+- `Save as default` persiste explicitamente los dos campos de scope mediante
+  un setter atomico y acotado, sin ejecutar cambios de shortcuts o autostart.
+  Sincroniza Settings, preserva su resto de draft y no cambia los resultados
+  actuales. `Reset to default` restaura herencia sin escribir preferencias.
+- La igualdad de scopes usa campos efectivos, expandiendo Metadata y aplicando
+  exclusiones, sin perder MIME/Kind cuando el alcance procede de All. No se
+  introduce un segundo sistema de presets.
 - El input es el draft; el snapshot aplicado conserva descriptor y resultados.
   Cuando difieren las queries efectivas, la UI muestra la query cuyos
   resultados siguen visibles. Un prefijo heredado no es por si solo un draft

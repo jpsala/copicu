@@ -2432,6 +2432,42 @@ fn set_picker_search_trigger_mode(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn set_picker_default_search_scopes(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    included: Vec<storage::SearchDefaultScope>,
+    excluded: Vec<storage::SearchPlanTextScopeV1>,
+) -> Result<storage::AppSettings, String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL],
+        "set_picker_default_search_scopes",
+    )?;
+    let next_settings = storage.update_default_search_scopes(included, excluded)?;
+    if let Err(error) = app.emit_to(
+        SETTINGS_WINDOW_LABEL,
+        SETTINGS_UPDATED_EVENT,
+        next_settings.clone(),
+    ) {
+        diag_log(
+            "picker.default_search_scopes.sync_failed",
+            format!("error={error}"),
+        );
+    }
+    diag_log(
+        "picker.default_search_scopes",
+        format!(
+            "included={:?} excluded={:?}",
+            next_settings.picker.default_search_scopes,
+            next_settings.picker.default_excluded_search_scopes
+        ),
+    );
+    Ok(next_settings)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn edit_scripts_in_vscode(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -3770,6 +3806,7 @@ pub fn run() {
             delete_history_item,
             get_history_item,
             set_history_item_inbox,
+            set_picker_default_search_scopes,
             get_settings,
             update_settings,
             set_external_editor_shortcut,

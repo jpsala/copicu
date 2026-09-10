@@ -1057,6 +1057,58 @@ button {
   font-size: 0.72rem;
   line-height: 1.4;
 }
+.search-scope-trigger {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.search-scope-trigger:hover,
+.search-scope-trigger:focus-visible {
+  color: var(--accent);
+}
+
+.search-scope-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.search-scope-trigger:disabled {
+  cursor: default;
+  color: inherit;
+}
+
+.search-scope-menu {
+  width: min(420px, calc(100vw - 24px));
+}
+
+.scope-editor-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.scope-editor-default {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scope-editor-error {
+  flex: 1 1 100%;
+  color: var(--danger);
+  font-size: 12px;
+}
 
 .scope-option-content {
   display: flex;

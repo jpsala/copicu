@@ -5,6 +5,8 @@ import {
   scopeQuery,
   scopeOptions,
   scopeSummary,
+  setSearchScopeEnabled,
+  sameSearchScopeSelection,
   type SearchScopeSelection,
 } from "./searchScopes.ts";
 
@@ -441,7 +443,11 @@ function matchingTags(prefix: string, tags: string[], replacement: (tag: string)
     .map((tag) => ({ label: replacement(tag), replacement: replacement(tag) }));
 }
 
-function scopeAutocompleteSuggestions(query: string, value: string): SearchSuggestion[] {
+function scopeAutocompleteSuggestions(
+  query: string,
+  value: string,
+  activeScope: SearchScopeSelection,
+): SearchSuggestion[] {
   const rawParts = value.split(",");
   const rawSuffix = rawParts.pop() ?? "";
   const negative = rawSuffix.startsWith("-");
@@ -449,7 +455,7 @@ function scopeAutocompleteSuggestions(query: string, value: string): SearchSugge
   const committedText = rawParts.join(",");
   const committed = committedText
     ? parseSearchScopeModifier(committedText)
-    : { included: ["all" as SearchScope], excluded: [] as Exclude<SearchScope, "all">[] };
+    : activeScope;
   if (!committed) return [];
   if (parseSearchScopeModifier(value)) return [];
   const visibleSelection = committed;
@@ -458,7 +464,7 @@ function scopeAutocompleteSuggestions(query: string, value: string): SearchSugge
     const allSelection: SearchScopeSelection = { included: ["all"], excluded: [] };
     suggestions.push({
       label: "All fields",
-      replacement: "all",
+      replacement: "in:all",
       scope: {
         state: committed.included.includes("all") ? "included" : "available",
         detail: "All searchable fields",
@@ -471,16 +477,11 @@ function scopeAutocompleteSuggestions(query: string, value: string): SearchSugge
   suggestions.push(
     ...scopeOptions(visibleSelection)
       .filter((option) => option.scope.startsWith(suffix))
-      .map<SearchSuggestion | null>((option) => {
-        const candidateText = [...rawParts, `${negative ? "-" : ""}${option.scope}`].join(",");
-        const candidate = parseSearchScopeModifier(candidateText);
-        const stateAwareToggle = !negative && rawParts.length > 0;
-        const nextSelection = stateAwareToggle ? option.next : candidate;
-        if (!nextSelection) return null;
+      .map<SearchSuggestion>((option) => {
+        const nextSelection = setSearchScopeEnabled(committed, option.scope, !negative);
         const replacement = scopeQuery(nextSelection, { includeAll: true });
-        const actionLabel = negative
-          ? `Exclude ${option.label}`
-          : (rawParts.length === 0 ? "Search only" : option.actionLabel);
+        const actionLabel = negative ? `Exclude ${option.label}`
+          : sameSearchScopeSelection(nextSelection, committed) ? "Included" : "Add";
         return {
           label: option.label,
           replacement,
@@ -492,13 +493,16 @@ function scopeAutocompleteSuggestions(query: string, value: string): SearchSugge
           },
           queryReplacement: replaceQueryScopes(query, nextSelection),
         };
-      })
-      .filter((suggestion): suggestion is SearchSuggestion => suggestion !== null),
+      }),
   );
   return suggestions;
 }
 
-export function searchSuggestions(query: string, tags: string[]): SearchSuggestion[] {
+export function searchSuggestions(
+  query: string,
+  tags: string[],
+  activeScope: SearchScopeSelection = { included: ["all"], excluded: [] },
+): SearchSuggestion[] {
   const token = activeToken(query);
   if (!token) return [];
 
@@ -524,7 +528,7 @@ export function searchSuggestions(query: string, tags: string[]): SearchSuggesti
     return matchingTags(value, tags, (tag) => `${negated}tag:${tag}`);
   }
   if (key === "in" && !negated) {
-    return scopeAutocompleteSuggestions(query, value);
+    return scopeAutocompleteSuggestions(query, value, activeScope);
   }
 
   const canonicalKey = VALUE_KEY_ALIASES[key] ?? key;

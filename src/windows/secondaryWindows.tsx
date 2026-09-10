@@ -963,6 +963,8 @@ export function MetadataWindowApp() {
 
 export function SettingsWindowApp() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const persistedSettingsRef = useRef(settings);
+  useEffect(() => { persistedSettingsRef.current = settings; }, [settings]);
   const [draft, setDraft] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1691,12 +1693,25 @@ export function SettingsWindowApp() {
         return;
       }
       const nextSettings = normalizeSettings(event.payload);
+      const currentSettings = persistedSettingsRef.current;
+      const pickerChanged = {
+        searchTriggerMode: currentSettings.picker.searchTriggerMode !== nextSettings.picker.searchTriggerMode,
+        defaultSearchScopes: JSON.stringify(currentSettings.picker.defaultSearchScopes)
+          !== JSON.stringify(nextSettings.picker.defaultSearchScopes),
+        defaultExcludedSearchScopes: JSON.stringify(currentSettings.picker.defaultExcludedSearchScopes)
+          !== JSON.stringify(nextSettings.picker.defaultExcludedSearchScopes),
+      };
+      persistedSettingsRef.current = nextSettings;
       setSettings(nextSettings);
-      setDraft((current) => ({
-        ...current,
+      setDraft((currentDraft) => ({
+        ...currentDraft,
         picker: {
-          ...current.picker,
-          searchTriggerMode: nextSettings.picker.searchTriggerMode,
+          ...currentDraft.picker,
+          ...(pickerChanged.searchTriggerMode ? { searchTriggerMode: nextSettings.picker.searchTriggerMode } : {}),
+          ...(pickerChanged.defaultSearchScopes ? { defaultSearchScopes: nextSettings.picker.defaultSearchScopes } : {}),
+          ...(pickerChanged.defaultExcludedSearchScopes
+            ? { defaultExcludedSearchScopes: nextSettings.picker.defaultExcludedSearchScopes }
+            : {}),
         },
       }));
     }).then((nextUnlisten) => {

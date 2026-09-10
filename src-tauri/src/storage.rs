@@ -2545,6 +2545,23 @@ impl AppStorage {
         persist_settings_to_conn(&conn, &settings)?;
         Ok(settings)
     }
+    pub fn update_default_search_scopes(
+        &self,
+        included: Vec<SearchDefaultScope>,
+        excluded: Vec<SearchPlanTextScopeV1>,
+    ) -> Result<AppSettings, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let mut settings = settings_from_conn(&conn)?;
+        settings.picker.default_search_scopes = included;
+        settings.picker.default_excluded_search_scopes = excluded;
+        normalize_default_search_scopes(&mut settings.picker);
+        validate_settings(&settings)?;
+        persist_settings_to_conn(&conn, &settings)?;
+        Ok(settings)
+    }
 
     pub fn list_tags(&self) -> Result<Vec<TagSummary>, String> {
         let conn = self
@@ -4788,24 +4805,7 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     if settings.picker.search_trigger_mode == SearchTriggerMode::Manual {
         settings.picker.search_trigger_mode = SearchTriggerMode::Enter;
     }
-    if settings.picker.default_search_scopes.len() > 1 {
-        settings
-            .picker
-            .default_search_scopes
-            .retain(|scope| *scope != SearchDefaultScope::All);
-    }
-    if settings.picker.default_search_scopes.is_empty() {
-        settings.picker.default_search_scopes = default_search_scopes();
-    }
-    settings.picker.default_search_scopes.dedup();
-    let mut unique_excluded_scopes =
-        Vec::with_capacity(settings.picker.default_excluded_search_scopes.len());
-    for scope in settings.picker.default_excluded_search_scopes.drain(..) {
-        if !unique_excluded_scopes.contains(&scope) {
-            unique_excluded_scopes.push(scope);
-        }
-    }
-    settings.picker.default_excluded_search_scopes = unique_excluded_scopes;
+    normalize_default_search_scopes(&mut settings.picker);
     let legacy_vscode_path = settings.tray.vscode_path.trim();
     let scripts_vscode_path = settings.scripts.vscode_path.trim();
     if scripts_vscode_path.is_empty() && !legacy_vscode_path.is_empty() {
@@ -4834,6 +4834,26 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
         settings.ai.model = model.to_string();
     }
     settings.ai.api_key = settings.ai.api_key.trim().to_string();
+}
+
+fn normalize_default_search_scopes(picker: &mut PickerSettings) {
+    if picker.default_search_scopes.len() > 1 {
+        picker
+            .default_search_scopes
+            .retain(|scope| *scope != SearchDefaultScope::All);
+    }
+    if picker.default_search_scopes.is_empty() {
+        picker.default_search_scopes = default_search_scopes();
+    }
+    picker.default_search_scopes.dedup();
+    let mut unique_excluded_scopes =
+        Vec::with_capacity(picker.default_excluded_search_scopes.len());
+    for scope in picker.default_excluded_search_scopes.drain(..) {
+        if !unique_excluded_scopes.contains(&scope) {
+            unique_excluded_scopes.push(scope);
+        }
+    }
+    picker.default_excluded_search_scopes = unique_excluded_scopes;
 }
 
 fn retention_limit_from_conn(conn: &Connection) -> i64 {
@@ -5531,6 +5551,47 @@ mod tests {
         assert_eq!(
             storage.get_settings().expect("settings should load"),
             AppSettings::default()
+        );
+    }
+
+    #[test]
+    fn default_search_scopes_update_normalizes_and_preserves_other_settings() {
+        let storage = test_storage_with_migrations();
+        let mut initial = AppSettings::default();
+        initial.history.retention_count = 777;
+        initial.picker.default_search_scopes = vec![SearchDefaultScope::Content];
+        initial.picker.default_excluded_search_scopes = vec![SearchPlanTextScopeV1::Title];
+        storage
+            .update_settings(initial)
+            .expect("initial settings should persist");
+
+        let persisted = storage
+            .update_default_search_scopes(
+                Vec::new(),
+                vec![
+                    SearchPlanTextScopeV1::Notes,
+                    SearchPlanTextScopeV1::Notes,
+                    SearchPlanTextScopeV1::Title,
+                ],
+            )
+            .expect("default scope settings should persist");
+
+        assert_eq!(
+            persisted.picker.default_search_scopes,
+            vec![SearchDefaultScope::All]
+        );
+        assert_eq!(
+            persisted.picker.default_excluded_search_scopes,
+            vec![SearchPlanTextScopeV1::Notes, SearchPlanTextScopeV1::Title]
+        );
+        assert_eq!(persisted.history.retention_count, 777);
+        assert_eq!(
+            storage
+                .get_settings()
+                .expect("updated settings should round-trip")
+                .history
+                .retention_count,
+            777
         );
     }
 

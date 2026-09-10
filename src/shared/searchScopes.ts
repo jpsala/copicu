@@ -6,6 +6,33 @@ export type SearchScopeSelection = {
   excluded: ExcludedSearchScope[];
 };
 
+/** Leaf fields shown in the picker. MIME and kind remain implicit in an all-fields search. */
+export const SEARCH_SCOPE_LEAVES: readonly ExcludedSearchScope[] = ["content", "title", "notes", "tags", "context"];
+
+export type SearchScopeLeaf = ExcludedSearchScope;
+
+export function effectiveSearchScopeLeaves(selection: SearchScopeSelection): SearchScopeLeaf[] {
+  const normalized = normalizedSelection(selection);
+  const included = new Set(normalized.included);
+  const excluded = new Set(normalized.excluded);
+  const all = included.has("all") || included.size === 0;
+  return SEARCH_SCOPE_LEAVES.filter((scope) => {
+    const selected = all || included.has(scope) || (included.has("metadata") && METADATA_CHILDREN.includes(scope));
+    return selected && !excluded.has(scope) && !(METADATA_CHILDREN.includes(scope) && excluded.has("metadata"));
+  });
+}
+
+export function sameSearchScopeSelection(left: SearchScopeSelection, right: SearchScopeSelection): boolean {
+  const normalizedLeft = normalizedSelection(left);
+  const normalizedRight = normalizedSelection(right);
+  const leftAll = normalizedLeft.included.length === 0 || normalizedLeft.included.includes("all");
+  const rightAll = normalizedRight.included.length === 0 || normalizedRight.included.includes("all");
+  if (leftAll !== rightAll) return false;
+  const leftLeaves = effectiveSearchScopeLeaves(normalizedLeft);
+  const rightLeaves = effectiveSearchScopeLeaves(normalizedRight);
+  return leftLeaves.length === rightLeaves.length && leftLeaves.every((scope, index) => scope === rightLeaves[index]);
+}
+
 export type ScopeOptionState = "included" | "inherited" | "excluded" | "available" | "partial";
 export type ScopeOption = {
   scope: ExcludedSearchScope;
@@ -19,7 +46,7 @@ export type ScopeOption = {
 const SEARCH_SCOPES: readonly ExcludedSearchScope[] = ["content", "metadata", "title", "notes", "tags", "context"];
 const METADATA_CHILDREN: readonly ExcludedSearchScope[] = ["title", "notes", "tags"];
 const SEARCH_SCOPE_SET = new Set<SearchScope>(["all", ...SEARCH_SCOPES]);
-const SCOPE_LABELS: Record<ExcludedSearchScope, string> = {
+export const SEARCH_SCOPE_LABELS: Record<ExcludedSearchScope, string> = {
   content: "Content",
   metadata: "Metadata",
   title: "Title",
@@ -126,6 +153,11 @@ export function queryHasExplicitSearchScope(query: string): boolean {
   return scopeTokenRanges(query).length > 0;
 }
 
+/** True when at least one unquoted scope token is complete and valid. */
+export function queryHasValidSearchScope(query: string): boolean {
+  return scopeTokenRanges(query).some((range) => parseSearchScopeModifier(range.value) !== null);
+}
+
 /** Resolve the persisted scope only when the draft has no explicit scope. */
 export function resolveSearchScopeQuery(query: string, defaults: SearchScopeSelection): string {
   const trimmed = query.trim();
@@ -182,29 +214,31 @@ function childState(scope: ExcludedSearchScope, included: Set<SearchScope>, excl
   return "available";
 }
 
-function nextFor(scope: ExcludedSearchScope, state: ScopeOptionState, selection: SearchScopeSelection): SearchScopeSelection {
+export function setSearchScopeEnabled(
+  selection: SearchScopeSelection,
+  scope: ExcludedSearchScope,
+  enabled: boolean,
+): SearchScopeSelection {
   const next = normalizedSelection(selection);
   const included = new Set<SearchScope>(next.included);
   const excluded = new Set<ExcludedSearchScope>(next.excluded);
-  if (state === "excluded") {
-    const blockedByMetadata = METADATA_CHILDREN.includes(scope) && excluded.has("metadata");
+  if (!enabled) {
+    excluded.add(scope);
+  } else {
     excluded.delete(scope);
-    if (blockedByMetadata) {
-      excluded.delete("metadata");
+    if (scope === "metadata") {
+      for (const child of METADATA_CHILDREN) excluded.delete(child);
+    } else if (METADATA_CHILDREN.includes(scope) && excluded.delete("metadata")) {
       for (const child of METADATA_CHILDREN) {
         if (child !== scope) excluded.add(child);
       }
-    } else if (scope === "metadata") {
-      for (const child of METADATA_CHILDREN) excluded.delete(child);
     }
-  } else if (included.has(scope)) {
-    included.delete(scope);
-  } else if (state === "inherited" || (state === "partial" && (included.has("all") || included.size === 0))) {
-    excluded.add(scope);
-  } else {
-    included.add(scope);
+    if (included.size > 0 && !included.has("all")
+      && !(included.has("metadata") && METADATA_CHILDREN.includes(scope))) {
+      included.add(scope);
+    }
   }
-  return normalizedSelection({ included: [...included], excluded: [...excluded] });
+  return { included: [...included], excluded: [...excluded] };
 }
 
 export function scopeOptions(selection: SearchScopeSelection): ScopeOption[] {
@@ -226,10 +260,12 @@ export function scopeOptions(selection: SearchScopeSelection): ScopeOption[] {
         : state === "excluded" ? (fieldBlocked(scope, excluded) === "metadata" ? "Excluded by metadata" : "Excluded")
           : state === "partial" ? "Some fields included"
             : "Not searched";
-    const actionLabel = state === "excluded" ? "Remove exclusion"
-      : included.has(scope) ? "Remove"
-        : state === "inherited" || (state === "partial" && implicitAll) ? "Exclude" : "Include";
-    return { scope, label: SCOPE_LABELS[scope], state, detail, actionLabel, next: nextFor(scope, state, normalized) };
+    const enabled = state === "included" || state === "inherited";
+    const actionLabel = enabled ? "Remove" : state === "partial" ? "Include remaining" : "Include";
+    return {
+      scope, label: SEARCH_SCOPE_LABELS[scope], state, detail, actionLabel,
+      next: setSearchScopeEnabled(normalized, scope, !enabled),
+    };
   });
 }
 
@@ -237,16 +273,13 @@ export function scopeSummary(selection: SearchScopeSelection): string {
   const normalized = normalizedSelection(selection);
   const included = new Set<SearchScope>(normalized.included);
   const excluded = new Set<ExcludedSearchScope>(normalized.excluded);
-  let summary: string;
+  const leaves = effectiveSearchScopeLeaves(normalized);
   if (included.has("all") || included.size === 0) {
-    summary = "All searchable fields";
-  } else {
-    summary = [...included].map((scope) => scope === "all" ? "All searchable fields" : SCOPE_LABELS[scope]).join(", ");
+    if (excluded.size === 0) return "All searchable fields";
+    return `All searchable fields except ${[...excluded].map((scope) => SEARCH_SCOPE_LABELS[scope]).join(", ")}`;
   }
-  if (excluded.size > 0) {
-    summary += ` except ${[...excluded].map((scope) => SCOPE_LABELS[scope]).join(", ")}`;
-  }
-  return summary;
+  if (leaves.length === 0) return "No searchable fields";
+  return leaves.map((scope) => SEARCH_SCOPE_LABELS[scope]).join(", ");
 }
 
 export { SEARCH_SCOPES };
