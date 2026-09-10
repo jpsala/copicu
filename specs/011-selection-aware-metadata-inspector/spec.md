@@ -496,3 +496,5 @@ Evidencia del corte:
 - `npm run visual:check`: 303/312 pasan; ocho fallas repetidas son baselines ajenos a metadata (initial-query ownership, capture-mode menu, initial-history error copy y placeholder Search), duplicadas desktop/narrow. La novena fue una corrida narrow transitoria de preview DTO que sí pasa en el corte focalizado. Search no se modificó para reanclar tests de wording.
 
 El smoke Tauri aislado encontró y corrigió una incompatibilidad real `tags: string[]`/`Option<String>` en create. El contrato final usa `Vec<String>`, persiste tags/properties dentro de la misma transacción y conserva el string legacy sólo como proyección derivada.
+
+Smoke post-release instalado: `Copicu 0.4.14` quedó activo desde `%LOCALAPPDATA%\Copicu\copicu.exe`; el picker real abrió con el shortcut configurado y `Shift+F2` abrió la utility `Copicu Metadata` sobre el clip activo. `Escape` cerró el inspector limpio sin persistir cambios y el proceso permaneció activo en tray.

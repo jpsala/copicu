@@ -147,7 +147,7 @@ Estado 2026-09-03: release estable `v0.4.11`, asset `Copicu_0.4.11_x64-setup.exe
 
 Estado 2026-09-03: release estable `v0.4.12`, asset `Copicu_0.4.12_x64-setup.exe`, firma y `latest.json`; SHA256 `A32560794FEB8DA02E34C474EDC074203772E10FD53EDA1A42764855F7892E5B`. Settings muestra en cada tag padre la suma de items directos y descendientes. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.12>.
 
-Estado 2026-09-10: release estable `v0.4.14`, asset `Copicu_0.4.14_x64-setup.exe`, firma y `latest.json`; SHA256 `C740F37A66DE96632998004467AA224D07CC04E6C6231A7EAAE0B501947CE0A9`. Unifica metadata single/multi/create sobre el inspector selection-aware y agrega scopes de Search editables desde el picker. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.14>.
+Estado 2026-09-10: release estable `v0.4.14`, asset `Copicu_0.4.14_x64-setup.exe`, firma y `latest.json`; SHA256 `C740F37A66DE96632998004467AA224D07CC04E6C6231A7EAAE0B501947CE0A9`. Unifica metadata single/multi/create sobre el inspector selection-aware y agrega scopes de Search editables desde el picker. Instalación local comprobada como `0.4.14`: proceso instalado activo, picker abierto con el shortcut configurado y utility `Copicu Metadata` abierta/cerrada con `Shift+F2`/`Escape` sin writes. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.14>.
 
 La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 
