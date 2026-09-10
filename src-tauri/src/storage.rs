@@ -40,7 +40,7 @@ pub use self::search::{
     SearchPlanDateFieldV1, SearchPlanDateFilterV1, SearchPlanDateOpV1, SearchPlanFiltersV1,
     SearchPlanHasV1, SearchPlanKindV1, SearchPlanMissingV1, SearchPlanRelativeDateV1,
     SearchPlanRelativeUnitV1, SearchPlanSortDirectionV1, SearchPlanSortFieldV1, SearchPlanSortV1,
-    SearchPlanTextV1, SearchPlanV1,
+    SearchPlanTextScopeV1, SearchPlanTextV1, SearchPlanV1,
 };
 #[cfg(test)]
 use rusqlite_migration::Migrations;
@@ -781,7 +781,8 @@ pub struct PickerSettings {
     pub defer_structured_search_until_enter: bool,
     #[serde(default = "default_search_scopes")]
     pub default_search_scopes: Vec<SearchDefaultScope>,
-
+    #[serde(default = "default_excluded_search_scopes")]
+    pub default_excluded_search_scopes: Vec<SearchPlanTextScopeV1>,
     #[serde(default = "default_pin_toggle_shortcut")]
     pub pin_toggle_shortcut: String,
     #[serde(default = "default_settings_shortcut")]
@@ -970,6 +971,7 @@ impl Default for AppSettings {
                 search_trigger_mode: SearchTriggerMode::Realtime,
                 defer_structured_search_until_enter: false,
                 default_search_scopes: default_search_scopes(),
+                default_excluded_search_scopes: default_excluded_search_scopes(),
                 pin_toggle_shortcut: default_pin_toggle_shortcut(),
                 settings_shortcut: default_settings_shortcut(),
                 preview_shortcut: default_preview_shortcut(),
@@ -1005,6 +1007,9 @@ fn default_auto_update_check_interval_minutes() -> i64 {
 
 fn default_promote_active_on_copy() -> bool {
     true
+}
+fn default_excluded_search_scopes() -> Vec<SearchPlanTextScopeV1> {
+    Vec::new()
 }
 
 fn default_search_scopes() -> Vec<SearchDefaultScope> {
@@ -4691,6 +4696,14 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
         settings.picker.default_search_scopes = default_search_scopes();
     }
     settings.picker.default_search_scopes.dedup();
+    let mut unique_excluded_scopes =
+        Vec::with_capacity(settings.picker.default_excluded_search_scopes.len());
+    for scope in settings.picker.default_excluded_search_scopes.drain(..) {
+        if !unique_excluded_scopes.contains(&scope) {
+            unique_excluded_scopes.push(scope);
+        }
+    }
+    settings.picker.default_excluded_search_scopes = unique_excluded_scopes;
     let legacy_vscode_path = settings.tray.vscode_path.trim();
     let scripts_vscode_path = settings.scripts.vscode_path.trim();
     if scripts_vscode_path.is_empty() && !legacy_vscode_path.is_empty() {
@@ -7550,6 +7563,146 @@ mod tests {
             })
             .expect("negated title query should load");
         assert_eq!(ids(&negated_title_page.items), vec![2]);
+    }
+
+    #[test]
+    fn list_page_applies_excluded_scope_field_union() {
+        let storage = test_storage_with_migrations();
+        for (id, created_at, text, title, notes) in [
+            (
+                1,
+                30_001,
+                "invoice in content",
+                Some("invoice title"),
+                Some("invoice note"),
+            ),
+            (
+                2,
+                30_002,
+                "unrelated content",
+                Some("invoice title"),
+                Some("other note"),
+            ),
+            (
+                3,
+                30_003,
+                "invoice in content",
+                Some("other title"),
+                Some("invoice note"),
+            ),
+            (
+                4,
+                30_004,
+                "unrelated content",
+                Some("other title"),
+                Some("other note"),
+            ),
+        ] {
+            insert_test_item(
+                &storage,
+                TestItem {
+                    id,
+                    created_at,
+                    content_kind: "text",
+                    text,
+                    mime_primary: Some("text/plain"),
+                    title,
+                    notes,
+                    tags: None,
+                },
+            );
+        }
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 5,
+                created_at: 30_005,
+                content_kind: "text",
+                text: "unrelated content",
+                mime_primary: Some("application/invoice"),
+                title: Some("other title"),
+                notes: Some("other note"),
+                tags: None,
+            },
+        );
+        insert_test_item(
+            &storage,
+            TestItem {
+                id: 6,
+                created_at: 30_006,
+                content_kind: "image",
+                text: "unrelated content",
+                mime_primary: Some("image/png"),
+                title: Some("other title"),
+                notes: Some("other note"),
+                tags: None,
+            },
+        );
+        storage
+            .conn
+            .lock()
+            .expect("test sqlite connection lock should work")
+            .execute(
+                "UPDATE clipboard_items SET context_search_text = 'invoice context' WHERE id = 4",
+                [],
+            )
+            .expect("test context should update");
+
+        let metadata_without_notes = storage
+            .list_page(HistoryPageRequest {
+                query: "in:metadata,-notes invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("metadata exclusion query should load");
+        assert_eq!(ids(&metadata_without_notes.items), vec![2, 1]);
+
+        let all_without_context = storage
+            .list_page(HistoryPageRequest {
+                query: "in:-context invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("negative-only context scope query should load");
+        assert_eq!(ids(&all_without_context.items), vec![5, 3, 2, 1]);
+        let kind_without_context = storage
+            .list_page(HistoryPageRequest {
+                query: "in:-context image".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("negative-only context should include content kind");
+        assert_eq!(ids(&kind_without_context.items), vec![6]);
+
+        let zero_effective_fields = storage
+            .list_page(HistoryPageRequest {
+                query: "in:notes,-notes invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("zero-field scope query should load");
+        assert!(zero_effective_fields.items.is_empty());
+
+        let structured_filter_survives_scope_exclusion = storage
+            .list_page(HistoryPageRequest {
+                query: "in:notes,-notes title:invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("structured filter should remain independent");
+        assert_eq!(
+            ids(&structured_filter_survives_scope_exclusion.items),
+            vec![2, 1]
+        );
+
+        let malformed_scope = storage
+            .list_page(HistoryPageRequest {
+                query: "in:metadata, invoice".to_string(),
+                cursor: None,
+                limit: Some(10),
+            })
+            .expect("malformed scope should fail closed");
+        assert!(malformed_scope.items.is_empty());
     }
 
     #[test]

@@ -111,7 +111,6 @@ import { localPreviewImageSource } from "./shared/previewMedia";
 import {
   classifyStructuredSearchDraft,
   replaceActiveSearchToken,
-  queryWithSearchScopes,
   searchSuggestions,
   tagKey,
   shouldHoldStructuredSearchDraft,
@@ -131,6 +130,8 @@ import {
   type AppSettings,
   type SearchTriggerMode,
 } from "./shared/settings";
+import { scopeQuery } from "./shared/searchScopes";
+import { SearchScopeOption } from "./ui/SearchScopeEditor";
 import {
   UiBadge,
   UiButton,
@@ -734,6 +735,13 @@ function nextSearchTriggerMode(mode: SearchTriggerMode): SearchTriggerMode {
 
 function searchTriggerModeName(mode: SearchTriggerMode) {
   return mode === "realtime" ? "Realtime" : "Enter";
+}
+
+function defaultSearchQuery(picker: AppSettings["picker"]) {
+  return scopeQuery({
+    included: picker.defaultSearchScopes,
+    excluded: picker.defaultExcludedSearchScopes,
+  });
 }
 
 function setPickerSearchTriggerMode(mode: SearchTriggerMode) {
@@ -2373,7 +2381,7 @@ function App() {
     setNewClipsAvailable(false);
     autocompleteCommittedQueryRef.current = null;
     if (!filterLockedRef.current && !activeScenarioSessionRef.current) {
-      const defaultQuery = queryWithSearchScopes("", pickerSearchSettingsRef.current.defaultSearchScopes);
+      const defaultQuery = defaultSearchQuery(pickerSearchSettingsRef.current);
       queryRef.current = defaultQuery;
       historyInputQueryRef.current = defaultQuery;
       setQuery(defaultQuery);
@@ -4921,7 +4929,7 @@ function App() {
           const normalized = normalizeSettings(nextSettings);
           setSettings(normalized);
           if (!filterLockedRef.current && !queryRef.current.trim()) {
-            const defaultQuery = queryWithSearchScopes("", normalized.picker.defaultSearchScopes);
+            const defaultQuery = defaultSearchQuery(normalized.picker);
             if (defaultQuery) {
               queryRef.current = defaultQuery;
               setQuery(defaultQuery);
@@ -5353,9 +5361,7 @@ function App() {
           ? pickerEventHandlersRef.current.refreshHistory({
               resetScroll: true,
               showPending: false,
-              queryOverride: filterLockedRef.current
-                ? historyInputQueryRef.current
-                : queryWithSearchScopes("", pickerSearchSettingsRef.current.defaultSearchScopes),
+              queryOverride: queryRef.current,
               allowAi: false,
             })
           : pickerEventHandlersRef.current.refreshAppliedHistory({
@@ -5440,6 +5446,9 @@ function App() {
       ? history.length
       : null;
   const hasPreviousHistorySnapshot = history.length > 0 || Boolean(searchState.applied);
+  const appliedResultsQuery = searchState.applied?.descriptor.displayQuery ?? historyInputQuery;
+  const appliedResultsDiffer = Boolean(searchState.applied) && appliedResultsQuery.trim() !== query.trim();
+  const canClearSearch = queryHasSearchTerms || Boolean(appliedResultsQuery.trim());
   const historyErrorCopy = hasPreviousHistorySnapshot
     ? "Could not update results. Previous results remain visible."
     : "Could not load clipboard history yet. Try again.";
@@ -5700,7 +5709,7 @@ function App() {
     if (!suggestion) {
       return;
     }
-    const nextQuery = replaceActiveSearchToken(query, suggestion.replacement);
+    const nextQuery = suggestion.queryReplacement ?? replaceActiveSearchToken(query, suggestion.replacement);
     if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
       leaveOpenedSavedView();
     }
@@ -5746,7 +5755,7 @@ function App() {
       ? `search-suggestion-${activeSearchSuggestionIndex}`
       : undefined,
     value: query,
-    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search clips, in:content, meta:work, #tag, re:pattern',
+    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search all fields · in: scopes, tag: tags, re: pattern',
     title:
       'Search help: in: scopes, plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -6151,7 +6160,7 @@ function App() {
               </Menu>
             </div>
           </div>
-          <div className={`search-field${!aiComposerMode && queryHasSearchTerms ? " has-clear-button" : ""}`}>
+          <div className={`search-field${!aiComposerMode && canClearSearch ? " has-clear-button" : ""}`}>
             {aiComposerMode ? (
               <UiTextarea
                 {...searchTextareaProps}
@@ -6197,7 +6206,7 @@ function App() {
                 </UiIconButton>
               </UiTooltip>
             ) : null}
-            {!aiComposerMode && queryHasSearchTerms ? (
+            {!aiComposerMode && canClearSearch ? (
               <UiTooltip label="Clear filter">
                 <UiIconButton
                   type="button"
@@ -6213,6 +6222,11 @@ function App() {
             ) : null}
             {searchSuggestionsOpen ? (
               <div id="search-autocomplete" className="search-autocomplete" role="listbox" aria-label={scenarioCommandOpen ? "Capture mode actions" : "Search suggestions"}>
+                {autocompleteSuggestions.some((suggestion) => suggestion.scope) && !scenarioCommandOpen ? (
+                  <div className="search-scope-summary" role="presentation">
+                    {autocompleteSuggestions.find((suggestion) => suggestion.scope)?.scope?.summary}
+                  </div>
+                ) : null}
                 {scenarioCommandOpen
                   ? scenarioCommandOptions.map((scenario, index) => (
                     <button
@@ -6241,7 +6255,9 @@ function App() {
                       onMouseEnter={() => setActiveSearchSuggestion(index)}
                       onClick={() => acceptSearchSuggestion(index)}
                     >
-                      {suggestion.label}
+                      {suggestion.scope
+                        ? <SearchScopeOption label={suggestion.label} {...suggestion.scope} />
+                        : suggestion.label}
                     </button>
                   ))}
               </div>
@@ -6681,7 +6697,7 @@ function App() {
             data-testid="structured-search-feedback"
           >
             <strong>{structuredSearchFeedback}</strong>
-            <span>The applied results stay visible until the filter is valid.</span>
+            <span>Showing results for <code>{appliedResultsQuery || "All history"}</code> until the filter is valid.</span>
           </div>
         ) : null}
 
@@ -6723,6 +6739,13 @@ function App() {
           </div>
         ) : null}
           </PickerContextStrip>
+        ) : null}
+        {appliedResultsDiffer && (!structuredSearchFeedback || historyError) ? (
+          <div className="search-applied-feedback" role="status" aria-live="polite">
+            <span>Showing results for</span>
+            <code>{appliedResultsQuery || "All history"}</code>
+            <small>The input is a draft. Apply it to update results, or clear the filter.</small>
+          </div>
         ) : null}
 
         {savedViewCreatorOpen ? (
@@ -7825,7 +7848,8 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>sqlite migration</code></dt><dd>All terms must match.</dd></div>
               <div><dt><code>"exact phrase"</code></dt><dd>Keep words together.</dd></div>
               <div><dt><code>-draft</code></dt><dd>Exclude matching clips.</dd></div>
-              <div><dt><code>in:content,metadata invoice</code></dt><dd>Limit plain terms to one or more scopes. Type in: for suggestions; after a comma, autocomplete offers the remaining scopes.</dd></div>
+              <div><dt><code>in:metadata,-notes invoice</code></dt><dd>Search title and tags, ignoring notes. Autocomplete shows included, inherited and excluded scopes with their next action.</dd></div>
+              <div><dt><code>in:-context invoice</code></dt><dd>Search all fields except capture context. Defaults live in Settings, Picker, Search &amp; filters.</dd></div>
               <div><dt><code>re:^invoice-\d+$</code></dt><dd>Match a case-insensitive regular expression across searchable fields.</dd></div>
             </dl>
           </section>

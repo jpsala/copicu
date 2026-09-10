@@ -46,6 +46,7 @@ type SearchPlanV1 = {
   schemaVersion: 1;
   text?: {
     scopes?: Array<"content" | "metadata" | "title" | "notes" | "tags" | "context">;
+    excludedScopes?: Array<"content" | "metadata" | "title" | "notes" | "tags" | "context">;
     all?: string[];
     any?: string[];
     phrases?: string[];
@@ -135,6 +136,25 @@ Reglas:
    `in:content,metadata`, editable mediante el autocomplete compartido, produce
    `SearchPlanV1.text.scopes`; un arreglo vacio conserva todos los campos
    buscables.
+
+### Scopes y estado visible
+
+- `in:metadata,-notes` busca en titulo y tags; `in:-context` parte de todos
+  los campos y resta contexto. Las exclusiones prevalecen sobre inclusiones.
+- Los campos se expanden y deduplican antes de compilar. Un conjunto efectivo
+  vacio nunca se convierte implicitamente en todos los campos.
+- Sin terminos de texto, los scopes no ocultan historial. Operadores explicitos
+  como `tag:` conservan su semantica, independiente de los scopes plain.
+- Settings agrupa campos predeterminados, trigger y confirmacion estructurada
+  bajo `Picker > Search & filters`. Defaults se convierten en query visible,
+  no en condiciones agregadas silenciosamente al backend.
+- Settings y autocomplete comparten estados incluido, heredado, excluido,
+  disponible y parcial. Quitar una exclusion y excluir un campo heredado son
+  acciones diferentes y se anuncian antes de ejecutarlas.
+- El input es el draft; el snapshot aplicado conserva descriptor y resultados.
+  Cuando difieren, la UI muestra la query cuyos resultados siguen visibles.
+  Sin `in:` se indica todos los campos; input vacio aplicado significa todo
+  el historial, no un filtro predeterminado oculto.
 
 ## Primer Slice Implementable
 

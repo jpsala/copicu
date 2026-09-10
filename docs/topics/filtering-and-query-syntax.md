@@ -170,11 +170,30 @@ Texto plain busca en:
 
 El modificador visible `in:scope1,scope2` limita los terminos plain a uno o mas
 grupos de campos. Usa el mismo autocomplete que `tag:` y los demas operadores,
-sin boton ni menu de scopes separado. Tras una coma ofrece los scopes restantes;
-`metadata` ya incluye title, notes y tags. Sin modificador se buscan todos los
-campos. Filtros guardados y scripts conservan la misma semantica.
-`Default search scopes` en Settings define el prefijo visible inicial;
-dejarlo vacio restaura todos los campos.
+sin boton ni menu separado. El autocomplete muestra todos los estados, no
+oculta lo elegido: incluido, heredado por otro scope, excluido, disponible o
+parcial. Al escribir un nombre se filtran opciones; `-` permite completar una
+exclusion. `metadata` incluye title, notes y tags.
+
+`in:metadata,-notes` busca en titulo y tags; `in:-context` busca en todos los
+campos menos contexto. Las exclusiones prevalecen sobre inclusiones. Excluir
+un campo lo ignora al buscar, no descarta clips por lo que contenga ese campo.
+Sin scopes positivos se parte de todos los campos; un conjunto efectivo vacio
+nunca se convierte implicitamente en todos. Sin terminos plain, los scopes
+no agregan un filtro de filas.
+
+Settings agrupa `Default search scopes`, `Search trigger` y `Confirm structured
+filters with Enter` en `Picker > Search & filters`. La representacion de
+estados coincide con el autocomplete. `Only` limita a un scope y `Reset to all`
+restaura todos; el preview muestra el prefijo que tendran las nuevas busquedas.
+Es un prefijo visible y editable, no un filtro oculto que Rust agrega por fuera
+de la query. Filtros guardados y scripts conservan la misma semantica.
+
+El input contiene el draft. El snapshot aplicado conserva su propia query,
+plan y resultados mientras un draft espera Enter, esta incompleto o falla.
+Si difieren, `Showing results for` identifica la query de los resultados.
+Sin `in:` se busca en todos los campos; input vacio aplicado muestra todo el
+historial. Clear elimina tambien el filtro aplicado, aunque el draft este vacio.
 Los scopes son:
 
 - `content`: `text`;
@@ -203,6 +222,8 @@ Operadores soportados:
 | `sqlite migration` | ambos terminos deben matchear en campos buscables |
 | `in:content invoice` | busca `invoice` solo en el contenido textual |
 | `in:metadata,context invoice` | busca `invoice` en title/notes/tags o contexto de captura |
+| `in:metadata,-notes invoice` | busca en titulo y tags; ignora notas |
+| `in:-context invoice` | busca en todos los campos salvo contexto de captura |
 | `"sqlite migration"` | frase exacta como un unico termino |
 | `re:^invoice-\d+$` | expresion regular case-insensitive sobre cualquiera de los campos buscables; el prefijo debe iniciar la query |
 | `-draft` | excluye resultados que contengan `draft` |

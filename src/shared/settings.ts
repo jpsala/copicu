@@ -4,16 +4,6 @@ import type { ThemeId, ThemeSetting } from "../themeCatalog";
 export type SearchTriggerMode = "realtime" | "enter";
 export type SearchScope = "all" | "content" | "metadata" | "title" | "notes" | "tags" | "context";
 
-export const SEARCH_SCOPE_OPTIONS: Array<{ value: SearchScope; label: string }> = [
-  { value: "all", label: "All searchable fields" },
-  { value: "content", label: "Clip content" },
-  { value: "metadata", label: "Metadata" },
-  { value: "title", label: "Title" },
-  { value: "notes", label: "Notes" },
-  { value: "tags", label: "Tags" },
-  { value: "context", label: "Capture context" },
-];
-
 export type EditorFontFamily = "systemMono" | "cascadiaMono" | "consolas" | "uiSans";
 export type EditorLineHeight = "compact" | "comfortable" | "relaxed";
 
@@ -78,6 +68,7 @@ export type AppSettings = {
     searchTriggerMode: SearchTriggerMode;
     deferStructuredSearchUntilEnter: boolean;
     defaultSearchScopes: SearchScope[];
+    defaultExcludedSearchScopes: Exclude<SearchScope, "all">[];
     pinToggleShortcut: string;
     settingsShortcut: string;
     previewShortcut: string;
@@ -124,6 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     searchTriggerMode: "realtime",
     deferStructuredSearchUntilEnter: false,
     defaultSearchScopes: ["all"],
+    defaultExcludedSearchScopes: [],
     pinToggleShortcut: "F8",
     settingsShortcut: "Ctrl+,",
     previewShortcut: "Alt+Enter",
@@ -187,6 +179,18 @@ function normalizeSearchScopes(value: unknown): SearchScope[] {
   return [...new Set(scopes)];
 }
 
+function normalizeExcludedSearchScopes(value: unknown): Exclude<SearchScope, "all">[] {
+  if (!Array.isArray(value)) return [];
+  const scopes = value.filter((scope): scope is Exclude<SearchScope, "all"> =>
+    scope === "content"
+    || scope === "metadata"
+    || scope === "title"
+    || scope === "notes"
+    || scope === "tags"
+    || scope === "context");
+  return [...new Set(scopes)];
+}
+
 export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSettings {
   const picker = { ...DEFAULT_SETTINGS.picker, ...settings.picker };
   return {
@@ -198,6 +202,7 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
       ...picker,
       searchTriggerMode: normalizeSearchTriggerMode(picker.searchTriggerMode),
       defaultSearchScopes: normalizeSearchScopes(picker.defaultSearchScopes),
+      defaultExcludedSearchScopes: normalizeExcludedSearchScopes(picker.defaultExcludedSearchScopes),
     },
     history: { ...DEFAULT_SETTINGS.history, ...settings.history },
     appearance: { ...DEFAULT_SETTINGS.appearance, ...settings.appearance },

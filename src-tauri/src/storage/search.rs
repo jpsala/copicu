@@ -35,6 +35,8 @@ pub struct SearchPlanTextV1 {
     pub regex: Option<String>,
     #[serde(default)]
     pub scopes: Vec<SearchPlanTextScopeV1>,
+    #[serde(default)]
+    pub excluded_scopes: Vec<SearchPlanTextScopeV1>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -215,7 +217,7 @@ pub(super) struct ParsedHistoryQuery {
     pub(super) text_terms: Vec<String>,
     pub(super) excluded_text_terms: Vec<String>,
     pub(super) text_scopes: Vec<SearchPlanTextScopeV1>,
-
+    pub(super) excluded_text_scopes: Vec<SearchPlanTextScopeV1>,
     pub(super) tags: Vec<String>,
     pub(super) excluded_tags: Vec<String>,
     pub(super) kinds: Vec<String>,
@@ -306,10 +308,13 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
                 }
             }
             "in" => {
-                if negated {
+                if !negated {
+                    if let Some((scopes, excluded_scopes)) = parse_text_scope_filters(value) {
+                        parsed.text_scopes = scopes;
+                        parsed.excluded_text_scopes = excluded_scopes;
+                    }
+                } else {
                     push_text_filter(&mut parsed, raw_token, true);
-                } else if let Some(scopes) = parse_text_scopes(value) {
-                    parsed.text_scopes = scopes;
                 }
             }
             "meta" | "metadata" => {
@@ -508,17 +513,31 @@ fn push_text_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool)
     }
 }
 
-fn parse_text_scopes(value: &str) -> Option<Vec<SearchPlanTextScopeV1>> {
-    let values = split_filter_values(value).collect::<Vec<_>>();
-    if values.is_empty() {
+fn parse_text_scope_filters(
+    value: &str,
+) -> Option<(Vec<SearchPlanTextScopeV1>, Vec<SearchPlanTextScopeV1>)> {
+    let values = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if values.is_empty() || values.iter().any(|value| value.is_empty()) {
         return None;
     }
-    if values.len() == 1 && values[0].eq_ignore_ascii_case("all") {
-        return Some(Vec::new());
-    }
+
     let mut scopes = Vec::with_capacity(values.len());
+    let mut excluded_scopes = Vec::with_capacity(values.len());
+    let mut includes_all = false;
     for value in values {
+        let (negated, value) = value
+            .strip_prefix('-')
+            .map(|value| (true, value.trim()))
+            .unwrap_or((false, value));
+        if value.is_empty() {
+            return None;
+        }
         let scope = match value.to_ascii_lowercase().as_str() {
+            "all" if negated => return None,
+            "all" => {
+                includes_all = true;
+                continue;
+            }
             "content" => SearchPlanTextScopeV1::Content,
             "metadata" => SearchPlanTextScopeV1::Metadata,
             "title" => SearchPlanTextScopeV1::Title,
@@ -527,11 +546,19 @@ fn parse_text_scopes(value: &str) -> Option<Vec<SearchPlanTextScopeV1>> {
             "context" => SearchPlanTextScopeV1::Context,
             _ => return None,
         };
-        if !scopes.contains(&scope) {
-            scopes.push(scope);
+        let target = if negated {
+            &mut excluded_scopes
+        } else {
+            &mut scopes
+        };
+        if !target.contains(&scope) {
+            target.push(scope);
         }
     }
-    Some(scopes)
+    if includes_all && !scopes.is_empty() {
+        return None;
+    }
+    Some((scopes, excluded_scopes))
 }
 
 fn push_tag_filter(parsed: &mut ParsedHistoryQuery, value: &str, negated: bool) {
@@ -671,6 +698,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
     text.all = query.text_terms;
     text.exclude = query.excluded_text_terms;
     text.scopes = query.text_scopes;
+    text.excluded_scopes = query.excluded_text_scopes;
 
     let mut filters = SearchPlanFiltersV1::default();
     filters.tags = query.tags;
@@ -743,6 +771,7 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
                 || !text.exclude.is_empty()
                 || text.regex.is_some()
                 || !text.scopes.is_empty()
+                || !text.excluded_scopes.is_empty()
         }),
         filters: Some(filters).filter(|filters| !filters.is_empty()),
         sort: Vec::new(),
@@ -794,14 +823,15 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
     let mut params = Vec::new();
 
     if let Some(text) = &plan.text {
+        let text_fields = text_search_fields(&text.scopes, &text.excluded_scopes);
         for term in clean_values(&text.all) {
-            push_text_like_clause(&mut clauses, &mut params, term, false, &text.scopes);
+            push_text_like_clause(&mut clauses, &mut params, term, false, &text_fields);
         }
         if !text.any.is_empty() {
             let mut any_clauses = Vec::new();
             let mut any_params = Vec::new();
             for term in clean_values(&text.any) {
-                push_text_like_clause(&mut any_clauses, &mut any_params, term, false, &text.scopes);
+                push_text_like_clause(&mut any_clauses, &mut any_params, term, false, &text_fields);
             }
             if !any_clauses.is_empty() {
                 clauses.push(format!("({})", any_clauses.join(" OR ")));
@@ -809,10 +839,10 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
             }
         }
         for phrase in clean_values(&text.phrases) {
-            push_text_like_clause(&mut clauses, &mut params, phrase, false, &text.scopes);
+            push_text_like_clause(&mut clauses, &mut params, phrase, false, &text_fields);
         }
         for term in clean_values(&text.exclude) {
-            push_text_like_clause(&mut clauses, &mut params, term, true, &text.scopes);
+            push_text_like_clause(&mut clauses, &mut params, term, true, &text_fields);
         }
         if let Some(pattern) = text.regex.as_deref() {
             regex::RegexBuilder::new(pattern)
@@ -1266,47 +1296,63 @@ impl From<SearchPlanMissingV1> for HasFilter {
     }
 }
 
+const ALL_TEXT_FIELDS: &[&str] = &[
+    "COALESCE(text, '')",
+    "COALESCE(title, '')",
+    "COALESCE(notes, '')",
+    "COALESCE(tags, '')",
+    "COALESCE(mime_primary, '')",
+    "content_kind",
+    "COALESCE(context_search_text, '')",
+];
+
+fn text_scope_fields(scope: SearchPlanTextScopeV1) -> &'static [&'static str] {
+    match scope {
+        SearchPlanTextScopeV1::Content => &["COALESCE(text, '')"],
+        SearchPlanTextScopeV1::Metadata => &[
+            "COALESCE(title, '')",
+            "COALESCE(notes, '')",
+            "COALESCE(tags, '')",
+        ],
+        SearchPlanTextScopeV1::Title => &["COALESCE(title, '')"],
+        SearchPlanTextScopeV1::Notes => &["COALESCE(notes, '')"],
+        SearchPlanTextScopeV1::Tags => &["COALESCE(tags, '')"],
+        SearchPlanTextScopeV1::Context => &["COALESCE(context_search_text, '')"],
+    }
+}
+
+fn text_search_fields(
+    scopes: &[SearchPlanTextScopeV1],
+    excluded_scopes: &[SearchPlanTextScopeV1],
+) -> Vec<&'static str> {
+    let mut fields = if scopes.is_empty() {
+        ALL_TEXT_FIELDS.to_vec()
+    } else {
+        let mut selected = Vec::with_capacity(ALL_TEXT_FIELDS.len());
+        for scope in scopes {
+            for field in text_scope_fields(*scope) {
+                if !selected.contains(field) {
+                    selected.push(*field);
+                }
+            }
+        }
+        selected
+    };
+    for scope in excluded_scopes {
+        for field in text_scope_fields(*scope) {
+            fields.retain(|selected| selected != field);
+        }
+    }
+    fields
+}
+
 fn push_text_like_clause(
     clauses: &mut Vec<String>,
     params: &mut Vec<Value>,
     term: &str,
     negated: bool,
-    scopes: &[SearchPlanTextScopeV1],
+    fields: &[&str],
 ) {
-    let all_fields = [
-        "COALESCE(text, '')",
-        "COALESCE(title, '')",
-        "COALESCE(notes, '')",
-        "COALESCE(tags, '')",
-        "COALESCE(mime_primary, '')",
-        "content_kind",
-        "COALESCE(context_search_text, '')",
-    ];
-    let mut selected_fields = Vec::with_capacity(all_fields.len());
-    let fields = if scopes.is_empty() {
-        all_fields.as_slice()
-    } else {
-        for scope in scopes {
-            let scope_fields: &[&str] = match scope {
-                SearchPlanTextScopeV1::Content => &["COALESCE(text, '')"],
-                SearchPlanTextScopeV1::Metadata => &[
-                    "COALESCE(title, '')",
-                    "COALESCE(notes, '')",
-                    "COALESCE(tags, '')",
-                ],
-                SearchPlanTextScopeV1::Title => &["COALESCE(title, '')"],
-                SearchPlanTextScopeV1::Notes => &["COALESCE(notes, '')"],
-                SearchPlanTextScopeV1::Tags => &["COALESCE(tags, '')"],
-                SearchPlanTextScopeV1::Context => &["COALESCE(context_search_text, '')"],
-            };
-            for field in scope_fields {
-                if !selected_fields.contains(field) {
-                    selected_fields.push(*field);
-                }
-            }
-        }
-        selected_fields.as_slice()
-    };
     push_field_like_clause(clauses, params, fields, term, negated);
 }
 
@@ -1340,6 +1386,14 @@ fn push_field_like_clause(
     term: &str,
     negated: bool,
 ) {
+    if fields.is_empty() {
+        clauses.push(if negated {
+            "1 = 1".to_string()
+        } else {
+            "0 = 1".to_string()
+        });
+        return;
+    }
     let joined = fields
         .iter()
         .map(|field| format!("{field} LIKE ? ESCAPE '\\'"))
@@ -1644,7 +1698,7 @@ pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation 
                     )
                 }),
                 "has" => values.iter().all(|value| parse_has_filter(value).is_some()),
-                "in" => !negated && parse_text_scopes(value).is_some(),
+                "in" => !negated && parse_text_scope_filters(value).is_some(),
                 "after" | "since" | "before" | "until" | "on" => {
                     !negated
                         && values.len() == 1

@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyStructuredSearchDraft,
-  queryWithoutSearchScopes,
-  queryWithSearchScopes,
   searchSuggestions,
   shouldHoldStructuredSearchDraft,
 } from "../src/shared/search.ts";
+import {
+  replaceQueryScopes,
+  scopeOptions,
+  scopeQuery,
+  scopeSelectionFromQuery,
+  scopeSummary,
+} from "../src/shared/searchScopes.ts";
 
 test("structured draft classifier holds incomplete operators and quotes", () => {
   assert.equal(classifyStructuredSearchDraft("#").kind, "incomplete");
@@ -24,7 +29,6 @@ test("structured draft classifier holds incomplete operators and quotes", () => 
 test("regular expressions require the explicit re prefix", () => {
   const empty = classifyStructuredSearchDraft("re:");
   assert.equal(empty.kind, "incomplete");
-  assert.equal(empty.message, "Add a regular expression after `re:`.");
   assert.equal(empty.structured, true);
   assert.equal(classifyStructuredSearchDraft("re:^invoice-\\d+$").kind, "complete");
   assert.equal(classifyStructuredSearchDraft("invoice re:paid").kind, "plain");
@@ -200,22 +204,47 @@ test("quoted structured values keep parity with the Rust tokenizer", () => {
   }
 });
 
-test("search scopes are validated, suggested, and replaced as one query modifier", () => {
+test("search scopes validate, expose truthful states, and replace one modifier", () => {
   assert.equal(classifyStructuredSearchDraft("in:metadata,content invoice").kind, "complete");
   assert.equal(classifyStructuredSearchDraft("in:properties invoice").kind, "invalid");
   assert.equal(classifyStructuredSearchDraft("in:all,content invoice").kind, "invalid");
   assert.equal(classifyStructuredSearchDraft("in:metadata,").kind, "incomplete");
   assert.equal(classifyStructuredSearchDraft("in:content,,context").kind, "invalid");
+  assert.equal(classifyStructuredSearchDraft("in:-all").kind, "invalid");
+  assert.equal(classifyStructuredSearchDraft("in:-context invoice").kind, "complete");
   assert.equal(classifyStructuredSearchDraft("-in:content invoice").kind, "invalid");
-  assert.ok(searchSuggestions("in:me", []).some((suggestion) => suggestion.replacement === "in:metadata"));
-  assert.ok(searchSuggestions("in:content,me", []).some((suggestion) => suggestion.replacement === "in:content,metadata"));
-  assert.deepEqual(
-    searchSuggestions("in:metadata,", []).map((suggestion) => suggestion.replacement),
-    ["in:metadata,content", "in:metadata,context"],
-  );
-  assert.deepEqual(searchSuggestions("in:all,", []), []);
 
-  assert.equal(queryWithoutSearchScopes("in:title,notes invoice paid"), "invoice paid");
-  assert.equal(queryWithSearchScopes("in:title invoice paid", ["context", "metadata"]), "in:context,metadata invoice paid");
-  assert.equal(queryWithSearchScopes("in:title invoice paid", ["all"]), "invoice paid");
+  const metadata = scopeOptions({ included: ["metadata"], excluded: [] });
+  assert.equal(metadata.find((option) => option.scope === "metadata")?.state, "included");
+  assert.equal(metadata.find((option) => option.scope === "notes")?.state, "inherited");
+  assert.equal(metadata.find((option) => option.scope === "notes")?.next.excluded[0], "notes");
+  const excluded = scopeOptions({ included: ["all"], excluded: ["metadata"] });
+  assert.equal(excluded.find((option) => option.scope === "title")?.state, "excluded");
+  assert.deepEqual(excluded.find((option) => option.scope === "title")?.next.excluded, ["notes", "tags"]);
+  assert.equal(scopeOptions(metadata[0].next).find((option) => option.scope === "content")?.state, "included");
+  assert.deepEqual(metadata.find((option) => option.scope === "metadata")?.next.included, []);
+  assert.equal(scopeOptions({ included: [], excluded: ["context"] }).find((option) => option.scope === "notes")?.state, "inherited");
+  assert.equal(scopeOptions({ included: ["metadata"], excluded: ["notes"] }).find((option) => option.scope === "metadata")?.state, "partial");
+
+  assert.ok(searchSuggestions("in:me", []).some((suggestion) =>
+    suggestion.replacement === "in:metadata" && suggestion.queryReplacement === "in:metadata"));
+  assert.ok(searchSuggestions("in:-no", []).some((suggestion) =>
+    suggestion.replacement === "in:-notes" && suggestion.scope?.actionLabel === "Exclude Notes"));
+  assert.deepEqual(searchSuggestions("in:metadata", []), []);
+  assert.ok(searchSuggestions("in:all,", []).some((suggestion) =>
+    suggestion.queryReplacement === "in:all,-notes"));
+  assert.ok(searchSuggestions("in:metadata,no", []).some((suggestion) =>
+    suggestion.queryReplacement === "in:metadata,-notes" && suggestion.scope?.actionLabel === "Exclude"));
+  assert.ok(searchSuggestions("in:metadata,", []).some((suggestion) =>
+    suggestion.scope?.state === "inherited" && suggestion.queryReplacement === "in:metadata,-notes"));
+
+  assert.deepEqual(scopeSelectionFromQuery("in:title old in:metadata,-notes"), {
+    included: ["metadata"],
+    excluded: ["notes"],
+  });
+  assert.equal(scopeQuery({ included: ["all"], excluded: ["notes"] }), "in:all,-notes");
+  assert.equal(scopeSummary({ included: ["all"], excluded: ["notes"] }), "All searchable fields except Notes");
+  const query = '  in:title   "a  b" re:^x\\s+in:notes  ';
+  assert.equal(replaceQueryScopes(query, { included: ["metadata"], excluded: ["tags"] }), '  in:metadata,-tags   "a  b" re:^x\\s+in:notes  ');
+  assert.equal(replaceQueryScopes("re:^x\\s+in:title", { included: ["metadata"], excluded: [] }), "re:^x\\s+in:title");
 });

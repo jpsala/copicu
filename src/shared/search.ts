@@ -1,4 +1,12 @@
 import type { SearchScope } from "./settings";
+import {
+  parseSearchScopeModifier,
+  replaceQueryScopes,
+  scopeQuery,
+  scopeOptions,
+  scopeSummary,
+  type SearchScopeSelection,
+} from "./searchScopes.ts";
 
 // Matches storage::normalize_tag_label without migrating Unicode identities.
 export function tagKey(value: string): string {
@@ -13,7 +21,17 @@ const STRUCTURED_FILTER_KEYS = new Set([
   "tag", "tags", "kind", "type", "is", "mime", "has", "in", "meta", "metadata", "title", "note", "notes", "ctx", "context", "app", "program", "process", "window", "domain", "site", "source", "format", "fmt", "after", "since", "before", "until", "on",
 ]);
 
-export type SearchSuggestion = { label: string; replacement: string };
+export type SearchSuggestion = {
+  label: string;
+  replacement: string;
+  scope?: {
+    state: "included" | "inherited" | "excluded" | "available" | "partial";
+    detail: string;
+    actionLabel: string;
+    summary: string;
+  };
+  queryReplacement?: string;
+};
 
 export type StructuredSearchDraftKind = "plain" | "complete" | "incomplete" | "invalid";
 
@@ -51,11 +69,13 @@ const CLOSED_VALUES: Record<string, string[]> = {
   kind: ["text", "image", "html", "file", "file-list", "unknown"],
   is: ["marked", "checked", "unmarked", "unchecked", "inbox", "not-inbox", "not_inbox"],
   has: ["text", "title", "note", "notes", "tag", "tags", "metadata", "meta", "mime", "blob", "file", "image"],
-  in: ["all", "content", "metadata", "title", "notes", "tags", "context"],
   after: ["today", "yesterday", "7d"],
   before: ["today", "yesterday", "7d"],
   on: ["today", "yesterday", "7d"],
 };
+const MIN_I64 = -(1n << 63n);
+const MAX_I64 = (1n << 63n) - 1n;
+const DECIMAL_I64_PATTERN = /^[+-]?\d+$/;
 
 const VALUE_KEY_ALIASES: Record<string, string> = {
   type: "kind",
@@ -65,26 +85,6 @@ const VALUE_KEY_ALIASES: Record<string, string> = {
 
 const DATE_FILTER_KEYS = new Set(["after", "since", "before", "until", "on"]);
 const NON_NEGATABLE_FILTER_KEYS = new Set(["in", "source", "format", "fmt"]);
-
-
-export function queryWithoutSearchScopes(query: string) {
-  return query
-    .replace(/(^|\p{White_Space})in:(?:all|(?:content|metadata|title|notes|tags|context)(?:,(?:content|metadata|title|notes|tags|context))*)(?=\p{White_Space}|$)/giu, " ")
-    .trim()
-    .replace(/\p{White_Space}+/gu, " ");
-}
-
-export function queryWithSearchScopes(query: string, scopes: SearchScope[]) {
-  const withoutScopes = queryWithoutSearchScopes(query);
-  const effectiveScopes = scopes.length === 0 || scopes.includes("all") ? [] : [...new Set(scopes)];
-  return effectiveScopes.length === 0
-    ? withoutScopes
-    : `in:${effectiveScopes.join(",")}${withoutScopes ? ` ${withoutScopes}` : ""}`;
-}
-const MIN_I64 = -(1n << 63n);
-const MAX_I64 = (1n << 63n) - 1n;
-const DECIMAL_I64_PATTERN = /^[+-]?\d+$/;
-
 function isI64Integer(value: string) {
   if (!DECIMAL_I64_PATTERN.test(value)) {
     return false;
@@ -358,7 +358,7 @@ export function classifyStructuredSearchDraft(
 
     const canonicalKey = VALUE_KEY_ALIASES[operator] ?? operator;
     const values = normalizedValue.split(",").map((part) => part.trim()).filter(Boolean);
-    const closedValues = ["kind", "is", "has", "in"].includes(canonicalKey)
+    const closedValues = ["kind", "is", "has"].includes(canonicalKey)
       ? CLOSED_VALUES[canonicalKey]
       : undefined;
     const invalidDateFilter = DATE_FILTER_KEYS.has(operator)
@@ -369,8 +369,7 @@ export function classifyStructuredSearchDraft(
       );
     const invalidNegatedFilter = negated && NON_NEGATABLE_FILTER_KEYS.has(operator);
     const invalidSearchScope = canonicalKey === "in"
-      && (normalizedValue.split(",").some((part) => !part.trim())
-        || (values.length > 1 && values.some((part) => part.toLocaleLowerCase() === "all")));
+      && (negated || parseSearchScopeModifier(normalizedValue) === null);
     if (
       values.length === 0
       || invalidDateFilter
@@ -442,11 +441,48 @@ function matchingTags(prefix: string, tags: string[], replacement: (tag: string)
     .map((tag) => ({ label: replacement(tag), replacement: replacement(tag) }));
 }
 
+function scopeAutocompleteSuggestions(query: string, value: string): SearchSuggestion[] {
+  const rawParts = value.split(",");
+  const rawSuffix = rawParts.pop() ?? "";
+  const negative = rawSuffix.startsWith("-");
+  const suffix = (negative ? rawSuffix.slice(1) : rawSuffix).toLocaleLowerCase();
+  const committedText = rawParts.join(",");
+  const committed = committedText
+    ? parseSearchScopeModifier(committedText)
+    : { included: ["all" as SearchScope], excluded: [] as Exclude<SearchScope, "all">[] };
+  if (!committed) return [];
+  if (parseSearchScopeModifier(value)) return [];
+  const visibleSelection = committed;
+  return scopeOptions(visibleSelection)
+    .filter((option) => option.scope.startsWith(suffix))
+    .map<SearchSuggestion | null>((option) => {
+      const candidateText = [...rawParts, `${negative ? "-" : ""}${option.scope}`].join(",");
+      const candidate = parseSearchScopeModifier(candidateText);
+      const stateAwareToggle = !negative && rawParts.length > 0;
+      const nextSelection = stateAwareToggle ? option.next : candidate;
+      if (!nextSelection) return null;
+      const replacement = scopeQuery(nextSelection);
+      const actionLabel = negative
+        ? `Exclude ${option.label}`
+        : (rawParts.length === 0 ? "Search only" : option.actionLabel);
+      return {
+        label: option.label,
+        replacement,
+        scope: {
+          state: option.state,
+          detail: option.detail,
+          actionLabel,
+          summary: scopeSummary(visibleSelection),
+        },
+        queryReplacement: replaceQueryScopes(query, nextSelection),
+      };
+    })
+    .filter((suggestion): suggestion is SearchSuggestion => suggestion !== null);
+}
+
 export function searchSuggestions(query: string, tags: string[]): SearchSuggestion[] {
   const token = activeToken(query);
-  if (!token) {
-    return [];
-  }
+  if (!token) return [];
 
   const negated = token.startsWith("-") ? "-" : "";
   const rawToken = negated ? token.slice(1) : token;
@@ -470,17 +506,7 @@ export function searchSuggestions(query: string, tags: string[]): SearchSuggesti
     return matchingTags(value, tags, (tag) => `${negated}tag:${tag}`);
   }
   if (key === "in" && !negated) {
-    const parts = value.toLocaleLowerCase().split(",");
-    const prefix = parts.pop() ?? "";
-    const selected = new Set(parts.filter(Boolean));
-    return CLOSED_VALUES.in
-      .filter((item) => item !== "all" && !selected.has("all") && !selected.has(item))
-      .filter((item) => !selected.has("metadata") || !["title", "notes", "tags"].includes(item))
-      .filter((item) => item.startsWith(prefix) && item !== prefix)
-      .map((item) => {
-        const replacement = `in:${[...selected, item].join(",")}`;
-        return { label: replacement, replacement };
-      });
+    return scopeAutocompleteSuggestions(query, value);
   }
 
   const canonicalKey = VALUE_KEY_ALIASES[key] ?? key;

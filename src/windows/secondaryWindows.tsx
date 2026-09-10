@@ -64,12 +64,10 @@ import {
   editorFontStack,
   editorLineHeightValue,
   normalizeSettings,
-  SEARCH_SCOPE_OPTIONS,
   type AppSettings,
   type EditorFontFamily,
   type EditorLineHeight,
   type SearchTriggerMode,
-  type SearchScope,
 } from "../shared/settings";
 import {
   UiAlert,
@@ -78,7 +76,6 @@ import {
   UiIconButton,
   UiKbd,
   UiLoader,
-  UiMultiSelect,
   UiNumberInput,
   UiPaper,
   UiSelect,
@@ -88,6 +85,7 @@ import {
   UiTooltip,
 } from "../ui/controls";
 import { ShortcutBadge } from "../ui/ShortcutBadge";
+import { SearchScopeEditor } from "../ui/SearchScopeEditor";
 import {
   formatMetadataText,
   MetadataTextInput,
@@ -2177,7 +2175,7 @@ function SettingsPanel({
   ].join(" ");
   const pickerSearchText = [
     "search trigger realtime enter",
-    "default search scopes all fields content metadata title notes tags capture context",
+    "search & filters search and filters default search scopes all fields content metadata title notes tags capture context included excluded",
     "confirm structured filters with enter",
     "in realtime mode tags and conditions wait for enter",
     `item preview full image markdown text zoom context menu magnifier shortcut ${draft.picker.previewShortcut}`,
@@ -2575,7 +2573,11 @@ function SettingsPanel({
                     />
                   </SettingRow>
                 ) : null}
-                {visible("picker", "Search trigger", "Realtime Enter run filter search") ? (
+                {visible("picker", "Search & filters Search and filters", pickerSearchText) ? (
+                  <div className="settings-search-group">
+                    <h3>Search &amp; filters</h3>
+                    <p>Choose where and when to search. Defaults appear as an editable in: modifier, not a hidden filter.</p>
+                {visible("picker", "Search trigger Search & filters Search and filters", "Realtime Enter run filter search") ? (
                   <SettingRow label="Search trigger" description="Choose whether typing filters immediately or Enter applies the query.">
                     <UiSelect
                       aria-label="Search trigger"
@@ -2597,33 +2599,29 @@ function SettingsPanel({
                     />
                   </SettingRow>
                 ) : null}
-                {visible("picker", "Default search scopes", "All fields content metadata title notes tags capture context") ? (
+                {visible("picker", "Default search scopes Search & filters Search and filters", "All fields content metadata title notes tags capture context included excluded") ? (
                   <SettingRow
                     label="Default search scopes"
-                    description="New searches start in these field groups. Leave empty for all searchable fields."
+                    description="Start new searches with these fields. The same marks and actions appear in the in: autocomplete."
+                    wide
                   >
-                    <UiMultiSelect
-                      aria-label="Default search scopes"
-                      value={draft.picker.defaultSearchScopes.includes("all") ? [] : draft.picker.defaultSearchScopes}
-                      data={SEARCH_SCOPE_OPTIONS.filter((option) => option.value !== "all")}
-                      searchable
-                      clearable
-                      hidePickedOptions
-                      placeholder="All searchable fields"
-                      nothingFoundMessage="No matching scope"
-                      onChange={(values) =>
-                        onDraftChange({
-                          ...draft,
-                          picker: {
-                            ...draft.picker,
-                            defaultSearchScopes: values.length === 0 ? ["all"] : values as SearchScope[],
-                          },
-                        })
-                      }
+                    <SearchScopeEditor
+                      selection={{
+                        included: draft.picker.defaultSearchScopes,
+                        excluded: draft.picker.defaultExcludedSearchScopes,
+                      }}
+                      onChange={(selection) => onDraftChange({
+                        ...draft,
+                        picker: {
+                          ...draft.picker,
+                          defaultSearchScopes: selection.included,
+                          defaultExcludedSearchScopes: selection.excluded,
+                        },
+                      })}
                     />
                   </SettingRow>
                 ) : null}
-                {visible("picker", "Structured queries", "Wait for Enter before running tags and conditions in realtime mode") ? (
+                {visible("picker", "Structured queries Search & filters Search and filters", "Confirm structured filters with Enter Wait for Enter before running tags and conditions in realtime mode") ? (
                   <SettingRow
                     label="Confirm structured filters with Enter"
                     description="In Realtime mode, tags and conditions wait for Enter for the current query only."
@@ -2643,6 +2641,8 @@ function SettingsPanel({
                       }
                     />
                   </SettingRow>
+                ) : null}
+                  </div>
                 ) : null}
                 {visible("picker", "Preview shortcut", "Open or close the full item preview from the picker") ? (
                   <SettingRow label="Preview shortcut" description="Opens or closes the full preview for the active item. The contextual menu and magnifier use the same surface.">

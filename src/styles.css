@@ -986,6 +986,141 @@ button {
   outline-offset: -2px;
 }
 
+.scope-editor-option-row {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+}
+
+.scope-editor-option-row > .search-autocomplete-option {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-scope-summary {
+  padding: 5px 8px 7px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.scope-option-content {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.scope-state-icon {
+  display: inline-flex;
+  flex: 0 0 14px;
+  align-items: center;
+}
+
+.scope-option-content.is-included .scope-state-icon,
+.scope-option-content.is-partial .scope-state-icon {
+  color: var(--accent);
+}
+
+.scope-option-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.scope-option-label {
+  color: var(--ink);
+}
+
+.scope-option-detail,
+.scope-option-action {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.scope-option-action {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.scope-editor {
+  min-width: 0;
+}
+
+.scope-editor-summary {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.scope-editor-summary code {
+  display: block;
+  margin-top: 5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.scope-editor-options {
+  display: grid;
+  gap: 2px;
+}
+
+.scope-editor .scope-option-content,
+.scope-editor .scope-option-copy,
+.scope-editor .scope-state-icon {
+  display: flex;
+  margin-bottom: 0;
+  line-height: 1.4;
+}
+
+.settings-search-group {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding-top: 12px;
+}
+
+.settings-search-group > h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.settings-search-group > p {
+  margin: 0 0 4px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.search-applied-feedback {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.search-applied-feedback code {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.search-applied-feedback small {
+  flex-basis: 100%;
+  font-size: inherit;
+}
+
 .search-row input,
 .search-row textarea {
   width: 100%;

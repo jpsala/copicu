@@ -17,8 +17,6 @@ import {
   type NumberInputProps,
   Paper,
   type PaperProps,
-  MultiSelect,
-  type MultiSelectProps,
   Select,
   type SelectProps,
   Switch,
@@ -90,10 +88,6 @@ export const UiNumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
 
 export function UiSelect({ comboboxProps, ...props }: SelectProps) {
   return <Select comboboxProps={{ withinPortal: true, ...comboboxProps }} {...props} />;
-}
-
-export function UiMultiSelect({ comboboxProps, ...props }: MultiSelectProps) {
-  return <MultiSelect comboboxProps={{ withinPortal: true, ...comboboxProps }} {...props} />;
 }
 
 export const UiSwitch = forwardRef<
