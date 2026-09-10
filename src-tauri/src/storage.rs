@@ -8,7 +8,7 @@ use rusqlite::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -62,6 +62,9 @@ const DEFAULT_GLOBAL_SHORTCUT: &str = "Ctrl+Shift+,";
 const DEFAULT_PASTE_NEXT_SHORTCUT: &str = "Ctrl+Alt+F11";
 const MIN_RETENTION_COUNT: i64 = 100;
 const MAX_RETENTION_COUNT: i64 = 100_000;
+const MAX_METADATA_SELECTION_ITEMS: usize = 100;
+const METADATA_CAPTURE_EVENT_LIMIT: i64 = 12;
+pub const METADATA_SNAPSHOT_STALE: &str = "METADATA_SNAPSHOT_STALE";
 
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
@@ -240,7 +243,10 @@ pub struct CreateHistoryItemRequest {
     pub text: String,
     pub title: Option<String>,
     pub notes: Option<String>,
-    pub tags: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub properties: ScenarioProperties,
     pub mime_primary: Option<String>,
 }
 
@@ -307,6 +313,162 @@ pub struct MetadataPropertyEntry {
     pub key: String,
     pub value: String,
     pub source: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSelectionRequest {
+    pub item_ids: Vec<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MetadataPresence {
+    All,
+    Some,
+    None,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSourceCount {
+    pub source: String,
+    pub count: usize,
+    pub confidence_min: Option<f64>,
+    pub confidence_max: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ScalarAggregateState {
+    Same,
+    Mixed,
+    Empty,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarAggregate {
+    pub state: ScalarAggregateState,
+    pub value: Option<String>,
+    pub populated_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataTagConfig {
+    pub tag_id: i64,
+    pub color: Option<String>,
+    pub pinned: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetValueAggregate {
+    pub key: String,
+    pub label: String,
+    pub presence: MetadataPresence,
+    pub present_count: usize,
+    pub total_count: usize,
+    pub sources: Vec<MetadataSourceCount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_config: Option<MetadataTagConfig>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataPropertyAggregates {
+    pub client: Vec<SetValueAggregate>,
+    pub project: Vec<SetValueAggregate>,
+    pub activity: Vec<SetValueAggregate>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSingleItem {
+    pub content_preview: String,
+    pub content_kind: String,
+    pub capture_context_events: Vec<CaptureContextEvent>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSelectionSnapshot {
+    pub item_ids: Vec<i64>,
+    pub item_count: usize,
+    pub snapshot_token: String,
+    pub title: ScalarAggregate,
+    pub notes: ScalarAggregate,
+    pub tags: Vec<SetValueAggregate>,
+    pub properties: MetadataPropertyAggregates,
+    pub single_item: Option<MetadataSingleItem>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum ScalarIntent {
+    Untouched,
+    Set { value: String },
+    Clear,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum NotesIntent {
+    Untouched,
+    ReplaceAll { value: String },
+    AppendToEach { value: String },
+    ClearAll,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetValueIntent {
+    pub key: String,
+    pub op: SetValueIntentOp,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SetValueIntentOp {
+    Untouched,
+    Add,
+    Remove,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataPropertyIntents {
+    #[serde(default)]
+    pub client: Vec<SetValueIntent>,
+    #[serde(default)]
+    pub project: Vec<SetValueIntent>,
+    #[serde(default)]
+    pub activity: Vec<SetValueIntent>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSelectionIntent {
+    pub item_ids: Vec<i64>,
+    pub expected_snapshot_token: String,
+    pub title: ScalarIntent,
+    pub notes: NotesIntent,
+    #[serde(default)]
+    pub tags: Vec<SetValueIntent>,
+    #[serde(default)]
+    pub properties: MetadataPropertyIntents,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSelectionApplyResult {
+    pub snapshot: MetadataSelectionSnapshot,
+    pub changed_item_count: usize,
+    pub title_changed_count: usize,
+    pub notes_changed_count: usize,
+    pub tag_relation_changes: usize,
+    pub property_relation_changes: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1518,8 +1680,15 @@ impl AppStorage {
 
         let title = normalize_optional_text(request.title);
         let notes = normalize_optional_text(request.notes);
-        let tags = normalize_optional_text(request.tags);
-        let normalized_tags = normalize_tag_values(&legacy_tags_to_values(tags.as_deref()))?;
+        let normalized_tags = normalize_tag_values(&request.tags)?;
+        let tags = (!normalized_tags.is_empty()).then(|| {
+            normalized_tags
+                .iter()
+                .map(|(_, label)| label.as_str())
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        let normalized_properties = normalize_scenario_properties(&request.properties)?;
         let mime_primary = normalize_optional_text(request.mime_primary)
             .or_else(|| Some("text/plain".to_string()));
         let normalized_hash = hash_text(&text);
@@ -1564,6 +1733,15 @@ impl AppStorage {
                 let next_notes = append_optional_notes(existing_notes, notes);
                 for (slug, label) in &normalized_tags {
                     add_item_tag_relation(&conn, existing_id, slug, label, "manual", None)?;
+                }
+                for value in &normalized_properties.client {
+                    add_item_property(&conn, existing_id, "client", value, "manual")?;
+                }
+                for value in &normalized_properties.project {
+                    add_item_property(&conn, existing_id, "project", value, "manual")?;
+                }
+                for value in &normalized_properties.activity {
+                    add_item_property(&conn, existing_id, "activity", value, "manual")?;
                 }
                 let next_mime = mime_primary.or(existing_mime);
                 let event_mime = next_mime.clone();
@@ -1629,6 +1807,15 @@ impl AppStorage {
                 let item_id = conn.last_insert_rowid();
                 for (slug, label) in &normalized_tags {
                     add_item_tag_relation(&conn, item_id, slug, label, "manual", None)?;
+                }
+                for value in &normalized_properties.client {
+                    add_item_property(&conn, item_id, "client", value, "manual")?;
+                }
+                for value in &normalized_properties.project {
+                    add_item_property(&conn, item_id, "project", value, "manual")?;
+                }
+                for value in &normalized_properties.activity {
+                    add_item_property(&conn, item_id, "activity", value, "manual")?;
                 }
                 sync_legacy_tags_for_item(&conn, item_id)?;
                 record_capture_event(
@@ -2414,6 +2601,238 @@ impl AppStorage {
             .map_err(|error| format!("failed to commit metadata update: {error}"))?;
         self.bump_mutation_epoch();
         Ok(())
+    }
+    pub fn get_metadata_selection_snapshot(
+        &self,
+        request: MetadataSelectionRequest,
+    ) -> Result<MetadataSelectionSnapshot, String> {
+        let item_ids = normalize_metadata_selection_ids(&request.item_ids)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        metadata_selection_snapshot_from_conn(&conn, &item_ids)
+    }
+
+    pub fn apply_metadata_selection_intent(
+        &self,
+        intent: MetadataSelectionIntent,
+    ) -> Result<MetadataSelectionApplyResult, String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let transaction = conn
+            .transaction()
+            .map_err(|error| format!("failed to begin metadata selection update: {error}"))?;
+        let item_ids = normalize_metadata_selection_ids(&intent.item_ids)?;
+        let current = metadata_selection_snapshot_from_conn(&transaction, &item_ids)?;
+        if current.snapshot_token != intent.expected_snapshot_token {
+            return Err(format!(
+                "{METADATA_SNAPSHOT_STALE}: editable metadata changed; reload selection"
+            ));
+        }
+
+        let mut changed_items = BTreeSet::new();
+        let mut tag_changed_items = BTreeSet::new();
+        let mut title_changed_count = 0;
+        let mut notes_changed_count = 0;
+        let mut tag_relation_changes = 0;
+        let mut property_relation_changes = 0;
+
+        for item_id in &item_ids {
+            let (current_title, current_notes) = transaction
+                .query_row(
+                    "SELECT title, notes FROM clipboard_items WHERE id = ?1",
+                    params![item_id],
+                    |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .map_err(|error| format!("failed to read scalar metadata: {error}"))?;
+
+            let next_title = match &intent.title {
+                ScalarIntent::Untouched => current_title.clone(),
+                ScalarIntent::Set { value } => normalize_optional_text(Some(value.clone())),
+                ScalarIntent::Clear => None,
+            };
+            if !matches!(intent.title, ScalarIntent::Untouched) && next_title != current_title {
+                transaction
+                    .execute(
+                        "UPDATE clipboard_items SET title = ?1 WHERE id = ?2",
+                        params![next_title, item_id],
+                    )
+                    .map_err(|error| format!("failed to update selection title: {error}"))?;
+                title_changed_count += 1;
+                changed_items.insert(*item_id);
+            }
+
+            let next_notes = match &intent.notes {
+                NotesIntent::Untouched => current_notes.clone(),
+                NotesIntent::ReplaceAll { value } => normalize_optional_text(Some(value.clone())),
+                NotesIntent::AppendToEach { value } => {
+                    let addition = normalize_optional_text(Some(value.clone()));
+                    match (current_notes.clone(), addition) {
+                        (existing, None) => existing,
+                        (None, Some(addition)) => Some(addition),
+                        (Some(existing), Some(addition)) => {
+                            Some(format!("{existing}\n\n{addition}"))
+                        }
+                    }
+                }
+                NotesIntent::ClearAll => None,
+            };
+            if !matches!(intent.notes, NotesIntent::Untouched) && next_notes != current_notes {
+                transaction
+                    .execute(
+                        "UPDATE clipboard_items SET notes = ?1 WHERE id = ?2",
+                        params![next_notes, item_id],
+                    )
+                    .map_err(|error| format!("failed to update selection notes: {error}"))?;
+                notes_changed_count += 1;
+                changed_items.insert(*item_id);
+            }
+        }
+
+        let normalized_tag_intents = normalize_tag_intents(&intent.tags)?;
+        for (slug, label, op) in normalized_tag_intents {
+            if op == SetValueIntentOp::Untouched {
+                continue;
+            }
+            for item_id in &item_ids {
+                let existing = transaction
+                    .query_row(
+                        "SELECT tags.label
+                         FROM clipboard_item_tags
+                         JOIN tags ON tags.id = clipboard_item_tags.tag_id
+                         WHERE clipboard_item_tags.item_id = ?1 AND tags.slug = ?2",
+                        params![item_id, slug],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .optional()
+                    .map_err(|error| format!("failed to inspect selection tag: {error}"))?;
+                match (op, existing) {
+                    (SetValueIntentOp::Add, None) => {
+                        if add_item_tag_relation(
+                            &transaction,
+                            *item_id,
+                            &slug,
+                            &label,
+                            "manual",
+                            None,
+                        )? {
+                            tag_relation_changes += 1;
+                            changed_items.insert(*item_id);
+                            tag_changed_items.insert(*item_id);
+                        }
+                    }
+                    (SetValueIntentOp::Remove, Some(existing_label)) => {
+                        suppress_metadata_value(
+                            &transaction,
+                            *item_id,
+                            "tag",
+                            "",
+                            &existing_label,
+                            &slug,
+                        )?;
+                        let tag_id = tag_id_by_slug(&transaction, &slug)?;
+                        transaction
+                            .execute(
+                                "DELETE FROM clipboard_item_tags WHERE item_id = ?1 AND tag_id = ?2",
+                                params![item_id, tag_id],
+                            )
+                            .map_err(|error| {
+                                format!("failed to remove selection tag relation: {error}")
+                            })?;
+                        tag_relation_changes += 1;
+                        changed_items.insert(*item_id);
+                        tag_changed_items.insert(*item_id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for (property_key, intents) in [
+            ("client", &intent.properties.client),
+            ("project", &intent.properties.project),
+            ("activity", &intent.properties.activity),
+        ] {
+            for (value, normalized_value, op) in normalize_property_intents(intents)? {
+                if op == SetValueIntentOp::Untouched {
+                    continue;
+                }
+                for item_id in &item_ids {
+                    let existing = transaction
+                        .query_row(
+                            "SELECT value FROM clipboard_item_properties
+                             WHERE item_id = ?1 AND property_key = ?2 AND normalized_value = ?3",
+                            params![item_id, property_key, normalized_value],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .optional()
+                        .map_err(|error| {
+                            format!("failed to inspect selection property: {error}")
+                        })?;
+                    match (op, existing) {
+                        (SetValueIntentOp::Add, None) => {
+                            if add_item_property(
+                                &transaction,
+                                *item_id,
+                                property_key,
+                                &value,
+                                "manual",
+                            )? {
+                                property_relation_changes += 1;
+                                changed_items.insert(*item_id);
+                            }
+                        }
+                        (SetValueIntentOp::Remove, Some(existing_value)) => {
+                            suppress_metadata_value(
+                                &transaction,
+                                *item_id,
+                                "property",
+                                property_key,
+                                &existing_value,
+                                &normalized_value,
+                            )?;
+                            transaction
+                                .execute(
+                                    "DELETE FROM clipboard_item_properties
+                                     WHERE item_id = ?1 AND property_key = ?2
+                                       AND normalized_value = ?3",
+                                    params![item_id, property_key, normalized_value],
+                                )
+                                .map_err(|error| {
+                                    format!(
+                                        "failed to remove selection property relation: {error}"
+                                    )
+                                })?;
+                            property_relation_changes += 1;
+                            changed_items.insert(*item_id);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        for item_id in &tag_changed_items {
+            sync_legacy_tags_for_item(&transaction, *item_id)?;
+        }
+        let snapshot = metadata_selection_snapshot_from_conn(&transaction, &item_ids)?;
+        transaction
+            .commit()
+            .map_err(|error| format!("failed to commit metadata selection update: {error}"))?;
+        if !changed_items.is_empty() {
+            self.bump_mutation_epoch();
+        }
+        Ok(MetadataSelectionApplyResult {
+            snapshot,
+            changed_item_count: changed_items.len(),
+            title_changed_count,
+            notes_changed_count,
+            tag_relation_changes,
+            property_relation_changes,
+        })
     }
 
     pub fn list_item_properties(&self, item_id: i64) -> Result<ScenarioProperties, String> {
@@ -3479,6 +3898,448 @@ impl AppStorage {
             let _ = std::fs::remove_file(path);
         }
     }
+}
+
+#[derive(Serialize)]
+struct MetadataFingerprintProjection<'a> {
+    item_ids: &'a [i64],
+    scalars: &'a [(i64, Option<String>, Option<String>)],
+    tags: &'a [(i64, String, String, Option<String>)],
+    properties: &'a [(i64, String, String, String, String)],
+}
+
+#[derive(Default)]
+struct SourceAggregateBuilder {
+    count: usize,
+    confidence_min: Option<f64>,
+    confidence_max: Option<f64>,
+}
+
+struct SetAggregateBuilder {
+    label: String,
+    item_ids: BTreeSet<i64>,
+    sources: BTreeMap<String, SourceAggregateBuilder>,
+    tag_config: Option<MetadataTagConfig>,
+}
+
+fn normalize_metadata_selection_ids(item_ids: &[i64]) -> Result<Vec<i64>, String> {
+    if item_ids.is_empty() {
+        return Err("metadata selection requires at least one item id".to_string());
+    }
+    let item_ids = item_ids.iter().copied().collect::<BTreeSet<_>>();
+    if item_ids.len() > MAX_METADATA_SELECTION_ITEMS {
+        return Err(format!(
+            "metadata selection exceeds limit of {MAX_METADATA_SELECTION_ITEMS} items"
+        ));
+    }
+    if item_ids.iter().any(|id| *id <= 0) {
+        return Err("metadata selection item ids must be positive".to_string());
+    }
+    Ok(item_ids.into_iter().collect())
+}
+
+fn normalize_tag_intents(
+    intents: &[SetValueIntent],
+) -> Result<Vec<(String, String, SetValueIntentOp)>, String> {
+    let mut normalized = Vec::with_capacity(intents.len());
+    let mut seen = BTreeSet::new();
+    for intent in intents {
+        let (slug, label) = normalize_tag_label(&intent.key)?;
+        if !seen.insert(slug.clone()) {
+            return Err(format!("duplicate metadata tag intent: {slug}"));
+        }
+        normalized.push((slug, label, intent.op));
+    }
+    Ok(normalized)
+}
+
+fn normalize_property_intents(
+    intents: &[SetValueIntent],
+) -> Result<Vec<(String, String, SetValueIntentOp)>, String> {
+    let mut normalized = Vec::with_capacity(intents.len());
+    let mut seen = BTreeSet::new();
+    for intent in intents {
+        let values = normalize_metadata_values(std::slice::from_ref(&intent.key))?;
+        let value = values
+            .into_iter()
+            .next()
+            .ok_or_else(|| "metadata property intent key cannot be empty".to_string())?;
+        let normalized_value = normalized_metadata_value(&value);
+        if !seen.insert(normalized_value.clone()) {
+            return Err(format!(
+                "duplicate metadata property intent: {normalized_value}"
+            ));
+        }
+        normalized.push((value, normalized_value, intent.op));
+    }
+    Ok(normalized)
+}
+
+fn scalar_aggregate(values: &[Option<String>]) -> ScalarAggregate {
+    let populated_count = values.iter().filter(|value| value.is_some()).count();
+    if populated_count == 0 {
+        return ScalarAggregate {
+            state: ScalarAggregateState::Empty,
+            value: None,
+            populated_count,
+        };
+    }
+    let first = values[0].as_ref();
+    if values.iter().all(|value| value.as_ref() == first) {
+        ScalarAggregate {
+            state: ScalarAggregateState::Same,
+            value: values[0].clone(),
+            populated_count,
+        }
+    } else {
+        ScalarAggregate {
+            state: ScalarAggregateState::Mixed,
+            value: None,
+            populated_count,
+        }
+    }
+}
+
+fn finish_set_aggregates(
+    builders: BTreeMap<String, SetAggregateBuilder>,
+    total_count: usize,
+) -> Vec<SetValueAggregate> {
+    builders
+        .into_iter()
+        .map(|(key, builder)| {
+            let present_count = builder.item_ids.len();
+            let presence = if present_count == total_count {
+                MetadataPresence::All
+            } else if present_count == 0 {
+                MetadataPresence::None
+            } else {
+                MetadataPresence::Some
+            };
+            let sources = builder
+                .sources
+                .into_iter()
+                .map(|(source, aggregate)| MetadataSourceCount {
+                    source,
+                    count: aggregate.count,
+                    confidence_min: aggregate.confidence_min,
+                    confidence_max: aggregate.confidence_max,
+                })
+                .collect();
+            SetValueAggregate {
+                key,
+                label: builder.label,
+                presence,
+                present_count,
+                total_count,
+                sources,
+                tag_config: builder.tag_config,
+            }
+        })
+        .collect()
+}
+
+fn record_set_aggregate(
+    builders: &mut BTreeMap<String, SetAggregateBuilder>,
+    key: String,
+    label: String,
+    item_id: i64,
+    source: String,
+    confidence: Option<f64>,
+    tag_config: Option<MetadataTagConfig>,
+) {
+    let builder = builders.entry(key).or_insert_with(|| SetAggregateBuilder {
+        label,
+        item_ids: BTreeSet::new(),
+        sources: BTreeMap::new(),
+        tag_config,
+    });
+    builder.item_ids.insert(item_id);
+    let source = builder.sources.entry(source).or_default();
+    source.count += 1;
+    if let Some(confidence) = confidence {
+        source.confidence_min =
+            Some(source.confidence_min.map_or(confidence, |value| value.min(confidence)));
+        source.confidence_max =
+            Some(source.confidence_max.map_or(confidence, |value| value.max(confidence)));
+    }
+}
+
+fn metadata_selection_snapshot_from_conn(
+    conn: &Connection,
+    item_ids: &[i64],
+) -> Result<MetadataSelectionSnapshot, String> {
+    let placeholders = vec!["?"; item_ids.len()].join(",");
+    let mut scalars = Vec::with_capacity(item_ids.len());
+    let mut content = Vec::with_capacity(item_ids.len());
+    let item_sql = format!(
+        "SELECT id, title, notes, content_kind, text
+         FROM clipboard_items
+         WHERE id IN ({placeholders})
+         ORDER BY id ASC"
+    );
+    let mut items = conn
+        .prepare(&item_sql)
+        .map_err(|error| format!("failed to prepare metadata selection items: {error}"))?;
+    let item_rows = items
+        .query_map(params_from_iter(item_ids.iter()), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .map_err(|error| format!("failed to query metadata selection items: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read metadata selection item: {error}"))?;
+    if item_rows.len() != item_ids.len() {
+        let found = item_rows.iter().map(|row| row.0).collect::<BTreeSet<_>>();
+        let missing = item_ids
+            .iter()
+            .find(|item_id| !found.contains(item_id))
+            .copied()
+            .unwrap_or_default();
+        return Err(format!("clipboard item not found: {missing}"));
+    }
+    for (item_id, title, notes, content_kind, text) in item_rows {
+        scalars.push((item_id, title, notes));
+        content.push((item_id, content_kind, text));
+    }
+
+    let mut tag_builders = BTreeMap::new();
+    let mut tag_projection = Vec::new();
+    let tag_sql = format!(
+        "SELECT clipboard_item_tags.item_id, tags.slug, tags.label,
+                clipboard_item_tags.source, clipboard_item_tags.confidence,
+                tags.id, tags.color, tags.pinned
+         FROM clipboard_item_tags
+         JOIN tags ON tags.id = clipboard_item_tags.tag_id
+         WHERE clipboard_item_tags.item_id IN ({placeholders})
+         ORDER BY clipboard_item_tags.item_id ASC, tags.slug ASC"
+    );
+    let mut tags = conn
+        .prepare(&tag_sql)
+        .map_err(|error| format!("failed to prepare metadata selection tags: {error}"))?;
+    let tag_rows = tags
+        .query_map(params_from_iter(item_ids.iter()), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<f64>>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, i64>(7)? != 0,
+            ))
+        })
+        .map_err(|error| format!("failed to query metadata selection tags: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read metadata selection tag: {error}"))?;
+    for (item_id, slug, label, source, confidence, tag_id, color, pinned) in tag_rows {
+        tag_projection.push((
+            item_id,
+            slug.clone(),
+            source.clone(),
+            confidence.map(|value| value.to_string()),
+        ));
+        record_set_aggregate(
+            &mut tag_builders,
+            slug,
+            label,
+            item_id,
+            source,
+            confidence,
+            Some(MetadataTagConfig {
+                tag_id,
+                color,
+                pinned,
+            }),
+        );
+    }
+
+    let mut property_builders: BTreeMap<String, BTreeMap<String, SetAggregateBuilder>> =
+        BTreeMap::new();
+    let mut property_projection = Vec::new();
+    let property_sql = format!(
+        "SELECT item_id, property_key, normalized_value, value, source
+         FROM clipboard_item_properties
+         WHERE item_id IN ({placeholders})
+           AND property_key IN ('client', 'project', 'activity')
+         ORDER BY item_id ASC, property_key ASC, normalized_value ASC"
+    );
+    let mut properties = conn
+        .prepare(&property_sql)
+        .map_err(|error| format!("failed to prepare metadata selection properties: {error}"))?;
+    let property_rows = properties
+        .query_map(params_from_iter(item_ids.iter()), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .map_err(|error| format!("failed to query metadata selection properties: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read metadata selection property: {error}"))?;
+    for (item_id, property_key, normalized_value, value, source) in property_rows {
+        property_projection.push((
+            item_id,
+            property_key.clone(),
+            normalized_value.clone(),
+            value.clone(),
+            source.clone(),
+        ));
+        record_set_aggregate(
+            property_builders.entry(property_key).or_default(),
+            normalized_value,
+            value,
+            item_id,
+            source,
+            None,
+            None,
+        );
+    }
+
+    let mut property_catalog = conn
+        .prepare(
+            "SELECT property_key, normalized_value, MIN(value)
+             FROM clipboard_item_properties
+             WHERE property_key IN ('client', 'project', 'activity')
+             GROUP BY property_key, normalized_value
+             ORDER BY property_key ASC, normalized_value ASC",
+        )
+        .map_err(|error| format!("failed to prepare metadata property catalog: {error}"))?;
+    let property_catalog_rows = property_catalog
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(|error| format!("failed to query metadata property catalog: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read metadata property catalog: {error}"))?;
+    for (property_key, normalized_value, value) in property_catalog_rows {
+        property_builders
+            .entry(property_key)
+            .or_default()
+            .entry(normalized_value)
+            .or_insert_with(|| SetAggregateBuilder {
+                label: value,
+                item_ids: BTreeSet::new(),
+                sources: BTreeMap::new(),
+                tag_config: None,
+            });
+    }
+
+    let title_values = scalars
+        .iter()
+        .map(|(_, title, _)| title.clone())
+        .collect::<Vec<_>>();
+    let notes_values = scalars
+        .iter()
+        .map(|(_, _, notes)| notes.clone())
+        .collect::<Vec<_>>();
+    let fingerprint = serde_json::to_vec(&MetadataFingerprintProjection {
+        item_ids,
+        scalars: &scalars,
+        tags: &tag_projection,
+        properties: &property_projection,
+    })
+    .map_err(|error| format!("failed to serialize metadata snapshot projection: {error}"))?;
+    let snapshot_token = hash_text(
+        std::str::from_utf8(&fingerprint)
+            .map_err(|error| format!("metadata snapshot projection is not UTF-8: {error}"))?,
+    );
+    let mut property_aggregates = |key: &str| {
+        finish_set_aggregates(
+            property_builders.remove(key).unwrap_or_default(),
+            item_ids.len(),
+        )
+    };
+    let single_item = if item_ids.len() == 1 {
+        let (_, content_kind, text) = &content[0];
+        Some(MetadataSingleItem {
+            content_preview: text.chars().take(HISTORY_PREVIEW_CHAR_LIMIT as usize).collect(),
+            content_kind: content_kind.clone(),
+            capture_context_events: capture_context_events_from_conn(
+                conn,
+                item_ids[0],
+                METADATA_CAPTURE_EVENT_LIMIT,
+            )?,
+        })
+    } else {
+        None
+    };
+
+    Ok(MetadataSelectionSnapshot {
+        item_ids: item_ids.to_vec(),
+        item_count: item_ids.len(),
+        snapshot_token,
+        title: scalar_aggregate(&title_values),
+        notes: scalar_aggregate(&notes_values),
+        tags: finish_set_aggregates(tag_builders, item_ids.len()),
+        properties: MetadataPropertyAggregates {
+            client: property_aggregates("client"),
+            project: property_aggregates("project"),
+            activity: property_aggregates("activity"),
+        },
+        single_item,
+    })
+}
+
+fn capture_context_events_from_conn(
+    conn: &Connection,
+    item_id: i64,
+    limit: i64,
+) -> Result<Vec<CaptureContextEvent>, String> {
+    let mut statement = conn
+        .prepare(
+            "SELECT id, captured_at_unix_ms, source_kind, source_app_name, source_app_path,
+                    source_process_id, source_window_id, source_window_title, content_kind,
+                    mime_primary, clipboard_platform, clipboard_sequence_number,
+                    clipboard_format_count, clipboard_formats_text, byte_size, text_char_count,
+                    line_count, domain, scenario_id, scenario_session_id, scenario_revision
+             FROM clipboard_item_capture_events
+             WHERE item_id = ?1
+             ORDER BY captured_at_unix_ms DESC, id DESC
+             LIMIT ?2",
+        )
+        .map_err(|error| format!("failed to prepare capture context query: {error}"))?;
+    let rows = statement
+        .query_map(params![item_id, limit.clamp(1, 50)], |row| {
+            Ok(CaptureContextEvent {
+                id: row.get(0)?,
+                captured_at_unix_ms: row.get(1)?,
+                source_kind: row.get(2)?,
+                source_app_name: row.get(3)?,
+                source_app_path: row.get(4)?,
+                source_process_id: row.get(5)?,
+                source_window_id: row.get(6)?,
+                source_window_title: row.get(7)?,
+                content_kind: row.get(8)?,
+                mime_primary: row.get(9)?,
+                clipboard_platform: row.get(10)?,
+                clipboard_sequence_number: row.get(11)?,
+                clipboard_format_count: row.get(12)?,
+                clipboard_formats_text: row.get(13)?,
+                byte_size: row.get(14)?,
+                text_char_count: row.get(15)?,
+                line_count: row.get(16)?,
+                domain: row.get(17)?,
+                scenario_id: row.get(18)?,
+                scenario_session_id: row.get(19)?,
+                scenario_revision: row.get(20)?,
+            })
+        })
+        .map_err(|error| format!("failed to query capture context: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("failed to read capture context row: {error}"))
 }
 
 struct ItemBlobPaths {
@@ -5056,6 +5917,304 @@ mod tests {
     use rusqlite::Connection;
     use std::sync::{Arc, Mutex};
 
+    fn untouched_metadata_intent(
+        item_ids: Vec<i64>,
+        expected_snapshot_token: String,
+    ) -> MetadataSelectionIntent {
+        MetadataSelectionIntent {
+            item_ids,
+            expected_snapshot_token,
+            title: ScalarIntent::Untouched,
+            notes: NotesIntent::Untouched,
+            tags: Vec::new(),
+            properties: MetadataPropertyIntents::default(),
+        }
+    }
+
+    #[test]
+    fn metadata_selection_snapshot_aggregates_normalized_rows_and_single_facts() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 2, 10_002, "second");
+        insert_test_text_item(&storage, 1, 10_001, "first");
+        insert_test_text_item(&storage, 3, 10_003, "catalog only");
+        {
+            let conn = storage.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE clipboard_items SET title = 'Shared', notes = 'one' WHERE id = 1",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE clipboard_items SET title = 'Shared', notes = 'two' WHERE id = 2",
+                [],
+            )
+            .unwrap();
+            add_item_tag_relation(&conn, 1, "work", "Work", "scenario", Some(0.7)).unwrap();
+            add_item_tag_relation(&conn, 2, "work", "Work", "manual", None).unwrap();
+            add_item_tag_relation(&conn, 1, "partial", "Partial", "context", Some(0.4)).unwrap();
+            add_item_property(&conn, 1, "client", "Acme", "scenario").unwrap();
+            add_item_property(&conn, 2, "client", "Acme", "manual").unwrap();
+            add_item_property(&conn, 3, "project", "Launch", "manual").unwrap();
+        }
+
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest {
+                item_ids: vec![2, 1, 2],
+            })
+            .unwrap();
+        assert_eq!(snapshot.item_ids, vec![1, 2]);
+        assert_eq!(snapshot.item_count, 2);
+        assert_eq!(snapshot.title.state, ScalarAggregateState::Same);
+        assert_eq!(snapshot.title.value.as_deref(), Some("Shared"));
+        assert_eq!(snapshot.notes.state, ScalarAggregateState::Mixed);
+        assert!(snapshot.single_item.is_none());
+        let work = snapshot.tags.iter().find(|tag| tag.key == "work").unwrap();
+        assert_eq!(work.presence, MetadataPresence::All);
+        assert_eq!(work.present_count, 2);
+        assert_eq!(work.sources.len(), 2);
+        let partial = snapshot
+            .tags
+            .iter()
+            .find(|tag| tag.key == "partial")
+            .unwrap();
+        assert_eq!(partial.presence, MetadataPresence::Some);
+        assert_eq!(snapshot.properties.client[0].presence, MetadataPresence::All);
+        let absent_project = snapshot
+            .properties
+            .project
+            .iter()
+            .find(|property| property.key == "launch")
+            .unwrap();
+        assert_eq!(absent_project.presence, MetadataPresence::None);
+        assert_eq!(absent_project.present_count, 0);
+
+        let original_token = snapshot.snapshot_token.clone();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE clipboard_item_properties SET value = 'ACME' WHERE item_id = 1 AND property_key = 'client'",
+                [],
+            )
+            .unwrap();
+        let relabeled = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest {
+                item_ids: vec![1, 2],
+            })
+            .unwrap();
+        assert_ne!(relabeled.snapshot_token, original_token);
+
+        let single = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] })
+            .unwrap()
+            .single_item
+            .unwrap();
+        assert_eq!(single.content_preview, "first");
+        assert_eq!(single.content_kind, "text");
+        assert_eq!(single.capture_context_events.len(), 0);
+    }
+
+    #[test]
+    fn metadata_selection_stale_token_and_write_failure_leave_zero_writes() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "first");
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] })
+            .unwrap();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute("UPDATE clipboard_items SET notes = 'external' WHERE id = 1", [])
+            .unwrap();
+        let mut stale = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        stale.title = ScalarIntent::Set {
+            value: "should roll back".into(),
+        };
+        stale.tags = vec![SetValueIntent {
+            key: "new".into(),
+            op: SetValueIntentOp::Add,
+        }];
+        let error = storage.apply_metadata_selection_intent(stale).unwrap_err();
+        assert!(error.contains(METADATA_SNAPSHOT_STALE));
+        assert_eq!(storage.get_item(1).unwrap().title, None);
+        assert!(storage.get_item_tag_entries(1).unwrap().is_empty());
+
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] })
+            .unwrap();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute_batch(
+                "CREATE TRIGGER reject_property BEFORE INSERT ON clipboard_item_properties
+                 BEGIN SELECT RAISE(ABORT, 'synthetic property failure'); END;",
+            )
+            .unwrap();
+        let mut failing = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        failing.title = ScalarIntent::Set {
+            value: "also rolls back".into(),
+        };
+        failing.properties.client = vec![SetValueIntent {
+            key: "Acme".into(),
+            op: SetValueIntentOp::Add,
+        }];
+        assert!(storage.apply_metadata_selection_intent(failing).is_err());
+        assert_eq!(storage.get_item(1).unwrap().title, None);
+        assert!(storage.list_item_property_entries(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn metadata_selection_add_preserves_present_provenance_and_fills_absent_items() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "first");
+        insert_test_text_item(&storage, 2, 10_002, "second");
+        {
+            let conn = storage.conn.lock().unwrap();
+            add_item_tag_relation(&conn, 1, "work", "Work", "scenario", Some(0.8)).unwrap();
+            suppress_metadata_value(&conn, 2, "tag", "", "Work", "work").unwrap();
+        }
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest {
+                item_ids: vec![1, 2],
+            })
+            .unwrap();
+        let mut intent = untouched_metadata_intent(vec![2, 1], snapshot.snapshot_token);
+        intent.tags = vec![SetValueIntent {
+            key: "work".into(),
+            op: SetValueIntentOp::Add,
+        }];
+        let result = storage.apply_metadata_selection_intent(intent).unwrap();
+        assert_eq!(result.changed_item_count, 1);
+        assert_eq!(result.tag_relation_changes, 1);
+        let first = storage.get_item_tag_entries(1).unwrap();
+        assert_eq!(first[0].source, "scenario");
+        assert_eq!(first[0].confidence, Some(0.8));
+        let second = storage.get_item_tag_entries(2).unwrap();
+        assert_eq!(second[0].source, "manual");
+        let conn = storage.conn.lock().unwrap();
+        assert!(!metadata_value_is_suppressed(&conn, 2, "tag", "", "work").unwrap());
+    }
+
+    #[test]
+    fn metadata_selection_remove_all_and_some_suppress_only_existing_relations() {
+        let storage = test_storage_with_migrations();
+        for id in 1..=3 {
+            insert_test_text_item(&storage, id, 10_000 + id, &format!("item {id}"));
+        }
+        {
+            let conn = storage.conn.lock().unwrap();
+            for id in 1..=3 {
+                add_item_tag_relation(&conn, id, "all", "All", "manual", None).unwrap();
+            }
+            add_item_tag_relation(&conn, 1, "some", "Some", "scenario", None).unwrap();
+            add_item_tag_relation(&conn, 2, "some", "Some", "context", None).unwrap();
+        }
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest {
+                item_ids: vec![1, 2, 3],
+            })
+            .unwrap();
+        let mut intent =
+            untouched_metadata_intent(vec![1, 2, 3], snapshot.snapshot_token);
+        intent.tags = vec![
+            SetValueIntent {
+                key: "all".into(),
+                op: SetValueIntentOp::Remove,
+            },
+            SetValueIntent {
+                key: "some".into(),
+                op: SetValueIntentOp::Remove,
+            },
+        ];
+        let result = storage.apply_metadata_selection_intent(intent).unwrap();
+        assert_eq!(result.tag_relation_changes, 5);
+        let conn = storage.conn.lock().unwrap();
+        for id in 1..=3 {
+            assert!(metadata_value_is_suppressed(&conn, id, "tag", "", "all").unwrap());
+        }
+        assert!(metadata_value_is_suppressed(&conn, 1, "tag", "", "some").unwrap());
+        assert!(metadata_value_is_suppressed(&conn, 2, "tag", "", "some").unwrap());
+        assert!(!metadata_value_is_suppressed(&conn, 3, "tag", "", "some").unwrap());
+    }
+
+    #[test]
+    fn create_history_item_request_accepts_structured_tags() {
+        let request: CreateHistoryItemRequest = serde_json::from_value(serde_json::json!({
+            "text": "synthetic",
+            "title": null,
+            "notes": null,
+            "tags": ["synthetic", "work/project"],
+            "properties": {
+                "client": ["Orca"],
+                "project": [],
+                "activity": []
+            },
+            "mimePrimary": "text/plain"
+        }))
+        .unwrap();
+        assert_eq!(request.tags, vec!["synthetic", "work/project"]);
+        assert_eq!(request.properties.client, vec!["Orca"]);
+    }
+
+    #[test]
+    fn metadata_selection_properties_and_create_dedupe_are_normalized_and_atomic() {
+        let storage = test_storage_with_migrations();
+        let first = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: "property item".into(),
+                title: None,
+                notes: None,
+                tags: Vec::new(),
+                properties: ScenarioProperties {
+                    client: vec![" Acme ".into()],
+                    project: vec![],
+                    activity: vec![],
+                },
+                mime_primary: None,
+            })
+            .unwrap();
+        let second = storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: " property item ".into(),
+                title: None,
+                notes: None,
+                tags: Vec::new(),
+                properties: ScenarioProperties {
+                    client: vec!["acme".into()],
+                    project: vec!["Launch".into()],
+                    activity: vec![],
+                },
+                mime_primary: None,
+            })
+            .unwrap();
+        assert_eq!(second.id, first.id);
+        let entries = storage.list_item_property_entries(first.id).unwrap();
+        assert_eq!(entries.len(), 2);
+
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest {
+                item_ids: vec![first.id],
+            })
+            .unwrap();
+        let mut intent = untouched_metadata_intent(vec![first.id], snapshot.snapshot_token);
+        intent.properties.client = vec![SetValueIntent {
+            key: "Acme".into(),
+            op: SetValueIntentOp::Remove,
+        }];
+        intent.properties.activity = vec![SetValueIntent {
+            key: "Review".into(),
+            op: SetValueIntentOp::Add,
+        }];
+        let result = storage.apply_metadata_selection_intent(intent).unwrap();
+        assert_eq!(result.property_relation_changes, 2);
+        let entries = storage.list_item_property_entries(first.id).unwrap();
+        assert!(entries.iter().any(|entry| entry.key == "activity" && entry.value == "Review"));
+        assert!(!entries.iter().any(|entry| entry.key == "client"));
+    }
+
     #[test]
     fn reliability_text_edit_preserves_drifted_metadata_and_provenance() {
         let storage = test_storage_with_migrations();
@@ -5143,7 +6302,10 @@ mod tests {
             text: "synthetic manual".into(),
             title: None,
             notes: Some("#unassigned".into()),
-            tags: tags.map(str::to_string),
+            tags: tags
+                .map(|value| vec![value.to_string()])
+                .unwrap_or_default(),
+            properties: ScenarioProperties::default(),
             mime_primary: None,
         };
         let first = storage
@@ -5211,7 +6373,8 @@ mod tests {
                 text: "original".into(),
                 title: None,
                 notes: None,
-                tags: Some("#Keep".into()),
+                tags: vec!["#Keep".into()],
+                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .unwrap()
@@ -5250,7 +6413,8 @@ mod tests {
                     text: text.into(),
                     title: Some("changed".into()),
                     notes: None,
-                    tags: Some("#Ghost".into()),
+                    tags: vec!["#Ghost".into()],
+                    properties: ScenarioProperties::default(),
                     mime_primary: None,
                 })
                 .is_err());
@@ -6562,7 +7726,8 @@ mod tests {
                     text: text.into(),
                     title: None,
                     notes: None,
-                    tags: None,
+                    tags: Vec::new(),
+                    properties: ScenarioProperties::default(),
                     mime_primary: None,
                 })
                 .unwrap();
@@ -6653,7 +7818,8 @@ mod tests {
                 text: "  Manual note  ".to_string(),
                 title: None,
                 notes: Some("#manual from keyboard".to_string()),
-                tags: Some("#manual".to_string()),
+                tags: vec!["#manual".to_string()],
+                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .expect("manual text item should be created");
@@ -6677,7 +7843,8 @@ mod tests {
                 text: "Manual note".to_string(),
                 title: None,
                 notes: Some("#first".to_string()),
-                tags: Some("#first".to_string()),
+                tags: vec!["#first".to_string()],
+                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .expect("first manual item should be created");
@@ -6686,7 +7853,8 @@ mod tests {
                 text: " Manual note ".to_string(),
                 title: Some("Manual".to_string()),
                 notes: Some("#second".to_string()),
-                tags: Some("#second #first".to_string()),
+                tags: vec!["#second".to_string(), "#first".to_string()],
+                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .expect("duplicate manual item should update existing item");
@@ -9371,7 +10539,8 @@ mod tests {
                 text: "epoch edited".to_string(),
                 title: Some("recapture".to_string()),
                 notes: None,
-                tags: None,
+                tags: Vec::new(),
+                properties: ScenarioProperties::default(),
                 mime_primary: Some("text/plain".to_string()),
             })
             .expect("deduplicated recapture should succeed");
@@ -9387,7 +10556,8 @@ mod tests {
                 text: "epoch edited".to_string(),
                 title: None,
                 notes: None,
-                tags: None,
+                tags: Vec::new(),
+                properties: ScenarioProperties::default(),
                 mime_primary: Some("text/plain".to_string()),
             })
             .expect("inert deduplicated recapture should succeed");
@@ -9415,7 +10585,8 @@ mod tests {
                 text: "before external edit".to_string(),
                 title: Some("Pinned note".to_string()),
                 notes: Some("Keep these notes".to_string()),
-                tags: Some("#work".to_string()),
+                tags: vec!["#work".to_string()],
+                properties: ScenarioProperties::default(),
                 mime_primary: Some("text/markdown".to_string()),
             })
             .expect("item should be created");

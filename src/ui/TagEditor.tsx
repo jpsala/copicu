@@ -1,35 +1,8 @@
 import { tagKey } from "../shared/search";
 import X from "lucide-react/dist/esm/icons/x.mjs";
-import {
-  forwardRef,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
-import type { ScenarioProperties, TagSummary } from "../shared/contracts";
-import {
-  UiButton,
-  UiIconButton,
-  UiKbd,
-  UiPaper,
-  UiTextInput,
-  UiTextarea,
-} from "./controls";
-
-export type TagEditorMode = "replace" | "patch";
-
-type TagEditorProps = {
-  itemCount: number;
-  mode: TagEditorMode;
-  initialTags: string[];
-  availableTags: TagSummary[];
-  saving: boolean;
-  error: string | null;
-  onApply: (tags: string[], removeTags: string[]) => void;
-  onCancel: () => void;
-};
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { TagSummary } from "../shared/contracts";
+import { UiTextInput } from "./controls";
 
 type TagInputProps = {
   tags: string[];
@@ -50,24 +23,6 @@ type TagSuggestion = {
   create: boolean;
 };
 
-type MetadataTextInputProps = {
-  value: string;
-  availableTags: TagSummary[];
-  onChange: (value: string) => void;
-};
-
-type MetadataTagDraft = {
-  start: number;
-  end: number;
-  query: string;
-};
-
-const METADATA_TOKEN_PATTERN = /(^|\p{White_Space})(?:#([\p{Alphabetic}\p{N}_/-]+)|(client|project|activity):(?:"((?:\\.|[^"\\])*)"|([^\p{White_Space}]+)))/giu;
-const METADATA_PROPERTY_KEYS = ["client", "project", "activity"] as const;
-
-type MetadataPropertyKey = (typeof METADATA_PROPERTY_KEYS)[number];
-
-
 function cleanTagInput(value: string) {
   return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "").replace(/^#+/, "").replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
 }
@@ -76,283 +31,15 @@ function uniqueTags(tags: string[]) {
   const seen = new Set<string>();
   return tags.filter((tag) => {
     const key = tagKey(tag);
-    if (!key || seen.has(key)) {
-      return false;
-    }
+    if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 }
 
-function uniquePropertyValues(values: string[]) {
-  const seen = new Set<string>();
-  return values.map((value) => value.trim()).filter((value) => {
-    const key = value.toLocaleLowerCase();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function formatPropertyValue(value: string) {
-  return /^[\p{L}\p{N}_./-]+$/u.test(value) ? value : JSON.stringify(value);
-}
-
-function parseQuotedPropertyValue(value: string) {
-  try {
-    return JSON.parse(`"${value}"`) as string;
-  } catch {
-    return value.replace(/\\(["\\])/g, "$1");
-  }
-}
-
-export function formatMetadataText(
-  title: string | null | undefined,
-  notes: string | null | undefined,
-  tags: string[],
-  properties: ScenarioProperties = { client: [], project: [], activity: [] },
-) {
-  const titleDirective = title?.trim()
-    ? `@title: ${title.trim().replace(/\s*\r?\n\s*/g, " ")}`
-    : "";
-  const tagTokens = uniqueTags(tags).map((tag) => `#${tagKey(tag)}`).filter((tag) => tag !== "#");
-  const propertyTokens = METADATA_PROPERTY_KEYS.flatMap((key) =>
-    uniquePropertyValues(properties[key]).map((value) => `${key}:${formatPropertyValue(value)}`),
-  );
-  // Escape literal note syntax before combining it with editable metadata tokens.
-  const escapedNotes = (notes?.trim() ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/(^|\p{White_Space})(?=#|@title:|(?:client|project|activity):)/giu, "$1\\");
-  return [titleDirective, [...tagTokens, ...propertyTokens].join(" "), escapedNotes]
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function parseMetadataText(
-  value: string,
-  availableTags: TagSummary[],
-  currentTags: string[] = [],
-) {
-  let title: string | null = null;
-  const metadataWithoutTitle = value.replace(
-    /^\s*@title:\s*(.*?)\s*$/imu,
-    (_match, titleValue: string) => {
-      title = titleValue.trim() || null;
-      return "";
-    },
-  );
-  const knownTags = new Map<string, string>();
-  for (const tag of availableTags) {
-    knownTags.set(tagKey(tag.slug), tag.label);
-    knownTags.set(tagKey(tag.label), tag.label);
-  }
-  for (const tag of currentTags) {
-    knownTags.set(tagKey(tag), tag);
-  }
-
-  const tags: string[] = [];
-  const properties: ScenarioProperties = { client: [], project: [], activity: [] };
-  const notes = metadataWithoutTitle.replace(
-    METADATA_TOKEN_PATTERN,
-    (
-      match,
-      prefix: string,
-      tagToken: string | undefined,
-      propertyKey: string | undefined,
-      quotedValue: string | undefined,
-      bareValue: string | undefined,
-      offset: number,
-      source: string,
-    ) => {
-      if (tagToken) {
-        tags.push(knownTags.get(tagKey(tagToken)) ?? tagToken);
-      } else if (propertyKey) {
-        const key = propertyKey.toLocaleLowerCase() as MetadataPropertyKey;
-        const propertyValue = quotedValue === undefined
-          ? (bareValue ?? "")
-          : parseQuotedPropertyValue(quotedValue);
-        properties[key].push(propertyValue);
-      }
-      const next = source[offset + match.length] ?? "";
-      return /[ \t]/.test(prefix) && /[ \t]/.test(next) ? "" : prefix;
-    },
-  ).trim().replace(/\\([\\#]|@title:|(?:client|project|activity):)/giu, "$1");
-
-  for (const key of METADATA_PROPERTY_KEYS) {
-    properties[key] = uniquePropertyValues(properties[key]);
-  }
-
-  return { title, notes, tags: uniqueTags(tags), properties };
-}
-
-function metadataTagDraftAt(value: string, caret: number): MetadataTagDraft | null {
-  const prefix = value.slice(0, caret);
-  const match = /(?:^|\p{White_Space})#([\p{Alphabetic}\p{N}_/-]*)$/u.exec(prefix);
-  if (!match) {
-    return null;
-  }
-  return {
-    start: caret - match[1].length - 1,
-    end: caret,
-    query: match[1],
-  };
-}
-
-export const MetadataTextInput = forwardRef<HTMLTextAreaElement, MetadataTextInputProps>(
-  function MetadataTextInput({ value, availableTags, onChange }, ref) {
-    const localRef = useRef<HTMLTextAreaElement | null>(null);
-    const suggestionListRef = useRef<HTMLDivElement | null>(null);
-    const [caret, setCaret] = useState(0);
-    const [activeIndex, setActiveIndex] = useState(0);
-    const [dismissedSuggestionKey, setDismissedSuggestionKey] = useState<string | null>(null);
-    const tagDraft = metadataTagDraftAt(value, caret);
-    const candidateSuggestions = useMemo(() => {
-      if (!tagDraft) {
-        return [];
-      }
-      const query = tagKey(tagDraft.query);
-      return availableTags
-        .filter((tag) => !query || tagKey(tag.label).includes(query) || tagKey(tag.slug).includes(query))
-        .sort((left, right) => {
-          const leftKey = tagKey(left.label);
-          const rightKey = tagKey(right.label);
-          const leftRank = leftKey === query ? 0 : leftKey.startsWith(query) ? 1 : 2;
-          const rightRank = rightKey === query ? 0 : rightKey.startsWith(query) ? 1 : 2;
-          return leftRank - rightRank
-            || Number(right.pinned) - Number(left.pinned)
-            || right.itemCount - left.itemCount
-            || left.label.localeCompare(right.label);
-        })
-        .slice(0, 6);
-    }, [availableTags, tagDraft]);
-    const suggestionKey = `${value}\u0000${caret}`;
-    const suggestions = dismissedSuggestionKey === suggestionKey ? [] : candidateSuggestions;
-
-    useEffect(() => {
-      const selected = suggestionListRef.current?.querySelector<HTMLElement>(
-        '[role="option"][aria-selected="true"]',
-      );
-      selected?.scrollIntoView({ block: "nearest" });
-    }, [activeIndex, suggestions.length]);
-
-    const setRefs = (node: HTMLTextAreaElement | null) => {
-      localRef.current = node;
-      if (typeof ref === "function") {
-        ref(node);
-      } else if (ref) {
-        ref.current = node;
-      }
-    };
-
-    const selectSuggestion = (tag: TagSummary) => {
-      if (!tagDraft) {
-        return;
-      }
-      const token = `#${tag.slug}`;
-      const suffix = value.slice(tagDraft.end);
-      const committedToken = `${token}${/^\s/.test(suffix) ? "" : " "}`;
-      const nextValue = `${value.slice(0, tagDraft.start)}${committedToken}${suffix}`;
-      const nextCaret = tagDraft.start + committedToken.length;
-      onChange(nextValue);
-      setCaret(nextCaret);
-      setActiveIndex(0);
-      setDismissedSuggestionKey(`${nextValue}\u0000${nextCaret}`);
-      window.requestAnimationFrame(() => {
-        localRef.current?.focus();
-        localRef.current?.setSelectionRange(nextCaret, nextCaret);
-        setCaret(nextCaret);
-      });
-    };
-
-    const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        return;
-      }
-      if (event.key === "Escape" && suggestions.length > 0) {
-        event.preventDefault();
-        event.stopPropagation();
-        setDismissedSuggestionKey(suggestionKey);
-        return;
-      }
-      if (!tagDraft || suggestions.length === 0) {
-        return;
-      }
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        const direction = event.key === "ArrowDown" ? 1 : -1;
-        setActiveIndex((current) => (current + direction + suggestions.length) % suggestions.length);
-        return;
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        event.preventDefault();
-        selectSuggestion(suggestions[Math.min(activeIndex, suggestions.length - 1)]);
-      }
-    };
-
-    return (
-      <div className="metadata-text-editor">
-        <UiTextarea
-          ref={setRefs}
-          autoFocus
-          autosize
-          minRows={4}
-          maxRows={9}
-          aria-label="Metadata"
-          aria-autocomplete="list"
-          aria-controls="metadata-tag-suggestions"
-          aria-expanded={suggestions.length > 0}
-          value={value}
-          placeholder="Write a note; use @title: …, #tags, or client:value…"
-          onChange={(event) => {
-            onChange(event.currentTarget.value);
-            setCaret(event.currentTarget.selectionStart);
-            setActiveIndex(0);
-            setDismissedSuggestionKey(null);
-          }}
-          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-          onKeyDown={handleKeyDown}
-        />
-        {suggestions.length > 0 ? (
-          <div
-            ref={suggestionListRef}
-            id="metadata-tag-suggestions"
-            className="tag-editor-suggestions metadata-text-suggestions"
-            role="listbox"
-            aria-label="Tag suggestions"
-          >
-            {suggestions.map((tag, index) => (
-              <button
-                key={tag.id}
-                type="button"
-                className="tag-editor-suggestion"
-                role="option"
-                aria-selected={index === Math.min(activeIndex, suggestions.length - 1)}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => selectSuggestion(tag)}
-              >
-                <span>#{tag.slug}</span>
-                <small>{tag.itemCount} {tag.itemCount === 1 ? "clip" : "clips"}</small>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  },
-);
-
-function suggestionsFor(
-  input: string,
-  availableTags: TagSummary[],
-  selectedTags: string[],
-): TagSuggestion[] {
+function suggestionsFor(input: string, availableTags: TagSummary[], selectedTags: string[]): TagSuggestion[] {
   const query = tagKey(input);
-  if (!query) {
-    return [];
-  }
+  if (!query) return [];
   const selected = new Set(selectedTags.map(tagKey));
   const matches = availableTags
     .filter((tag) => !selected.has(tagKey(tag.slug)))
@@ -374,18 +61,12 @@ function suggestionsFor(
       detail: `${tag.itemCount} ${tag.itemCount === 1 ? "clip" : "clips"}`,
       create: false,
     }));
-
   const cleanedInput = cleanTagInput(input);
   const exactExists = availableTags.some(
     (tag) => tagKey(tag.label) === tagKey(cleanedInput) || tagKey(tag.slug) === tagKey(cleanedInput),
   ) || selected.has(tagKey(cleanedInput));
   if (cleanedInput && !exactExists) {
-    matches.push({
-      key: `create:${tagKey(cleanedInput)}`,
-      label: cleanedInput,
-      detail: "Create tag",
-      create: true,
-    });
+    matches.push({ key: `create:${tagKey(cleanedInput)}`, label: cleanedInput, detail: "Create tag", create: true });
   }
   return matches;
 }
@@ -404,10 +85,7 @@ export function TagInput({
   const [input, setInput] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const suggestions = useMemo(
-    () => suggestionsFor(input, availableTags, tags),
-    [availableTags, input, tags],
-  );
+  const suggestions = useMemo(() => suggestionsFor(input, availableTags, tags), [availableTags, input, tags]);
   const activeSuggestion = suggestions[Math.min(activeIndex, Math.max(suggestions.length - 1, 0))];
   const suggestionListId = `${idPrefix}-suggestions`;
   const suggestionId = (key: string) => `${idPrefix}-suggestion-${key}`;
@@ -421,9 +99,7 @@ export function TagInput({
 
   const addTag = (value: string) => {
     const cleaned = canonicalTag(value);
-    if (!cleaned) {
-      return;
-    }
+    if (!cleaned) return;
     onChange(uniqueTags([...tags, cleaned]));
     setInput("");
     setActiveIndex(0);
@@ -448,15 +124,11 @@ export function TagInput({
     }
     switch (event.key) {
       case "ArrowDown":
-        if (suggestions.length > 0) {
-          event.preventDefault();
-          setActiveIndex((current) => (current + 1) % suggestions.length);
-        }
-        break;
       case "ArrowUp":
         if (suggestions.length > 0) {
           event.preventDefault();
-          setActiveIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          setActiveIndex((current) => (current + direction + suggestions.length) % suggestions.length);
         }
         break;
       case "Enter":
@@ -517,7 +189,6 @@ export function TagInput({
           onKeyDown={handleInputKeyDown}
         />
       </div>
-
       {suggestions.length > 0 ? (
         <div id={suggestionListId} className="tag-editor-suggestions" role="listbox" aria-label="Tag suggestions">
           {suggestions.map((suggestion, index) => (
@@ -538,113 +209,6 @@ export function TagInput({
           ))}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-export function TagEditor({
-  itemCount,
-  mode,
-  initialTags,
-  availableTags,
-  saving,
-  error,
-  onApply,
-  onCancel,
-}: TagEditorProps) {
-  const [tags, setTags] = useState(() => uniqueTags(initialTags));
-  const [removeTags, setRemoveTags] = useState<string[]>([]);
-  const isBatch = mode === "patch";
-  const updateTags = (nextTags: string[]) => {
-    const nextKeys = new Set(nextTags.map(tagKey));
-    setTags(nextTags);
-    setRemoveTags((current) => current.filter((tag) => !nextKeys.has(tagKey(tag))));
-  };
-  const updateRemoveTags = (nextTags: string[]) => {
-    const nextKeys = new Set(nextTags.map(tagKey));
-    setRemoveTags(nextTags);
-    setTags((current) => current.filter((tag) => !nextKeys.has(tagKey(tag))));
-  };
-
-  return (
-    <div className="tag-editor-backdrop" role="dialog" aria-modal="true" aria-label={isBatch ? "Edit tags for selection" : "Edit tags"}>
-      <UiPaper
-        component="form"
-        className="tag-editor-panel"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onApply(tags, removeTags);
-        }}
-      >
-        <header className="tag-editor-header">
-          <div>
-            <strong>{isBatch ? `Edit tags for ${itemCount} clips` : "Edit tags"}</strong>
-            <span>{isBatch ? "Add and remove only the tags you choose." : "Add, create, or remove tags."}</span>
-          </div>
-          <UiIconButton type="button" variant="subtle" aria-label="Cancel tag editing" onClick={onCancel}>
-            <X size={16} strokeWidth={2.3} aria-hidden="true" />
-          </UiIconButton>
-        </header>
-
-        {isBatch ? (
-          <div className="tag-editor-patch-fields">
-            <label className="tag-editor-section">
-              <strong>Add tags</strong>
-              <TagInput
-                tags={tags}
-                availableTags={availableTags}
-                ariaLabel="Tags to add"
-                inputAriaLabel="Tag to add"
-                idPrefix="tag-add"
-                autoFocus
-                onChange={updateTags}
-                onApply={(nextTags) => onApply(nextTags, removeTags)}
-                onCancel={onCancel}
-              />
-            </label>
-            <label className="tag-editor-section">
-              <strong>Remove tags</strong>
-              <TagInput
-                tags={removeTags}
-                availableTags={availableTags}
-                ariaLabel="Tags to remove"
-                inputAriaLabel="Tag to remove"
-                idPrefix="tag-remove"
-                onChange={updateRemoveTags}
-                onApply={(nextRemoveTags) => onApply(tags, nextRemoveTags)}
-                onCancel={onCancel}
-              />
-            </label>
-          </div>
-        ) : (
-          <TagInput
-            tags={tags}
-            availableTags={availableTags}
-            ariaLabel="Selected tags"
-            autoFocus
-            onChange={setTags}
-            onApply={(nextTags) => onApply(nextTags, [])}
-            onCancel={onCancel}
-          />
-        )}
-
-        {error ? <p className="tag-editor-error" role="alert">{error}</p> : null}
-
-        <footer className="tag-editor-footer">
-          <span><UiKbd>Enter</UiKbd> add · <UiKbd>Ctrl+Enter</UiKbd> apply</span>
-          <div>
-            <UiButton type="button" variant="default" onClick={onCancel}>Cancel</UiButton>
-            <UiButton
-              type="submit"
-              variant="filled"
-              loading={saving}
-              disabled={isBatch && tags.length === 0 && removeTags.length === 0}
-            >
-              Apply tag changes
-            </UiButton>
-          </div>
-        </footer>
-      </UiPaper>
     </div>
   );
 }

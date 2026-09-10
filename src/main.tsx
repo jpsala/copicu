@@ -66,7 +66,6 @@ import type {
   ActivateItemRequest,
   ActivationOptions,
   ActiveScenarioSession,
-  ApplyItemTagsRequest,
   ClipKind,
   CompoundHotkeyPendingEvent,
   CreateHistoryItemRequest,
@@ -91,6 +90,8 @@ import type {
   FindStartResponse,
   FindTargetRequest,
   FindTargetResponse,
+  MetadataFocusTarget,
+  MetadataSelectionIntent,
   MarkdownOutputPayload,
   RunActionRequest,
   SavedHistoryView,
@@ -101,7 +102,6 @@ import type {
   ToastItem,
   ToastOptions,
   UiHostRequest,
-  UpdateHistoryItemRequest,
   UpdateTagConfigRequest,
   WhichKeyEntry,
   WhichKeyState,
@@ -141,7 +141,6 @@ import {
   UiLoader,
   UiAlert,
   UiPaper,
-  UiSelect,
   UiTextarea,
   UiTextInput,
   UiTooltip,
@@ -151,7 +150,7 @@ import { ShortcutBadge } from "./ui/ShortcutBadge";
 import { ToastStack } from "./ui/ToastStack";
 import { ScenarioCreator } from "./ui/ScenarioSwitcher";
 import { SavedViewCreator } from "./ui/SavedViewCreator";
-import { formatMetadataText, parseMetadataText, TagEditor, type TagEditorMode } from "./ui/TagEditor";
+import { MetadataInspector, createEmptyMetadataSnapshot } from "./ui/MetadataInspector";
 import {
   PickerContextStrip,
   PickerFeed,
@@ -398,15 +397,12 @@ type PickerSessionSnapshot = {
   pendingActivationItemId: number | null;
 };
 
-type EditMode = "content" | "metadata";
+type EditMode = "content";
 
 type EditDraft = {
   id: number;
   mode: EditMode;
   text: string;
-  title: string;
-  notes: string;
-  tags: string;
   mimePrimary: string;
 };
 
@@ -414,24 +410,17 @@ type InlineEditDraft = Omit<EditDraft, "mode">;
 
 type CreateItemDraft = {
   text: string;
-  metadata: string;
+  title: string | null;
+  notes: string | null;
+  tags: string[];
+  properties: { client: string[]; project: string[]; activity: string[] };
 };
 
-type BatchMetadataMode = "append" | "replace" | "merge";
-
-type BatchMetadataDraft = {
-  ids: number[];
-  metadata: string;
-  mode: BatchMetadataMode;
-  commonMetadata: string | null;
-  hasMixedMetadata: boolean;
+const CREATE_METADATA_PAYLOAD = {
+  snapshot: createEmptyMetadataSnapshot(),
+  focusTarget: "overview" as const,
 };
 
-type TagEditorDraft = {
-  itemIds: number[];
-  mode: TagEditorMode;
-  initialTags: string[];
-};
 
 type OpenedSavedView = {
   id: number;
@@ -556,6 +545,8 @@ const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
 const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
 const EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT = "copicu://external-editor/edit-active";
+const METADATA_SELECTION_SAVED_EVENT = "copicu://metadata/selection-saved";
+const METADATA_SELECTION_CANCELLED_EVENT = "copicu://metadata/selection-cancelled";
 const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const SCENARIO_SESSION_CHANGED_EVENT = "copicu://scenario/session-changed";
 const NOTIFICATIONS_WINDOW_WIDTH = 340;
@@ -848,13 +839,6 @@ function updateTagConfig(request: UpdateTagConfigRequest) {
   return invoke<TagSummary>("update_tag_config", { request });
 }
 
-function getItemTags(id: number) {
-  return invoke<string[]>("get_item_tags", { id });
-}
-
-function applyItemTags(request: ApplyItemTagsRequest) {
-  return invoke<void>("apply_item_tags", { request });
-}
 
 function stopCaptureTagContext() {
   return invoke<void>("stop_capture_tag_context");
@@ -932,8 +916,11 @@ function openTagsSettings() {
   return openSettingsWindow();
 }
 
-function openMetadataWindow(itemId: number) {
-  return invoke<boolean>("open_metadata_window", { request: { itemId } });
+function openMetadataWindow(itemIds: number[], focusTarget: MetadataFocusTarget) {
+  const frozenItemIds = [...new Set(itemIds)].sort((left, right) => left - right);
+  return invoke<boolean>("open_metadata_window", {
+    request: { itemIds: frozenItemIds, focusTarget },
+  });
 }
 
 function openItemPreview(itemId: number) {
@@ -1110,7 +1097,7 @@ const LazyAiOutputWindowApp = lazy(() =>
   import("./windows/AiOutputWindowApp").then((module) => ({ default: module.AiOutputWindowApp })),
 );
 const LazyMetadataWindowApp = lazy(() =>
-  import("./windows/secondaryWindows").then((module) => ({ default: module.MetadataWindowApp })),
+  import("./windows/MetadataWindowApp").then((module) => ({ default: module.MetadataWindowApp })),
 );
 const LazyItemPreviewWindowApp = lazy(() =>
   import("./windows/ItemPreviewWindowApp").then((module) => ({ default: module.ItemPreviewWindowApp })),
@@ -1267,9 +1254,6 @@ function App() {
   const [inlineEditSaving, setInlineEditSaving] = useState(false);
   const [expandedItemIds, setExpandedItemIds] = useState<Set<number>>(() => new Set());
   const [createItemDraft, setCreateItemDraft] = useState<CreateItemDraft | null>(null);
-  const [batchMetadataDraft, setBatchMetadataDraft] = useState<BatchMetadataDraft | null>(null);
-  const [tagEditorDraft, setTagEditorDraft] = useState<TagEditorDraft | null>(null);
-  const [tagEditorSaving, setTagEditorSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [openMarkMenu, setOpenMarkMenu] = useState<MarkMenuAnchor | null>(null);
   const [markedActionItems, setMarkedActionItems] = useState<HistoryItem[] | null>(null);
@@ -2140,8 +2124,6 @@ function App() {
         || editDraft
         || inlineEditDraft
         || createItemDraft
-        || batchMetadataDraft
-        || tagEditorDraft
         || commandPalette
         || actionPicker
         || searchHelpOpen
@@ -2160,7 +2142,6 @@ function App() {
     return () => document.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
     actionPicker,
-    batchMetadataDraft,
     closeFind,
     commandPalette,
     createItemDraft,
@@ -2168,7 +2149,6 @@ function App() {
     inlineEditDraft,
     openFind,
     searchHelpOpen,
-    tagEditorDraft,
   ]);
 
   const navigateFind = useCallback(
@@ -2405,9 +2385,6 @@ function App() {
     setInlineEditSaving(false);
     setExpandedItemIds(new Set());
     setCreateItemDraft(null);
-    setBatchMetadataDraft(null);
-    setTagEditorDraft(null);
-    setTagEditorSaving(false);
     setOpenItemMenu(null);
     setActionPicker(null);
     setPickerMenuOpen(false);
@@ -2796,8 +2773,6 @@ function App() {
         !actionPicker &&
         !editDraft &&
         !createItemDraft &&
-        !batchMetadataDraft &&
-        !tagEditorDraft &&
         !searchHelpOpen
       ) {
         event.preventDefault();
@@ -2812,8 +2787,6 @@ function App() {
         !actionPicker &&
         !editDraft &&
         !createItemDraft &&
-        !batchMetadataDraft &&
-        !tagEditorDraft &&
         !searchHelpOpen
       ) {
         event.preventDefault();
@@ -2828,11 +2801,9 @@ function App() {
     };
   }, [
     actionPicker,
-    batchMetadataDraft,
     commandPalette,
     createItemDraft,
     editDraft,
-    tagEditorDraft,
     openActionPicker,
     openScenarioMenu,
     pickerMenuOpen,
@@ -4274,9 +4245,6 @@ function App() {
         setInlineEditDraft({
           id: fullItem.id,
           text: fullItem.text,
-          title: fullItem.title ?? "",
-          notes: fullItem.notes ?? "",
-          tags: fullItem.tags ?? "",
           mimePrimary: fullItem.mime_primary ?? "",
         });
       });
@@ -4312,34 +4280,16 @@ function App() {
   }, [focusSearch, inlineEditDraft, inlineEditSaving, mutateRowLayout, rebaseFind, refreshAppliedHistory]);
 
   const beginEdit = useCallback(
-    async (item: HistoryItem, mode: EditMode, standalone = true) => {
+    async (item: HistoryItem) => {
       try {
         setEditError(null);
         setInlineEditDraft(null);
         setOpenItemMenu(null);
-        if (mode === "metadata" && standalone && isTauriRuntime()) {
-          try {
-            const openedStandalone = await openMetadataWindow(item.id);
-            if (openedStandalone) {
-              focusSearch();
-              return;
-            }
-          } catch (openError) {
-            if (import.meta.env.VITE_COPICU_VISUAL_TEST !== "1") {
-              throw openError;
-            }
-          }
-        }
         const fullItem = await ensureFullHistoryItem(item);
         setEditDraft({
           id: fullItem.id,
-          mode,
+          mode: "content",
           text: fullItem.text,
-          title: fullItem.title ?? "",
-          notes: mode === "metadata"
-            ? formatMetadataText(fullItem.title, fullItem.notes, await getItemTags(fullItem.id))
-            : fullItem.notes ?? "",
-          tags: fullItem.tags ?? "",
           mimePrimary: fullItem.mime_primary ?? "",
         });
         window.setTimeout(() => editTextRef.current?.focus(), 0);
@@ -4351,11 +4301,37 @@ function App() {
     [ensureFullHistoryItem, focusSearch],
   );
 
-  const openActiveMetadata = useCallback(() => {
-    const now = Date.now();
-    if (now - metadataShortcutHandledAtRef.current < 250) {
+  const openMetadataForItems = useCallback(async (
+    items: Pick<HistoryItem, "id">[],
+    focusTarget: MetadataFocusTarget,
+    catalogItemId: number | null = null,
+  ) => {
+    catalogItemIdRef.current = catalogItemId;
+    if (items.length === 0) {
+      pushToast({
+        title: "No clip selected",
+        message: "Select a clip before editing metadata.",
+        tone: "warning",
+      });
       return;
     }
+    setOpenItemMenu(null);
+    setOpenMarkMenu(null);
+    setEditError(null);
+    try {
+      await openMetadataWindow(items.map((item) => item.id), focusTarget);
+      focusSearch();
+    } catch (error) {
+      if (catalogItemIdRef.current === catalogItemId) catalogItemIdRef.current = null;
+      setEditError(String(error));
+      pushToast({ title: "Metadata unavailable", message: String(error), tone: "danger" });
+      focusSearch();
+    }
+  }, [focusSearch, pushToast]);
+
+  const openActiveMetadata = useCallback(() => {
+    const now = Date.now();
+    if (now - metadataShortcutHandledAtRef.current < 250) return;
     metadataShortcutHandledAtRef.current = now;
     const pendingItemId = pendingHistoryActivationItemIdRef.current;
     const activeItemId = pendingItemId
@@ -4363,23 +4339,13 @@ function App() {
       ?? lastActivatedItemIdRef.current
       ?? historyRef.current[0]?.id
       ?? null;
-    if (activeItemId === null) {
-      return;
-    }
+    if (activeItemId === null) return;
     if (pendingItemId !== null) {
       pendingHistoryActivationItemIdRef.current = null;
       lastActivatedItemIdRef.current = pendingItemId;
     }
-    const activeItem = historyRef.current.find((item) => item.id === activeItemId);
-    if (activeItem) {
-      void beginEdit(activeItem, "metadata");
-      return;
-    }
-    void openMetadataWindow(activeItemId).catch((error) => {
-      setEditError(String(error));
-      focusSearch();
-    });
-  }, [beginEdit, focusSearch]);
+    void openMetadataForItems([{ id: activeItemId }], "overview");
+  }, [openMetadataForItems]);
 
   const openExternalEditor = useCallback(async (itemId: number | null) => {
     if (itemId === null) {
@@ -4434,6 +4400,30 @@ function App() {
       unlisten?.();
     };
   }, [openActiveMetadata]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return undefined;
+    let active = true;
+    const saved = listen<{ itemIds: number[] }>(METADATA_SELECTION_SAVED_EVENT, (event) => {
+      const catalogItemId = catalogItemIdRef.current;
+      if (!active || catalogItemId === null || !event.payload.itemIds.includes(catalogItemId)) return;
+      catalogItemIdRef.current = null;
+      void setHistoryItemInbox(catalogItemId, false)
+        .then(() => refreshAppliedHistory())
+        .catch((error) => setActionError(String(error)));
+    });
+    const cancelled = listen<{ itemIds: number[] }>(METADATA_SELECTION_CANCELLED_EVENT, (event) => {
+      const catalogItemId = catalogItemIdRef.current;
+      if (active && catalogItemId !== null && event.payload.itemIds.includes(catalogItemId)) {
+        catalogItemIdRef.current = null;
+      }
+    });
+    return () => {
+      active = false;
+      void saved.then((unlisten) => unlisten());
+      void cancelled.then((unlisten) => unlisten());
+    };
+  }, [refreshAppliedHistory]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -4609,63 +4599,6 @@ function App() {
     setOpenItemMenu((current) => (current?.itemId === item.id ? null : nextAnchor));
   }, [selectForContextMenu]);
 
-  const beginTagEdit = useCallback(async (items: HistoryItem[]) => {
-    if (items.length === 0) {
-      pushToast({
-        title: "No clip selected",
-        message: "Select a clip before editing tags.",
-        tone: "warning",
-      });
-      return;
-    }
-
-    closeTransientEditors();
-    setCommandPalette(null);
-    setOpenMarkMenu(null);
-    setEditError(null);
-    try {
-      const [availableTags, initialTags] = await Promise.all([
-        listTags(),
-        items.length === 1 ? getItemTags(items[0].id) : Promise.resolve([]),
-      ]);
-      setPaletteTags(availableTags);
-      setKnownTagSlugs(availableTags.map((tag) => tag.slug));
-      setTagEditorDraft({
-        itemIds: items.map((item) => item.id),
-        mode: items.length === 1 ? "replace" : "patch",
-        initialTags,
-      });
-    } catch (error) {
-      pushToast({
-        title: "Tags unavailable",
-        message: String(error),
-        tone: "danger",
-      });
-      focusSearch();
-    }
-  }, [closeTransientEditors, focusSearch, pushToast]);
-
-  const beginBatchMetadataEdit = useCallback((items: HistoryItem[]) => {
-    if (items.length === 0) {
-      return;
-    }
-
-    const metadataValues = items.map((item) => item.notes?.trim() ?? "");
-    const uniqueMetadataValues = new Set(metadataValues);
-
-    setEditError(null);
-    setOpenItemMenu(null);
-    setOpenMarkMenu(null);
-    setBatchMetadataDraft({
-      ids: items.map((item) => item.id),
-      metadata: "",
-      mode: "append",
-      commonMetadata: uniqueMetadataValues.size === 1 ? metadataValues[0] : null,
-      hasMixedMetadata: uniqueMetadataValues.size > 1,
-    });
-    window.setTimeout(() => editTextRef.current?.focus(), 0);
-  }, []);
-
   const beginCreateItem = useCallback(() => {
     setEditError(null);
     setActionError(null);
@@ -4674,8 +4607,13 @@ function App() {
     setCommandPalette(null);
     setEditDraft(null);
     catalogItemIdRef.current = null;
-    setBatchMetadataDraft(null);
-    setCreateItemDraft({ text: "", metadata: "" });
+    setCreateItemDraft({
+      text: "",
+      title: null,
+      notes: null,
+      tags: [],
+      properties: { client: [], project: [], activity: [] },
+    });
     window.setTimeout(() => editTextRef.current?.focus(), 0);
   }, []);
 
@@ -4721,7 +4659,7 @@ function App() {
             disabled={!hasItems}
             onClick={() => {
               if (hasItems) {
-                void beginTagEdit(items);
+                void openMetadataForItems(items, "tags");
               }
             }}
           >
@@ -4763,7 +4701,7 @@ function App() {
     [
       actionById,
       actionDefinitions,
-      beginTagEdit,
+      openMetadataForItems,
       runActionDefinition,
       runBuiltinAction,
       selectedItem,
@@ -4771,17 +4709,15 @@ function App() {
   );
 
   const beginSelectedItemEdit = useCallback(
-    (mode: EditMode) => {
-      if (mode === "metadata" && hasMultiSelection) {
-        beginBatchMetadataEdit(effectiveSelection);
+    (mode: "content" | "metadata") => {
+      if (mode === "metadata") {
+        void openMetadataForItems(effectiveSelection, "overview");
         return;
       }
-      if (!selectedItem || hasMultiSelection) {
-        return;
-      }
-      void beginEdit(selectedItem, mode);
+      if (!selectedItem || hasMultiSelection) return;
+      void beginEdit(selectedItem);
     },
-    [beginBatchMetadataEdit, beginEdit, effectiveSelection, hasMultiSelection, selectedItem],
+    [beginEdit, effectiveSelection, hasMultiSelection, openMetadataForItems, selectedItem],
   );
 
   const saveEdit = useCallback(async (textOverride?: string) => {
@@ -4792,24 +4728,7 @@ function App() {
 
     try {
       setEditError(null);
-      if (editDraft.mode === "content") {
-        await invoke("update_history_item_text", { id: editDraft.id, text: textOverride ?? editDraft.text });
-      } else {
-        const parsed = parseMetadataText(editDraft.notes, paletteTags);
-        const request: UpdateHistoryItemRequest = {
-          id: editDraft.id,
-          text: editDraft.text,
-          title: parsed.title,
-          notes: nullableTrim(parsed.notes),
-          tags: parsed.tags.map((tag) => `#${tagKey(tag)}`).join(" ") || null,
-          mimePrimary: nullableTrim(editDraft.mimePrimary),
-        };
-        await invoke("update_history_item", { request });
-      }
-      if (catalogItemIdRef.current === editDraft.id) {
-        await setHistoryItemInbox(editDraft.id, false);
-        catalogItemIdRef.current = null;
-      }
+      await invoke("update_history_item_text", { id: editDraft.id, text: textOverride ?? editDraft.text });
       setEditDraft(null);
       await refreshAppliedHistory();
       rebaseFind();
@@ -4818,12 +4737,11 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [paletteTags, editDraft, focusSearch, rebaseFind, refreshAppliedHistory]);
+  }, [editDraft, focusSearch, rebaseFind, refreshAppliedHistory]);
 
   const catalogItem = useCallback((item: HistoryItem) => {
-    catalogItemIdRef.current = item.id;
-    void beginEdit(item, "metadata", false);
-  }, [beginEdit]);
+    void openMetadataForItems([item], "overview", item.id);
+  }, [openMetadataForItems]);
 
   const removeFromInbox = useCallback(async (item: HistoryItem) => {
     try {
@@ -4836,20 +4754,35 @@ function App() {
     }
   }, [focusSearch, refreshAppliedHistory]);
 
-  const saveCreateItem = useCallback(async () => {
-    if (!createItemDraft || !createItemDraft.text.trim()) {
-      return;
-    }
+  const updateCreateMetadata = useCallback((intent: MetadataSelectionIntent) => {
+    setCreateItemDraft((draft) => {
+      if (!draft) return draft;
+      return {
+        ...draft,
+        title: intent.title.op === "set" ? intent.title.value : null,
+        notes: intent.notes.op === "replaceAll" || intent.notes.op === "appendToEach"
+          ? nullableTrim(intent.notes.value)
+          : null,
+        tags: intent.tags.filter((entry) => entry.op === "add").map((entry) => entry.key),
+        properties: {
+          client: intent.properties.client.filter((entry) => entry.op === "add").map((entry) => entry.key),
+          project: intent.properties.project.filter((entry) => entry.op === "add").map((entry) => entry.key),
+          activity: intent.properties.activity.filter((entry) => entry.op === "add").map((entry) => entry.key),
+        },
+      };
+    });
+  }, []);
 
-    const parsed = parseMetadataText(createItemDraft.metadata, paletteTags);
+  const saveCreateItem = useCallback(async () => {
+    if (!createItemDraft || !createItemDraft.text.trim()) return;
     const request: CreateHistoryItemRequest = {
       text: createItemDraft.text,
-      title: parsed.title,
-      notes: nullableTrim(parsed.notes),
-      tags: parsed.tags.map((tag) => `#${tagKey(tag)}`).join(" ") || null,
+      title: createItemDraft.title,
+      notes: createItemDraft.notes,
+      tags: createItemDraft.tags,
+      properties: createItemDraft.properties,
       mimePrimary: "text/plain",
     };
-
     try {
       setEditError(null);
       const result = await createHistoryItem(request);
@@ -4873,92 +4806,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [paletteTags, createItemDraft, focusSearch, leaveOpenedSavedView, pushToast, refreshHistory]);
-
-  const saveBatchMetadata = useCallback(async () => {
-    if (!batchMetadataDraft) {
-      return;
-    }
-
-    const selectedItemsById = new Map(history.map((item) => [item.id, item]));
-    const itemsToUpdate = batchMetadataDraft.ids
-      .map((id) => selectedItemsById.get(id))
-      .filter((item): item is HistoryItem => Boolean(item));
-    const nextMetadata = batchMetadataDraft.metadata.trim();
-
-    if (itemsToUpdate.length === 0 || nextMetadata.length === 0) {
-      setBatchMetadataDraft(null);
-      focusSearch();
-      return;
-    }
-
-    try {
-      setEditError(null);
-      const fullItemsToUpdate = await Promise.all(itemsToUpdate.map(ensureFullHistoryItem));
-      for (const item of fullItemsToUpdate) {
-        const assignedTags = await getItemTags(item.id);
-        const parsed = parseMetadataText(nextMetadata, paletteTags);
-        const nextNotes = applyBatchMetadata(item.notes, parsed.notes, batchMetadataDraft.mode);
-        const request: UpdateHistoryItemRequest = {
-          id: item.id,
-          text: item.text,
-          title: item.title,
-          notes: nextNotes,
-          tags: (batchMetadataDraft.mode === "replace"
-            ? parsed.tags
-            : [...new Set([...assignedTags, ...parsed.tags])]).map((tag) => `#${tagKey(tag)}`).join(" ") || null,
-          mimePrimary: item.mime_primary,
-        };
-        await invoke("update_history_item", { request });
-      }
-      setBatchMetadataDraft(null);
-      await refreshAppliedHistory();
-      rebaseFind();
-      focusSearch();
-    } catch (error) {
-      setEditError(String(error));
-      window.setTimeout(() => editTextRef.current?.focus(), 0);
-    }
-  }, [paletteTags, batchMetadataDraft, ensureFullHistoryItem, focusSearch, history, rebaseFind, refreshAppliedHistory]);
-
-  const saveTagEditor = useCallback(async (tags: string[], removeTags: string[]) => {
-    if (!tagEditorDraft || tagEditorSaving) {
-      return;
-    }
-
-    setTagEditorSaving(true);
-    setEditError(null);
-    try {
-      await applyItemTags({
-        itemIds: tagEditorDraft.itemIds,
-        tags,
-        removeTags,
-        mode: tagEditorDraft.mode,
-      });
-      const itemCount = tagEditorDraft.itemIds.length;
-      setTagEditorDraft(null);
-      const [availableTags] = await Promise.all([
-        listTags(),
-        refreshAppliedHistory(),
-      ]);
-      rebaseFind();
-      setPaletteTags(availableTags);
-      setKnownTagSlugs(availableTags.map((tag) => tag.slug));
-      if (itemCount > 1) {
-        pushToast({
-          title: "Tags updated",
-          message: `Applied tag changes to ${itemCount} clips.`,
-          tone: "success",
-        });
-      }
-      focusSearch();
-    } catch (error) {
-      setEditError(String(error));
-    } finally {
-      setTagEditorSaving(false);
-    }
-  }, [focusSearch, pushToast, rebaseFind, refreshAppliedHistory, tagEditorDraft, tagEditorSaving]);
-
+  }, [createItemDraft, focusSearch, leaveOpenedSavedView, pushToast, refreshHistory]);
   useEffect(() => {
     let active = true;
 
@@ -7014,11 +6862,11 @@ function App() {
           <PickerSelectionBar ariaLabel={`${selectedItems.length} selected`}>
             <strong>{selectedItems.length} selected</strong>
             <div className="selection-action-buttons">
-              <UiButton type="button" size="xs" variant="subtle" onClick={() => void beginTagEdit(selectedItems)}>
+              <UiButton type="button" size="xs" variant="subtle" onClick={() => void openMetadataForItems(selectedItems, "tags")}>
                 <Tags size={13} strokeWidth={2.2} aria-hidden="true" />
                 <span>Tags</span>
               </UiButton>
-              <UiButton type="button" size="xs" variant="subtle" onClick={() => beginBatchMetadataEdit(selectedItems)}>
+              <UiButton type="button" size="xs" variant="subtle" onClick={() => void openMetadataForItems(selectedItems, "overview")}>
                 <Pencil size={13} strokeWidth={2.2} aria-hidden="true" />
                 <span>Metadata</span>
               </UiButton>
@@ -7367,7 +7215,7 @@ function App() {
                               if (event.ctrlKey || event.metaKey) {
                                 void openExternalEditor(item.id);
                               } else {
-                                void beginEdit(item, "content");
+                                void beginEdit(item);
                               }
                             } else if (event.key === "Escape") {
                               event.preventDefault();
@@ -7586,7 +7434,7 @@ function App() {
                                 role="menuitem"
                                 tabIndex={-1}
                                 className="item-menu-action"
-                                onClick={() => void beginEdit(item, "content")}
+                                onClick={() => void beginEdit(item)}
                               >
                                 <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
                                 <span>Open full editor</span>
@@ -7634,7 +7482,7 @@ function App() {
                             role="menuitem"
                             tabIndex={-1}
                             className="item-menu-action"
-                            onClick={() => void beginTagEdit([item])}
+                            onClick={() => void openMetadataForItems([item], "tags")}
                           >
                             <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit tags</span>
@@ -7645,7 +7493,7 @@ function App() {
                             role="menuitem"
                             tabIndex={-1}
                             className="item-menu-action"
-                            onClick={() => void beginEdit(item, "metadata")}
+                            onClick={() => void openMetadataForItems([item], "overview")}
                           >
                             <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
                             <span>Edit metadata</span>
@@ -7758,22 +7606,6 @@ function App() {
             }}
           />
         ) : null}
-        {tagEditorDraft ? (
-          <TagEditor
-            itemCount={tagEditorDraft.itemIds.length}
-            mode={tagEditorDraft.mode}
-            initialTags={tagEditorDraft.initialTags}
-            availableTags={paletteTags}
-            saving={tagEditorSaving}
-            error={editError}
-            onApply={(tags, removeTags) => void saveTagEditor(tags, removeTags)}
-            onCancel={() => {
-              setTagEditorDraft(null);
-              setEditError(null);
-              focusSearch();
-            }}
-          />
-        ) : null}
         {createItemDraft ? (
           <div
             className="edit-backdrop"
@@ -7822,30 +7654,17 @@ function App() {
                   autosize={false}
                 />
               </label>
-              <label>
-                <span>Metadata</span>
-                <UiTextarea
-                  className="notes-input"
-                  value={createItemDraft.metadata}
-                  placeholder="#work&#10;Optional Markdown notes"
-                  onChange={(event) => {
-                    const nextMetadata = event.currentTarget.value;
-                    setCreateItemDraft((draft) => draft ? { ...draft, metadata: nextMetadata } : draft);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setCreateItemDraft(null);
-                      focusSearch();
-                    }
-                    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                      event.preventDefault();
-                      void saveCreateItem();
-                    }
-                  }}
-                  autosize={false}
-                />
-              </label>
+              <MetadataInspector
+                payload={CREATE_METADATA_PAYLOAD}
+                variant="create"
+                availableTags={paletteTags}
+                showFooter={false}
+                onIntentChange={updateCreateMetadata}
+                onCancel={() => {
+                  setCreateItemDraft(null);
+                  focusSearch();
+                }}
+              />
               {editError ? <UiAlert className="error-text" color="red" variant="light">{editError}</UiAlert> : null}
               <div className="edit-buttons">
                 <UiButton type="button" variant="default" onClick={() => {
@@ -7861,171 +7680,6 @@ function App() {
                   onClick={() => void saveCreateItem()}
                 >
                   Create
-                </UiButton>
-              </div>
-            </UiPaper>
-          </div>
-        ) : null}
-        {editDraft ? (
-          <div
-            className="edit-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-label={editDraft.mode === "metadata" ? "Edit item metadata" : "Edit clipboard item"}
-          >
-            <UiPaper
-              component="form"
-              className="edit-panel"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveEdit();
-              }}
-              onKeyDown={(event) => {
-                if (event.defaultPrevented) {
-                  return;
-                }
-                if (isSubmitShortcut(event)) {
-                  event.preventDefault();
-                  void saveEdit();
-                }
-              }}
-            >
-              {editDraft.mode === "metadata" ? (
-                <label>
-                  <span>Metadata</span>
-                  <UiTextarea
-                    ref={editTextRef}
-                    className="notes-input"
-                    value={editDraft.notes}
-                    placeholder="#work&#10;Markdown notes about this clip"
-                    onChange={(event) =>
-                      setEditDraft({ ...editDraft, notes: event.currentTarget.value })
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setEditDraft(null);
-                        catalogItemIdRef.current = null;
-                        focusSearch();
-                      }
-                      if (event.key === "F2") {
-                        event.preventDefault();
-                        void saveEdit();
-                      }
-                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                        event.preventDefault();
-                        void saveEdit();
-                      }
-                    }}
-                    autosize={false}
-                  />
-                </label>
-              ) : null}
-              {editError ? <UiAlert className="error-text" color="red" variant="light">{editError}</UiAlert> : null}
-              <div className="edit-buttons">
-                <UiButton type="button" variant="default" onClick={() => {
-                  setEditDraft(null);
-                  catalogItemIdRef.current = null;
-                  focusSearch();
-                }}>
-                  Cancel
-                </UiButton>
-                <UiButton type="submit" variant="filled">Save</UiButton>
-              </div>
-            </UiPaper>
-          </div>
-        ) : null}
-        {batchMetadataDraft ? (
-          <div
-            className="edit-backdrop"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Add tags to selected items"
-          >
-            <UiPaper
-              component="form"
-              className="edit-panel"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void saveBatchMetadata();
-              }}
-              onKeyDown={(event) => {
-                if (event.defaultPrevented) {
-                  return;
-                }
-                if (isSubmitShortcut(event)) {
-                  event.preventDefault();
-                  void saveBatchMetadata();
-                }
-              }}
-            >
-              <div className="batch-metadata-editor">
-                <span>Metadata for {batchMetadataDraft.ids.length} items</span>
-                <UiSelect
-                  className="batch-metadata-mode"
-                  label="How to apply"
-                  value={batchMetadataDraft.mode}
-                  data={[
-                    { value: "append", label: "Append: keep existing and add this text" },
-                    { value: "replace", label: "Replace: overwrite metadata on every item" },
-                    { value: "merge", label: "Smart merge: add only new lines/tags" },
-                  ]}
-                  onChange={(value) => {
-                    if (value === "append" || value === "replace" || value === "merge") {
-                      setBatchMetadataDraft({ ...batchMetadataDraft, mode: value });
-                    }
-                  }}
-                />
-                <div className="batch-metadata-existing" aria-live="polite">
-                  <strong>Existing metadata</strong>
-                  {batchMetadataDraft.hasMixedMetadata ? (
-                    <span>Mixed values across selected items.</span>
-                  ) : batchMetadataDraft.commonMetadata ? (
-                    <pre>{batchMetadataDraft.commonMetadata}</pre>
-                  ) : (
-                    <span>Empty on all selected items.</span>
-                  )}
-                </div>
-                <UiTextarea
-                  ref={editTextRef}
-                  className="notes-input"
-                  aria-label={`Metadata for ${batchMetadataDraft.ids.length} items`}
-                  value={batchMetadataDraft.metadata}
-                  placeholder="#work&#10;Markdown notes to apply"
-                  onChange={(event) =>
-                    setBatchMetadataDraft({
-                      ...batchMetadataDraft,
-                      metadata: event.currentTarget.value,
-                    })
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setBatchMetadataDraft(null);
-                      focusSearch();
-                    }
-                    if (event.key === "F2") {
-                      event.preventDefault();
-                      void saveBatchMetadata();
-                    }
-                  }}
-                  autosize={false}
-                />
-              </div>
-              {editError ? <UiAlert className="error-text" color="red" variant="light">{editError}</UiAlert> : null}
-              <div className="edit-buttons">
-                <UiButton type="button" variant="default" onClick={() => {
-                  setBatchMetadataDraft(null);
-                  focusSearch();
-                }}>
-                  Cancel
-                </UiButton>
-                <UiButton type="submit" variant="filled">
-                  {batchMetadataDraft.mode === "append"
-                    ? "Append metadata"
-                    : batchMetadataDraft.mode === "replace"
-                      ? "Replace metadata"
-                      : "Merge metadata"}
                 </UiButton>
               </div>
             </UiPaper>
@@ -8970,53 +8624,6 @@ function nullableTrim(value: string) {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-
-function appendMetadata(existing: string | null, metadataToAdd: string) {
-  const trimmedExisting = existing?.trim() ?? "";
-  const trimmedMetadata = metadataToAdd.trim();
-  if (!trimmedExisting) {
-    return trimmedMetadata;
-  }
-  if (!trimmedMetadata) {
-    return trimmedExisting;
-  }
-  return `${trimmedExisting}\n${trimmedMetadata}`;
-}
-
-function applyBatchMetadata(existing: string | null, metadata: string, mode: BatchMetadataMode) {
-  switch (mode) {
-    case "append":
-      return appendMetadata(existing, metadata);
-    case "replace":
-      return metadata.trim();
-    case "merge":
-      return mergeMetadata(existing, metadata);
-  }
-}
-
-function mergeMetadata(existing: string | null, metadataToMerge: string) {
-  const mergedLines = metadataLines(existing);
-  const lineKeys = new Set(mergedLines.map(metadataLineKey));
-  for (const line of metadataLines(metadataToMerge)) {
-    const key = metadataLineKey(line);
-    if (!lineKeys.has(key)) {
-      lineKeys.add(key);
-      mergedLines.push(line);
-    }
-  }
-  return mergedLines.join("\n").trim();
-}
-
-function metadataLines(value: string | null) {
-  return (value ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function metadataLineKey(value: string) {
-  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
-}
 
 function metadataNotesPreview(notes: string | null, _tags: string | null) {
   return notes?.trim() ?? "";

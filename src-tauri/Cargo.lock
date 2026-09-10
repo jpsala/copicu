@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "copicu"
-version = "0.4.13"
+version = "0.4.14"
 dependencies = [
  "base64 0.22.1",
  "caseless",

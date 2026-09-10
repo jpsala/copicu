@@ -315,6 +315,14 @@ Editor de contenido F2 aplicado 2026-07-31:
 - Decision durable: CodeMirror queda para edicion larga/code-like; metadata conserva `MetadataTextInput` y su autocomplete de dominio hasta que necesite un lenguaje con completions/highlighting/diagnostics propios. Politica en `docs/topics/ui-surface-architecture.md`.
 - Checks pasados: LSP sin errores, `npm run build`, `cargo check --tests`, tests focales desktop/narrow y `npm run visual:check` 206/206. Los tests Rust compilan pero el binario mantiene el fallo conocido `STATUS_ENTRYPOINT_NOT_FOUND` al arrancar.
 
+Vigésimo tercer corte aplicado 2026-09-10:
+
+- `MetadataInspector` reemplazó los editores divergentes de tags, metadata single, batch y create con una composición selection-aware.
+- La utility `metadata` conserva registry, `CachedHidden`, prewarm y bounds; single/multi usan payload congelado, dirty/pending/stale guards y guardado transaccional.
+- Los conjuntos muestran `all | some | none`, provenance e intenciones explícitas; title/notes mixtos no se infieren desde el texto del input.
+- Create usa tags/properties estructurados y la misma normalización. El smoke Tauri aislado detectó y corrigió el drift `string[]`/`Option<String>`.
+- Search/Find no cambió. Checks del corte: build, 7 tests reducer/text, 16 visuales focales desktop+narrow, `cargo check --tests` y 237 tests Rust pasan. El visual completo queda 303/312: ocho baselines ajenos a metadata y una falla narrow transitoria que pasa focalizada.
+
 ## Diagnostico Inicial
 
 El picker ya tiene valor funcional, pero la composicion visual sigue arrastrando decisiones de MVP:

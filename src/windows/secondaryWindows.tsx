@@ -44,7 +44,6 @@ import type {
   RunActionRequest,
   SetHistoryItemsMarkedRequest,
   SetHistoryQueryMarkedRequest,
-  SetItemTagsRequest,
   SavedHistoryView,
   CreateSavedHistoryViewRequest,
   Scenario,
@@ -54,7 +53,6 @@ import type {
   ToastItem,
   ToastOptions,
   UiHostRequest,
-  UpdateItemMetadataRequest,
   UpdateTagConfigRequest,
 } from "../shared/contracts";
 import {
@@ -86,11 +84,6 @@ import {
 } from "../ui/controls";
 import { ShortcutBadge } from "../ui/ShortcutBadge";
 import { SearchScopeEditor } from "../ui/SearchScopeEditor";
-import {
-  formatMetadataText,
-  MetadataTextInput,
-  parseMetadataText,
-} from "../ui/TagEditor";
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
 import { SavedHistoryViews } from "./SavedHistoryViews";
@@ -117,29 +110,6 @@ type HistoryItem = {
   inbox_at_unix_ms: number | null;
 };
 
-type CaptureContextEvent = {
-  id: number;
-  capturedAtUnixMs: number;
-  sourceKind: string;
-  sourceAppName: string | null;
-  sourceAppPath: string | null;
-  sourceProcessId: number | null;
-  sourceWindowId: number | null;
-  sourceWindowTitle: string | null;
-  contentKind: string;
-  mimePrimary: string | null;
-  clipboardPlatform: string | null;
-  clipboardSequenceNumber: number | null;
-  clipboardFormatCount: number | null;
-  clipboardFormatsText: string | null;
-  byteSize: number | null;
-  textCharCount: number | null;
-  lineCount: number | null;
-  domain: string | null;
-  scenarioId: number | null;
-  scenarioSessionId: string | null;
-  scenarioRevision: number | null;
-};
 
 type HotkeyNormalizationResult = {
   normalized: string | null;
@@ -175,24 +145,6 @@ type ExternalEditorCandidate = {
   configured: boolean;
 };
 
-type MetadataTagEntry = {
-  value: string;
-  source: string;
-  confidence: number | null;
-};
-
-type MetadataPropertyEntry = {
-  key: "client" | "project" | "activity";
-  value: string;
-  source: string;
-};
-
-type MetadataEditorPayload = {
-  item: HistoryItem;
-  tagEntries: MetadataTagEntry[];
-  propertyEntries: MetadataPropertyEntry[];
-  captureContextEvents: CaptureContextEvent[];
-};
 
 type AppAboutInfo = {
   name: string;
@@ -208,11 +160,9 @@ const SETTINGS_WINDOW_LABEL = "settings";
 const AI_OUTPUT_WINDOW_LABEL = "ai-output";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
 const AI_OUTPUT_OPEN_EVENT = "copicu://ai-output/open";
-const METADATA_OPEN_EVENT = "copicu://metadata/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const SETTINGS_FOCUS_SECTION_EVENT = "copicu://settings/focus-section";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
-const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 const SCENARIO_SESSION_CHANGED_EVENT = "copicu://scenario/session-changed";
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
@@ -272,38 +222,6 @@ function nullableTrim(value: string) {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function formatCaptureTimestamp(value: number) {
-  return new Date(value).toLocaleString([], {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function formatOptionalNumber(value: number | null, suffix = "") {
-  return value === null ? "—" : `${value.toLocaleString()}${suffix}`;
-}
-
-function captureContextRows(event: CaptureContextEvent) {
-  return [
-    ["Captured", formatCaptureTimestamp(event.capturedAtUnixMs)],
-    ["Source", event.sourceKind],
-    [
-      "Capture mode",
-      event.scenarioId === null
-        ? "—"
-        : `#${event.scenarioId} · revision ${event.scenarioRevision ?? "—"} · ${event.scenarioSessionId ?? "session unavailable"}`,
-    ],
-    ["App", event.sourceAppName ?? "—"],
-    ["Window", event.sourceWindowTitle ?? "—"],
-    ["Domain", event.domain ?? "—"],
-    ["MIME", event.mimePrimary ?? "—"],
-    ["Size", `${formatOptionalNumber(event.byteSize, " bytes")} · ${formatOptionalNumber(event.textCharCount, " chars")} · ${formatOptionalNumber(event.lineCount, " lines")}`],
-  ];
-}
 
 function updateStatusMessage(status: AutoUpdateStatus | null) {
   if (!status) {
@@ -327,44 +245,6 @@ function updateStatusMessage(status: AutoUpdateStatus | null) {
   }
 }
 
-function captureSearchChips(event: CaptureContextEvent) {
-  return [
-    event.sourceAppName ? `app:${event.sourceAppName}` : null,
-    event.sourceWindowTitle ? `window:${event.sourceWindowTitle}` : null,
-    event.domain ? `domain:${event.domain}` : null,
-    event.sourceKind ? `source:${event.sourceKind}` : null,
-    event.clipboardFormatsText ? "format:<format>" : null,
-  ].filter(Boolean) as string[];
-}
-
-function metadataProperties(entries: MetadataPropertyEntry[]) {
-  const properties = {
-    client: [] as string[],
-    project: [] as string[],
-    activity: [] as string[],
-  };
-  for (const entry of entries) {
-    properties[entry.key].push(entry.value);
-  }
-  return properties;
-}
-
-function metadataSourceLabel(source: string) {
-  const normalized = source.trim().toLocaleLowerCase();
-  if (normalized.includes("scenario")) {
-    return "Capture mode";
-  }
-  if (normalized.includes("context") || normalized.includes("capture")) {
-    return "Context";
-  }
-  return "Auto";
-}
-
-function captureEventSummary(event: CaptureContextEvent) {
-  const source = event.sourceAppName ?? event.sourceKind;
-  const detail = event.sourceWindowTitle ?? event.domain;
-  return [source, detail, formatCaptureTimestamp(event.capturedAtUnixMs)].filter(Boolean).join(" · ");
-}
 
 function setHistoryItemsMarked(request: SetHistoryItemsMarkedRequest) {
   return invoke("set_history_items_marked", { request });
@@ -479,21 +359,7 @@ function deleteTag(id: number) {
   return invoke<void>("delete_tag", { id });
 }
 
-function setItemTags(request: SetItemTagsRequest) {
-  return invoke<void>("set_item_tags", { request });
-}
 
-function pendingMetadataEditor() {
-  return invoke<MetadataEditorPayload | null>("pending_metadata_editor");
-}
-
-function updateItemMetadata(request: UpdateItemMetadataRequest) {
-  return invoke<void>("update_item_metadata", { request });
-}
-
-function closeMetadataWindow() {
-  return invoke("close_metadata_window");
-}
 
 function countMarkedHistoryItems() {
   return invoke<number>("count_marked_history_items");
@@ -660,306 +526,6 @@ if (isTauriRuntime()) {
   }
 }
 
-function GeneratedMetadataSection({
-  tagEntries,
-  propertyEntries,
-}: {
-  tagEntries: MetadataTagEntry[];
-  propertyEntries: MetadataPropertyEntry[];
-}) {
-  const entries = [
-    ...tagEntries
-      .filter((entry) => entry.source !== "manual")
-      .map((entry) => ({
-        key: `tag:${entry.source}:${entry.value}`,
-        text: `#${entry.value}`,
-        source: entry.source,
-        confidence: entry.confidence,
-      })),
-    ...propertyEntries
-      .filter((entry) => entry.source !== "manual")
-      .map((entry) => ({
-        key: `property:${entry.key}:${entry.source}:${entry.value}`,
-        text: `${entry.key}:${entry.value}`,
-        source: entry.source,
-        confidence: null,
-      })),
-  ];
-
-  if (entries.length === 0) {
-    return null;
-  }
-
-  return (
-    <section className="metadata-provenance" aria-labelledby="metadata-provenance-title">
-      <div className="metadata-provenance-heading">
-        <strong id="metadata-provenance-title">Generated metadata</strong>
-        <span>Removing generated metadata prevents it from being added automatically again.</span>
-      </div>
-      <ul>
-        {entries.map((entry) => (
-          <li key={entry.key}>
-            <UiBadge size="xs" variant="light">{metadataSourceLabel(entry.source)}</UiBadge>
-            <code>{entry.text}</code>
-            {entry.confidence === null
-              ? null
-              : <span>{Math.round(entry.confidence * 100)}% confidence</span>}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function CaptureEventFacts({ event }: { event: CaptureContextEvent }) {
-  const chips = captureSearchChips(event);
-  return (
-    <div className="metadata-capture-event-facts">
-      <dl className="metadata-capture-context-grid">
-        {captureContextRows(event).map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {chips.length > 0 ? (
-        <div className="metadata-capture-context-chips" aria-label="Capture search filters">
-          {chips.map((chip) => <code key={chip}>{chip}</code>)}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function CaptureDetails({ events }: { events: CaptureContextEvent[] }) {
-  if (events.length === 0) {
-    return null;
-  }
-
-  const orderedEvents = [...events].sort(
-    (left, right) => right.capturedAtUnixMs - left.capturedAtUnixMs,
-  );
-  const [newestEvent, ...olderEvents] = orderedEvents;
-
-  return (
-    <section className="metadata-capture-context" aria-label="Capture details">
-      <details>
-        <summary>
-          <span>Capture details</span>
-          <small>{captureEventSummary(newestEvent)}</small>
-        </summary>
-        <CaptureEventFacts event={newestEvent} />
-        {olderEvents.length > 0 ? (
-          <div className="metadata-capture-context-events">
-            <span>Earlier captures</span>
-            {olderEvents.map((event) => (
-              <details key={event.id} className="metadata-capture-context-event">
-                <summary>
-                  <small>{captureEventSummary(event)}</small>
-                </summary>
-                <CaptureEventFacts event={event} />
-              </details>
-            ))}
-          </div>
-        ) : null}
-      </details>
-    </section>
-  );
-}
-
-export function MetadataWindowApp() {
-  const [payload, setPayload] = useState<MetadataEditorPayload | null>(null);
-  const [metadataText, setMetadataText] = useState("");
-  const [editorSession, setEditorSession] = useState(0);
-  const [availableTags, setAvailableTags] = useState<TagSummary[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
-
-  const focusEditor = useCallback((itemId: number | null) => {
-    window.requestAnimationFrame(() => {
-      editorRef.current?.focus();
-      recordRendererDiagnostic(
-        "metadata.input-focused",
-        `item_id=${itemId ?? "none"} active=${document.activeElement === editorRef.current}`,
-      );
-    });
-  }, []);
-
-  useEffect(() => {
-    document.body.classList.add("metadata-window");
-    recordRendererDiagnostic("metadata.mount", `label=${currentWindowLabel()}`);
-    return () => {
-      document.body.classList.remove("metadata-window");
-    };
-  }, []);
-
-  const loadPayload = useCallback((nextPayload: MetadataEditorPayload | null) => {
-    const itemId = nextPayload?.item.id ?? null;
-    recordRendererDiagnostic("metadata.loadPayload", `item_id=${itemId ?? "none"}`);
-    setPayload(nextPayload);
-    setMetadataText(formatMetadataText(
-      nextPayload?.item.title,
-      nextPayload?.item.notes,
-      nextPayload?.tagEntries.map((entry) => entry.value) ?? [],
-      nextPayload ? metadataProperties(nextPayload.propertyEntries) : undefined,
-    ));
-    setEditorSession((current) => current + 1);
-    setError(null);
-    void listTags()
-      .then(setAvailableTags)
-      .catch((loadError) => setError(String(loadError)));
-    focusEditor(itemId);
-  }, [focusEditor]);
-
-  useEffect(() => {
-    let active = true;
-    recordRendererDiagnostic("metadata.pending.request", `label=${currentWindowLabel()}`);
-    void pendingMetadataEditor()
-      .then((nextPayload) => {
-        recordRendererDiagnostic(
-          "metadata.pending.response",
-          `has_payload=${Boolean(nextPayload)} item_id=${nextPayload?.item.id ?? "none"}`,
-        );
-        if (active) {
-          loadPayload(nextPayload);
-        }
-      })
-      .catch((loadError) => {
-        if (active) {
-          setError(String(loadError));
-        }
-      });
-    const unlistenPromise = listen<MetadataEditorPayload>(
-      METADATA_OPEN_EVENT,
-      (event: Event<MetadataEditorPayload>) => {
-        if (!active) return;
-        recordRendererDiagnostic("metadata.event.open", `item_id=${event.payload.item.id}`);
-        loadPayload(event.payload);
-      },
-    );
-    return () => {
-      active = false;
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [loadPayload]);
-
-  const closeWindow = useCallback(() => {
-    void closeMetadataWindow().catch((closeError) => setError(String(closeError)));
-  }, []);
-
-  const save = useCallback(async () => {
-    if (!payload || saving) {
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    const parsed = parseMetadataText(
-      metadataText,
-      availableTags,
-      payload.tagEntries.map((entry) => entry.value),
-    );
-    const request: UpdateItemMetadataRequest = {
-      id: payload.item.id,
-      title: parsed.title,
-      notes: nullableTrim(parsed.notes),
-      tags: parsed.tags,
-      properties: parsed.properties,
-    };
-    try {
-      await updateItemMetadata(request);
-      await emitTo("main", HISTORY_CHANGED_EVENT, {
-        itemId: payload.item.id,
-        contentKind: payload.item.content_kind,
-      });
-      await closeMetadataWindow();
-    } catch (saveError) {
-      setError(String(saveError));
-    } finally {
-      setSaving(false);
-    }
-  }, [availableTags, metadataText, payload, saving]);
-
-  const handleEditorKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLFormElement>) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeWindow();
-      }
-      if (event.key === "F2" || isSubmitShortcut(event)) {
-        event.preventDefault();
-        void save();
-      }
-    },
-    [closeWindow, save],
-  );
-
-  return (
-    <CustomWindowFrame
-      variant="utility"
-      title="Metadata"
-      controls={["minimize", "maximize", "close"]}
-    >
-      <main className="metadata-window-app" aria-label="Metadata editor">
-        <header className="metadata-window-header">
-          <div className="metadata-window-title">
-            <strong>Metadata</strong>
-            <span>{payload ? `#${payload.item.id}` : "Waiting for item"}</span>
-          </div>
-        </header>
-
-        {payload ? (
-          <form
-            className="metadata-window-form"
-            onKeyDown={handleEditorKeyDown}
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              void save();
-            }}
-          >
-            <section className="metadata-item-content" aria-label="Item content">
-              <span>Content</span>
-              <pre>{payload.item.text || (payload.item.content_kind === "image" ? "Image clip" : "Empty clip")}</pre>
-            </section>
-            <MetadataTextInput
-              key={editorSession}
-              ref={editorRef}
-              value={metadataText}
-              availableTags={availableTags}
-              onChange={setMetadataText}
-            />
-            <GeneratedMetadataSection
-              tagEntries={payload.tagEntries}
-              propertyEntries={payload.propertyEntries}
-            />
-            <CaptureDetails events={payload.captureContextEvents} />
-            {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
-            <div className="metadata-window-footer">
-              <span><code>#tag</code> · <code>client:value</code> · <code>Ctrl+Enter</code></span>
-              <div className="metadata-window-buttons">
-                <UiButton type="button" variant="default" onClick={closeWindow}>
-                  Cancel
-                </UiButton>
-                <UiButton type="submit" variant="filled" loading={saving}>
-                  Save
-                </UiButton>
-              </div>
-            </div>
-          </form>
-        ) : (
-          <div className="metadata-window-empty">
-            <UiLoader size="sm" />
-            <span>Waiting for metadata payload</span>
-          </div>
-        )}
-      </main>
-    </CustomWindowFrame>
-  );
-}
 
 export function SettingsWindowApp() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);

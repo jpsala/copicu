@@ -154,7 +154,7 @@ Limitaciones actuales:
 
 - no hay FTS5 todavia, se usa `LIKE` paginado contra SQLite;
 - no hay `app:` hasta capturar source process/window;
-- tags siguen como string de metadata, no tabla normalizada;
+- Tags y properties editables usan relaciones normalizadas; los strings legacy son proyecciones derivadas, no autoridad.
 - fechas se interpretan como bounds de dia UTC hasta implementar contexto local mas fino.
 
 Modos de filtro:
@@ -196,21 +196,21 @@ Crear item manual:
 
 - entrada first-class del picker, no hack de clipboard;
 - superficies actuales: atajo `Ctrl+N`, boton `+`, menu del picker y command palette;
-- dialog con `Content` obligatorio y `Metadata` opcional; `Ctrl+Enter` crea;
+- editor con `Content` obligatorio y campos estructurados opcionales para title, notes, tags y properties `client`, `project`, `activity`; `Ctrl+Enter` crea;
 - crear no escribe ni modifica el portapapeles;
-- dedupe por hash del texto normalizado: si ya existe, se promueve arriba y se mergean metadata/tags;
-- gotcha 2026-06-22: el autofocus del dialog debe correr solo al abrir; si depende del draft completo, escribir en `Metadata` re-enfoca `Content` en cada tecla.
-- validacion 2026-06-22: `Ctrl+N` + escribir `Content` + `Tab` + escribir `Metadata` mantuvo foco en metadata; `Create` agrego item arriba y el clipboard sentinel no cambio. El submit quedo robustecido con `onClick` directo y updates funcionales del draft. Dedupe/promocion queda cubierto por tests Rust y Playwright; la validacion manual via Computer Use puede ser ruidosa si una automatizacion deja un dialog stale.
+- dedupe por hash del texto normalizado: si ya existe, se promueve arriba y se mergean metadata, tags y properties dentro de la misma transacción;
+- el autofocus corre sólo al abrir; escribir metadata no puede reenfocar `Content`;
+- el request frontend/backend usa tags estructurados `string[]`; Rust normaliza relaciones y deriva la cache legacy.
 
 Metadata editable:
 
-- La utility muestra el contenido del item como preview read-only y mantiene el foco inicial en el textarea de metadata.
-- Un solo texto mezcla notas libres, `#tags` y las properties acotadas `client`, `project` y `activity`; al guardar, el parser separa metadata normalizada y preserva `title` sin exponerlo.
-- `Ctrl+Shift+C` es global app-owned y `Shift+F2` abre la misma utility desde el picker.
-- El flujo rapido `Edit tags` y el batch de seleccion multiple permanecen separados, atomicos e idempotentes.
-- Tags y properties semanticas muestran su provenance durable; un guardado sin cambios normalizados conserva source/confidence, una remocion crea suppression y una adicion o reintroduccion pasa a manual.
-- Capture context se muestra por evento como hechos read-only, sin aplanarlo dentro de metadata editable.
-- Los detalles de sistema permanecen internos por defecto y, si se exponen, viven en una superficie avanzada.
+- Una sola composición `MetadataInspector` sirve a existing-single, existing-multi y create; items existentes siempre usan la utility standalone `metadata`.
+- La selección se congela al abrir. Multi muestra title/notes agregados y conjuntos `all | some | none`; ninguna operación mixta se infiere desde placeholders: set/clear/append/replace son explícitos y staged.
+- `Ctrl+Shift+C`, `Shift+F2`, Tags, Metadata, Catalog de Inbox y `copicu.metadata.editActive()` abren la misma surface y contratos.
+- `Ctrl+Enter` guarda una intención en una transacción SQLite; Escape limpio cierra y Escape/close dirty exige descartar. Un payload nuevo dirty queda pending y un fingerprint stale no escribe.
+- Tags y properties muestran provenance durable; no-op conserva source/confidence, remove suprime sólo relaciones existentes y add/reintroducción es manual.
+- `clipboard_item_tags` y `clipboard_item_properties` son autoridad. Title/notes viven como escalares separados; capture context queda read-only y single-only.
+- El autocomplete es scoped al inspector, accesible como listbox y no comparte draft, ranking ni reemplazo con Search.
 - La promocion manual explicita de metadata generada y una cola rica de revision de sugerencias quedan fuera de este corte.
 
 Editor externo:

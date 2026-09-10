@@ -88,6 +88,8 @@ const SCENARIO_SESSION_CHANGED_EVENT: &str = "copicu://scenario/session-changed"
 #[cfg(not(test))]
 const METADATA_OPEN_EVENT: &str = "copicu://metadata/open";
 #[cfg(not(test))]
+const METADATA_SELECTION_SAVED_EVENT: &str = "copicu://metadata/selection-saved";
+#[cfg(not(test))]
 const ITEM_PREVIEW_OPEN_EVENT: &str = "copicu://item-preview/open";
 #[cfg(not(test))]
 const NOTIFICATIONS_WINDOW_WIDTH: u32 = 340;
@@ -1680,21 +1682,27 @@ struct OpenItemPreviewRequest {
     item_id: i64,
 }
 
+#[derive(Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum MetadataFocusTarget {
+    Tags,
+    Overview,
+}
+
 #[cfg(not(test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OpenMetadataWindowRequest {
-    item_id: i64,
+    item_ids: Vec<i64>,
+    focus_target: MetadataFocusTarget,
 }
 
 #[cfg(not(test))]
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct MetadataEditorPayload {
-    item: storage::HistoryItem,
-    tag_entries: Vec<storage::MetadataTagEntry>,
-    property_entries: Vec<storage::MetadataPropertyEntry>,
-    capture_context_events: Vec<storage::CaptureContextEvent>,
+pub(crate) struct MetadataEditorPayload {
+    snapshot: storage::MetadataSelectionSnapshot,
+    focus_target: MetadataFocusTarget,
 }
 
 #[cfg(not(test))]
@@ -1740,42 +1748,19 @@ fn open_metadata_window(
     request: OpenMetadataWindowRequest,
 ) -> Result<bool, String> {
     let started_at = Instant::now();
-    diag_log(
-        "metadata.open.command.start",
-        format!(
-            "source_window={} item_id={}",
-            window.label(),
-            request.item_id
-        ),
-    );
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_metadata_window")?;
-    let fetch_started_at = Instant::now();
-    let item = storage.get_item(request.item_id)?;
-    let tag_entries = storage.get_item_tag_entries(request.item_id)?;
-    let property_entries = storage.list_item_property_entries(request.item_id)?;
-    let capture_context_events = storage.list_capture_context_events(request.item_id, 12)?;
-    diag_log(
-        "metadata.open.item-fetch.done",
-        format!(
-            "item_id={} elapsed_ms={} total_ms={}",
-            request.item_id,
-            fetch_started_at.elapsed().as_millis(),
-            started_at.elapsed().as_millis()
-        ),
-    );
-    let item_id = request.item_id;
+    let snapshot = storage.get_metadata_selection_snapshot(storage::MetadataSelectionRequest {
+        item_ids: request.item_ids,
+    })?;
+    let item_ids = snapshot.item_ids.clone();
+    let payload = MetadataEditorPayload {
+        snapshot,
+        focus_target: request.focus_target,
+    };
     thread::spawn(move || {
         let app_for_main_thread = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
-            if let Err(error) = open_metadata_editor_window(
-                &app_for_main_thread,
-                MetadataEditorPayload {
-                    item,
-                    tag_entries,
-                    property_entries,
-                    capture_context_events,
-                },
-            ) {
+            if let Err(error) = open_metadata_editor_window(&app_for_main_thread, payload) {
                 eprintln!("metadata window open failed: {error}");
             }
         }) {
@@ -1785,8 +1770,7 @@ fn open_metadata_window(
     diag_log(
         "metadata.open.command.dispatched",
         format!(
-            "item_id={} total_ms={}",
-            item_id,
+            "item_ids={item_ids:?} total_ms={}",
             started_at.elapsed().as_millis()
         ),
     );
@@ -1804,12 +1788,12 @@ fn pending_metadata_editor(
     diag_log(
         "metadata.pending",
         format!(
-            "window={} has_payload={} item_id={}",
+            "window={} has_payload={} item_count={}",
             window.label(),
             payload.is_some(),
             payload
                 .as_ref()
-                .map(|payload| payload.item.id())
+                .map(|payload| payload.snapshot.item_count)
                 .unwrap_or_default()
         ),
     );
@@ -2104,23 +2088,6 @@ async fn count_marked_history_items(
         .map_err(|error| format!("count marks worker failed: {error}"))?
 }
 
-#[cfg(not(test))]
-#[tauri::command]
-async fn update_history_item(
-    window: tauri::WebviewWindow,
-    storage: State<'_, storage::AppStorage>,
-    request: storage::UpdateHistoryItemRequest,
-) -> Result<(), String> {
-    require_surface_window(
-        &window,
-        &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
-        "update_history_item",
-    )?;
-    let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage.update_item(request))
-        .await
-        .map_err(|error| format!("edit item worker failed: {error}"))?
-}
 
 #[cfg(not(test))]
 #[tauri::command]
@@ -2139,20 +2106,57 @@ async fn update_history_item_text(
 
 #[cfg(not(test))]
 #[tauri::command]
-async fn update_item_metadata(
+async fn get_metadata_selection_snapshot(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
-    request: storage::UpdateItemMetadataRequest,
-) -> Result<(), String> {
+    request: storage::MetadataSelectionRequest,
+) -> Result<storage::MetadataSelectionSnapshot, String> {
     require_surface_window(
         &window,
         &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
-        "update_item_metadata",
+        "get_metadata_selection_snapshot",
     )?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage.update_item_metadata(request))
-        .await
-        .map_err(|error| format!("metadata worker failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        storage.get_metadata_selection_snapshot(request)
+    })
+    .await
+    .map_err(|error| format!("metadata snapshot worker failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn apply_metadata_selection_intent(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    intent: storage::MetadataSelectionIntent,
+) -> Result<storage::MetadataSelectionApplyResult, String> {
+    require_surface_window(
+        &window,
+        &[METADATA_WINDOW_LABEL],
+        "apply_metadata_selection_intent",
+    )?;
+    let storage = storage.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        storage.apply_metadata_selection_intent(intent)
+    })
+    .await
+    .map_err(|error| format!("metadata selection worker failed: {error}"))??;
+    let item_ids = result.snapshot.item_ids.clone();
+    if let Err(error) = app.emit(
+        METADATA_SELECTION_SAVED_EVENT,
+        serde_json::json!({ "itemIds": item_ids.clone() }),
+    ) {
+        eprintln!("metadata selection saved emit failed: {error}");
+    }
+    if let Err(error) = app.emit(
+        HISTORY_CHANGED_EVENT,
+        serde_json::json!({ "itemIds": item_ids }),
+    ) {
+        eprintln!("history changed emit failed: {error}");
+    }
+    Ok(result)
 }
 
 #[cfg(not(test))]
@@ -3261,47 +3265,8 @@ fn normalize_hotkey_sequence(input: String) -> HotkeyNormalizationResult {
     }
 }
 
-#[cfg(not(test))]
-#[tauri::command]
-async fn get_item_tags(
-    window: tauri::WebviewWindow,
-    storage: State<'_, storage::AppStorage>,
-    id: i64,
-) -> Result<Vec<String>, String> {
-    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_item_tags")?;
-    let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage.get_item_tags(id))
-        .await
-        .map_err(|error| format!("item tags worker failed: {error}"))?
-}
 
-#[cfg(not(test))]
-#[tauri::command]
-async fn set_item_tags(
-    window: tauri::WebviewWindow,
-    storage: State<'_, storage::AppStorage>,
-    request: storage::SetItemTagsRequest,
-) -> Result<(), String> {
-    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_item_tags")?;
-    let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage.set_item_tags(request))
-        .await
-        .map_err(|error| format!("set tags worker failed: {error}"))?
-}
 
-#[cfg(not(test))]
-#[tauri::command]
-async fn apply_item_tags(
-    window: tauri::WebviewWindow,
-    storage: State<'_, storage::AppStorage>,
-    request: storage::ApplyItemTagsRequest,
-) -> Result<(), String> {
-    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "apply_item_tags")?;
-    let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage.apply_item_tags(request))
-        .await
-        .map_err(|error| format!("apply tags worker failed: {error}"))?
-}
 
 #[cfg(not(test))]
 #[tauri::command]
@@ -3580,7 +3545,9 @@ pub fn run() {
         )
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if surface_registry::hides_on_close(window.label()) {
+                if surface_registry::hides_on_close(window.label())
+                    && window.label() != METADATA_WINDOW_LABEL
+                {
                     api.prevent_close();
                     hide_cached_surface_on_close(window);
                     return;
@@ -3782,6 +3749,8 @@ pub fn run() {
             record_renderer_diagnostic,
             open_markdown_output,
             open_metadata_window,
+            get_metadata_selection_snapshot,
+            apply_metadata_selection_intent,
             pending_metadata_editor,
             close_metadata_window,
             open_item_preview,
@@ -3800,8 +3769,6 @@ pub fn run() {
             set_history_query_marked,
             clear_marked_history_items,
             count_marked_history_items,
-            update_history_item,
-            update_item_metadata,
             create_history_item,
             delete_history_item,
             get_history_item,
@@ -3839,9 +3806,6 @@ pub fn run() {
             delete_tag,
             open_picker_for_tag,
             normalize_hotkey_sequence,
-            get_item_tags,
-            set_item_tags,
-            apply_item_tags,
             list_builtin_actions,
             list_actions,
             refresh_script_action_cache,
@@ -4194,7 +4158,7 @@ fn open_metadata_editor_window<R: tauri::Runtime>(
     payload: MetadataEditorPayload,
 ) -> Result<(), String> {
     let started_at = Instant::now();
-    let item_id = payload.item.id();
+    let item_id = payload.snapshot.item_ids[0];
     let cache_hit = app.get_webview_window(METADATA_WINDOW_LABEL).is_some();
     diag_log(
         "metadata.open.backend.start",

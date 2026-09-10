@@ -224,20 +224,122 @@ export type SetItemTagsRequest = {
   tags: string[];
 };
 
-export type UpdateItemMetadataRequest = {
+
+export type MetadataFocusTarget = "tags" | "overview";
+export type MetadataPresence = "all" | "some" | "none";
+export type MetadataSource = "manual" | "scenario" | "rule" | "enrichment" | "context";
+export type MetadataPropertyKey = keyof ScenarioProperties;
+
+export type MetadataCaptureContextEvent = {
   id: number;
-  title: string | null;
-  notes: string | null;
-  tags: string[];
-  properties: ScenarioProperties;
+  capturedAtUnixMs: number;
+  sourceKind: string;
+  sourceAppName: string | null;
+  sourceAppPath: string | null;
+  sourceProcessId: number | null;
+  sourceWindowId: number | null;
+  sourceWindowTitle: string | null;
+  contentKind: string;
+  mimePrimary: string | null;
+  clipboardPlatform: string | null;
+  clipboardSequenceNumber: number | null;
+  clipboardFormatCount: number | null;
+  clipboardFormatsText: string | null;
+  byteSize: number | null;
+  textCharCount: number | null;
+  lineCount: number | null;
+  domain: string | null;
+  scenarioId: number | null;
+  scenarioSessionId: string | null;
+  scenarioRevision: number | null;
 };
 
-export type ApplyItemTagsRequest = {
-  itemIds: number[];
-  tags: string[];
-  removeTags: string[];
-  mode: "replace" | "patch";
+export type MetadataSourceCount = {
+  source: MetadataSource;
+  count: number;
+  confidenceMin: number | null;
+  confidenceMax: number | null;
 };
+
+export type MetadataScalarAggregate = {
+  state: "same" | "mixed" | "empty";
+  value: string | null;
+  populatedCount: number;
+};
+
+export type MetadataSetValueAggregate = {
+  key: string;
+  label: string;
+  presence: MetadataPresence;
+  presentCount: number;
+  totalCount: number;
+  sources: MetadataSourceCount[];
+  tagConfig?: {
+    tagId: number;
+    color: string | null;
+    pinned: boolean;
+  };
+};
+
+export type MetadataSelectionSnapshot = {
+  itemIds: number[];
+  itemCount: number;
+  snapshotToken: string;
+  title: MetadataScalarAggregate;
+  notes: MetadataScalarAggregate;
+  tags: MetadataSetValueAggregate[];
+  properties: Record<MetadataPropertyKey, MetadataSetValueAggregate[]>;
+  singleItem: {
+    contentPreview: string;
+    contentKind: string;
+    captureContextEvents: MetadataCaptureContextEvent[];
+  } | null;
+};
+
+export type MetadataSelectionPayload = {
+  snapshot: MetadataSelectionSnapshot;
+  focusTarget: MetadataFocusTarget;
+};
+
+export type MetadataScalarIntent =
+  | { op: "untouched" }
+  | { op: "set"; value: string }
+  | { op: "clear" };
+
+export type MetadataNotesIntent =
+  | { op: "untouched" }
+  | { op: "replaceAll"; value: string }
+  | { op: "appendToEach"; value: string }
+  | { op: "clearAll" };
+
+export type MetadataSetValueIntent = {
+  key: string;
+  op: "untouched" | "add" | "remove";
+};
+
+export type MetadataSelectionIntent = {
+  itemIds: number[];
+  expectedSnapshotToken: string;
+  title: MetadataScalarIntent;
+  notes: MetadataNotesIntent;
+  tags: MetadataSetValueIntent[];
+  properties: Record<MetadataPropertyKey, MetadataSetValueIntent[]>;
+};
+
+export type ApplyMetadataSelectionIntentResult = {
+  snapshot: MetadataSelectionSnapshot;
+  changedItemCount: number;
+  titleChangedCount: number;
+  notesChangedCount: number;
+  tagRelationChanges: number;
+  propertyRelationChanges: number;
+};
+
+export type OpenMetadataWindowRequest = {
+  itemIds: number[];
+  focusTarget: MetadataFocusTarget;
+};
+
 
 export type ActivateItemRequest = {
   itemId: number;
@@ -414,7 +516,8 @@ export type CreateHistoryItemRequest = {
   text: string;
   title: string | null;
   notes: string | null;
-  tags: string | null;
+  tags: string[];
+  properties: ScenarioProperties;
   mimePrimary: string | null;
 };
 

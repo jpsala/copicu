@@ -359,6 +359,32 @@ const descriptorFingerprint = (mode: "structured" | "ai", plan: unknown) =>
 const rustDescriptorFixtureFingerprint = "5b1ce8274d70065fcc9407c1dc3fce4ad078c54fc0bc0fd85686ac5bf8c77dc3";
 const previousJsDescriptorFixtureFingerprint = "e1fa8cbd5b370ac2344d5ed9e92f262b238cd69ab7c30a076665ebe8a1877af0";
 
+type MockMetadataItem = {
+  id: number;
+  text: string;
+  content_kind: string;
+  mime_primary: string | null;
+  title?: string | null;
+  notes?: string | null;
+  tags?: string | null;
+  properties?: { client: string[]; project: string[]; activity: string[] };
+};
+
+type MetadataVisualRuntime = Window & {
+  __copicuTestHistoryItems?: MockMetadataItem[];
+  __copicuTestMetadataSnapshot?: (ids: number[], token?: string) => unknown;
+  __copicuTestEmitEvent?: (event: string, payload: unknown) => Promise<void>;
+  __copicuTestInvocations?: Array<{
+    cmd: string;
+    args: {
+      id?: number;
+      text?: string;
+      request?: { itemIds: number[]; focusTarget: string };
+      intent?: { title: { op: string }; tags: Array<{ key: string; op: string }> };
+    };
+  }>;
+};
+
 type MockTauriOptions = {
   historySearchDelayMs?: number;
   historySearchDelaySequenceMs?: number[];
@@ -395,6 +421,11 @@ type MockTauriOptions = {
     lineNumbers: boolean;
     highlightActiveLine: boolean;
   }>;
+  metadataItemIds?: number[];
+  appearance?: {
+    theme: "system" | "light" | "dark";
+    themeId: string;
+  };
 };
 
 async function mockTauriInvoke(
@@ -1070,8 +1101,8 @@ async function mockTauriInvoke(
         retentionCount: 1000,
       },
       appearance: {
-        theme: "system",
-        themeId: "default",
+        theme: mockOptions.appearance?.theme ?? "system",
+        themeId: mockOptions.appearance?.themeId ?? "default",
       },
       editor: {
         fontFamily: "systemMono",
@@ -1094,6 +1125,89 @@ async function mockTauriInvoke(
         apiKey: "",
       },
     };
+    const metadataSnapshot = (itemIds: number[], token = `snapshot-${itemIds.join("-")}`) => {
+      const testWindow = window as MetadataVisualRuntime;
+      const sourceItems: MockMetadataItem[] = testWindow.__copicuTestHistoryItems ?? items;
+      const selected = itemIds.map((id) => sourceItems.find((item) => item.id === id)).filter((item): item is MockMetadataItem => Boolean(item));
+      const aggregateScalar = (field: "title" | "notes") => {
+        const values = selected.map((item) => String(item[field] ?? "").trim());
+        const populatedCount = values.filter(Boolean).length;
+        const same = values.every((value: string) => value === values[0]);
+        return {
+          state: populatedCount === 0 ? "empty" : same ? "same" : "mixed",
+          value: same && values[0] ? values[0] : null,
+          populatedCount,
+        };
+      };
+      const propertyDefaults = { client: ["ACME"], project: ["Web"], activity: ["Development"] };
+      const valuesFor = (field: "tags" | "client" | "project" | "activity", item: MockMetadataItem): string[] => {
+        if (field === "tags") {
+          return String(item.tags ?? "").split(/\s+/).map((value) => value.replace(/^#/, "").trim()).filter(Boolean);
+        }
+        return item.properties?.[field] ?? propertyDefaults[field];
+      };
+      const aggregateValues = (field: "tags" | "client" | "project" | "activity") => {
+        const labels = new Map<string, string>();
+        for (const item of selected) {
+          for (const value of valuesFor(field, item)) labels.set(value.toLocaleLowerCase(), value);
+        }
+        return [...labels].map(([key, label]) => {
+          const presentCount = selected.filter((item) =>
+            valuesFor(field, item).some((value) => value.toLocaleLowerCase() === key),
+          ).length;
+          return {
+            key,
+            label,
+            presence: presentCount === selected.length ? "all" : presentCount === 0 ? "none" : "some",
+            presentCount,
+            totalCount: selected.length,
+            sources: [{ source: "manual", count: presentCount, confidenceMin: null, confidenceMax: null }],
+          };
+        });
+      };
+      const item = selected[0];
+      return {
+        itemIds,
+        itemCount: selected.length,
+        snapshotToken: token,
+        title: aggregateScalar("title"),
+        notes: aggregateScalar("notes"),
+        tags: aggregateValues("tags"),
+        properties: {
+          client: aggregateValues("client"),
+          project: aggregateValues("project"),
+          activity: aggregateValues("activity"),
+        },
+        singleItem: selected.length === 1 ? {
+          contentPreview: item.text,
+          contentKind: item.content_kind,
+          captureContextEvents: [{
+            id: 1,
+            capturedAtUnixMs: 1782154403281,
+            sourceKind: "clipboard",
+            sourceAppName: "code.exe",
+            sourceAppPath: "C:\\Tools\\VS Code\\Code.exe",
+            sourceProcessId: 4242,
+            sourceWindowId: 9001,
+            sourceWindowTitle: "main.rs - Copicu",
+            contentKind: item.content_kind,
+            mimePrimary: item.mime_primary,
+            clipboardPlatform: "windows",
+            clipboardSequenceNumber: 597,
+            clipboardFormatCount: 4,
+            clipboardFormatsText: "CF_UNICODETEXT text HTML Format registered",
+            byteSize: 82,
+            textCharCount: item.text.length,
+            lineCount: item.text.split(/\r\n|\r|\n/).length,
+            domain: "example.com",
+            scenarioId: 1,
+            scenarioSessionId: "scenario-1-test",
+            scenarioRevision: 1,
+          }],
+        } : null,
+      };
+    };
+    (window as MetadataVisualRuntime).__copicuTestMetadataSnapshot = metadataSnapshot;
     (window as any).__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args?: any) => {
         (window as any).__copicuTestInvocations.push({ cmd, args });
@@ -1809,37 +1923,6 @@ async function mockTauriInvoke(
             return items;
           case "list_tags":
             return (window as any).__copicuTestTags;
-          case "get_item_tags": {
-            const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
-            const item = sourceItems.find((candidate: any) => candidate.id === args.id);
-            return (item?.tags ?? "")
-              .split(/\s+/)
-              .map((tag: string) => tag.replace(/^#/, "").trim())
-              .filter(Boolean);
-          }
-          case "apply_item_tags": {
-            const request = args.request;
-            const ids = new Set(request.itemIds);
-            (window as any).__copicuTestHistoryItems = (
-              (window as any).__copicuTestHistoryItems ?? items
-            ).map((item: any) => {
-              if (!ids.has(item.id)) {
-                return item;
-              }
-              const existing = (item.tags ?? "")
-                .split(/\s+/)
-                .map((tag: string) => tag.replace(/^#/, "").trim())
-                .filter(Boolean);
-              const nextTags = request.mode === "patch"
-                ? [...new Set([
-                    ...existing.filter((tag: string) => !request.removeTags.includes(tag)),
-                    ...request.tags,
-                  ])]
-                : request.tags;
-              return { ...item, tags: nextTags.map((tag: string) => `#${tag}`).join(" ") || null };
-            });
-            return null;
-          }
           case "list_saved_history_views":
             return (window as any).__copicuTestSavedHistoryViews;
           case "create_saved_history_view": {
@@ -1943,60 +2026,32 @@ async function mockTauriInvoke(
             await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", null);
             return null;
           case "pending_metadata_editor": {
-            const item = ((window as any).__copicuTestHistoryItems ?? items)[3] ?? items[0];
+            const sourceItems = (window as Window & { __copicuTestHistoryItems?: MockMetadataItem[] }).__copicuTestHistoryItems ?? items;
+            const itemIds = mockOptions.metadataItemIds ?? [sourceItems[3]?.id ?? sourceItems[0].id];
             return {
-              item: withHistoryPreview(item, true),
-              tagEntries: (item.tags ?? "")
-                .split(/\s+/)
-                .map((tag: string) => tag.replace(/^#/, "").trim())
-                .filter(Boolean)
-                .map((value: string) => ({ value, source: "manual", confidence: null })),
-              propertyEntries: [
-                { key: "client", value: "ACME", source: "manual" },
-                { key: "project", value: "Web", source: "manual" },
-                { key: "activity", value: "Development", source: "manual" },
-              ],
-              captureContextEvents: [
-                {
-                  id: 1,
-                  capturedAtUnixMs: 1782154403281,
-                  sourceKind: "clipboard",
-                  sourceAppName: "code.exe",
-                  sourceAppPath: "C:\\Tools\\VS Code\\Code.exe",
-                  sourceProcessId: 4242,
-                  sourceWindowId: 9001,
-                  sourceWindowTitle: "main.rs - Copicu",
-                  contentKind: "text",
-                  mimePrimary: "text/plain",
-                  clipboardPlatform: "windows",
-                  clipboardSequenceNumber: 597,
-                  clipboardFormatCount: 4,
-                  clipboardFormatsText: "CF_UNICODETEXT text HTML Format registered",
-                  byteSize: 82,
-                  textCharCount: 64,
-                  lineCount: 1,
-                  domain: "example.com",
-                  scenarioId: 1,
-                  scenarioSessionId: "scenario-1-test",
-                  scenarioRevision: 1,
-                },
-              ],
+              snapshot: metadataSnapshot(itemIds),
+              focusTarget: "overview",
             };
           }
-          case "update_item_metadata": {
-            const request = args.request;
-            (window as any).__copicuTestHistoryItems = (
-              (window as any).__copicuTestHistoryItems ?? items
-            ).map((item: any) => item.id === request.id
-              ? {
-                  ...item,
-                  title: request.title,
-                  notes: request.notes,
-                  tags: request.tags.map((tag: string) => `#${tag}`).join(" ") || null,
-                }
-              : item);
-            return null;
+          case "get_metadata_selection_snapshot":
+            return metadataSnapshot(args.request.itemIds, `reload-${Date.now()}`);
+          case "apply_metadata_selection_intent": {
+            const intent = args.intent;
+            const nextSnapshot = metadataSnapshot(intent.itemIds, `saved-${Date.now()}`);
+            const emitEvent = (window as MetadataVisualRuntime).__copicuTestEmitEvent;
+            if (!emitEvent) throw new Error("Synthetic metadata event bridge is unavailable");
+            await emitEvent("copicu://metadata/selection-saved", { itemIds: intent.itemIds });
+            return {
+              snapshot: nextSnapshot,
+              changedItemCount: intent.itemIds.length,
+              titleChangedCount: intent.title.op === "untouched" ? 0 : intent.itemIds.length,
+              notesChangedCount: intent.notes.op === "untouched" ? 0 : intent.itemIds.length,
+              tagRelationChanges: intent.tags.length,
+              propertyRelationChanges: Object.values(intent.properties).flat().length,
+            };
           }
+          case "open_metadata_window":
+            return true;
           case "create_tag": {
             const label = args.request.label.trim();
             const nextTag = {
@@ -2052,7 +2107,9 @@ async function mockTauriInvoke(
             const existing = sourceItems.find((item: any) => item.text.trim() === normalizedText);
             if (existing) {
               existing.notes = request.notes ?? existing.notes ?? null;
-              existing.tags = [existing.tags, request.tags].filter(Boolean).join(" ") || null;
+              const requestedTags = request.tags.map((tag: string) => `#${tag}`).join(" ");
+              existing.tags = [existing.tags, requestedTags].filter(Boolean).join(" ") || null;
+              existing.properties = request.properties;
               existing.last_copied_at_unix_ms = Date.now();
               existing.copy_count = (existing.copy_count ?? 1) + 1;
               (window as any).__copicuTestHistoryItems = [
@@ -2080,7 +2137,8 @@ async function mockTauriInvoke(
               thumbnail_data_url: null,
               title: request.title ?? null,
               notes: request.notes ?? null,
-              tags: request.tags ?? null,
+              tags: request.tags.map((tag: string) => `#${tag}`).join(" ") || null,
+              properties: request.properties,
             };
             (window as any).__copicuTestHistoryItems = [nextItem, ...sourceItems];
             return { id: nextId, created: true };
@@ -3006,16 +3064,26 @@ test("Inbox item stays pending on catalog cancel and leaves after catalog save",
   await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
-
-  const catalogDialog = page.getByRole("dialog", { name: "Edit item metadata" });
-  await expect(catalogDialog).toBeVisible();
-  await catalogDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect.poll(async () => page.evaluate(() => {
+    const runtime = window as MetadataVisualRuntime;
+    return (runtime.__copicuTestInvocations ?? []).filter((call) => call.cmd === "open_metadata_window").length;
+  })).toBe(1);
+  await page.evaluate(async (itemId) => {
+    const runtime = window as MetadataVisualRuntime;
+    const emitEvent = runtime.__copicuTestEmitEvent;
+    if (!emitEvent) throw new Error("Synthetic metadata event bridge is unavailable");
+    await emitEvent("copicu://metadata/selection-cancelled", { itemIds: [itemId] });
+  }, inboxItem.id);
   await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
 
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
-  await catalogDialog.getByRole("textbox", { name: "Metadata" }).fill("#cataloged Inbox review");
-  await catalogDialog.getByRole("button", { name: "Save" }).click();
+  await page.evaluate(async (itemId) => {
+    const runtime = window as MetadataVisualRuntime;
+    const emitEvent = runtime.__copicuTestEmitEvent;
+    if (!emitEvent) throw new Error("Synthetic metadata event bridge is unavailable");
+    await emitEvent("copicu://metadata/selection-saved", { itemIds: [itemId] });
+  }, inboxItem.id);
 
   await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toHaveCount(0);
   const inboxTransitions = await page.evaluate(() => {
@@ -3072,11 +3140,12 @@ test("new item dialog creates a manual history item", async ({ page }) => {
   await expect(dialog.getByRole("textbox", { name: "Content" })).toBeFocused();
 
   const contentInput = dialog.getByRole("textbox", { name: "Content" });
-  const metadataInput = dialog.getByRole("textbox", { name: "Metadata" });
+  const notesInput = dialog.getByRole("textbox", { name: "Notes" });
   await contentInput.fill("COPICU_SYNTH_MANUAL_ITEM");
-  await metadataInput.focus();
-  await page.keyboard.type("#manual created from Copicu");
-  await expect(metadataInput).toBeFocused();
+  await notesInput.fill("created from Copicu");
+  const tagInput = dialog.getByRole("textbox", { name: "Add tags" });
+  await tagInput.fill("manual");
+  await tagInput.press("Enter");
   await expect(contentInput).toHaveValue("COPICU_SYNTH_MANUAL_ITEM");
   await dialog.getByRole("button", { name: "Create" }).click();
 
@@ -3112,7 +3181,10 @@ test("new item duplicate promotes the existing history item", async ({ page }) =
   await page.getByLabel("Search clipboard history").press("Control+N");
   const dialog = page.getByRole("dialog", { name: "Create new item" });
   await dialog.getByRole("textbox", { name: "Content" }).fill("COPICU_SYNTH_DUPLICATE_MANUAL_ITEM");
-  await dialog.getByRole("textbox", { name: "Metadata" }).fill("#second duplicate metadata");
+  await dialog.getByRole("textbox", { name: "Notes" }).fill("duplicate metadata");
+  const duplicateTagInput = dialog.getByRole("textbox", { name: "Add tags" });
+  await duplicateTagInput.fill("second");
+  await duplicateTagInput.press("Enter");
   await dialog.getByRole("button", { name: "Create" }).click();
 
   await expect(dialog).toBeHidden();
@@ -4190,22 +4262,19 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
   });
   const initialSearchCall = await initialSearch.jsonValue() as any;
   expect(initialSearchCall.args.request.includeContent).toBe(false);
-
-  await page.getByRole("group", { name: /COPICU_SYNTH_FULL_CONTENT_START/ }).click();
-  await page.getByLabel("Search clipboard history").click();
-  await page.keyboard.press("Shift+F2");
-  const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
-  await expect(metadataDialog).toBeVisible();
-  await metadataDialog.getByRole("textbox", { name: "Metadata" }).fill("#perf metadata note");
-  await metadataDialog.getByRole("button", { name: "Save", exact: true }).click();
+  await page.keyboard.press("F2");
+  const contentEditor = page.getByRole("region", { name: "Edit clipboard item" });
+  const contentInput = contentEditor.getByRole("textbox", { name: "Item content" });
+  await contentInput.fill(`${fullText} edited`);
+  await page.keyboard.press("Control+s");
 
   const updateCall = await page.waitForFunction(() => {
-    const calls = (window as any).__copicuTestInvocations;
-    return calls.find((call: any) => call.cmd === "update_history_item");
+    const calls = (window as MetadataVisualRuntime).__copicuTestInvocations ?? [];
+    return calls.find((call) => call.cmd === "update_history_item_text");
   });
-  const update = await updateCall.jsonValue() as any;
-  expect(update.args.request.text).toBe(fullText);
-  expect(update.args.request.text).toContain("COPICU_SYNTH_FULL_CONTENT_END");
+  const update = await updateCall.jsonValue() as unknown as { args: { text: string } };
+  expect(update.args.text).toBe(`${fullText} edited`);
+  expect(update.args.text).toContain("COPICU_SYNTH_FULL_CONTENT_END");
   const getCalls = await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "get_history_item"),
   );
@@ -4284,12 +4353,17 @@ test("F2, Ctrl+F2, and Shift+F2 route to content, external, and metadata editors
   };
   expect(externalEdit.args.itemId).toBe(syntheticLongHistory[0].id);
   await expect(page.getByText(/Opened in Visual Studio Code/)).toBeVisible();
-
   await page.keyboard.press("Shift+F2");
-  const metadataDialog = page.getByRole("dialog", { name: "Edit item metadata" });
-  await expect(metadataDialog).toBeVisible();
-  await expect(metadataDialog.getByRole("textbox", { name: "Metadata" })).toBeVisible();
-  await expect(metadataDialog.getByRole("textbox", { name: "Content" })).toHaveCount(0);
+  const metadataOpenCall = await page.waitForFunction(() => {
+    const runtime = window as MetadataVisualRuntime;
+    return (runtime.__copicuTestInvocations ?? []).find((entry) => entry.cmd === "open_metadata_window") ?? false;
+  });
+  // The mock bridge returns the recorded invocation after waitForFunction observes it.
+  const metadataOpen = await metadataOpenCall.jsonValue() as unknown as { args: { request: { itemIds: number[]; focusTarget: string } } };
+  expect(metadataOpen.args.request).toEqual({
+    itemIds: [syntheticLongHistory[0].id],
+    focusTarget: "overview",
+  });
 });
 
 test("Ctrl+Shift+C targets the last item activated with Enter", async ({ page }) => {
@@ -4300,19 +4374,16 @@ test("Ctrl+Shift+C targets the last item activated with Enter", async ({ page })
   await page.locator(".feed-item").nth(1).click();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Control+Shift+C");
-
-  const dialog = page.getByRole("dialog", { name: "Edit item metadata" });
-  await expect(dialog).toBeVisible();
-  const metadata = dialog.getByRole("textbox", { name: "Metadata" });
-  await expect(metadata).toBeFocused();
-  await expect(dialog.getByRole("textbox", { name: "Content" })).toHaveCount(0);
-  await metadata.fill("last activated #verified");
-  await dialog.getByRole("button", { name: "Save" }).click();
-
-  const update = await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "update_history_item"),
-  );
-  expect((await update.jsonValue() as any).args.request.id).toBe(activatedItem.id);
+  const metadataOpen = await page.waitForFunction((activatedId) => {
+    const runtime = window as MetadataVisualRuntime;
+    return (runtime.__copicuTestInvocations ?? []).find((entry) =>
+      entry.cmd === "open_metadata_window"
+      && entry.args.request?.itemIds.includes(activatedId)
+    ) ?? false;
+  }, activatedItem.id);
+  // The mock bridge returns the recorded invocation after waitForFunction observes it.
+  const invocation = await metadataOpen.jsonValue() as unknown as { args: { request: { itemIds: number[]; focusTarget: string } } };
+  expect(invocation.args.request).toEqual({ itemIds: [activatedItem.id], focusTarget: "overview" });
 });
 
 test("native global activation updates the active item while the picker is hidden", async ({ page }) => {
@@ -6215,32 +6286,23 @@ test("ctrl+d deletes selected items", async ({ page }) => {
   expect(deletedIds).toEqual([101, 102]);
 });
 
-test("multi selection tag editor patches added and removed tags without replacement", async ({ page }) => {
+test("multi selection tag action opens the frozen selection in the standalone inspector", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
   await page.locator(".selection-action-bar").getByRole("button", { name: "Tags", exact: true }).click();
 
-  const dialog = page.getByRole("dialog", { name: "Edit tags for selection" });
-  await expect(dialog.getByText("Edit tags for 2 clips")).toBeVisible();
-  await expect(dialog.getByText("Add and remove only the tags you choose.")).toBeVisible();
-  const addInput = dialog.getByRole("textbox", { name: "Tag to add" });
-  await addInput.fill("batch-tag");
-  await addInput.press("Enter");
-  const removeInput = dialog.getByRole("textbox", { name: "Tag to remove" });
-  await removeInput.fill("work");
-  await removeInput.press("Enter");
-  await dialog.getByRole("button", { name: "Apply tag changes" }).click();
-
-  const call = await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "apply_item_tags"),
-  );
-  const request = (await call.jsonValue() as any).args.request;
-  expect(request.itemIds).toEqual([101, 102]);
-  expect(request.mode).toBe("patch");
-  expect(request.tags).toEqual(["batch-tag"]);
-  expect(request.removeTags).toEqual(["Work"]);
+  const call = await page.waitForFunction(() => {
+    const runtime = window as MetadataVisualRuntime;
+    return (runtime.__copicuTestInvocations ?? []).find((entry) => entry.cmd === "open_metadata_window") ?? false;
+  });
+  // The mock bridge returns the recorded invocation after waitForFunction observes it.
+  const invocation = await call.jsonValue() as unknown as { args: { request: { itemIds: number[]; focusTarget: string } } };
+  expect(invocation.args.request).toEqual({
+    itemIds: [101, 102],
+    focusTarget: "tags",
+  });
 });
 
 test("dark color scheme uses dark surfaces", async ({ page }) => {
@@ -6608,74 +6670,40 @@ test("ai-output renders markdown and actions without overflow", async ({ page })
   expect(overflow).toBe(false);
 });
 
-test("metadata window keeps tags and properties inline at its minimum size", async ({ page }) => {
+test("metadata window exposes structured fields and stays usable at its minimum size", async ({ page }) => {
   await page.setViewportSize({ width: 380, height: 300 });
   await mockTauriInvoke(page);
   await gotoShell(page, "/?window=metadata");
 
-  const editor = page.getByRole("textbox", { name: "Metadata" });
-  await expect(editor).toBeVisible();
-  await expect(editor).toBeFocused();
-  const itemContent = page.getByLabel("Item content");
-  await expect(itemContent).toBeVisible();
-  await expect(itemContent).toContainText(syntheticLongHistory[3].text);
-  await expect(page.getByRole("textbox", { name: "Title" })).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "Notes" })).toHaveCount(0);
-  await expect(page.getByLabel("Client properties")).toHaveCount(0);
-  await expect(page.getByLabel("Project properties")).toHaveCount(0);
-  await expect(editor).toHaveValue(/client:ACME project:Web activity:Development/);
-  await expect(page.getByLabel("Capture details")).toBeVisible();
-  await expect(page.locator(".metadata-text-suggestions")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
+  const title = page.getByRole("textbox", { name: "Title" });
+  await expect(title).toBeVisible();
+  await expect(title).toBeFocused();
+  await expect(page.getByRole("textbox", { name: "Notes" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Add tags" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Add client" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Add project" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Add activity" })).toBeVisible();
+  await expect(page.getByText("Content preview")).toBeVisible();
+  await expect(page.getByText("Capture details")).toBeVisible();
 
-  await editor.fill('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #wo');
-  const suggestionList = page.locator(".metadata-text-suggestions");
-  await expect(suggestionList).toBeVisible();
-  const [suggestionBox, appBox] = await Promise.all([
-    suggestionList.boundingBox(),
-    page.locator(".metadata-window-app").boundingBox(),
-  ]);
-  expect(suggestionBox).not.toBeNull();
-  expect(appBox).not.toBeNull();
-  expect(suggestionBox!.y + suggestionBox!.height).toBeLessThanOrEqual(appBox!.y + appBox!.height);
-  await editor.press("Tab");
-  await expect(suggestionList).toHaveCount(0);
-  await expect(editor).toHaveValue('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #work ');
-
-  await editor.pressSequentially("anywhere #ba");
-  await expect(suggestionList).toBeVisible();
-  await editor.press("Enter");
-  await expect(suggestionList).toHaveCount(0);
-  await expect(editor).toHaveValue('client:"ACME North" client:Globex project:Web activity:"Code review" Markdown note #work anywhere #backend ');
-
-  await editor.press("Tab");
-  await expect(page.getByLabel("Capture details").locator("summary")).toBeFocused();
-  await editor.focus();
-  await editor.pressSequentially("#wo");
-  await expect(suggestionList).toBeVisible();
-  await editor.press("Escape");
-  await expect(suggestionList).toHaveCount(0);
-  await expect(editor).toBeFocused();
-  await editor.press("Backspace");
-  await editor.press("Backspace");
-  await editor.press("Backspace");
-  await editor.pressSequentially("#fresh");
-  await editor.press("Control+Enter");
-
-  const update = await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.find((entry: any) => entry.cmd === "update_item_metadata"),
-  );
-  const request = (await update.jsonValue() as any).args.request;
-  expect(request.title).toBeNull();
-  expect(request.notes).toBe("Markdown note anywhere");
-  expect(request.tags).toContain("Work");
-  expect(request.tags).toContain("Backend");
-  expect(request.tags).toContain("fresh");
-  expect(request.properties.client).toEqual(["ACME North", "Globex"]);
-  expect(request.properties.project).toEqual(["Web"]);
-  expect(request.properties.activity).toEqual(["Code review"]);
-  await expect(page.locator(".metadata-window-buttons .mantine-Loader-root")).toHaveCount(0);
+  await title.fill("Focused metadata");
+  await expect(page.getByText("Set title on 1 clip")).toBeVisible();
+  const tagInput = page.getByRole("textbox", { name: "Add tags" });
+  await tagInput.fill("fresh");
+  await tagInput.press("Enter");
+  await expect(page.getByText(/Add #fresh to 1 clip/)).toBeVisible();
+  await page.keyboard.press("Control+Enter");
+  const applyCall = await page.waitForFunction(() => {
+    const runtime = window as MetadataVisualRuntime;
+    return (runtime.__copicuTestInvocations ?? []).find((entry) => entry.cmd === "apply_metadata_selection_intent") ?? false;
+  });
+  // The mock bridge returns the recorded invocation after waitForFunction observes it.
+  const invocation = await applyCall.jsonValue() as unknown as {
+    args: { intent: { title: { op: string }; tags: Array<{ key: string; op: string }> } };
+  };
+  expect(invocation.args.intent.title.op).toBe("set");
+  expect(invocation.args.intent.tags).toContainEqual({ key: "fresh", op: "add" });
+  await expect(page.locator(".metadata-inspector-footer .mantine-Loader-root")).toHaveCount(0);
 
   const overflowing = await page.locator(".metadata-window-app").evaluate((element) =>
     Array.from(element.querySelectorAll<HTMLElement>("*"))
@@ -6692,6 +6720,119 @@ test("metadata window keeps tags and properties inline at its minimum size", asy
       })),
   );
   expect(overflowing).toEqual([]);
+});
+
+test("metadata Escape protects dirty drafts and closes clean drafts", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=metadata");
+  const title = page.getByRole("textbox", { name: "Title" });
+  const baseTitle = await title.inputValue();
+
+  await title.fill("Synthetic dirty title");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("alertdialog", { name: "Discard metadata changes" })).toBeVisible();
+  await page.getByRole("button", { name: "Keep editing" }).click();
+  await title.fill(baseTitle);
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => page.evaluate(() =>
+    (window as MetadataVisualRuntime).__copicuTestInvocations
+      ?.filter((entry) => entry.cmd === "close_metadata_window").length ?? 0,
+  )).toBe(1);
+});
+
+test("metadata stays readable in high contrast with reduced motion", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 380, height: 300 });
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { theme: "dark", themeId: "highContrast" },
+  });
+  await gotoShell(page, "/?window=metadata");
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme-id", "highContrast");
+
+  const evidence = await page.locator(".metadata-inspector").evaluate((element) => {
+    const foreground = getComputedStyle(element).color;
+    const background = getComputedStyle(element.closest(".metadata-window-app")!).backgroundColor;
+    const luminances = [foreground, background].map((value) => {
+      const channels = (value.match(/[\d.]+/g) ?? [])
+        .slice(0, 3)
+        .map((channel) => Number(channel) / 255)
+        .map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    });
+    const contrast = (Math.max(...luminances) + 0.05) / (Math.min(...luminances) + 0.05);
+    const style = getComputedStyle(element);
+    return {
+      contrast,
+      animationDurationSeconds: Number.parseFloat(style.animationDuration) || 0,
+      transitionDurationSeconds: Number.parseFloat(style.transitionDuration) || 0,
+    };
+  });
+  expect(evidence.contrast).toBeGreaterThanOrEqual(4.5);
+  expect(evidence.animationDurationSeconds).toBeLessThanOrEqual(0.001);
+  expect(evidence.transitionDurationSeconds).toBeLessThanOrEqual(0.001);
+});
+
+test("multi metadata inspector shows aggregate states and protects dirty work from conflicts and pending selections", async ({ page }) => {
+  const selection = [
+    { ...syntheticLongHistory[0], id: 9701, title: "One", notes: "First", tags: "#all #some" },
+    { ...syntheticLongHistory[1], id: 9702, title: "Two", notes: null, tags: "#all #some" },
+    { ...syntheticLongHistory[2], id: 9703, title: null, notes: "Third", tags: "#all" },
+    { ...syntheticLongHistory[3], id: 9704, title: null, notes: null, tags: null },
+  ];
+  await mockTauriInvoke(page, selection, null, { metadataItemIds: [9701, 9702, 9703] });
+  await gotoShell(page, "/?window=metadata");
+
+  await expect(page.getByText("Editing 3 selected clips")).toBeVisible();
+  await expect(page.getByText("2 of 3 have titles")).toBeVisible();
+  await expect(page.getByText("2 of 3 have different notes")).toBeVisible();
+  const titleInput = page.getByRole("textbox", { name: "Title for all clips" });
+  await expect(titleInput).toBeFocused();
+  await titleInput.fill("Unified synthetic title");
+  await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await page.getByRole("button", { name: "Set title on all" }).click();
+  await expect(page.getByText("Set title on 3 clips")).toBeVisible();
+  const allTag = page.getByRole("checkbox", { name: /#all/ });
+  const someTag = page.getByRole("checkbox", { name: /#some/ });
+  const noneTag = page.getByRole("checkbox", { name: /#Work none/ });
+  await expect(allTag).toHaveAttribute("aria-checked", "true");
+  await expect(someTag).toHaveAttribute("aria-checked", "mixed");
+  await expect(noneTag).toHaveAttribute("aria-checked", "false");
+  await expect(someTag).toContainText("2 of 3");
+  const addTags = page.getByRole("textbox", { name: "Add tags" });
+  await addTags.fill("backend");
+  await expect(page.getByRole("option", { name: /#Backend Available/ })).toBeVisible();
+
+  await page.getByRole("button", { name: "Remove from 2" }).click();
+  await expect(page.getByText("Remove #some from 2 clips")).toBeVisible();
+  await page.evaluate(async () => {
+    const runtime = window as MetadataVisualRuntime;
+    const emitEvent = runtime.__copicuTestEmitEvent;
+    const buildSnapshot = runtime.__copicuTestMetadataSnapshot;
+    if (!emitEvent || !buildSnapshot) throw new Error("Synthetic metadata bridge is unavailable");
+    await emitEvent("copicu://metadata/open", {
+      snapshot: buildSnapshot([9701, 9702, 9703], "conflict-token"),
+      focusTarget: "overview",
+    });
+  });
+  await expect(page.getByText("Metadata changed since this inspector opened", { exact: true })).toBeVisible();
+  await expect(titleInput).toHaveValue("Unified synthetic title");
+  await page.getByRole("button", { name: "Keep editing" }).click();
+
+  await page.evaluate(async () => {
+    const runtime = window as MetadataVisualRuntime;
+    const emitEvent = runtime.__copicuTestEmitEvent;
+    const buildSnapshot = runtime.__copicuTestMetadataSnapshot;
+    if (!emitEvent || !buildSnapshot) throw new Error("Synthetic metadata bridge is unavailable");
+    await emitEvent("copicu://metadata/open", {
+      snapshot: buildSnapshot([9704], "pending-token"),
+      focusTarget: "tags",
+    });
+  });
+  await expect(page.getByText("Another metadata request is waiting", { exact: true })).toBeVisible();
+  await expect(titleInput).toHaveValue("Unified synthetic title");
+  await expect(page.getByRole("button", { name: "Save and open" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Discard and open" })).toBeVisible();
 });
 
 for (const mode of ["full", "inline"] as const) {

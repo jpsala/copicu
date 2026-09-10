@@ -678,22 +678,12 @@ fn open_ai_output_window_on_main_thread<R: Runtime + 'static>(
 #[cfg(not(test))]
 fn open_metadata_editor_window_on_main_thread<R: Runtime + 'static>(
     app: &AppHandle<R>,
-    item: crate::storage::HistoryItem,
-    tag_entries: Vec<crate::storage::MetadataTagEntry>,
-    property_entries: Vec<crate::storage::MetadataPropertyEntry>,
+    payload: crate::MetadataEditorPayload,
 ) -> Result<(), String> {
     let app = app.clone();
     app.clone()
         .run_on_main_thread(move || {
-            if let Err(error) = crate::open_metadata_editor_window(
-                &app,
-                crate::MetadataEditorPayload {
-                    item,
-                    tag_entries,
-                    property_entries,
-                    capture_context_events: Vec::new(),
-                },
-            ) {
+            if let Err(error) = crate::open_metadata_editor_window(&app, payload) {
                 eprintln!("script metadata editor failed: {error}");
             }
         })
@@ -1343,10 +1333,17 @@ fn script_metadata_edit_active<R: Runtime + 'static>(
     let payload: MetadataEditActivePayload = serde_json::from_value(payload)
         .map_err(|error| format!("invalid metadata.editActive payload: {error}"))?;
     let item_id = parse_script_item_id(&payload.id)?;
-    let item = storage.get_item(item_id)?;
-    let tag_entries = storage.get_item_tag_entries(item_id)?;
-    let property_entries = storage.list_item_property_entries(item_id)?;
-    open_metadata_editor_window_on_main_thread(app, item, tag_entries, property_entries)?;
+    let snapshot =
+        storage.get_metadata_selection_snapshot(crate::storage::MetadataSelectionRequest {
+            item_ids: vec![item_id],
+        })?;
+    open_metadata_editor_window_on_main_thread(
+        app,
+        crate::MetadataEditorPayload {
+            snapshot,
+            focus_target: crate::MetadataFocusTarget::Overview,
+        },
+    )?;
     Ok(json!(null))
 }
 

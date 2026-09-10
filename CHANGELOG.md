@@ -4,13 +4,25 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-09-10
+
 ### Added
 
-- Edit effective search fields from the picker strip, save them explicitly as the default, or reset the current query to its inherited default without changing Settings.
+- Add a selection-aware metadata inspector shared by single-item, multi-selection, Inbox catalog, script, and manual-create flows.
+- Add explicit editable Search scopes with shared autocomplete, included/excluded field feedback, and controls to save or reset the effective default.
+- Add structured `client`, `project`, and `activity` properties to manual item creation.
 
 ### Changed
 
-- Scope autocomplete adds fields to the active selection; manually completed `in:` modifiers remain exact. The strip shows effective fields uniformly, and scope-only saves preserve unrelated Settings drafts and current results.
+- Aggregate normalized tags and properties as `all`, `some`, or `none`, with provenance and exact staged change counts before saving.
+- Apply metadata intentions atomically against a frozen selection and snapshot fingerprint; mixed titles and notes now require explicit set, clear, append, or replace operations.
+- Keep global tag configuration separate from per-clip membership, and preserve Search query results while changing or saving scope defaults.
+
+### Fixed
+
+- Preserve dirty metadata drafts when conflicting or pending payloads arrive, including at the minimum supported window size.
+- Avoid creating metadata suppressions for clips where a removed partial tag or property was already absent.
+- Preserve existing source and confidence when adding a tag or property that is already present.
 
 ## [0.4.13] - 2026-09-09
 
@@ -114,6 +126,8 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.14]: https://github.com/jpsala/copicu/releases/tag/v0.4.14
+[0.4.13]: https://github.com/jpsala/copicu/releases/tag/v0.4.13
 [0.4.1-rc.2]: https://github.com/jpsala/copicu/releases/tag/v0.4.1-rc.2
 [0.4.1-rc.1]: https://github.com/jpsala/copicu/releases/tag/v0.4.1-rc.1
 [0.4.0-rc.6]: https://github.com/jpsala/copicu/releases/tag/v0.4.0-rc.6

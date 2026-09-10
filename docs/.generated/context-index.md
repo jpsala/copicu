@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-09-10T09:58:40.456Z
+Generated: 2026-09-10T17:55:39.764Z
 
 ## Topics
 
@@ -59,6 +59,7 @@ Generated: 2026-09-10T09:58:40.456Z
 - [008-clipboard-enrichment](../../specs/008-clipboard-enrichment/)
 - [009-saved-history-views](../../specs/009-saved-history-views/)
 - [010-inbox-copy](../../specs/010-inbox-copy/)
+- [011-selection-aware-metadata-inspector](../../specs/011-selection-aware-metadata-inspector/)
 
 ## Skills
 
