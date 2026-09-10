@@ -123,7 +123,7 @@ Dogfood 2026-07-09: con keyset/cursor pagination el virtualizer debe usar filas 
 
 ## Ejecucion De Search
 
-El picker soporta `Settings > Picker > Search trigger`:
+El picker soporta `Settings > Picker > Search & filters > Search trigger`:
 
 - `Realtime while typing`: comportamiento por defecto; cada cambio dispara busqueda con debounce corto.
 - `When pressing Enter`: tipear deja la query pendiente; Enter aplica la busqueda. Si la query ya esta aplicada, Enter conserva la accion de activar item.
@@ -185,15 +185,43 @@ no agregan un filtro de filas.
 Settings agrupa `Default search scopes`, `Search trigger` y `Confirm structured
 filters with Enter` en `Picker > Search & filters`. La representacion de
 estados coincide con el autocomplete. `Only` limita a un scope y `Reset to all`
-restaura todos; el preview muestra el prefijo que tendran las nuevas busquedas.
-Es un prefijo visible y editable, no un filtro oculto que Rust agrega por fuera
-de la query. Filtros guardados y scripts conservan la misma semantica.
+restaura todos. El picker hereda estos scopes cuando el draft no declara `in:`;
+los muestra como campos incluidos y excluidos en una franja debajo del buscador,
+sin ocupar ancho del input, y resuelve una query explicita antes de ejecutar.
+Reemplazar todo el texto no elimina el default.
+Un `in:` escrito reemplaza el default, no se combina con el; `in:all` permite
+buscar deliberadamente en todos los campos. `re:` conserva su semantica
+exclusiva. Los planes explicitos, filtros guardados y scripts mantienen su
+autoridad y no reciben defaults silenciosos del picker.
+La franja distingue `Default`, `Query`, `Saved` o `Regex`, conserva el estado
+parcial de grupos y comparte espacio con los chips de otros filtros aplicados.
+No repite la query ni una explicacion generica `Interpreted` para busquedas
+deterministicas; mantiene diagnosticos, warnings y explicaciones de AI.
+Quitar otro filtro no convierte el default heredado en un override escrito.
 
 El input contiene el draft. El snapshot aplicado conserva su propia query,
 plan y resultados mientras un draft espera Enter, esta incompleto o falla.
-Si difieren, `Showing results for` identifica la query de los resultados.
-Sin `in:` se busca en todos los campos; input vacio aplicado muestra todo el
-historial. Clear elimina tambien el filtro aplicado, aunque el draft este vacio.
+La comparacion usa la query efectiva: el prefijo heredado no genera por si
+solo un aviso de draft pendiente. Si difieren, `Showing results for` identifica
+la query de los resultados. Input vacio aplicado muestra todo el historial;
+Clear elimina el filtro aplicado, sin perder el default de la proxima busqueda.
+En el contrato Rust, una query sin scopes sigue buscando todos los campos:
+la herencia es responsabilidad visible del picker, no estado oculto de SQL.
+
+Cada resultado puede incluir `search_matches`, evidencia acotada calculada
+desde el plan aplicado: campo y fragmento dividido en `before`, `matched` y
+`after`. La UI resalta solo `matched`, como texto seguro. Esto permite explicar
+coincidencias fuera del preview inicial o en contexto de captura sin enviar
+todo el contenido ni todo el contexto al frontend. La evidencia respeta scopes
+y exclusiones; filtros solo negativos o estructurales no inventan una palabra
+coincidente. Hay como maximo un fragmento por campo y tres campos por item.
+Los fragmentos conservan hasta 80 caracteres a cada lado y 160 de coincidencia,
+con elipsis para recortes y limites Unicode seguros. El matcher se compila una
+vez por pagina y lee las fuentes sin copiar todo el contenido al renderer.
+`get_history_items_preview` acepta el `appliedDescriptor` para recalcular
+evidencia de filas retenidas, incluso si solo cambio metadata. La expansion de
+contenido conserva evidencia solo mientras sigan vigentes hash y snapshot.
+
 Los scopes son:
 
 - `content`: `text`;
@@ -215,12 +243,14 @@ podar eventos para no mantener membresia por procedencias eliminadas.
 Clips historicos no recapturados conservan su contexto sin poda retroactiva.
 Contrato de escritura: [clipboard](clipboard.md#pattern-recomendado-para-mvp-0).
 
-Operadores soportados:
+Operadores soportados por el motor. El picker resuelve antes el scope
+predeterminado cuando no hay un `in:` explicito:
 
 | Query | Significado |
 | --- | --- |
 | `sqlite migration` | ambos terminos deben matchear en campos buscables |
 | `in:content invoice` | busca `invoice` solo en el contenido textual |
+| `in:all invoice` | ignora el scope predeterminado del picker y busca en todos los campos |
 | `in:metadata,context invoice` | busca `invoice` en title/notes/tags o contexto de captura |
 | `in:metadata,-notes invoice` | busca en titulo y tags; ignora notas |
 | `in:-context invoice` | busca en todos los campos salvo contexto de captura |

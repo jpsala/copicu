@@ -2576,7 +2576,7 @@ function SettingsPanel({
                 {visible("picker", "Search & filters Search and filters", pickerSearchText) ? (
                   <div className="settings-search-group">
                     <h3>Search &amp; filters</h3>
-                    <p>Choose where and when to search. Defaults appear as an editable in: modifier, not a hidden filter.</p>
+                    <p>Choose where and when to search. A saved default scope is inherited at execution when the query has no explicit in: modifier; clear still shows all history.</p>
                 {visible("picker", "Search trigger Search & filters Search and filters", "Realtime Enter run filter search") ? (
                   <SettingRow label="Search trigger" description="Choose whether typing filters immediately or Enter applies the query.">
                     <UiSelect
@@ -2602,7 +2602,7 @@ function SettingsPanel({
                 {visible("picker", "Default search scopes Search & filters Search and filters", "All fields content metadata title notes tags capture context included excluded") ? (
                   <SettingRow
                     label="Default search scopes"
-                    description="Start new searches with these fields. The same marks and actions appear in the in: autocomplete."
+                    description="Inherited by typed searches without an explicit in: modifier. Add in:all or another in: scope to override it."
                     wide
                   >
                     <SearchScopeEditor

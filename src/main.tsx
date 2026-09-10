@@ -130,8 +130,8 @@ import {
   type AppSettings,
   type SearchTriggerMode,
 } from "./shared/settings";
-import { scopeQuery } from "./shared/searchScopes";
-import { SearchScopeOption } from "./ui/SearchScopeEditor";
+import { queryHasExplicitSearchScope, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, type SearchScopeSelection } from "./shared/searchScopes";
+import { SearchScopeOption, SearchScopeSummary } from "./ui/SearchScopeEditor";
 import {
   UiBadge,
   UiButton,
@@ -254,6 +254,13 @@ type CaptureSnapshot = {
   events: CaptureEvent[];
 };
 
+type HistorySearchMatch = {
+  field: "content" | "title" | "notes" | "tags" | "context" | "mime" | "kind";
+  before: string;
+  matched: string;
+  after: string;
+};
+
 type HistoryItem = {
   id: number;
   content_kind: "text" | string;
@@ -276,6 +283,7 @@ type HistoryItem = {
   title: string | null;
   notes: string | null;
   tags: string | null;
+  search_matches?: HistorySearchMatch[];
   is_marked: boolean;
   marked_at_unix_ms: number | null;
   is_inbox: boolean;
@@ -737,11 +745,38 @@ function searchTriggerModeName(mode: SearchTriggerMode) {
   return mode === "realtime" ? "Realtime" : "Enter";
 }
 
-function defaultSearchQuery(picker: AppSettings["picker"]) {
+function defaultSearchScopePrefix(picker: AppSettings["picker"]) {
   return scopeQuery({
     included: picker.defaultSearchScopes,
     excluded: picker.defaultExcludedSearchScopes,
   });
+}
+
+const HISTORY_SEARCH_MATCH_LABELS: Record<HistorySearchMatch["field"], string> = {
+  content: "Content",
+  title: "Title",
+  notes: "Notes",
+  tags: "Tags",
+  context: "Context",
+  mime: "MIME",
+  kind: "Kind",
+};
+
+function HistorySearchMatches({ matches }: { matches?: HistorySearchMatch[] }) {
+  const visibleMatches = (matches ?? []).filter((match) => match.matched).slice(0, 3);
+  if (visibleMatches.length === 0) return null;
+  return (
+    <span className="search-match-list" aria-label="Search matches">
+      {visibleMatches.map((match) => (
+        <span className="search-match" key={`${match.field}:${match.before}:${match.matched}:${match.after}`}>
+          <strong>{HISTORY_SEARCH_MATCH_LABELS[match.field]}</strong>
+          <span className="search-match-snippet">
+            {match.before}<mark>{match.matched}</mark>{match.after}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function setPickerSearchTriggerMode(mode: SearchTriggerMode) {
@@ -1264,7 +1299,9 @@ function App() {
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryItem[]>([]);
   const historyRequestSeqRef = useRef(0);
+  const settingsHydratedRef = useRef(false);
   const historyLoadMoreSeqRef = useRef(0);
+  const lastHydratedDefaultScopeRef = useRef<string | null>(null);
   const historyPaginationBlockedRef = useRef<HistoryPaginationBlock | null>(null);
   const searchIntentGenerationRef = useRef(0);
   const appliedSnapshotGenerationRef = useRef(0);
@@ -2381,15 +2418,8 @@ function App() {
     setNewClipsAvailable(false);
     autocompleteCommittedQueryRef.current = null;
     if (!filterLockedRef.current && !activeScenarioSessionRef.current) {
-      const defaultQuery = defaultSearchQuery(pickerSearchSettingsRef.current);
-      queryRef.current = defaultQuery;
-      historyInputQueryRef.current = defaultQuery;
-      setQuery(defaultQuery);
-      setHistoryInputQuery(defaultQuery);
-      setHistoryQuery(defaultQuery);
-      if (searchRef.current) {
-        searchRef.current.value = defaultQuery;
-      }
+      queryRef.current = "";
+      setQuery("");
     }
     selectionInteractionSeqRef.current += 1;
     const emptySelection = new Set<number>();
@@ -3023,6 +3053,7 @@ function App() {
       showPending = true,
       queryOverride = null,
       allowAi = true,
+      applyDefaultScope = true,
       source = "foreground",
       descriptorOverride = null,
     }: {
@@ -3031,6 +3062,7 @@ function App() {
       showPending?: boolean;
       queryOverride?: string | null;
       allowAi?: boolean;
+      applyDefaultScope?: boolean;
       source?: "foreground" | "background";
       descriptorOverride?: AppliedSearchDescriptor | null;
     } = {}) => {
@@ -3097,6 +3129,17 @@ function App() {
         } else {
           return;
         }
+      }
+      const ownsExplicitContextQuery = openedSavedView?.query.trim() === trimmed
+        || activeScenarioSessionRef.current?.query.trim() === trimmed;
+      if (applyDefaultScope && !ownsExplicitContextQuery && !isAppliedSearchDescriptor(appliedDescriptorForRequest) && searchInput.mode === "structured") {
+        searchInput = {
+          ...searchInput,
+          query: resolveSearchScopeQuery(searchInput.query, {
+            included: pickerSearchSettingsRef.current.defaultSearchScopes,
+            excluded: pickerSearchSettingsRef.current.defaultExcludedSearchScopes,
+          }),
+        };
       }
       lastSearchFailureRef.current = null;
       const requestSeq = ++historyRequestSeqRef.current;
@@ -3282,6 +3325,7 @@ function App() {
           for (let offset = 0; offset < retainedIds.length; offset += 100) {
             const refreshed = await invoke<HistoryItem[]>("get_history_items_preview", {
               ids: retainedIds.slice(offset, offset + 100),
+              appliedDescriptor: committedDescriptor,
             });
             if (requestSeq !== historyRequestSeqRef.current
               || (foreground && intentGeneration !== searchIntentGenerationRef.current)
@@ -3508,6 +3552,7 @@ function App() {
       historyInputQuery,
       historyQuery,
       query,
+      openedSavedView,
       refreshMarkedCount,
       searchInterpretation,
       searchState.applied,
@@ -3517,6 +3562,35 @@ function App() {
     ],
   );
 
+  useEffect(() => {
+    if (
+      !settingsHydratedRef.current
+      || filterLockedRef.current
+      || activeScenarioSessionRef.current
+    ) {
+      return;
+    }
+    const defaultScope = defaultSearchScopePrefix(settings.picker);
+    if (lastHydratedDefaultScopeRef.current === defaultScope) {
+      return;
+    }
+    lastHydratedDefaultScopeRef.current = defaultScope;
+    if (queryRef.current.trim() !== (searchState.applied?.descriptor.displayQuery ?? "").trim()) {
+      return;
+    }
+    void refreshHistory({
+      resetScroll: false,
+      showPending: false,
+      queryOverride: queryRef.current,
+      allowAi: false,
+      applyDefaultScope: !openedSavedView,
+    });
+  }, [
+    openedSavedView,
+    refreshHistory,
+    settings.picker.defaultExcludedSearchScopes,
+    settings.picker.defaultSearchScopes,
+  ]);
   const openPaletteNavigation = useCallback((entry: Extract<CommandPaletteEntry, { kind: "navigation" }>) => {
     const nextQuery = entry.query;
     setCommandPalette(null);
@@ -3536,6 +3610,7 @@ function App() {
       resetScroll: true,
       queryOverride: nextQuery,
       allowAi: false,
+      applyDefaultScope: !entry.savedView,
     }).then(focusSearch);
   }, [focusSearch, refreshHistory]);
 
@@ -3679,11 +3754,11 @@ function App() {
         setActiveScenarioSession(scenarioSession);
         const nextQuery = scenarioSession.query;
         queryRef.current = nextQuery;
-        setQuery(nextQuery);
         void pickerEventHandlersRef.current.refreshHistory({
           resetScroll: true,
           queryOverride: nextQuery,
           allowAi: false,
+          applyDefaultScope: false,
         });
       })
       .catch(() => undefined);
@@ -3710,6 +3785,7 @@ function App() {
         resetScroll: true,
         queryOverride: nextQuery,
         allowAi: false,
+        applyDefaultScope: !nextView,
       }).then(() => pickerEventHandlersRef.current.focusSearch());
     }).then((nextUnlisten) => {
       if (active) unlisten = nextUnlisten;
@@ -4092,13 +4168,22 @@ function App() {
     if (item.includes_content) {
       return item;
     }
+    const evidenceFingerprint = appliedDescriptorRef.current?.fingerprint ?? null;
+    const evidenceGeneration = appliedSnapshotGenerationRef.current;
     const fullItem = await getHistoryItem(item.id);
+    const unchangedAppliedSearch = evidenceFingerprint === (appliedDescriptorRef.current?.fingerprint ?? null)
+      && evidenceGeneration === appliedSnapshotGenerationRef.current;
+    const hasNoFreshEvidence = !fullItem.search_matches || fullItem.search_matches.length === 0;
+    const mergedItem = hasNoFreshEvidence
+      && unchangedAppliedSearch
+      && fullItem.normalized_hash === item.normalized_hash
+      ? { ...fullItem, search_matches: item.search_matches }
+      : fullItem;
     setHistory((current) =>
-      current.map((currentItem) => (currentItem.id === fullItem.id ? fullItem : currentItem)),
+      current.map((currentItem) => (currentItem.id === mergedItem.id ? mergedItem : currentItem)),
     );
-    return fullItem;
+    return mergedItem;
   }, []);
-
   const mutateRowLayout = useCallback((itemId: number, mutate: () => void) => {
     const scrollElement = historyScrollRef.current;
     const scrollTop = scrollElement?.scrollTop ?? 0;
@@ -4927,14 +5012,9 @@ function App() {
       .then((nextSettings) => {
         if (active) {
           const normalized = normalizeSettings(nextSettings);
+          pickerSearchSettingsRef.current = normalized.picker;
+          settingsHydratedRef.current = true;
           setSettings(normalized);
-          if (!filterLockedRef.current && !queryRef.current.trim()) {
-            const defaultQuery = defaultSearchQuery(normalized.picker);
-            if (defaultQuery) {
-              queryRef.current = defaultQuery;
-              setQuery(defaultQuery);
-            }
-          }
         }
       })
       .catch((error) => {
@@ -4947,30 +5027,30 @@ function App() {
       active = false;
     };
   }, []);
-
   useEffect(() => {
     if (!isTauriRuntime()) {
       return undefined;
     }
-
     let active = true;
     let unlisten: (() => void) | null = null;
-
     void listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event: Event<AppSettings>) => {
       if (active) {
-        setSettings(normalizeSettings(event.payload));
+        const normalized = normalizeSettings(event.payload);
+        pickerSearchSettingsRef.current = normalized.picker;
+        settingsHydratedRef.current = true;
+        setSettings(normalized);
         setSettingsError(null);
       }
     }).then((nextUnlisten) => {
       if (active) unlisten = nextUnlisten;
       else nextUnlisten();
     });
-
     return () => {
       active = false;
       unlisten?.();
     };
   }, []);
+
 
   useEffect(() => {
     return setupAutomaticUpdates(settings.autoUpdate, {
@@ -5446,8 +5526,19 @@ function App() {
       ? history.length
       : null;
   const hasPreviousHistorySnapshot = history.length > 0 || Boolean(searchState.applied);
-  const appliedResultsQuery = searchState.applied?.descriptor.displayQuery ?? historyInputQuery;
-  const appliedResultsDiffer = Boolean(searchState.applied) && appliedResultsQuery.trim() !== query.trim();
+  const appliedDescriptor = searchState.applied?.descriptor;
+  const appliedResultsQuery = (appliedDescriptor?.mode === "ai"
+    ? appliedDescriptor.displayQuery
+    : appliedDescriptor?.effectiveQuery) ?? historyInputQuery;
+  const draftEffectiveQuery = aiComposerMode || openedSavedView
+    || activeScenarioSession?.query.trim() === query.trim()
+    ? query.trim()
+    : resolveSearchScopeQuery(query, {
+      included: settings.picker.defaultSearchScopes,
+      excluded: settings.picker.defaultExcludedSearchScopes,
+    });
+  const appliedResultsDiffer = Boolean(appliedDescriptor)
+    && appliedResultsQuery.trim() !== draftEffectiveQuery;
   const canClearSearch = queryHasSearchTerms || Boolean(appliedResultsQuery.trim());
   const historyErrorCopy = hasPreviousHistorySnapshot
     ? "Could not update results. Previous results remain visible."
@@ -5457,7 +5548,6 @@ function App() {
     && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")
     ? structuredSearchDraft.message
     : null;
-  const hasSearchContext = Boolean(structuredSearchFeedback || visibleSearchInterpretation);
   const searchStatus = useMemo(() => {
     if (historyError) {
       return "Could not update results";
@@ -5639,13 +5729,13 @@ function App() {
     filterLockedRef.current = false;
     writeLockedFilterQuery(null);
     setFilterLocked(false);
-    const defaultQuery = "";
+    const clearedQuery = "";
     autocompleteCommittedQueryRef.current = null;
-    queryRef.current = defaultQuery;
-    setQuery(defaultQuery);
-    supersedeSearchIntent(defaultQuery, "applying");
+    queryRef.current = clearedQuery;
+    setQuery(clearedQuery);
+    supersedeSearchIntent(clearedQuery, "applying");
     skipNextRealtimeSearchRef.current = {
-      query: defaultQuery,
+      query: clearedQuery,
       intentGeneration: searchIntentGenerationRef.current,
       appliedGeneration: appliedSnapshotGenerationRef.current,
       reason: "foreground",
@@ -5657,17 +5747,28 @@ function App() {
     setSelectedItemId(null);
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
-    void refreshHistory({ resetScroll: true, queryOverride: defaultQuery, allowAi: false });
+    void refreshHistory({ resetScroll: true, queryOverride: clearedQuery, allowAi: false });
     window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent, updateClearSearchPending]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
+    let nextQuery = chip.queryWithoutClause;
+    const applied = searchState.applied?.descriptor;
+    if (applied?.mode === "structured" && !queryHasExplicitSearchScope(applied.displayQuery)) {
+      const separator = applied.effectiveQuery.indexOf(" ");
+      const prefix = applied.effectiveQuery.slice(0, separator);
+      if (prefix.startsWith("in:") && applied.effectiveQuery.slice(separator + 1) === applied.displayQuery.trim()) {
+        nextQuery = nextQuery.startsWith(`${prefix} `)
+          ? nextQuery.slice(prefix.length + 1)
+          : nextQuery === prefix ? "" : nextQuery;
+      }
+    }
     leaveOpenedSavedView();
     autocompleteCommittedQueryRef.current = null;
-    queryRef.current = chip.queryWithoutClause;
-    setQuery(chip.queryWithoutClause);
-    supersedeSearchIntent(chip.queryWithoutClause, "applying");
+    queryRef.current = nextQuery;
+    setQuery(nextQuery);
+    supersedeSearchIntent(nextQuery, "applying");
     skipNextRealtimeSearchRef.current = {
-      query: chip.queryWithoutClause.trim(),
+      query: nextQuery.trim(),
       intentGeneration: searchIntentGenerationRef.current,
       appliedGeneration: appliedSnapshotGenerationRef.current,
       reason: "foreground",
@@ -5678,10 +5779,10 @@ function App() {
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({
       resetScroll: true,
-      queryOverride: chip.queryWithoutClause,
+      queryOverride: nextQuery,
       allowAi: false,
     });
-  }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent]);
+  }, [leaveOpenedSavedView, refreshHistory, searchState.applied, supersedeSearchIntent]);
   const discardSearchDraft = useCallback(() => {
     const appliedQuery = historyInputQueryRef.current;
     const paginationRecoveryError = historyPaginationBlockMatchesCurrent
@@ -5755,7 +5856,7 @@ function App() {
       ? `search-suggestion-${activeSearchSuggestionIndex}`
       : undefined,
     value: query,
-    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search all fields · in: scopes, tag: tags, re: pattern',
+    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search · in: scopes, tag: tags, re: pattern',
     title:
       'Search help: in: scopes, plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
     onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -5994,6 +6095,20 @@ function App() {
     onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
     onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   };
+  const scopeUsesDefaults = !queryHasExplicitSearchScope(query)
+    && !/^re:/iu.test(query.trim()) && !openedSavedView
+    && activeScenarioSession?.query.trim() !== query.trim();
+  const scopeSelection: SearchScopeSelection = scopeUsesDefaults ? {
+    included: settings.picker.defaultSearchScopes,
+    excluded: settings.picker.defaultExcludedSearchScopes,
+  } : scopeSelectionFromQuery(query);
+  const scopeEditing = structuredSearchDraft.operator === "in"
+    && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid");
+  const scopeSource = scopeEditing ? "Draft" : scopeUsesDefaults ? "Default"
+    : openedSavedView || activeScenarioSession?.query.trim() === query.trim() ? "Saved"
+      : /^re:/iu.test(query.trim()) ? "Regex" : "Query";
+  const visibleFilterChips = visibleSearchInterpretation?.chips
+    .filter((chip) => !queryHasExplicitSearchScope(chip.label)) ?? [];
 
   return (
     <main className="app-shell">
@@ -6614,6 +6729,33 @@ function App() {
           </Menu>
         </div>
 
+        {!aiComposerMode && !aiDraftActive ? (
+          <div className="search-filter-strip" aria-label="Search fields and filters">
+            <span className="search-filter-label">Search in</span>
+            {scopeEditing
+              ? <span className="search-scope-empty">Editing scopes…</span>
+              : <SearchScopeSummary selection={scopeSelection} />}
+            {visibleFilterChips.length > 0 ? (
+              <span className="search-filter-chips" aria-label="Applied filters">
+                {visibleFilterChips.map((chip) => (
+                  <button key={`${chip.label}:${chip.queryWithoutClause}`}
+                    type="button" className="search-interpretation-chip"
+                    aria-label={`Remove filter ${chip.label}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => removeSearchChip(chip)}>
+                    <span>{chip.label}</span>
+                    <X size={12} strokeWidth={2.5} aria-hidden="true" />
+                  </button>
+                ))}
+              </span>
+            ) : null}
+            <span className="search-scope-source"
+              title={scopeEditing ? "Complete the in: filter to apply these fields" : scopeQuery(scopeSelection, { includeAll: true })}>
+              {scopeSource}
+            </span>
+          </div>
+        ) : null}
+
         {findState?.active ? (
           <FindBar
             needle={findState.needle}
@@ -6631,7 +6773,7 @@ function App() {
           />
         ) : null}
 
-        {hasActivePickerContext || hasSearchContext ? (
+        {hasActivePickerContext ? (
           <PickerContextStrip>
         {activeScenarioSession ? (
           <div
@@ -6688,6 +6830,8 @@ function App() {
             </UiButton>
           </div>
         ) : null}
+          </PickerContextStrip>
+        ) : null}
 
         {structuredSearchFeedback && !historyError ? (
           <div
@@ -6701,13 +6845,17 @@ function App() {
           </div>
         ) : null}
 
-        {visibleSearchInterpretation ? (
+        {visibleSearchInterpretation && (visibleSearchInterpretation.mode === "ai"
+          || visibleSearchInterpretation.diagnostics.length > 0
+          || visibleSearchInterpretation.warnings.length > 0) ? (
           <div className="search-interpretation" aria-live="polite">
-            <span className="search-interpretation-label">
-              {visibleSearchInterpretation.mode === "ai" ? "AI interpreted" : "Interpreted"}
-            </span>
-            <span className="search-interpretation-query">{visibleSearchInterpretation.query}</span>
-            {visibleSearchInterpretation.chips.map((chip) => (
+            {visibleSearchInterpretation.mode === "ai" ? (
+              <>
+                <span className="search-interpretation-label">AI interpreted</span>
+                <span className="search-interpretation-query">{visibleSearchInterpretation.query}</span>
+              </>
+            ) : null}
+            {visibleSearchInterpretation.mode === "ai" ? visibleSearchInterpretation.chips.map((chip) => (
               <button
                 key={`${chip.label}:${chip.queryWithoutClause}`}
                 type="button"
@@ -6719,8 +6867,8 @@ function App() {
                 <span>{chip.label}</span>
                 <X size={12} strokeWidth={2.5} aria-hidden="true" />
               </button>
-            ))}
-            {visibleSearchInterpretation.explanation ? (
+            )) : null}
+            {visibleSearchInterpretation.mode === "ai" && visibleSearchInterpretation.explanation ? (
               <span className="search-interpretation-detail">{visibleSearchInterpretation.explanation}</span>
             ) : null}
             {visibleSearchInterpretation.diagnostics.map((diagnostic) => (
@@ -6737,8 +6885,6 @@ function App() {
               </span>
             ))}
           </div>
-        ) : null}
-          </PickerContextStrip>
         ) : null}
         {appliedResultsDiffer && (!structuredSearchFeedback || historyError) ? (
           <div className="search-applied-feedback" role="status" aria-live="polite">
@@ -7113,6 +7259,7 @@ function App() {
                           ) : null}
                         </span>
                       ) : null}
+                      <HistorySearchMatches matches={item.search_matches} />
                     </span>
                     {inlineEditDraft?.id === item.id ? (
                       <div

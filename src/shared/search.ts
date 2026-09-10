@@ -453,31 +453,49 @@ function scopeAutocompleteSuggestions(query: string, value: string): SearchSugge
   if (!committed) return [];
   if (parseSearchScopeModifier(value)) return [];
   const visibleSelection = committed;
-  return scopeOptions(visibleSelection)
-    .filter((option) => option.scope.startsWith(suffix))
-    .map<SearchSuggestion | null>((option) => {
-      const candidateText = [...rawParts, `${negative ? "-" : ""}${option.scope}`].join(",");
-      const candidate = parseSearchScopeModifier(candidateText);
-      const stateAwareToggle = !negative && rawParts.length > 0;
-      const nextSelection = stateAwareToggle ? option.next : candidate;
-      if (!nextSelection) return null;
-      const replacement = scopeQuery(nextSelection);
-      const actionLabel = negative
-        ? `Exclude ${option.label}`
-        : (rawParts.length === 0 ? "Search only" : option.actionLabel);
-      return {
-        label: option.label,
-        replacement,
-        scope: {
-          state: option.state,
-          detail: option.detail,
-          actionLabel,
-          summary: scopeSummary(visibleSelection),
-        },
-        queryReplacement: replaceQueryScopes(query, nextSelection),
-      };
-    })
-    .filter((suggestion): suggestion is SearchSuggestion => suggestion !== null);
+  const suggestions: SearchSuggestion[] = [];
+  if (!negative && "all".startsWith(suffix)) {
+    const allSelection: SearchScopeSelection = { included: ["all"], excluded: [] };
+    suggestions.push({
+      label: "All fields",
+      replacement: "all",
+      scope: {
+        state: committed.included.includes("all") ? "included" : "available",
+        detail: "All searchable fields",
+        actionLabel: "Search all fields",
+        summary: scopeSummary(visibleSelection),
+      },
+      queryReplacement: replaceQueryScopes(query, allSelection),
+    });
+  }
+  suggestions.push(
+    ...scopeOptions(visibleSelection)
+      .filter((option) => option.scope.startsWith(suffix))
+      .map<SearchSuggestion | null>((option) => {
+        const candidateText = [...rawParts, `${negative ? "-" : ""}${option.scope}`].join(",");
+        const candidate = parseSearchScopeModifier(candidateText);
+        const stateAwareToggle = !negative && rawParts.length > 0;
+        const nextSelection = stateAwareToggle ? option.next : candidate;
+        if (!nextSelection) return null;
+        const replacement = scopeQuery(nextSelection, { includeAll: true });
+        const actionLabel = negative
+          ? `Exclude ${option.label}`
+          : (rawParts.length === 0 ? "Search only" : option.actionLabel);
+        return {
+          label: option.label,
+          replacement,
+          scope: {
+            state: option.state,
+            detail: option.detail,
+            actionLabel,
+            summary: scopeSummary(visibleSelection),
+          },
+          queryReplacement: replaceQueryScopes(query, nextSelection),
+        };
+      })
+      .filter((suggestion): suggestion is SearchSuggestion => suggestion !== null),
+  );
+  return suggestions;
 }
 
 export function searchSuggestions(query: string, tags: string[]): SearchSuggestion[] {

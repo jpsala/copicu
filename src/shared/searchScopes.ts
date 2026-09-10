@@ -109,20 +109,38 @@ export function scopeSelectionFromQuery(query: string): SearchScopeSelection {
   return selection;
 }
 
-export function scopeQuery(selection: SearchScopeSelection): string {
+export function scopeQuery(selection: SearchScopeSelection, options: { includeAll?: boolean } = {}): string {
   const normalized = normalizedSelection(selection);
   const included = normalized.included;
   const excluded = normalized.excluded;
   if (included.length === 0 && excluded.length === 0) return "";
-  if (included.length === 1 && included[0] === "all" && excluded.length === 0) return "";
+  if (included.length === 1 && included[0] === "all" && excluded.length === 0) {
+    return options.includeAll ? "in:all" : "";
+  }
   const pieces = [...included, ...excluded.map((scope) => `-${scope}`)];
   return `in:${pieces.join(",")}`;
 }
 
+/** True when the query contains a syntactic, unquoted `in:` token. */
+export function queryHasExplicitSearchScope(query: string): boolean {
+  return scopeTokenRanges(query).length > 0;
+}
+
+/** Resolve the persisted scope only when the draft has no explicit scope. */
+export function resolveSearchScopeQuery(query: string, defaults: SearchScopeSelection): string {
+  const trimmed = query.trim();
+  if (!trimmed || /^re:/iu.test(trimmed) || queryHasExplicitSearchScope(trimmed)) {
+    return trimmed;
+  }
+  const prefix = scopeQuery(defaults);
+  return prefix ? `${prefix} ${trimmed}` : trimmed;
+}
+
+
 /** Replace every scope token once while preserving all non-scope bytes verbatim. */
 export function replaceQueryScopes(query: string, selection: SearchScopeSelection): string {
   if (query.trimStart().startsWith("re:")) return query;
-  const replacement = scopeQuery(selection);
+  const replacement = scopeQuery(selection, { includeAll: true });
   const ranges = scopeTokenRanges(query);
   if (ranges.length === 0) {
     if (!replacement) return query;

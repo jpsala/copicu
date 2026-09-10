@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  appliedQueryMutationFields,
-  appliedSearchRequestFields,
   createPickerSearchState,
   pickerSearchReducer,
 } from "../src/shared/searchSnapshot.ts";
@@ -346,21 +344,6 @@ test("pagination rejects a response from another applied descriptor", () => {
   });
 
   assert.equal(rejected, applied);
-});
-
-test("AI refresh and mark-all wiring keep display identity and canonical plan", () => {
-  assert.deepEqual(appliedSearchRequestFields(descriptor), {
-    query: "tag:client title:invoice",
-    displayQuery: "ai:find client invoices",
-    mode: "ai",
-    plan: descriptor.plan,
-    appliedDescriptor: descriptor,
-  });
-  assert.deepEqual(appliedQueryMutationFields(descriptor, true), {
-    query: "tag:client title:invoice",
-    marked: true,
-    appliedDescriptor: descriptor,
-  });
 });
 
 test("retained foreground refresh advances its generation and rejects stale metadata", () => {

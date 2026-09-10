@@ -2,13 +2,13 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{
     params, params_from_iter,
-    types::{Type, Value},
+    types::{Type, Value, ValueRef},
     Connection, Error as SqliteError, OpenFlags, OptionalExtension,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -31,8 +31,9 @@ use self::schema::MIGRATIONS;
 #[cfg(test)]
 use self::schema::MIGRATIONS_SLICE;
 use self::search::{
-    compile_search_plan, explain_history_query, finish_history_page, history_item_select_columns,
-    history_page_sql, search_plan_from_query, search_query_explanation,
+    compile_search_evidence, compile_search_plan, explain_history_query, finish_history_page,
+    history_item_select_columns, history_page_sql, search_plan_from_query,
+    search_plan_has_positive_evidence, search_query_explanation, SearchMatch,
 };
 #[cfg(test)]
 use self::search::{days_from_civil, parse_history_query, HasFilter};
@@ -160,6 +161,8 @@ pub struct HistoryItem {
     marked_at_unix_ms: Option<i64>,
     is_inbox: bool,
     inbox_at_unix_ms: Option<i64>,
+    #[serde(default)]
+    search_matches: Vec<SearchMatch>,
 }
 
 impl HistoryItem {
@@ -1968,6 +1971,14 @@ impl AppStorage {
                 warnings,
                 descriptor.clone(),
             )?;
+            if let Some(applied) = page.applied_descriptor.as_ref() {
+                attach_search_matches(
+                    &conn,
+                    &mut page.items,
+                    &applied.plan,
+                    request.include_content,
+                )?;
+            }
             drop(conn);
             self.attach_thumbnail_data_urls(&mut page.items);
             return Ok(page);
@@ -1988,6 +1999,14 @@ impl AppStorage {
             warnings,
             descriptor,
         )?;
+        if let Some(applied) = page.applied_descriptor.as_ref() {
+            attach_search_matches(
+                &conn,
+                &mut page.items,
+                &applied.plan,
+                request.include_content,
+            )?;
+        }
         if custom_sort {
             page.next_cursor = None;
         }
@@ -1996,12 +2015,19 @@ impl AppStorage {
         Ok(page)
     }
 
-    pub fn get_items_preview(&self, ids: Vec<i64>) -> Result<Vec<HistoryItem>, String> {
+    pub fn get_items_preview(
+        &self,
+        ids: Vec<i64>,
+        applied_descriptor: Option<AppliedSearchDescriptor>,
+    ) -> Result<Vec<HistoryItem>, String> {
         if ids.len() > MAX_HISTORY_PAGE_LIMIT as usize {
             return Err("item preview request cannot exceed 100 IDs".to_string());
         }
         if ids.is_empty() {
             return Ok(Vec::new());
+        }
+        if let Some(descriptor) = applied_descriptor.as_ref() {
+            descriptor.validate()?;
         }
         let placeholders = vec!["?"; ids.len()].join(",");
         let mut items = {
@@ -2009,14 +2035,18 @@ impl AppStorage {
                 .conn
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-            self.query_items(
+            let mut items = self.query_items(
                 &conn,
                 &format!(
                     "SELECT {} FROM clipboard_items WHERE id IN ({placeholders}) ORDER BY id",
                     history_item_select_columns(false),
                 ),
                 params_from_iter(ids.iter()),
-            )?
+            )?;
+            if let Some(descriptor) = applied_descriptor.as_ref() {
+                attach_search_matches(&conn, &mut items, &descriptor.plan, false)?;
+            }
+            items
         };
         self.attach_thumbnail_data_urls(&mut items);
         Ok(items)
@@ -3514,12 +3544,84 @@ where
                 marked_at_unix_ms: row.get(21)?,
                 is_inbox: row.get::<_, i64>(22)? != 0,
                 inbox_at_unix_ms: row.get(23)?,
+                search_matches: Vec::new(),
             })
         })
         .map_err(|error| format!("failed to query clipboard history: {error}"))?;
-
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("failed to read clipboard history row: {error}"))
+}
+
+fn attach_search_matches(
+    conn: &Connection,
+    items: &mut [HistoryItem],
+    plan: &SearchPlanV1,
+    include_content: bool,
+) -> Result<(), String> {
+    if items.is_empty() || !search_plan_has_positive_evidence(plan) {
+        return Ok(());
+    }
+    let placeholders = vec!["?"; items.len()].join(",");
+    let text_expr = if include_content { "NULL" } else { "text" };
+    let sql = format!(
+        "SELECT id, {text_expr}, title, notes, tags, mime_primary, content_kind,
+                context_search_text
+         FROM clipboard_items
+         WHERE id IN ({placeholders})"
+    );
+    let ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let index_by_id = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (item.id, index))
+        .collect::<HashMap<_, _>>();
+    let matcher = compile_search_evidence(plan)?;
+    let mut statement = conn
+        .prepare(&sql)
+        .map_err(|error| format!("failed to prepare search evidence query: {error}"))?;
+    let mut rows = statement
+        .query(params_from_iter(ids.iter()))
+        .map_err(|error| format!("failed to query search evidence: {error}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| format!("failed to read search evidence row: {error}"))?
+    {
+        let id = row
+            .get::<_, i64>(0)
+            .map_err(|error| format!("failed to decode search evidence item id: {error}"))?;
+        let Some(&index) = index_by_id.get(&id) else {
+            continue;
+        };
+        let optional_text = |column| -> Result<Option<&str>, String> {
+            let value = row
+                .get_ref(column)
+                .map_err(|error| format!("failed to decode search evidence field: {error}"))?;
+            if matches!(value, ValueRef::Null) {
+                Ok(None)
+            } else {
+                value
+                    .as_str()
+                    .map(Some)
+                    .map_err(|error| format!("failed to decode search evidence text: {error}"))
+            }
+        };
+        let content = if include_content {
+            items[index].text.as_str()
+        } else {
+            optional_text(1)?.unwrap_or("")
+        };
+        let evidence = matcher.matches(
+            content,
+            optional_text(2)?,
+            optional_text(3)?,
+            optional_text(4)?,
+            optional_text(5)?,
+            optional_text(6)?.unwrap_or(""),
+            optional_text(7)?,
+        );
+        items[index].search_matches = evidence;
+    }
+    Ok(())
 }
 
 fn count_history_items(
@@ -5242,7 +5344,9 @@ mod tests {
                 properties: ScenarioProperties::default(),
             })
             .unwrap();
-        let preview = storage.get_items_preview(vec![id, other + 1, id]).unwrap();
+        let preview = storage
+            .get_items_preview(vec![id, other + 1, id], None)
+            .unwrap();
         assert_eq!(ids(&preview), vec![id]);
         assert!(!preview[0].includes_content);
         assert_eq!(
@@ -5254,12 +5358,36 @@ mod tests {
         assert_eq!(preview[0].title.as_deref(), Some("Fresh title"));
         assert_eq!(preview[0].notes.as_deref(), Some("Fresh notes"));
         assert_eq!(preview[0].tags.as_deref(), Some("#Fresh/Tag"));
-        assert!(storage.get_items_preview(vec![]).unwrap().is_empty());
+        let descriptor = AppliedSearchDescriptor::for_query(
+            "Fresh",
+            "in:notes Fresh",
+            AppliedSearchMode::Structured,
+        )
+        .unwrap();
+        let matched = storage
+            .get_items_preview(vec![id], Some(descriptor.clone()))
+            .unwrap();
+        assert_eq!(matched[0].search_matches[0].field, "notes");
+        assert_eq!(matched[0].search_matches[0].matched, "Fresh");
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id,
+                title: Some("Fresh title".into()),
+                notes: Some("Replaced notes".into()),
+                tags: vec!["Fresh/Tag".into()],
+                properties: ScenarioProperties::default(),
+            })
+            .unwrap();
+        let refreshed = storage
+            .get_items_preview(vec![id], Some(descriptor))
+            .unwrap();
+        assert!(refreshed[0].search_matches.is_empty());
+        assert!(storage.get_items_preview(vec![], None).unwrap().is_empty());
         assert_eq!(
-            ids(&storage.get_items_preview(vec![id; 100]).unwrap()),
+            ids(&storage.get_items_preview(vec![id; 100], None).unwrap()),
             vec![id]
         );
-        assert!(storage.get_items_preview(vec![id; 101]).is_err());
+        assert!(storage.get_items_preview(vec![id; 101], None).is_err());
     }
 
     #[test]
@@ -5341,7 +5469,7 @@ mod tests {
             image.thumbnail_png_bytes
         );
         assert_eq!(
-            storage.get_items_preview(vec![id]).unwrap()[0]
+            storage.get_items_preview(vec![id], None).unwrap()[0]
                 .thumbnail_data_url
                 .as_deref()
                 .unwrap(),
@@ -6609,6 +6737,35 @@ mod tests {
         );
         assert!(preview_item.text().chars().count() <= HISTORY_PREVIEW_CHAR_LIMIT as usize);
         assert!(!preview_item.text().contains("COPICU_SYNTH_PREVIEW_END"));
+
+        let search_page = storage
+            .history_search(HistorySearchRequest {
+                query: "COPICU_SYNTH_PREVIEW_END".to_string(),
+                display_query: None,
+                cursor: None,
+                limit: Some(10),
+                plan: None,
+                mode: HistorySearchMode::Structured,
+                include_content: false,
+                include_counts: true,
+                explain: false,
+                ai_context: None,
+                applied_descriptor: None,
+            })
+            .expect("search page should load");
+        assert!(!search_page.items[0].includes_content);
+        assert!(!search_page.items[0]
+            .text()
+            .contains("COPICU_SYNTH_PREVIEW_END"));
+        assert_eq!(search_page.items[0].search_matches.len(), 1);
+        assert_eq!(search_page.items[0].search_matches[0].field, "content");
+        assert_eq!(
+            search_page.items[0].search_matches[0].matched,
+            "COPICU_SYNTH_PREVIEW_END"
+        );
+        assert!(search_page.items[0].search_matches[0]
+            .before
+            .starts_with('…'));
 
         let full_page = storage
             .history_search(HistorySearchRequest {

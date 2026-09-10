@@ -1,3 +1,4 @@
+use regex::RegexBuilder;
 use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +49,18 @@ pub enum SearchPlanTextScopeV1 {
     Notes,
     Tags,
     Context,
+}
+
+const MAX_SEARCH_MATCH_FIELDS: usize = 3;
+const SEARCH_MATCH_CONTEXT_CHARS: usize = 80;
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct SearchMatch {
+    pub field: String,
+    pub before: String,
+    pub matched: String,
+    pub after: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -1346,6 +1359,257 @@ fn text_search_fields(
     fields
 }
 
+fn text_search_match_fields(
+    scopes: &[SearchPlanTextScopeV1],
+    excluded_scopes: &[SearchPlanTextScopeV1],
+) -> Vec<&'static str> {
+    const ALL_FIELDS: &[&str] = &[
+        "content", "title", "notes", "tags", "mime", "kind", "context",
+    ];
+    let mut fields = if scopes.is_empty() {
+        ALL_FIELDS.to_vec()
+    } else {
+        let mut selected = Vec::with_capacity(ALL_FIELDS.len());
+        for scope in scopes {
+            let scope_fields: &[&str] = match scope {
+                SearchPlanTextScopeV1::Content => &["content"],
+                SearchPlanTextScopeV1::Metadata => &["title", "notes", "tags"],
+                SearchPlanTextScopeV1::Title => &["title"],
+                SearchPlanTextScopeV1::Notes => &["notes"],
+                SearchPlanTextScopeV1::Tags => &["tags"],
+                SearchPlanTextScopeV1::Context => &["context"],
+            };
+            for field in scope_fields {
+                if !selected.contains(field) {
+                    selected.push(*field);
+                }
+            }
+        }
+        selected
+    };
+    for scope in excluded_scopes {
+        let excluded: &[&str] = match scope {
+            SearchPlanTextScopeV1::Content => &["content"],
+            SearchPlanTextScopeV1::Metadata => &["title", "notes", "tags"],
+            SearchPlanTextScopeV1::Title => &["title"],
+            SearchPlanTextScopeV1::Notes => &["notes"],
+            SearchPlanTextScopeV1::Tags => &["tags"],
+            SearchPlanTextScopeV1::Context => &["context"],
+        };
+        fields.retain(|field| !excluded.contains(field));
+    }
+    fields
+}
+
+pub(super) fn search_plan_has_positive_evidence(plan: &SearchPlanV1) -> bool {
+    let Some(text) = plan.text.as_ref() else {
+        return plan.filters.as_ref().is_some_and(|filters| {
+            clean_values(&filters.metadata).next().is_some()
+                || clean_values(&filters.title).next().is_some()
+                || clean_values(&filters.notes).next().is_some()
+                || clean_values(&filters.context).next().is_some()
+        });
+    };
+    clean_values(&text.all).next().is_some()
+        || clean_values(&text.any).next().is_some()
+        || clean_values(&text.phrases).next().is_some()
+        || text
+            .regex
+            .as_deref()
+            .is_some_and(|pattern| !pattern.is_empty())
+        || plan.filters.as_ref().is_some_and(|filters| {
+            clean_values(&filters.metadata).next().is_some()
+                || clean_values(&filters.title).next().is_some()
+                || clean_values(&filters.notes).next().is_some()
+                || clean_values(&filters.context).next().is_some()
+        })
+}
+
+pub(super) struct CompiledSearchEvidence<'a> {
+    plan: &'a SearchPlanV1,
+    regex: Option<regex::Regex>,
+}
+
+pub(super) fn compile_search_evidence(
+    plan: &SearchPlanV1,
+) -> Result<CompiledSearchEvidence<'_>, String> {
+    let regex = plan
+        .text
+        .as_ref()
+        .and_then(|text| text.regex.as_deref())
+        .map(|pattern| {
+            RegexBuilder::new(pattern)
+                .case_insensitive(true)
+                .build()
+                .map_err(|error| format!("Invalid regular expression: {error}"))
+        })
+        .transpose()?;
+    Ok(CompiledSearchEvidence { plan, regex })
+}
+
+impl CompiledSearchEvidence<'_> {
+    pub(super) fn matches(
+        &self,
+        content: &str,
+        title: Option<&str>,
+        notes: Option<&str>,
+        tags: Option<&str>,
+        mime: Option<&str>,
+        kind: &str,
+        context: Option<&str>,
+    ) -> Vec<SearchMatch> {
+        let values = [
+            ("content", content),
+            ("title", title.unwrap_or("")),
+            ("notes", notes.unwrap_or("")),
+            ("tags", tags.unwrap_or("")),
+            ("mime", mime.unwrap_or("")),
+            ("kind", kind),
+            ("context", context.unwrap_or("")),
+        ];
+        let mut matches = Vec::new();
+
+        if let Some(text) = &self.plan.text {
+            let text_fields = text_search_match_fields(&text.scopes, &text.excluded_scopes);
+            for term in clean_values(&text.all) {
+                add_like_match(&mut matches, &values, term, &text_fields);
+            }
+            for term in clean_values(&text.any) {
+                add_like_match(&mut matches, &values, term, &text_fields);
+            }
+            for phrase in clean_values(&text.phrases) {
+                add_like_match(&mut matches, &values, phrase, &text_fields);
+            }
+            if let Some(regex) = &self.regex {
+                for (field, value) in values {
+                    if matches.iter().any(|item| item.field == field) {
+                        continue;
+                    }
+                    if let Some(found) = regex
+                        .find(value)
+                        .filter(|found| found.start() != found.end())
+                    {
+                        matches.push(make_search_match(field, value, found.start(), found.end()));
+                        if matches.len() == MAX_SEARCH_MATCH_FIELDS {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(filters) = &self.plan.filters {
+            for term in clean_values(&filters.metadata) {
+                add_like_match(&mut matches, &values, term, &["title", "notes", "tags"]);
+            }
+            for term in clean_values(&filters.title) {
+                add_like_match(&mut matches, &values, term, &["title"]);
+            }
+            for term in clean_values(&filters.notes) {
+                add_like_match(&mut matches, &values, term, &["notes"]);
+            }
+            for term in clean_values(&filters.context) {
+                add_like_match(&mut matches, &values, term, &["context"]);
+            }
+        }
+
+        matches
+    }
+}
+
+fn add_like_match(
+    matches: &mut Vec<SearchMatch>,
+    values: &[(&str, &str); 7],
+    term: &str,
+    fields: &[&str],
+) {
+    if matches.len() >= MAX_SEARCH_MATCH_FIELDS {
+        return;
+    }
+    for (field, value) in values {
+        if matches.iter().any(|item| item.field == *field) || !fields.contains(field) {
+            continue;
+        }
+        if let Some((start, end)) = find_sqlite_like_match(value, term) {
+            matches.push(make_search_match(field, value, start, end));
+            return;
+        }
+    }
+}
+
+fn find_sqlite_like_match(value: &str, needle: &str) -> Option<(usize, usize)> {
+    if needle.is_empty() {
+        return None;
+    }
+    for (start, _) in value.char_indices() {
+        let mut value_chars = value[start..].chars();
+        let mut end = start;
+        let mut matched = true;
+        for needle_char in needle.chars() {
+            let Some(value_char) = value_chars.next() else {
+                matched = false;
+                break;
+            };
+            if !sqlite_like_char_equal(value_char, needle_char) {
+                matched = false;
+                break;
+            }
+            end += value_char.len_utf8();
+        }
+        if matched {
+            return Some((start, end));
+        }
+    }
+    None
+}
+
+fn sqlite_like_char_equal(left: char, right: char) -> bool {
+    left == right || (left.is_ascii() && right.is_ascii() && left.eq_ignore_ascii_case(&right))
+}
+
+const MAX_SEARCH_MATCHED_CHARS: usize = 160;
+
+fn make_search_match(field: &str, value: &str, start: usize, end: usize) -> SearchMatch {
+    let before_start = value[..start]
+        .char_indices()
+        .rev()
+        .nth(SEARCH_MATCH_CONTEXT_CHARS.saturating_sub(1))
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    let before_clipped = before_start > 0;
+    let after_end = value[end..]
+        .char_indices()
+        .nth(SEARCH_MATCH_CONTEXT_CHARS)
+        .map(|(index, _)| end + index)
+        .unwrap_or(value.len());
+    let after_clipped = after_end < value.len();
+    let matched_limit = value[start..]
+        .char_indices()
+        .nth(MAX_SEARCH_MATCHED_CHARS)
+        .map(|(index, _)| start + index)
+        .unwrap_or(value.len());
+    let matched_end = matched_limit.min(end);
+    let matched_clipped = matched_end < end;
+    SearchMatch {
+        field: field.to_string(),
+        before: format!(
+            "{}{}",
+            if before_clipped { "…" } else { "" },
+            &value[before_start..start]
+        ),
+        matched: format!(
+            "{}{}",
+            &value[start..matched_end],
+            if matched_clipped { "…" } else { "" }
+        ),
+        after: format!(
+            "{}{}",
+            &value[end..after_end],
+            if after_clipped { "…" } else { "" }
+        ),
+    }
+}
+
 fn push_text_like_clause(
     clauses: &mut Vec<String>,
     params: &mut Vec<Value>,
@@ -1915,7 +2179,7 @@ fn is_leap_year(year: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        compile_search_plan, parse_iso_datetime_unix_ms, search_plan_from_query,
+        compile_search_evidence, parse_iso_datetime_unix_ms, search_plan_from_query,
         search_query_explanation,
     };
 
@@ -1980,37 +2244,6 @@ mod tests {
     }
 
     #[test]
-    fn in_scope_limits_plain_terms_to_the_selected_fields() {
-        let content = compile_search_plan(&search_plan_from_query("in:content invoice"))
-            .expect("content-scoped search");
-        assert!(content.where_sql.contains("COALESCE(text, '') LIKE"));
-        assert!(!content.where_sql.contains("COALESCE(title, '') LIKE"));
-        assert_eq!(content.params.len(), 1);
-
-        let metadata = compile_search_plan(&search_plan_from_query("in:metadata invoice"))
-            .expect("metadata-scoped search");
-        assert!(!metadata.where_sql.contains("COALESCE(text, '') LIKE"));
-        assert!(metadata.where_sql.contains("COALESCE(title, '') LIKE"));
-        assert!(metadata.where_sql.contains("COALESCE(notes, '') LIKE"));
-        assert!(metadata.where_sql.contains("COALESCE(tags, '') LIKE"));
-        assert_eq!(metadata.params.len(), 3);
-
-        let content_and_context =
-            compile_search_plan(&search_plan_from_query("in:content,context invoice"))
-                .expect("multi-scope search");
-        assert!(content_and_context
-            .where_sql
-            .contains("COALESCE(text, '') LIKE"));
-        assert!(content_and_context
-            .where_sql
-            .contains("COALESCE(context_search_text, '') LIKE"));
-        assert!(!content_and_context
-            .where_sql
-            .contains("COALESCE(title, '') LIKE"));
-        assert_eq!(content_and_context.params.len(), 2);
-    }
-
-    #[test]
     fn in_scope_is_explained_and_rejects_unknown_values() {
         let valid = search_query_explanation("in:context vivaldi");
         assert!(valid.diagnostics.is_empty());
@@ -2021,5 +2254,109 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "invalidValue" && diagnostic.severity == "error"));
+    }
+    #[test]
+    fn search_matches_find_content_beyond_preview_without_returning_content() {
+        let plan = search_plan_from_query("openai");
+        let content = format!("{}openAI tail", "x".repeat(42_200));
+        let matches = compile_search_evidence(&plan).unwrap().matches(
+            &content,
+            None,
+            None,
+            None,
+            Some("text/plain"),
+            "text",
+            None,
+        );
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].field, "content");
+        assert_eq!(matches[0].matched, "openAI");
+        assert!(matches[0].before.starts_with('…'));
+        assert!(matches[0].after.ends_with("tail"));
+    }
+
+    #[test]
+    fn search_matches_report_context_only_and_respect_excluded_scope() {
+        let context_plan = search_plan_from_query("in:context OpenAI.Codex");
+        let context_matches = compile_search_evidence(&context_plan).unwrap().matches(
+            "unrelated content",
+            None,
+            None,
+            None,
+            None,
+            "text",
+            Some("C:\\Tools\\OpenAI.Codex.exe"),
+        );
+        assert_eq!(context_matches.len(), 1);
+        assert_eq!(context_matches[0].field, "context");
+        assert_eq!(context_matches[0].matched, "OpenAI.Codex");
+
+        let excluded_plan = search_plan_from_query("in:all,-context OpenAI");
+        let excluded_matches = compile_search_evidence(&excluded_plan).unwrap().matches(
+            "unrelated content",
+            None,
+            None,
+            None,
+            None,
+            "text",
+            Some("OpenAI.Codex"),
+        );
+        assert!(excluded_matches.is_empty());
+    }
+
+    #[test]
+    fn search_matches_preserve_unicode_boundaries_for_regex() {
+        let plan = search_plan_from_query("re:señal");
+        let matches = compile_search_evidence(&plan).unwrap().matches(
+            "antes 😀 señal después",
+            None,
+            None,
+            None,
+            None,
+            "text",
+            None,
+        );
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].matched, "señal");
+        assert_eq!(matches[0].before, "antes 😀 ");
+        assert_eq!(matches[0].after, " después");
+        let long_plan = search_plan_from_query("re:😀+");
+        let long_content = "😀".repeat(500);
+        let bounded = compile_search_evidence(&long_plan).unwrap().matches(
+            &long_content,
+            None,
+            None,
+            None,
+            None,
+            "text",
+            None,
+        );
+        assert!(bounded[0].matched.chars().count() <= 161);
+        assert!(bounded[0].matched.ends_with('…'));
+    }
+
+    #[test]
+    fn search_matches_bound_fields_and_keep_positive_filter_truthful() {
+        let plan = search_plan_from_query("OpenAI title:OpenAI notes:OpenAI ctx:OpenAI");
+        let matches = compile_search_evidence(&plan).unwrap().matches(
+            "OpenAI body",
+            Some("OpenAI title"),
+            Some("OpenAI notes"),
+            Some("other"),
+            Some("text/plain"),
+            "text",
+            Some("OpenAI context"),
+        );
+
+        assert_eq!(matches.len(), 3);
+        assert_eq!(
+            matches
+                .iter()
+                .map(|item| item.field.as_str())
+                .collect::<Vec<_>>(),
+            vec!["content", "title", "notes"]
+        );
     }
 }

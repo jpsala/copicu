@@ -7,9 +7,11 @@ import {
 } from "../src/shared/search.ts";
 import {
   replaceQueryScopes,
+  resolveSearchScopeQuery,
   scopeOptions,
   scopeQuery,
   scopeSelectionFromQuery,
+  queryHasExplicitSearchScope,
   scopeSummary,
 } from "../src/shared/searchScopes.ts";
 
@@ -247,4 +249,16 @@ test("search scopes validate, expose truthful states, and replace one modifier",
   const query = '  in:title   "a  b" re:^x\\s+in:notes  ';
   assert.equal(replaceQueryScopes(query, { included: ["metadata"], excluded: ["tags"] }), '  in:metadata,-tags   "a  b" re:^x\\s+in:notes  ');
   assert.equal(replaceQueryScopes("re:^x\\s+in:title", { included: ["metadata"], excluded: [] }), "re:^x\\s+in:title");
+});
+
+test("default scopes resolve at execution without capturing quoted or regex text", () => {
+  const contentDefault = { included: ["content"], excluded: [] };
+  assert.equal(resolveSearchScopeQuery("openai", contentDefault), "in:content openai");
+  assert.equal(resolveSearchScopeQuery("in:all openai", contentDefault), "in:all openai");
+  assert.equal(resolveSearchScopeQuery('"in:all" openai', contentDefault), 'in:content "in:all" openai');
+  assert.equal(resolveSearchScopeQuery("re:openai", contentDefault), "re:openai");
+  assert.equal(queryHasExplicitSearchScope("in:content openai"), true);
+  assert.equal(queryHasExplicitSearchScope('"in:content" openai'), false);
+  assert.equal(scopeQuery({ included: ["all"], excluded: [] }, { includeAll: true }), "in:all");
+  assert.ok(searchSuggestions("in:a", []).some((suggestion) => suggestion.queryReplacement === "in:all"));
 });

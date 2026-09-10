@@ -2212,10 +2212,11 @@ async fn get_history_items_preview(
     window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
     ids: Vec<i64>,
+    applied_descriptor: Option<storage::AppliedSearchDescriptor>,
 ) -> Result<Vec<storage::HistoryItem>, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_history_items_preview")?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage.get_items_preview(ids))
+    tauri::async_runtime::spawn_blocking(move || storage.get_items_preview(ids, applied_descriptor))
         .await
         .map_err(|error| format!("preview refresh worker failed: {error}"))?
 }

@@ -146,15 +146,27 @@ Reglas:
 - Sin terminos de texto, los scopes no ocultan historial. Operadores explicitos
   como `tag:` conservan su semantica, independiente de los scopes plain.
 - Settings agrupa campos predeterminados, trigger y confirmacion estructurada
-  bajo `Picker > Search & filters`. Defaults se convierten en query visible,
-  no en condiciones agregadas silenciosamente al backend.
+  bajo `Picker > Search & filters`. Cuando el draft no declara `in:`, el picker
+  muestra incluidos y excluidos en una franja debajo del buscador, separada
+  del texto editable, y resuelve una query explicita. Reemplazar el texto
+  conserva el default. La franja distingue origen y comparte espacio con los
+  demas filtros sin repetir la query ni explicaciones genericas.
+  `in:all` lo reemplaza por todos los campos. Regex y planes explicitos
+  conservan su propia autoridad; Rust no agrega preferencias ocultas.
 - Settings y autocomplete comparten estados incluido, heredado, excluido,
   disponible y parcial. Quitar una exclusion y excluir un campo heredado son
   acciones diferentes y se anuncian antes de ejecutarlas.
 - El input es el draft; el snapshot aplicado conserva descriptor y resultados.
-  Cuando difieren, la UI muestra la query cuyos resultados siguen visibles.
-  Sin `in:` se indica todos los campos; input vacio aplicado significa todo
-  el historial, no un filtro predeterminado oculto.
+  Cuando difieren las queries efectivas, la UI muestra la query cuyos
+  resultados siguen visibles. Un prefijo heredado no es por si solo un draft
+  pendiente. Input vacio aplicado significa todo el historial; Clear no pierde
+  el default de la proxima busqueda.
+- Cada fila devuelve evidencia acotada de predicados positivos del plan
+  aplicado: `search_matches` contiene campo, `before`, `matched` y `after`.
+  Se muestran hasta tres campos, con un fragmento por campo, resaltado como
+  texto seguro. Cubre coincidencias fuera del preview y en contexto sin enviar
+  el payload completo. Scopes/exclusiones limitan tambien la evidencia;
+  filtros negativos o solo estructurales no inventan coincidencias literales.
 
 ## Primer Slice Implementable
 

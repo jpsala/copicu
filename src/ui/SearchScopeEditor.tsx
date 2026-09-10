@@ -28,6 +28,38 @@ export function SearchScopeOption({ label, state, detail, actionLabel }: {
   );
 }
 
+export function SearchScopeSummary({ selection }: { selection: SearchScopeSelection }) {
+  const options = scopeOptions(selection);
+  const allFields = selection.included.length === 0 || selection.included.includes("all");
+  const included = allFields ? [] : options.filter((option) =>
+    selection.included.includes(option.scope) && option.state !== "excluded");
+  return (
+    <span className="search-scope-tokens">
+      {allFields ? (
+        <span className="search-scope-token" aria-label="Included: all fields">
+          <Check size={12} aria-hidden="true" /> All fields
+        </span>
+      ) : included.length === 0 ? (
+        <span className="search-scope-empty">No text fields</span>
+      ) : included.map((option) => (
+        <span key={option.scope} className="search-scope-token"
+          aria-label={`${option.label}: ${option.state === "partial" ? "partly included" : "included"}`}>
+          {option.state === "partial"
+            ? <CircleDot size={12} aria-hidden="true" />
+            : <Check size={12} aria-hidden="true" />}
+          {option.label}
+        </span>
+      ))}
+      {options.filter((option) => selection.excluded.includes(option.scope)).map((option) => (
+        <span key={`excluded:${option.scope}`} className="search-scope-token is-excluded"
+          aria-label={`Excluded: ${option.label}`}>
+          <Minus size={12} aria-hidden="true" /> {option.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function SearchScopeEditor({ selection, onChange }: {
   selection: SearchScopeSelection;
   onChange: (selection: SearchScopeSelection) => void;
@@ -60,7 +92,7 @@ export function SearchScopeEditor({ selection, onChange }: {
           </div>
         ))}
       </div>
-      <p>Included fields are combined; exclusions take precedence. Empty search still shows all history.</p>
+      <p>These fields are applied when a search runs without an explicit in: modifier. Clear shows all history, and the default remains available for the next typed search.</p>
     </div>
   );
 }

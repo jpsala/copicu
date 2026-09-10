@@ -557,17 +557,6 @@ button {
   border-color: color-mix(in srgb, var(--success) 35%, var(--line));
 }
 
-.context-strip > .search-draft-feedback,
-.context-strip > .search-interpretation {
-  flex: 1 0 100%;
-  border-bottom: 0;
-  background: transparent;
-  padding: 0;
-}
-
-.context-strip > .search-interpretation {
-  max-height: min(150px, 22vh);
-}
 
 .find-bar {
   display: grid;
@@ -941,6 +930,71 @@ button {
 
 .search-field {
   position: relative;
+}
+
+.search-filter-strip {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 31px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
+  padding: 5px 10px;
+  color: var(--ink-soft);
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+
+.search-filter-label,
+.search-scope-source {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.search-scope-source {
+  margin-left: auto;
+  font-size: 0.65rem;
+}
+
+.search-scope-tokens,
+.search-filter-chips {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.search-scope-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  padding: 2px 5px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.search-scope-token svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.search-scope-token.is-excluded {
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+}
+
+.search-scope-token.is-excluded svg {
+  color: var(--muted);
+}
+
+.search-scope-empty {
+  color: var(--muted);
 }
 
 .search-autocomplete {
@@ -2672,6 +2726,47 @@ button {
     background: rgb(17 22 24 / 96%);
     box-shadow: 0 6px 14px rgb(0 0 0 / 24%);
   }
+}
+.search-match-list {
+  display: grid;
+  grid-column: 1 / -1;
+  min-width: 0;
+  gap: 2px;
+  margin-top: 1px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.69rem;
+  line-height: 1.3;
+}
+
+.search-match {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.search-match > strong {
+  flex: 0 0 52px;
+  color: var(--accent);
+  font-family: var(--font-family, inherit);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.search-match-snippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.search-match mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--ink);
+  font-weight: 800;
 }
 
 :root[data-theme="dark"] .toast-item {
