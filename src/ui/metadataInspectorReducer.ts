@@ -1,6 +1,5 @@
 import type {
   MetadataNotesIntent,
-  MetadataPropertyKey,
   MetadataScalarIntent,
   MetadataSelectionIntent,
   MetadataSelectionPayload,
@@ -9,7 +8,6 @@ import type {
   MetadataSetValueIntent,
 } from "../shared/contracts";
 
-const PROPERTY_KEYS: MetadataPropertyKey[] = ["client", "project", "activity"];
 
 export type MetadataInspectorSaveState = "idle" | "saving" | "stale" | "error" | "saved";
 
@@ -20,7 +18,6 @@ export type MetadataInspectorState = {
   title: MetadataScalarIntent;
   notes: MetadataNotesIntent;
   tags: MetadataSetValueIntent[];
-  properties: Record<MetadataPropertyKey, MetadataSetValueIntent[]>;
   dirty: boolean;
   pendingNoticeHidden: boolean;
   summary: string;
@@ -31,17 +28,14 @@ export type MetadataInspectorState = {
   undoStack: MetadataInspectorIntentSnapshot[];
 };
 
-type MetadataInspectorIntentSnapshot = Pick<
-  MetadataInspectorState,
-  "title" | "notes" | "tags" | "properties"
->;
+type MetadataInspectorIntentSnapshot = Pick<MetadataInspectorState, "title" | "notes" | "tags">;
 
 export type MetadataInspectorAction =
   | { type: "receivePayload"; payload: MetadataSelectionPayload }
   | { type: "replacePayload"; payload: MetadataSelectionPayload }
   | { type: "stageTitle"; intent: MetadataScalarIntent }
   | { type: "stageNotes"; intent: MetadataNotesIntent }
-  | { type: "stageSetValue"; field: "tags" | MetadataPropertyKey; intent: MetadataSetValueIntent }
+  | { type: "stageSetValue"; field: "tags"; intent: MetadataSetValueIntent }
   | { type: "undoLast" }
   | { type: "saveStarted" }
   | { type: "saveSucceeded"; snapshot: MetadataSelectionSnapshot }
@@ -52,9 +46,6 @@ export type MetadataInspectorAction =
 const untouchedTitle: MetadataScalarIntent = { op: "untouched" };
 const untouchedNotes: MetadataNotesIntent = { op: "untouched" };
 
-function emptyProperties(): Record<MetadataPropertyKey, MetadataSetValueIntent[]> {
-  return { client: [], project: [], activity: [] };
-}
 
 function normalizedSetIntents(intents: MetadataSetValueIntent[]) {
   return intents
@@ -67,7 +58,6 @@ function intentSnapshot(state: MetadataInspectorState): MetadataInspectorIntentS
     title: state.title,
     notes: state.notes,
     tags: state.tags,
-    properties: state.properties,
   };
 }
 
@@ -88,8 +78,7 @@ function sameSelection(left: number[], right: number[]) {
 function withDerivedState(state: MetadataInspectorState): MetadataInspectorState {
   const dirty = state.title.op !== "untouched"
     || state.notes.op !== "untouched"
-    || state.tags.length > 0
-    || PROPERTY_KEYS.some((key) => state.properties[key].length > 0);
+    || state.tags.length > 0;
   return { ...state, dirty, summary: metadataChangeSummary(state) };
 }
 
@@ -101,7 +90,6 @@ export function createMetadataInspectorState(payload: MetadataSelectionPayload):
     title: untouchedTitle,
     notes: untouchedNotes,
     tags: [],
-    properties: emptyProperties(),
     dirty: false,
     summary: "No changes",
     pendingPayload: null,
@@ -155,17 +143,8 @@ export function metadataInspectorReducer(
       return stage(state, { title: action.intent });
     case "stageNotes":
       return stage(state, { notes: action.intent });
-    case "stageSetValue": {
-      if (action.field === "tags") {
-        return stage(state, { tags: setValueIntent(state.tags, action.intent) });
-      }
-      return stage(state, {
-        properties: {
-          ...state.properties,
-          [action.field]: setValueIntent(state.properties[action.field], action.intent),
-        },
-      });
-    }
+    case "stageSetValue":
+      return stage(state, { tags: setValueIntent(state.tags, action.intent) });
     case "undoLast": {
       const previous = state.undoStack.at(-1);
       if (!previous) return state;
@@ -213,7 +192,6 @@ export function metadataSelectionIntent(state: MetadataInspectorState): Metadata
     title: state.title,
     notes: state.notes,
     tags: state.tags,
-    properties: state.properties,
   };
 }
 
@@ -223,12 +201,10 @@ export function metadataValueKey(value: string) {
 
 function aggregateFor(
   snapshot: MetadataSelectionSnapshot,
-  field: "tags" | MetadataPropertyKey,
   key: string,
 ): MetadataSetValueAggregate | undefined {
-  const entries = field === "tags" ? snapshot.tags : snapshot.properties[field];
   const normalized = metadataValueKey(key);
-  return entries.find((entry) => metadataValueKey(entry.key) === normalized);
+  return snapshot.tags.find((entry) => metadataValueKey(entry.key) === normalized);
 }
 
 function clipCount(count: number) {
@@ -237,12 +213,11 @@ function clipCount(count: number) {
 
 function setSummary(
   snapshot: MetadataSelectionSnapshot,
-  field: "tags" | MetadataPropertyKey,
   intent: MetadataSetValueIntent,
 ) {
-  const aggregate = aggregateFor(snapshot, field, intent.key);
+  const aggregate = aggregateFor(snapshot, intent.key);
   const label = aggregate?.label ?? intent.key;
-  const value = field === "tags" ? `#${label.replace(/^#/, "")}` : `${field}:${label}`;
+  const value = `#${label.replace(/^#/, "")}`;
   const count = intent.op === "add"
     ? snapshot.itemCount - (aggregate?.presentCount ?? 0)
     : aggregate?.presentCount ?? 0;
@@ -251,7 +226,7 @@ function setSummary(
 
 export function metadataChangeSummary(state: Pick<
   MetadataInspectorState,
-  "baseSnapshot" | "title" | "notes" | "tags" | "properties"
+  "baseSnapshot" | "title" | "notes" | "tags"
 >): string {
   const changes: string[] = [];
   const { baseSnapshot: snapshot } = state;
@@ -260,9 +235,6 @@ export function metadataChangeSummary(state: Pick<
   if (state.notes.op === "appendToEach") changes.push(`Append notes to ${clipCount(snapshot.itemCount)}`);
   if (state.notes.op === "replaceAll") changes.push(`Replace notes on ${clipCount(snapshot.itemCount)}`);
   if (state.notes.op === "clearAll") changes.push(`Clear notes on ${clipCount(snapshot.notes.populatedCount)}`);
-  for (const intent of state.tags) changes.push(setSummary(snapshot, "tags", intent));
-  for (const key of PROPERTY_KEYS) {
-    for (const intent of state.properties[key]) changes.push(setSummary(snapshot, key, intent));
-  }
+  for (const intent of state.tags) changes.push(setSummary(snapshot, intent));
   return changes.length > 0 ? changes.join(" · ") : "No changes";
 }

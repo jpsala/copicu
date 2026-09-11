@@ -164,18 +164,11 @@ export type UpdateSavedHistoryViewRequest = {
   captureTags: string[];
 };
 
-export type ScenarioProperties = {
-  client: string[];
-  project: string[];
-  activity: string[];
-};
-
 export type Scenario = {
   id: number;
   name: string;
   query: string;
   revision: number;
-  properties: ScenarioProperties;
   tags: string[];
   createdAtUnixMs: number;
   updatedAtUnixMs: number;
@@ -184,7 +177,6 @@ export type Scenario = {
 export type ScenarioDraftRequest = {
   name: string;
   query: string;
-  properties: ScenarioProperties;
   tags: string[];
 };
 
@@ -199,7 +191,6 @@ export type ActiveScenarioSession = {
   scenarioName: string;
   scenarioRevision: number;
   query: string;
-  properties: ScenarioProperties;
   tags: string[];
   startedAtUnixMs: number;
 };
@@ -228,7 +219,6 @@ export type SetItemTagsRequest = {
 export type MetadataFocusTarget = "tags" | "overview";
 export type MetadataPresence = "all" | "some" | "none";
 export type MetadataSource = "manual" | "scenario" | "rule" | "enrichment" | "context";
-export type MetadataPropertyKey = keyof ScenarioProperties;
 
 export type MetadataCaptureContextEvent = {
   id: number;
@@ -288,7 +278,6 @@ export type MetadataSelectionSnapshot = {
   title: MetadataScalarAggregate;
   notes: MetadataScalarAggregate;
   tags: MetadataSetValueAggregate[];
-  properties: Record<MetadataPropertyKey, MetadataSetValueAggregate[]>;
   singleItem: {
     contentPreview: string;
     contentKind: string;
@@ -327,7 +316,6 @@ export type MetadataSelectionIntent = {
   title: MetadataScalarIntent;
   notes: MetadataNotesIntent;
   tags: MetadataSetValueIntent[];
-  properties: Record<MetadataPropertyKey, MetadataSetValueIntent[]>;
 };
 
 export type ApplyMetadataSelectionIntentResult = {
@@ -337,7 +325,6 @@ export type ApplyMetadataSelectionIntentResult = {
   titleChangedCount: number;
   notesChangedCount: number;
   tagRelationChanges: number;
-  propertyRelationChanges: number;
 };
 
 export type OpenMetadataWindowRequest = {
@@ -522,7 +509,6 @@ export type CreateHistoryItemRequest = {
   title: string | null;
   notes: string | null;
   tags: string[];
-  properties: ScenarioProperties;
   mimePrimary: string | null;
 };
 

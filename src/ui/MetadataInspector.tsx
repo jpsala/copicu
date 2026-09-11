@@ -5,7 +5,6 @@ import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.mjs";
 import type {
   ApplyMetadataSelectionIntentResult,
   MetadataNotesIntent,
-  MetadataPropertyKey,
   MetadataSelectionIntent,
   MetadataSelectionPayload,
   MetadataSelectionSnapshot,
@@ -23,12 +22,6 @@ import {
   type MetadataInspectorState,
 } from "./metadataInspectorReducer";
 
-const PROPERTY_KEYS: MetadataPropertyKey[] = ["client", "project", "activity"];
-const PROPERTY_LABELS: Record<MetadataPropertyKey, string> = {
-  client: "Client",
-  project: "Project",
-  activity: "Activity",
-};
 
 export type MetadataInspectorProps = {
   payload: MetadataSelectionPayload;
@@ -54,7 +47,6 @@ export function createEmptyMetadataSnapshot(): MetadataSelectionSnapshot {
     title: { state: "empty", value: null, populatedCount: 0 },
     notes: { state: "empty", value: null, populatedCount: 0 },
     tags: [],
-    properties: { client: [], project: [], activity: [] },
     singleItem: null,
   };
 }
@@ -137,7 +129,7 @@ function SetValueRows({
   dispatch,
 }: {
   label: string;
-  field: "tags" | MetadataPropertyKey;
+  field: "tags";
   values: MetadataSetValueAggregate[];
   intents: MetadataSetValueIntent[];
   dispatch: Dispatch<Parameters<typeof metadataInspectorReducer>[1]>;
@@ -213,7 +205,7 @@ function MetadataSetSection({
   dispatch,
 }: {
   label: string;
-  field: "tags" | MetadataPropertyKey;
+  field: "tags";
   values: MetadataSetValueAggregate[];
   candidates: MetadataSetValueAggregate[];
   intents: MetadataSetValueIntent[];
@@ -242,7 +234,7 @@ function MetadataSetSection({
         autoFocus={autoFocus}
         renderToken={(value) => (
           <>
-            {field === "tags" ? `#${value.label.replace(/^#/, "")}` : value.label}
+            {`#${value.label.replace(/^#/, "")}`}
             {value.sources[0] && value.sources[0].source !== "manual" ? <small>{value.sources[0].source}</small> : null}
           </>
         )}
@@ -396,19 +388,6 @@ export function MetadataInspector({
   const notesMode = state.notes.op === "appendToEach" || state.notes.op === "replaceAll" || state.notes.op === "clearAll"
     ? state.notes.op
     : "untouched";
-  const propertyFields = PROPERTY_KEYS.map((key) => (
-    <MetadataSetSection
-      key={key}
-      label={PROPERTY_LABELS[key]}
-      field={key}
-      values={snapshot.properties[key]}
-      candidates={snapshot.properties[key]}
-      intents={state.properties[key]}
-      multi={multi}
-      allowCreate
-      dispatch={dispatch}
-    />
-  ));
 
   return (
     <div
@@ -554,21 +533,6 @@ export function MetadataInspector({
           dispatch={dispatch}
         />
 
-        {embedded ? (
-          <details className="metadata-properties-details">
-            <summary>
-              Properties
-              <span>Client · Project · Activity</span>
-            </summary>
-            <div className="metadata-properties" aria-label="Properties">
-              {propertyFields}
-            </div>
-          </details>
-        ) : (
-          <div className="metadata-properties" aria-label="Properties">
-            {propertyFields}
-          </div>
-        )}
 
         {!isCreate && !embedded && snapshot.singleItem ? <MetadataFacts snapshot={snapshot} /> : null}
         {state.saveState === "error" && state.error ? <UiAlert color="red" variant="light">{state.error}</UiAlert> : null}
@@ -599,10 +563,9 @@ export function MetadataInspector({
 
 function MetadataFacts({ snapshot }: { snapshot: MetadataSelectionSnapshot }) {
   const events = snapshot.singleItem?.captureContextEvents ?? [];
-  const values = [
-    ...snapshot.tags.map((value) => ({ label: `#${value.label}`, sources: value.sources })),
-    ...PROPERTY_KEYS.flatMap((key) => snapshot.properties[key].map((value) => ({ label: `${key}:${value.label}`, sources: value.sources }))),
-  ].filter((value) => value.sources.some((source) => source.source !== "manual"));
+  const values = snapshot.tags
+    .map((value) => ({ label: `#${value.label}`, sources: value.sources }))
+    .filter((value) => value.sources.some((source) => source.source !== "manual"));
   return (
     <div className="metadata-facts">
       {values.length > 0 ? (

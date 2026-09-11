@@ -63,7 +63,6 @@ export function ItemContentEditor({
     title: { op: "untouched" },
     notes: { op: "untouched" },
     tags: [],
-    properties: { client: [], project: [], activity: [] },
   });
   valueRef.current = value;
   onCancelRef.current = onCancel;
@@ -200,7 +199,7 @@ export function ItemContentEditor({
         <aside className="item-content-editor-pane is-metadata" aria-label="Metadata editor">
           <div className="item-editor-pane-header">
             <strong>Metadata</strong>
-            <span>Title, notes, tags and properties</span>
+            <span>Title, notes and tags</span>
           </div>
           <MetadataInspector
             payload={metadataPayload}

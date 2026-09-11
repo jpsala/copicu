@@ -536,8 +536,8 @@ Checkpoint 2026-07-28 `v0.4.1-rc.2`:
 
 Checkpoint 2026-07-30 `v0.4.3`:
 
-- El editor standalone de metadata vuelve al convenio de un único textbox: `#tags`, `client`, `project` y `activity` se editan como tokens inline; valores con espacios aceptan comillas y los tokens repetidos preservan properties multivalor.
-- El layout mantiene contenido, editor y acciones visibles en `380×300`, sin los tres inputs inferiores que rompían el resize.
+- El editor standalone de metadata usa un único textbox compacto para notas y `#tags`.
+- El layout mantiene contenido, editor y acciones visibles en `380×300`.
 - Checks: build frontend, `cargo check --tests`, context audit, capabilities drift y suite visual 206/206.
 - Publicado como stable/latest con instalador, `.sig` y `latest.json`; SHA256 `A3E3AEAEBDC3FBD144DF0B355302B004664B60BE85553245A3508E0F5B1AF636`. Instalación local `0.4.3` verificada y respondiendo.
 

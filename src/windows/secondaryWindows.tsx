@@ -1770,13 +1770,10 @@ function SettingsPanel({
     updateStatusMessage(updateStatus),
   ].join(" ");
   const scenarioSearchText = [
-    "capture modes capture mode scenarios scenario client project activity context picker saved search saved view",
+    "capture modes capture mode scenarios scenario context picker saved search saved view tags",
     ...scenarios.map((scenario) => [
       scenario.name,
       scenario.query,
-      ...scenario.properties.client,
-      ...scenario.properties.project,
-      ...scenario.properties.activity,
       ...scenario.tags,
     ].join(" ")),
   ].join(" ");
@@ -1814,7 +1811,7 @@ function SettingsPanel({
     {
       id: "scenarios",
       label: "Capture modes",
-      description: "Project context and picker views",
+      description: "Reusable picker filters and capture tags",
     },
     {
       id: "appearance",
@@ -2711,7 +2708,7 @@ function SettingsPanel({
             ) : null}
 
             {displayedSections.some((section) => section.id === "scenarios") ? (
-              <SettingsSection title="Capture modes" description="Switch projects without losing the filter or context that belongs to each one.">
+              <SettingsSection title="Capture modes" description="Keep a reusable picker filter and optionally tag new captures while it is active.">
                 <Scenarios
                   scenarios={scenarios}
                   availableTags={tags}

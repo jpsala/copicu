@@ -18,7 +18,6 @@ function snapshot(token = "snapshot-1", itemIds = [11, 12, 13]): MetadataSelecti
       { key: "review", label: "Review", presence: "some", presentCount: 2, totalCount: 3, sources: [{ source: "scenario", count: 2, confidenceMin: 0.8, confidenceMax: 0.9 }] },
       { key: "later", label: "Later", presence: "none", presentCount: 0, totalCount: 3, sources: [] },
     ],
-    properties: { client: [], project: [], activity: [] },
     singleItem: null,
   };
 }

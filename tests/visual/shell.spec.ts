@@ -367,7 +367,6 @@ type MockMetadataItem = {
   title?: string | null;
   notes?: string | null;
   tags?: string | null;
-  properties?: { client: string[]; project: string[]; activity: string[] };
 };
 
 type MetadataVisualRuntime = Window & {
@@ -386,7 +385,6 @@ type MetadataVisualRuntime = Window & {
         title: { op: string; value?: string };
         notes: { op: string; value?: string };
         tags: Array<{ key: string; op: string }>;
-        properties: Record<"client" | "project" | "activity", Array<{ key: string; op: string }>>;
       };
     };
   }>;
@@ -1069,10 +1067,9 @@ async function mockTauriInvoke(
     (window as any).__copicuTestScenarios = [
       {
         id: 1,
-        name: "Cliente ACME / Proyecto Web",
+        name: "Focused writing",
         query: "tag:work kind:text",
         revision: 1,
-        properties: { client: ["ACME"], project: ["Web"], activity: ["Development"] },
         tags: ["Work"],
         createdAtUnixMs: 1,
         updatedAtUnixMs: 1,
@@ -1082,7 +1079,6 @@ async function mockTauriInvoke(
         name: "Internal review",
         query: "tag:work kind:text",
         revision: 1,
-        properties: { client: ["Internal"], project: [], activity: ["Review"] },
         tags: [],
         createdAtUnixMs: 2,
         updatedAtUnixMs: 2,
@@ -1146,21 +1142,16 @@ async function mockTauriInvoke(
           populatedCount,
         };
       };
-      const propertyDefaults = { client: ["ACME"], project: ["Web"], activity: ["Development"] };
-      const valuesFor = (field: "tags" | "client" | "project" | "activity", item: MockMetadataItem): string[] => {
-        if (field === "tags") {
-          return String(item.tags ?? "").split(/\s+/).map((value) => value.replace(/^#/, "").trim()).filter(Boolean);
-        }
-        return item.properties?.[field] ?? propertyDefaults[field];
-      };
-      const aggregateValues = (field: "tags" | "client" | "project" | "activity") => {
+      const valuesFor = (item: MockMetadataItem): string[] =>
+        String(item.tags ?? "").split(/\s+/).map((value) => value.replace(/^#/, "").trim()).filter(Boolean);
+      const aggregateValues = () => {
         const labels = new Map<string, string>();
         for (const item of selected) {
-          for (const value of valuesFor(field, item)) labels.set(value.toLocaleLowerCase(), value);
+          for (const value of valuesFor(item)) labels.set(value.toLocaleLowerCase(), value);
         }
         return [...labels].map(([key, label]) => {
           const presentCount = selected.filter((item) =>
-            valuesFor(field, item).some((value) => value.toLocaleLowerCase() === key),
+            valuesFor(item).some((value) => value.toLocaleLowerCase() === key),
           ).length;
           return {
             key,
@@ -1179,12 +1170,7 @@ async function mockTauriInvoke(
         snapshotToken: token,
         title: aggregateScalar("title"),
         notes: aggregateScalar("notes"),
-        tags: aggregateValues("tags"),
-        properties: {
-          client: aggregateValues("client"),
-          project: aggregateValues("project"),
-          activity: aggregateValues("activity"),
-        },
+        tags: aggregateValues(),
         singleItem: selected.length === 1 ? {
           contentPreview: item.text,
           contentKind: item.content_kind,
@@ -2017,7 +2003,6 @@ async function mockTauriInvoke(
               scenarioName: scenario.name,
               scenarioRevision: scenario.revision,
               query: scenario.query,
-              properties: scenario.properties,
               tags: scenario.tags,
               startedAtUnixMs: Date.now(),
             };
@@ -2072,7 +2057,6 @@ async function mockTauriInvoke(
               titleChangedCount: intent.title.op === "untouched" ? 0 : intent.itemIds.length,
               notesChangedCount: intent.notes.op === "untouched" ? 0 : intent.itemIds.length,
               tagRelationChanges: intent.tags.length,
-              propertyRelationChanges: Object.values(intent.properties).flat().length,
             };
           }
           case "open_metadata_window":
@@ -2134,7 +2118,6 @@ async function mockTauriInvoke(
               existing.notes = request.notes ?? existing.notes ?? null;
               const requestedTags = request.tags.map((tag: string) => `#${tag}`).join(" ");
               existing.tags = [existing.tags, requestedTags].filter(Boolean).join(" ") || null;
-              existing.properties = request.properties;
               existing.last_copied_at_unix_ms = Date.now();
               existing.copy_count = (existing.copy_count ?? 1) + 1;
               (window as any).__copicuTestHistoryItems = [
@@ -2163,7 +2146,6 @@ async function mockTauriInvoke(
               title: request.title ?? null,
               notes: request.notes ?? null,
               tags: request.tags.map((tag: string) => `#${tag}`).join(" ") || null,
-              properties: request.properties,
             };
             (window as any).__copicuTestHistoryItems = [nextItem, ...sourceItems];
             return { id: nextId, created: true };
@@ -3624,7 +3606,7 @@ test("saved search management stays independent from capture modes", async ({ pa
     })),
   );
   expect(scenarioSnapshot).toEqual([
-    { id: 1, name: "Cliente ACME / Proyecto Web", query: "tag:work kind:text" },
+    { id: 1, name: "Focused writing", query: "tag:work kind:text" },
     { id: 2, name: "Internal review", query: "tag:work kind:text" },
   ]);
 });
@@ -3636,23 +3618,19 @@ test("settings manages capture modes independently, then activates, switches, an
   await page.getByRole("tab", { name: /Capture modes/ }).click();
   const scenarios = page.getByTestId("scenario-settings");
   await expect(scenarios).toContainText("Capture modes are workspaces for the picker");
-  await expect(scenarios).toContainText("Cliente ACME / Proyecto Web");
+  await expect(scenarios).toContainText("Focused writing");
   const savedViewsBefore = await page.evaluate(() =>
     JSON.stringify((window as any).__copicuTestSavedHistoryViews),
   );
 
   await scenarios.getByRole("button", { name: "New capture mode" }).click();
   await expect(scenarios.getByText("All capture modes")).toBeVisible();
-  await page.getByLabel("Capture mode name").fill("Cliente ACME / QA");
+  await page.getByLabel("Capture mode name").fill("QA review");
   await page.getByLabel("Capture mode query").fill("tag:qa");
-  await scenarios.getByText("Advanced metadata").click();
-  await page.getByLabel("Capture mode client values").fill("ACME");
-  await page.getByLabel("Capture mode project values").fill("Web");
-  await page.getByLabel("Capture mode activity values").fill("QA, Review");
   await scenarios.getByRole("button", { name: "Create capture mode" }).click();
-  await expect(scenarios).toContainText("Cliente ACME / QA");
+  await expect(scenarios).toContainText("QA review");
 
-  const qaRow = scenarios.locator(".scenario-row").filter({ hasText: "Cliente ACME / QA" });
+  const qaRow = scenarios.locator(".scenario-row").filter({ hasText: "QA review" });
   await qaRow.getByRole("button", { name: "Edit" }).click();
   await expect(scenarios.locator(".scenario-list")).toHaveCount(0);
   await page.getByLabel("Capture mode query").fill("tag:qa kind:text");
@@ -3665,9 +3643,9 @@ test("settings manages capture modes independently, then activates, switches, an
   expect(await page.evaluate(() => JSON.stringify((window as any).__copicuTestSavedHistoryViews)))
     .toBe(savedViewsBefore);
 
-  const acmeRow = scenarios.locator(".scenario-row").filter({ hasText: "Cliente ACME / Proyecto Web" });
-  await acmeRow.getByRole("button", { name: "Activate" }).click();
-  await expect(scenarios.locator(".scenario-session-summary")).toContainText("Cliente ACME / Proyecto Web");
+  const writingRow = scenarios.locator(".scenario-row").filter({ hasText: "Focused writing" });
+  await writingRow.getByRole("button", { name: "Activate" }).click();
+  await expect(scenarios.locator(".scenario-session-summary")).toContainText("Focused writing");
 
   const internalRow = scenarios.locator(".scenario-row").filter({ hasText: "Internal review" });
   await internalRow.getByRole("button", { name: "Activate" }).click();
@@ -3712,8 +3690,8 @@ test("picker capture mode menu supports Alt+S, switching, and Stop at narrow wid
 
   const switchMenu = await openPickerOverflow(page);
   await switchMenu.getByRole("menuitem", { name: "Organize" }).click();
-  await page.getByRole("menuitem", { name: /Cliente ACME/ }).click();
-  await expect(page.getByTestId("scenario-session-bar")).toContainText("Cliente ACME");
+  await page.getByRole("menuitem", { name: /Focused writing/ }).click();
+  await expect(page.getByTestId("scenario-session-bar")).toContainText("Focused writing");
 
   await openPickerOverflow(page);
   await expect(page.getByRole("menu", { name: "Picker menu" })).toBeVisible();
@@ -3743,7 +3721,6 @@ test("switching to an edited capture mode applies its updated picker view", asyn
         id: 2,
         name: "Internal review",
         query: "tag:context-smoke",
-        properties: { client: ["Internal"], project: [], activity: ["Review"] },
         tags: [],
       },
     });
@@ -3753,7 +3730,7 @@ test("switching to an edited capture mode applies its updated picker view", asyn
   await search.press("Alt+s");
   const menu = page.getByRole("menu", { name: "Picker menu" });
   await menu.getByRole("menuitem", { name: "Organize" }).click();
-  await page.getByRole("menuitem", { name: /Cliente ACME/ }).click();
+  await page.getByRole("menuitem", { name: /Focused writing/ }).click();
   await expect(menu).toBeHidden();
   await expect(search).toHaveValue("tag:work kind:text");
 
@@ -3778,7 +3755,6 @@ test("picker creates and activates a capture mode from the current query", async
   const creator = page.getByRole("dialog", { name: "Create capture mode" });
   await expect(creator.getByRole("code")).toHaveText("#111");
   await expect(creator.getByRole("button", { name: "Remove tag 111" })).toBeVisible();
-  await expect(creator.getByText("Advanced metadata")).toBeVisible();
   await creator.getByLabel("New capture mode name").fill("Writing session");
   await creator.getByRole("button", { name: "Save and activate" }).click();
 
@@ -3815,11 +3791,10 @@ test("active capture mode remains visible through picker hide and reopen until S
     await (window as any).__TAURI_INTERNALS__.invoke("activate_scenario", { id: 1 });
   });
   const sessionBar = page.getByTestId("scenario-session-bar");
-  await expect(sessionBar).toContainText("Cliente ACME / Proyecto Web");
-  await expect(sessionBar).toContainText("client:ACME");
+  await expect(sessionBar).toContainText("Focused writing");
+  await expect(sessionBar).toContainText("#Work");
   await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
 
-  await page.getByRole("button", { name: "Hide" }).click();
   await page.evaluate(async () => {
     const session = await (window as any).__TAURI_INTERNALS__.invoke("get_active_scenario_session");
     await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
@@ -4366,9 +4341,6 @@ test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused ro
   }
   await expect(metadataPane).toBeVisible();
   await expect(titleInput).toBeVisible();
-  const propertiesDetails = contentEditor.locator(".metadata-properties-details");
-  await expect(propertiesDetails.locator(":scope > summary")).toContainText("Properties");
-  await expect(propertiesDetails).not.toHaveAttribute("open", "");
   await titleInput.fill("Unified editor title");
   await expect(contentEditor.getByText("Modified", { exact: true })).toBeVisible();
   await page.keyboard.press("Control+s");
@@ -6735,9 +6707,6 @@ test("metadata window exposes structured fields and stays usable at its minimum 
   await expect(title).toBeFocused();
   await expect(page.getByRole("textbox", { name: "Notes" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Add tags" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Add client" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Add project" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Add activity" })).toBeVisible();
   await expect(page.getByText("Content preview")).toBeVisible();
   await expect(page.getByText("Capture details")).toBeVisible();
 

@@ -42,7 +42,7 @@ Flow:
 
 ### Standalone Metadata Editor
 
-- Semantic metadata remains user-editable: normalized tags and the constrained `client`, `project`, and `activity` properties are shown separately from their durable provenance.
+- Semantic metadata remains user-editable: normalized tags are shown with their durable provenance.
 - Generated semantic metadata must expose its source and, where recorded, confidence. Editing the item must not silently relabel generated values as manual.
 - Saving expresses the desired semantic values. Values retained after normalization keep their existing source and confidence, so an unchanged or no-op save preserves provenance exactly.
 - Removing a semantic value deletes its active relation and records a durable suppression so capture, scenario, or enrichment flows do not silently reintroduce it.
@@ -54,7 +54,7 @@ Flow:
 
 - User-defined rule DSL.
 - Automatic AI classification.
-- Arbitrary or user-defined metadata key/value schemas beyond the constrained semantic properties.
+- Arbitrary or user-defined metadata key/value schemas.
 - Image enrichment.
 - AI enrichment.
 - Rule DSL or additional complex metadata storage.

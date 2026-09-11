@@ -82,8 +82,7 @@ Reparar thumbnails/datos historicos en masa requiere alcance propio. RPC queda f
 
 ## Limites De Interpretacion
 
-- `meta:`/`has:metadata` abarcan titulo, notas y tags por contrato; agregar
-  properties es una decision de producto, no un bug confirmado.
+- `meta:`/`has:metadata` abarcan titulo, notas y tags por contrato.
 - Los probes nativos verificaron foreign keys activas, busy timeout configurado
   y borrado sin eventos huerfanos: no aplicar un parche generico de PRAGMAs.
 - No adoptar FTS5, migrar datos ni atribuir hangs a una ruta solo por inspeccion.

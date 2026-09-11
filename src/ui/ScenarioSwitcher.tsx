@@ -10,14 +10,9 @@ import { UiButton, UiIconButton, UiTextInput, UiTooltip } from "./controls";
 
 type Draft = {
   name: string;
-  client: string;
-  project: string;
-  activity: string;
   tags: string[];
 };
 
-const splitValues = (value: string) =>
-  value.split(/[;,\n]/).map((part) => part.trim()).filter(Boolean);
 
 export function ScenarioCreator({
   availableTags,
@@ -34,9 +29,6 @@ export function ScenarioCreator({
 }) {
   const [draft, setDraft] = useState<Draft>(() => ({
     name: "",
-    client: "",
-    project: "",
-    activity: "",
     tags: positiveTagFilters(currentQuery),
   }));
 
@@ -56,11 +48,6 @@ export function ScenarioCreator({
       await onCreate({
         name: draft.name,
         query: currentQuery,
-        properties: {
-          client: splitValues(draft.client),
-          project: splitValues(draft.project),
-          activity: splitValues(draft.activity),
-        },
         tags: draft.tags,
       }, activate);
       onClose();
@@ -83,7 +70,7 @@ export function ScenarioCreator({
         <header className="scenario-switcher-header">
           <div>
             <strong>Create capture mode</strong>
-            <span>Save this search and apply optional metadata to new captures while active.</span>
+            <span>Save this search and optionally tag new captures while active.</span>
           </div>
           <UiTooltip label="Close capture mode creator">
             <UiIconButton type="button" variant="subtle" aria-label="Close capture mode creator" onClick={onClose}>
@@ -116,15 +103,6 @@ export function ScenarioCreator({
             <small>Tags from the search are added automatically so new captures appear in this mode.</small>
             <TagInput tags={draft.tags} availableTags={availableTags} ariaLabel="New capture mode tags" onChange={(tags) => setDraft({ ...draft, tags })} />
           </label>
-          <details className="scenario-create-advanced">
-            <summary>Advanced metadata</summary>
-            <p>Optional structured fields. They do not control which clips appear.</p>
-            <div className="scenario-create-properties">
-              <UiTextInput label="Client" aria-label="New capture mode client" value={draft.client} onChange={(event) => setDraft({ ...draft, client: event.currentTarget.value })} />
-              <UiTextInput label="Project" aria-label="New capture mode project" value={draft.project} onChange={(event) => setDraft({ ...draft, project: event.currentTarget.value })} />
-              <UiTextInput label="Activity" aria-label="New capture mode activity" value={draft.activity} onChange={(event) => setDraft({ ...draft, activity: event.currentTarget.value })} />
-            </div>
-          </details>
           <div className="scenario-create-actions">
             <UiButton type="button" variant="default" disabled={busy} onClick={onClose}>Cancel</UiButton>
             <UiButton type="button" variant="default" loading={busy} disabled={!draft.name.trim()} onClick={() => void submitCreate(false)}>Save capture mode</UiButton>

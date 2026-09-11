@@ -154,7 +154,7 @@ Limitaciones actuales:
 
 - no hay FTS5 todavia, se usa `LIKE` paginado contra SQLite;
 - no hay `app:` hasta capturar source process/window;
-- Tags y properties editables usan relaciones normalizadas; los strings legacy son proyecciones derivadas, no autoridad.
+- Tags editables usan relaciones normalizadas; el string legacy es una proyección derivada, no autoridad.
 - fechas se interpretan como bounds de dia UTC hasta implementar contexto local mas fino.
 
 Modos de filtro:
@@ -181,7 +181,7 @@ Navegacion por teclado:
 - Los menus WebView muestran shortcuts como keycaps compactas en tipografia mono, no como texto corrido. `Settings` siempre usa el valor configurado de `settingsShortcut`. El tray nativo conserva la convencion visual de Windows mediante accelerators del OS para abrir picker y Settings; ambos se actualizan despues de guardar Settings.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
-- `F2`: reemplaza el feed por el editor unificado del clip activo. CodeMirror edita content y `MetadataInspector` edita title, notes, tags y properties; en ancho normal se ven lado a lado ocupando todo el panel y en ventana estrecha se alternan con tabs. Las properties menos frecuentes `Client`, `Project` y `Activity` permanecen plegadas bajo `Properties`. `F2`, `Ctrl+S` y `Ctrl+Enter` guardan content + metadata atómicamente; `Escape` cancela o pide descartar si hay cambios.
+- `F2`: reemplaza el feed por el editor unificado del clip activo. CodeMirror edita content y `MetadataInspector` edita title, notes y tags; en ancho normal se ven lado a lado ocupando todo el panel y en ventana estrecha se alternan con tabs. `F2`, `Ctrl+S` y `Ctrl+Enter` guardan content + metadata atómicamente; `Escape` cancela o pide descartar si hay cambios.
 - `Shift+F2`: abre la utility standalone del mismo `MetadataInspector` para una edición focalizada metadata-only.
 - `Ctrl+Shift+C`: global app-owned; abre la utility de metadata para el item activo o el ultimo activado.
 - `Ctrl+Shift+Up` / `Ctrl+Shift+Down`: globales app-owned; activan y copian el item anterior (más viejo) o siguiente (más nuevo), con wrap en los extremos y feedback por toast. La implementación interna reemplaza la necesidad de los scripts `032`/`033` para este flujo cotidiano.
@@ -196,20 +196,20 @@ Crear item manual:
 
 - entrada first-class del picker, no hack de clipboard;
 - superficies actuales: atajo `Ctrl+N`, boton `+`, menu del picker y command palette;
-- editor con `Content` obligatorio y campos estructurados opcionales para title, notes, tags y properties `client`, `project`, `activity`; `Ctrl+Enter` crea;
+- editor con `Content` obligatorio y campos opcionales para title, notes y tags; `Ctrl+Enter` crea;
 - crear no escribe ni modifica el portapapeles;
-- dedupe por hash del texto normalizado: si ya existe, se promueve arriba y se mergean metadata, tags y properties dentro de la misma transacción;
+- dedupe por hash del texto normalizado: si ya existe, se promueve arriba y se mergean metadata y tags dentro de la misma transacción;
 - el autofocus corre sólo al abrir; escribir metadata no puede reenfocar `Content`;
 - el request frontend/backend usa tags estructurados `string[]`; Rust normaliza relaciones y deriva la cache legacy.
 
 Metadata editable:
 
-- Una sola composición `MetadataInspector` sirve a existing-single, existing-multi y create. `F2` la embebe junto a content para single y pliega `Client`, `Project` y `Activity` bajo `Properties`; batch y entradas metadata-only usan la utility standalone `metadata`.
+- Una sola composición `MetadataInspector` sirve a existing-single, existing-multi y create. `F2` la embebe junto a content para single; batch y entradas metadata-only usan la utility standalone `metadata`.
 - La selección se congela al abrir. Multi muestra title/notes agregados y conjuntos `all | some | none`; ninguna operación mixta se infiere desde placeholders: set/clear/append/replace son explícitos y staged.
 - `Ctrl+Shift+C`, `Shift+F2`, Tags, Metadata, Catalog de Inbox y `copicu.metadata.editActive()` abren la misma utility y contratos.
 - En `F2`, `Ctrl+S`/`Ctrl+Enter` envían content opcional y la intención metadata en una única transacción SQLite, con hash de content y fingerprint de metadata. Escape limpio cierra; Escape dirty exige descartar. En la utility, un payload nuevo dirty queda pending y un fingerprint stale no escribe.
-- Tags y properties muestran provenance durable; no-op conserva source/confidence, remove suprime sólo relaciones existentes y add/reintroducción es manual.
-- `clipboard_item_tags` y `clipboard_item_properties` son autoridad. Title/notes viven como escalares separados; capture context queda read-only y single-only.
+- Tags muestran provenance durable; no-op conserva source/confidence, remove suprime sólo relaciones existentes y add/reintroducción es manual.
+- `clipboard_item_tags` es la autoridad de pertenencia. Title/notes viven como escalares separados; capture context queda read-only y single-only.
 - El autocomplete es scoped al inspector, accesible como listbox y no comparte draft, ranking ni reemplazo con Search.
 - La promocion manual explicita de metadata generada y una cola rica de revision de sugerencias quedan fuera de este corte.
 

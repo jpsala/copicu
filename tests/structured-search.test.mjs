@@ -207,7 +207,7 @@ test("quoted structured values keep parity with the Rust tokenizer", () => {
 
 test("search scopes validate, expose truthful states, and replace one modifier", () => {
   assert.equal(classifyStructuredSearchDraft("in:metadata,content invoice").kind, "complete");
-  assert.equal(classifyStructuredSearchDraft("in:properties invoice").kind, "invalid");
+  assert.equal(classifyStructuredSearchDraft("in:unknown invoice").kind, "invalid");
   assert.equal(classifyStructuredSearchDraft("in:all,content invoice").kind, "invalid");
   assert.equal(classifyStructuredSearchDraft("in:metadata,").kind, "incomplete");
   assert.equal(classifyStructuredSearchDraft("in:content,,context").kind, "invalid");

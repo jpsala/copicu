@@ -320,14 +320,14 @@ Vigésimo tercer corte aplicado 2026-09-10:
 - `MetadataInspector` reemplazó los editores divergentes de tags, metadata single, batch y create con una composición selection-aware.
 - La utility `metadata` conserva registry, `CachedHidden`, prewarm y bounds; single/multi usan payload congelado, dirty/pending/stale guards y guardado transaccional.
 - Los conjuntos muestran `all | some | none`, provenance e intenciones explícitas; title/notes mixtos no se infieren desde el texto del input.
-- Create usa tags/properties estructurados y la misma normalización. El smoke Tauri aislado detectó y corrigió el drift `string[]`/`Option<String>`.
+- Create usa tags estructurados y la misma normalización. El smoke Tauri aislado detectó y corrigió el drift `string[]`/`Option<String>`.
 - Search/Find no cambió. Checks del corte: build, 7 tests reducer/text, 16 visuales focales desktop+narrow, `cargo check --tests` y 237 tests Rust pasan. El visual completo queda 303/312: ocho baselines ajenos a metadata y una falla narrow transitoria que pasa focalizada.
 
 Vigésimo cuarto corte aplicado 2026-09-10:
 
 - `F2` pasó de content-only a editar el clip completo: CodeMirror y `MetadataInspector` comparten una superficie full-picker, dirty state, cancel guard y acción `Save changes`.
-- El layout ocupa todo el panel disponible: content y metadata quedan lado a lado con ancho normal y usan tabs `Content` / `Metadata` por debajo de 720 px. Las properties infrecuentes `Client`, `Project` y `Activity` quedan plegadas bajo `Properties`; `Ctrl+F2` sigue externo y `Shift+F2` metadata-only standalone.
-- `MetadataSelectionIntent` acepta content opcional sólo para single-item. Rust valida el hash de content y el fingerprint de metadata, y aplica text, title, notes, tags y properties en una única transacción.
+- El layout ocupa todo el panel disponible: content y metadata quedan lado a lado con ancho normal y usan tabs `Content` / `Metadata` por debajo de 720 px. `Ctrl+F2` sigue externo y `Shift+F2` metadata-only standalone.
+- `MetadataSelectionIntent` acepta content opcional sólo para single-item. Rust valida el hash de content y el fingerprint de metadata, y aplica text, title, notes y tags en una única transacción.
 - Verificación del corte: `npm run build`, checks visuales F2 desktop+narrow, `cargo check --tests` y 238 tests Rust pasan. El smoke sobre la app instalada confirmó que la superficie llena el picker, mantiene el footer al borde inferior y que `Escape` limpio vuelve al feed.
 
 ## Diagnostico Inicial

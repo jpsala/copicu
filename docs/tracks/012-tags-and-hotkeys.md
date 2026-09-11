@@ -208,7 +208,7 @@ El smoke detecto que la ventana recibia foco nativo pero dejaba `document.active
 
 ### Resultado Del Rediseño Inline 2026-07-25
 
-La ventana `metadata` quedó con un solo textarea auto-grow enfocado, autocomplete contextual al escribir `#`, `Ctrl+Enter` para guardar y acciones compactas. El parser mantiene la arquitectura SQLite vigente: envía texto sin tokens a `notes`, tags normalizados a `tags` y preserva `title` sin exponerlo. Desde el corte de scenarios, `client`, `project` y `activity` siguen el mismo convenio mediante tokens inline repetibles, con comillas para valores con espacios, en vez de inputs permanentes debajo del textarea.
+La ventana `metadata` quedó con un solo textarea auto-grow enfocado, autocomplete contextual al escribir `#`, `Ctrl+Enter` para guardar y acciones compactas. El parser mantiene la arquitectura SQLite vigente: envía texto sin tokens a `notes`, tags normalizados a `tags` y preserva `title` sin exponerlo.
 
 ## Validaciones De Referencia
 

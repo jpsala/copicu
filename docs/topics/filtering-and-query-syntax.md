@@ -249,7 +249,7 @@ Los scopes son:
 
 Los scopes solo restringen terminos plain, frases y exclusiones plain. Los
 operadores estructurados como `tag:`, `kind:` o fechas conservan su semantica
-propia. Las properties `client`, `project` y `activity` siguen fuera de texto plain.
+propia.
 
 Desde la siguiente captura/recaptura de cada clip, ese campo se reconstruye
 solamente con sus 3 eventos mas recientes (`captured_at_unix_ms DESC, id DESC`).
@@ -316,11 +316,7 @@ predeterminado cuando no hay un `in:` explicito:
 
 Valores separados por coma funcionan en algunos filtros, por ejemplo `tag:ypf,sqlite`.
 
-`meta:` y `has:metadata` conservan el alcance documentado de titulo, notas y
-tags. Las properties `client`, `project` y `activity` no participan de esos
-filtros ni de texto plain. Ampliar ese alcance es una decision de producto
-pendiente, no una reparacion implicita: cambia tambien resultados negados y
-debe actualizar ayuda, planner y explicacion junto al compiler.
+`meta:` y `has:metadata` abarcan titulo, notas y tags.
 
 ## Checked / Marked Items
 

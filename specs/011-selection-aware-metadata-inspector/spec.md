@@ -29,7 +29,7 @@ Razones:
 
 Tradeoffs:
 
-- El editor `F2` necesita un layout responsive: dos paneles que ocupan toda la superficie cuando hay ancho y navegación por tabs cuando no lo hay. Las properties `client`, `project` y `activity` quedan disponibles, pero plegadas por defecto en esta variante por su baja frecuencia.
+- El editor `F2` necesita un layout responsive: dos paneles que ocupan toda la superficie cuando hay ancho y navegación por tabs cuando no lo hay.
 - El read model agregado y el control de concurrencia deben vivir en Rust/SQLite, no reconstruirse en React.
 - El intent de single-item admite contenido opcional y debe verificar su fingerprint dentro de la misma transacción que metadata.
 - La migración visual exige reemplazar la ruta content-only en una sola cutover, no coexistencia permanente.
@@ -44,7 +44,7 @@ Ventaja: entrada rápida y compacta. Problemas: `all/some/none`, provenance, sup
 
 ### Alternativa diferida: inspector universal o JSON/forms/plugins
 
-No construir un framework de schemas, JSON forms, plugins ni properties arbitrarias. Sólo existen tags y las properties acotadas `client`, `project`, `activity`, más `title` y `notes`.
+No construir un framework de schemas, JSON forms, plugins ni metadata arbitraria. El modelo editable se limita a `title`, `notes` y tags.
 
 ## Evidencia y mapa actual
 
@@ -57,7 +57,7 @@ No construir un framework de schemas, JSON forms, plugins ni properties arbitrar
 | Inbox `Catalog` | `src/main.tsx:4823-4826` `catalogItem` | Fuerza `beginEdit(..., "metadata", false)`, por lo que vuelve al overlay legacy dentro del picker. |
 | Selección `Tags` | `src/main.tsx:4612-4646` `beginTagEdit`; `src/main.tsx:7017-7024`; `src/main.tsx:7761-7776` | Multi no carga agregados: `initialTags` es `[]`; `TagEditor` muestra campos separados Add/Remove sin `all/some/none`. |
 | Selección `Metadata` | `src/main.tsx:4648-4667`, `4878-4922`, `7938-8033` | Overlay batch con Append/Replace/Smart merge global. Sólo agrega o reemplaza notes/tags, hace fetch por item y guarda uno por uno. |
-| Crear item | `src/main.tsx:4669-4680`, `4839-4876`, `7777-7867` | Parsea properties, pero `CreateHistoryItemRequest` no las transporta ni `create_text_item` las persiste. |
+| Crear item | `src/main.tsx:4669-4680`, `4839-4876`, `7777-7867` | Embebe el mismo inspector y transporta tags estructurados. |
 | Settings Tags | `src/windows/secondaryWindows.tsx:1347-1431` y flujo de configuración de tags | Configura entidad global tag: nombre, color, pin, orden, hotkey, auto-apply. No es pertenencia del clip. |
 | Scenario editors | `src/ui/ScenarioSwitcher.tsx`, `src/windows/Scenarios.tsx` | Reusan `TagInput` para el patch futuro de captura. No son selección de clips y conservan semántica add-only propia. |
 
@@ -66,19 +66,18 @@ No construir un framework de schemas, JSON forms, plugins ni properties arbitrar
 - `src/windows/secondaryWindows.tsx:771-962`, `MetadataWindowApp`, ya separa preview read-only, metadata editable, provenance generada y capture facts.
 - `loadPayload` en `src/windows/secondaryWindows.tsx:798-846` reemplaza `payload` y `metadataText` ante pending state o evento nuevo. No consulta dirty state.
 - `save` en `src/windows/secondaryWindows.tsx:852-882` usa `update_item_metadata`; es atómico para un item, pero no incluye revision/fingerprint y por eso es last-write-wins.
-- `src-tauri/src/lib.rs:1736-1793` carga item, tags, properties y capture events con cuatro lecturas separadas y construye `MetadataEditorPayload` single-item.
+- `src-tauri/src/lib.rs:1736-1793` carga item, tags y capture events y construye `MetadataEditorPayload` single-item.
 - `src-tauri/src/lib.rs:4192-4282` conserva el payload host-owned y muestra/emite hacia una ventana `metadata` cacheada.
 
 ### Persistencia
 
 - `src-tauri/src/storage/schema.rs:218-251`: `tags` y `clipboard_item_tags` modelan catálogo global y pertenencia normalizada con source/confidence.
-- `src-tauri/src/storage/schema.rs:395-419`: `clipboard_item_properties` y `clipboard_item_metadata_suppressions` ya cubren properties acotadas, provenance y suppression.
 - `src-tauri/src/storage.rs:3901-3950`: `set_item_tags_from_values` actualiza relaciones y luego sincroniza `clipboard_items.tags`.
 - `src-tauri/src/storage.rs:3970-3985`: `clipboard_items.tags` es proyección/cache legacy, no autoridad.
-- `src-tauri/src/storage.rs:2374-2416`: `update_item_metadata` guarda title, notes, tags y properties en una transacción de un item.
+- `src-tauri/src/storage.rs:2374-2416`: `update_item_metadata` guarda title, notes y tags en una transacción de un item.
 - `src-tauri/src/storage.rs:3097-3158`: `apply_item_tags` guarda varios items en una transacción global.
 - Bug concreto: en patch remove, `src-tauri/src/storage.rs:3138-3145` crea suppression antes de saber si la relación existía. Quitar un tag `some` puede suprimirlo también en clips donde nunca estuvo presente.
-- `src-tauri/src/storage.rs:1510-1658`: create/dedupe es transaccional y persiste tags, pero `CreateHistoryItemRequest` en `src-tauri/src/storage.rs:239-245` no incluye properties.
+- `src-tauri/src/storage.rs:1510-1658`: create/dedupe es transaccional y persiste tags.
 
 ### Autocomplete y listboxes
 
@@ -97,7 +96,6 @@ Conclusión: hay mecánica listbox repetida, pero no un único problema de ranki
 - `title`: escalar opcional.
 - `notes`: texto opcional.
 - `tags`: set de relaciones normalizadas.
-- `properties.client`, `properties.project`, `properties.activity`: sets de valores normalizados.
 - `tag config` (`label`, `color`, `pinned`, `sortOrder`, `hotkey`, `autoApplyEnabled`): configuración global separada.
 - `capture context`: hechos event-scoped read-only.
 - `clipboard_items.tags`: cache legacy derivada.
@@ -150,11 +148,6 @@ type MetadataSelectionSnapshot = {
   title: ScalarAggregate;
   notes: ScalarAggregate;
   tags: SetValueAggregate[];
-  properties: {
-    client: SetValueAggregate[];
-    project: SetValueAggregate[];
-    activity: SetValueAggregate[];
-  };
   singleItem: null | {
     contentPreview: string;
     contentKind: string;
@@ -166,8 +159,8 @@ type MetadataSelectionSnapshot = {
 Invariantes:
 
 1. Rust ordena y deduplica IDs; falta de cualquier item falla el read completo.
-2. Una sola adquisición de conexión produce snapshot coherente. No hacer `get_item` + `get_item_tag_entries` + `list_item_property_entries` por separado.
-3. Tags/properties se agregan desde las tablas normalizadas. Nunca parsear `clipboard_items.tags` para determinar pertenencia.
+2. Una sola adquisición de conexión produce snapshot coherente. No hacer lecturas separadas por campo.
+3. Tags se agregan desde la tabla normalizada. Nunca parsear `clipboard_items.tags` para determinar pertenencia.
 4. `snapshotToken` se deriva dentro de la misma lectura de IDs y proyección editable. Puede ser un fingerprint determinista, por lo que no exige migración de schema.
 5. Capture facts sólo se incluyen en single mode. No agregar ni resumir payload sensible de múltiples clips.
 6. Limitar cantidad de IDs según una constante explícita y devolver error útil si se excede.
@@ -203,11 +196,6 @@ type MetadataSelectionIntent = {
   title: ScalarIntent;
   notes: NotesIntent;
   tags: SetValueIntent[];
-  properties: {
-    client: SetValueIntent[];
-    project: SetValueIntent[];
-    activity: SetValueIntent[];
-  };
 };
 ```
 
@@ -219,10 +207,9 @@ Semántica:
 - `title set/clear`: aplica el mismo valor a todos sólo tras intención explícita. No existe append ni merge.
 - `notes replaceAll/clearAll`: operación destructiva explícita.
 - `notes appendToEach`: agrega el bloque a cada nota conservando orden y usando una regla única de separación. No existe `smart merge`, porque deduplicar líneas cambia significado y orden.
-- Properties usan la misma semántica set que tags. La key sigue cerrada a `client | project | activity`.
 - La respuesta devuelve conteos reales y un nuevo snapshot, no un booleano ambiguo.
 
-`content` sólo es válido para una selección de un item. Su ausencia mantiene la semántica metadata-only. Si está presente, `expectedHash` protege el contenido contra cambios concurrentes y el texto se actualiza dentro de la misma transacción que title, notes, tags y properties.
+`content` sólo es válido para una selección de un item. Su ausencia mantiene la semántica metadata-only. Si está presente, `expectedHash` protege el contenido contra cambios concurrentes y el texto se actualiza dentro de la misma transacción que title, notes y tags.
 
 Toda validación, conflicto y escritura ocurre dentro de una única transacción SQLite:
 
@@ -260,9 +247,8 @@ Ventana `metadata`, variante `utility`, tamaño compacto pero redimensionable. C
 3. Title.
 4. Notes.
 5. Tags.
-6. Properties: Client, Project, Activity.
-7. Single only: provenance detallada y `Capture details` colapsable.
-8. Sticky footer: change summary, Cancel, `Save changes`.
+6. Single only: provenance detallada y `Capture details` colapsable.
+7. Sticky footer: change summary, Cancel, `Save changes`.
 
 No usar cards anidadas. Separar secciones con spacing, labels y divisores discretos. Mantener tokens de tema, foco visible y densidad actual.
 
@@ -270,7 +256,7 @@ No usar cards anidadas. Separar secciones con spacing, labels y divisores discre
 
 - Title: text input normal.
 - Notes: textarea normal, sin tokens embebidos.
-- Tags y properties: editable token combobox. Los chips muestran color/config existente y provenance.
+- Tags: editable token combobox. Los chips muestran color/config existente y provenance.
 - Quitar chip staged marca `remove`; Undo local restaura `untouched`.
 - Agregar valor nuevo staged marca `add`.
 - Preview/capture context siguen read-only.
@@ -339,7 +325,7 @@ El header muestra `Editing 12 selected clips` y puede ofrecer `Reload current se
 
 Reusar y concentrar:
 
-- normalización de tags/properties;
+- normalización de tags;
 - lectura agregada coherente;
 - fingerprint/snapshot token;
 - intent applier transaccional;
@@ -378,7 +364,6 @@ Crear una primitiva tipada y acotada, nombre propuesto `EditableTokenCombobox<T>
 Los adapters de dominio poseen ranking y reemplazo:
 
 - tags: exact > prefix > contains, pinned, itemCount, label;
-- property values: exact > prefix > contains, frecuencia, label;
 - search: queda intacto en `src/shared/search.ts` y `src/main.tsx`;
 - Command Palette/Action Picker: quedan intactos hasta que un segundo consumidor real justifique extraer sólo la mecánica.
 
@@ -401,7 +386,7 @@ No crear un renderer universal de fields ni schema-driven forms.
 - `Shift+F2`, `Metadata`, shortcut global y `metadata.editActive`: abren la utility `metadata` con `focusTarget: "overview"`.
 - `Tags` en selection bar/item menu: abre `metadata` con los IDs congelados y `focusTarget: "tags"`.
 - `Catalog Inbox item`: abre la misma superficie y conserva el efecto actual de quitar Inbox sólo después de save exitoso.
-- `Create`: mantiene Content como campo separado y embebe `MetadataInspector` en modo create. El request final incluye title, notes, tags y properties estructuradas.
+- `Create`: mantiene Content como campo separado y embebe `MetadataInspector` en modo create. El request final incluye title, notes y tags.
 - Futuro `history-manager`: monta `MetadataInspector` como panel para su selección estable, usando los mismos comandos.
 - Tag manager futuro/Settings: edita nombre, color, pin, orden, hotkey y auto-apply globales. El inspector sólo muestra ese color/config y ofrece navegación `Manage tag`, no los modifica inline.
 
@@ -413,13 +398,13 @@ No crear un renderer universal de fields ni schema-driven forms.
 2. Implementar read agregado con una sola conexión y fingerprint sin migración.
 3. Implementar intent applier con una sola transacción global.
 4. Corregir suppression parcial: sólo suprimir tras confirmar relación presente.
-5. Extender create para properties estructuradas dentro de su transacción actual.
+5. Alinear create con el contrato de tags estructurados.
 
 ### Corte B: inspector standalone
 
 1. Extraer `MetadataWindowApp` a su propio archivo/chunk si el corte lo justifica por tamaño, sin cambiar label/lifecycle.
 2. Agregar reducer/controller y `EditableTokenCombobox`.
-3. Reemplazar textarea-token por campos Title, Notes, Tags y Properties.
+3. Reemplazar textarea-token por campos Title, Notes y Tags.
 4. Implementar single/multi, dirty guard, pending payload y conflict UI.
 5. Conservar provenance y capture details single-item.
 
@@ -434,8 +419,7 @@ No crear un renderer universal de fields ni schema-driven forms.
 ### Corte D: create
 
 1. Reusar los fields del inspector dentro de Create, manteniendo Content separado.
-2. Cambiar `CreateHistoryItemRequest` a tags/properties estructurados.
-3. Eliminar parseo de properties que hoy se descarta.
+2. Cambiar `CreateHistoryItemRequest` a tags estructurados.
 
 No modificar Find/search, feed virtualizado ni tag global manager en estos cortes.
 
@@ -460,7 +444,7 @@ No modificar Find/search, feed virtualizado ni tag global manager en estos corte
 2. `F2` muestra content y metadata en una única interfaz responsive y guarda ambos con una sola acción.
 3. `Ctrl+F2` conserva el editor externo y `Shift+F2` conserva la utility metadata-only.
 4. La selección queda congelada y visible; cambios del picker no retargetean el draft.
-5. Tags/properties muestran `all/some/none` con conteos y estado accesible.
+5. Tags muestra `all/some/none` con conteos y estado accesible.
 6. Cada valor set soporta `untouched/add/remove`; unchanged preserva provenance y confidence.
 7. Remove parcial no crea suppressions en items donde el valor estaba ausente.
 8. Notes mixed requiere una operación explícita; no existe Smart merge.
@@ -470,8 +454,8 @@ No modificar Find/search, feed virtualizado ni tag global manager en estos corte
 12. Un save con snapshot de metadata o hash de content stale falla sin writes y ofrece reload.
 13. Batch read no hace N+1 y batch write usa una única transacción global.
 14. Content y metadata staged por `F2` se guardan all-or-nothing en esa misma transacción.
-15. Create persiste properties estructuradas además de title, notes y tags.
-16. `clipboard_item_tags` y `clipboard_item_properties` siguen siendo autoridad; cache legacy sólo se deriva.
+15. Create persiste title, notes y tags.
+16. `clipboard_item_tags` sigue siendo autoridad; la cache legacy sólo se deriva.
 17. Tag color/nombre/pin permanecen configuración global separada.
 18. Search conserva ranking, navegación, replacement y sensación observables.
 19. La cutover elimina la ruta F2 content-only sin aliases o shims permanentes.
@@ -480,7 +464,7 @@ No modificar Find/search, feed virtualizado ni tag global manager en estos corte
 
 Backend:
 
-- tests Rust focales de read agregado, fingerprint conflict, transacción all-or-nothing, provenance no-op, add sobre presente, add sobre ausente, remove all, remove some sin suppression en absent, properties y create/dedupe con properties;
+- tests Rust focales de read agregado, fingerprint conflict, transacción all-or-nothing, provenance no-op, add sobre presente, add sobre ausente, remove all, remove some sin suppression en absent y create/dedupe con tags;
 - `cargo check --tests`;
 - suite canónica `npm run rust:test`.
 
@@ -515,6 +499,6 @@ Extensión `F2` unificada verificada el 2026-09-10:
 - `npm run build` y `cargo check --tests`: pasan;
 - `npm run rust:test`: 238 tests pasan, incluidos commit content+metadata y rollback por conflicto/falla.
 
-El smoke Tauri aislado encontró y corrigió una incompatibilidad real `tags: string[]`/`Option<String>` en create. El contrato final usa `Vec<String>`, persiste tags/properties dentro de la misma transacción y conserva el string legacy sólo como proyección derivada.
+El smoke Tauri aislado encontró y corrigió una incompatibilidad real `tags: string[]`/`Option<String>` en create. El contrato final usa `Vec<String>`, persiste tags dentro de la misma transacción y conserva el string legacy sólo como proyección derivada.
 
 Smoke post-release instalado: `Copicu 0.4.14` quedó activo desde `%LOCALAPPDATA%\Copicu\copicu.exe`; el picker real abrió con el shortcut configurado y `Shift+F2` abrió la utility `Copicu Metadata` sobre el clip activo. `Escape` cerró el inspector limpio sin persistir cambios y el proceso permaneció activo en tray.

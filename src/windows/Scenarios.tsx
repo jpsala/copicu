@@ -16,46 +16,24 @@ import { UiBadge, UiButton, UiTextInput } from "../ui/controls";
 type ScenarioDraft = {
   name: string;
   query: string;
-  client: string;
-  project: string;
-  activity: string;
   tags: string[];
 };
 
 const emptyDraft = (): ScenarioDraft => ({
   name: "",
   query: "",
-  client: "",
-  project: "",
-  activity: "",
   tags: [],
 });
 
-const splitValues = (value: string) =>
-  value.split(/[;,\n]/).map((part) => part.trim()).filter(Boolean);
-
-const joinValues = (values: string[]) => values.join(", ");
 
 function requestFromDraft(draft: ScenarioDraft): CreateScenarioFromQueryRequest {
   return {
     name: draft.name,
     query: draft.query,
-    properties: {
-      client: splitValues(draft.client),
-      project: splitValues(draft.project),
-      activity: splitValues(draft.activity),
-    },
     tags: draft.tags,
   };
 }
 
-function advancedLabels(scenario: Scenario) {
-  return [
-    ...scenario.properties.client.map((value) => `Client: ${value}`),
-    ...scenario.properties.project.map((value) => `Project: ${value}`),
-    ...scenario.properties.activity.map((value) => `Activity: ${value}`),
-  ];
-}
 
 export function Scenarios({
   scenarios,
@@ -99,9 +77,6 @@ export function Scenarios({
     setDraft({
       name: scenario.name,
       query: scenario.query,
-      client: joinValues(scenario.properties.client),
-      project: joinValues(scenario.properties.project),
-      activity: joinValues(scenario.properties.activity),
       tags: scenario.tags,
     });
     setEditingId(scenario.id);
@@ -129,7 +104,7 @@ export function Scenarios({
           </UiButton>
           <div>
             <strong>{editingId === null ? "Create capture mode" : "Edit capture mode"}</strong>
-            <span>A capture mode remembers a picker filter and optional labels for new clips.</span>
+            <span>A capture mode remembers a picker filter and optional tags for new clips.</span>
           </div>
         </header>
 
@@ -165,16 +140,6 @@ export function Scenarios({
             <TagInput tags={draft.tags} availableTags={availableTags} ariaLabel="Capture mode tags" onChange={(tags) => setDraft({ ...draft, tags })} />
           </label>
 
-          <details className="scenario-advanced">
-            <summary>Advanced metadata</summary>
-            <p>Use these only if you want structured fields in addition to tags. They do not control which clips appear.</p>
-            <div className="scenario-property-grid">
-              <UiTextInput label="Client" description="Who the work is for, such as ACME." aria-label="Capture mode client values" value={draft.client} placeholder="ACME" onChange={(event) => setDraft({ ...draft, client: event.currentTarget.value })} />
-              <UiTextInput label="Project" description="The product or workstream, such as Website." aria-label="Capture mode project values" value={draft.project} placeholder="Website" onChange={(event) => setDraft({ ...draft, project: event.currentTarget.value })} />
-              <UiTextInput label="Activity" description="The kind of work, such as Review." aria-label="Capture mode activity values" value={draft.activity} placeholder="Development" onChange={(event) => setDraft({ ...draft, activity: event.currentTarget.value })} />
-            </div>
-            <small>Separate multiple values with commas.</small>
-          </details>
 
           <div className="scenario-form-actions">
             <UiButton type="button" variant="filled" loading={busy} disabled={!draft.name.trim()} onClick={() => void save()}>
@@ -216,7 +181,6 @@ export function Scenarios({
       <div className="scenario-list">
         {scenarios.map((scenario) => {
           const active = activeSession?.scenarioId === scenario.id;
-          const advanced = advancedLabels(scenario);
           return (
             <article key={scenario.id} className={`scenario-row${active ? " is-active" : ""}`}>
               <div className="scenario-row-main">
@@ -232,7 +196,6 @@ export function Scenarios({
                   {scenario.tags.length > 0
                     ? scenario.tags.map((tag) => <span key={tag}>#{tag}</span>)
                     : <small>No automatic tags</small>}
-                  {advanced.map((label) => <span key={label} className="is-advanced">{label}</span>)}
                 </div>
               </div>
               <div className="scenario-row-actions">

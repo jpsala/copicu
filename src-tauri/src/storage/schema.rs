@@ -466,5 +466,46 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
         ON clipboard_items(is_inbox DESC, inbox_at_unix_ms DESC);
     "#,
     ),
+    M::up(
+        r#"
+    CREATE TABLE scenarios_without_properties (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        query TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        created_at_unix_ms INTEGER NOT NULL,
+        updated_at_unix_ms INTEGER NOT NULL
+    );
+
+    INSERT INTO scenarios_without_properties (
+        id, name, query, revision, tags_json, created_at_unix_ms, updated_at_unix_ms
+    )
+    SELECT id, name, query, revision, tags_json, created_at_unix_ms, updated_at_unix_ms
+    FROM scenarios;
+
+    DROP TABLE scenarios;
+    ALTER TABLE scenarios_without_properties RENAME TO scenarios;
+
+    CREATE TABLE clipboard_item_tag_suppressions (
+        item_id INTEGER NOT NULL,
+        value TEXT NOT NULL,
+        normalized_value TEXT NOT NULL,
+        created_at_unix_ms INTEGER NOT NULL,
+        PRIMARY KEY (item_id, normalized_value),
+        FOREIGN KEY (item_id) REFERENCES clipboard_items(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO clipboard_item_tag_suppressions (
+        item_id, value, normalized_value, created_at_unix_ms
+    )
+    SELECT item_id, value, normalized_value, created_at_unix_ms
+    FROM clipboard_item_metadata_suppressions
+    WHERE metadata_kind = 'tag';
+
+    DROP TABLE clipboard_item_metadata_suppressions;
+    DROP TABLE clipboard_item_properties;
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

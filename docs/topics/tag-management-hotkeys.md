@@ -143,8 +143,8 @@ Reglas:
 
 Contratos implementados y protegidos por regresiones sinteticas:
 
-- Editar contenido no modifica notas, tags, properties, provenance ni
-  suppressions; tampoco puede sobrescribir una edicion concurrente de metadata.
+- Editar contenido no modifica notas, tags, provenance ni suppressions; tampoco
+  puede sobrescribir una edicion concurrente de metadata.
 - Full/inline usan `update_history_item_text` y SQL parcial, no reconstruyen
   relaciones desde el cache. Enrichment revalida el hash en su transaccion para
   no aplicar resultados de una version anterior.

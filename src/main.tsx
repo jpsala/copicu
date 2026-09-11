@@ -415,7 +415,6 @@ type CreateItemDraft = {
   title: string | null;
   notes: string | null;
   tags: string[];
-  properties: { client: string[]; project: string[]; activity: string[] };
 };
 
 const CREATE_METADATA_PAYLOAD = {
@@ -4628,7 +4627,6 @@ function App() {
       title: null,
       notes: null,
       tags: [],
-      properties: { client: [], project: [], activity: [] },
     });
     window.setTimeout(() => editTextRef.current?.focus(), 0);
   }, []);
@@ -4794,11 +4792,6 @@ function App() {
           ? nullableTrim(intent.notes.value)
           : null,
         tags: intent.tags.filter((entry) => entry.op === "add").map((entry) => entry.key),
-        properties: {
-          client: intent.properties.client.filter((entry) => entry.op === "add").map((entry) => entry.key),
-          project: intent.properties.project.filter((entry) => entry.op === "add").map((entry) => entry.key),
-          activity: intent.properties.activity.filter((entry) => entry.op === "add").map((entry) => entry.key),
-        },
       };
     });
   }, []);
@@ -4810,7 +4803,6 @@ function App() {
       title: createItemDraft.title,
       notes: createItemDraft.notes,
       tags: createItemDraft.tags,
-      properties: createItemDraft.properties,
       mimePrimary: "text/plain",
     };
     try {
@@ -6743,14 +6735,11 @@ function App() {
             <div className="scenario-session-copy">
               <strong>Capture mode active</strong>
               <span>{activeScenarioSession.scenarioName}</span>
-              <span className="scenario-session-metadata">
-                {[
-                  ...activeScenarioSession.properties.client.map((value) => `client:${value}`),
-                  ...activeScenarioSession.properties.project.map((value) => `project:${value}`),
-                  ...activeScenarioSession.properties.activity.map((value) => `activity:${value}`),
-                  ...activeScenarioSession.tags.map((tag) => `#${tag}`),
-                ].join(" · ")}
-              </span>
+              {activeScenarioSession.tags.length > 0 ? (
+                <span className="scenario-session-metadata">
+                  {activeScenarioSession.tags.map((tag) => `#${tag}`).join(" · ")}
+                </span>
+              ) : null}
             </div>
             <UiButton
               type="button"

@@ -33,7 +33,6 @@ impl ActiveScenarioState {
             scenario_name: scenario.name,
             scenario_revision: scenario.revision,
             query: scenario.query,
-            properties: scenario.properties,
             tags: scenario.tags,
             started_at_unix_ms,
         };
@@ -62,7 +61,6 @@ fn now_unix_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::ScenarioProperties;
 
     fn scenario(id: i64, name: &str) -> Scenario {
         Scenario {
@@ -70,7 +68,6 @@ mod tests {
             name: name.to_string(),
             query: format!("tag:{id}"),
             revision: 1,
-            properties: ScenarioProperties::default(),
             tags: Vec::new(),
             created_at_unix_ms: 1,
             updated_at_unix_ms: 1,

@@ -233,8 +233,6 @@ pub struct UpdateItemMetadataRequest {
     pub title: Option<String>,
     pub notes: Option<String>,
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub properties: ScenarioProperties,
 }
 
 #[derive(Deserialize)]
@@ -245,8 +243,6 @@ pub struct CreateHistoryItemRequest {
     pub notes: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub properties: ScenarioProperties,
     pub mime_primary: Option<String>,
 }
 
@@ -305,14 +301,6 @@ pub struct MetadataTagEntry {
     pub value: String,
     pub source: String,
     pub confidence: Option<f64>,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct MetadataPropertyEntry {
-    pub key: String,
-    pub value: String,
-    pub source: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -375,14 +363,6 @@ pub struct SetValueAggregate {
     pub tag_config: Option<MetadataTagConfig>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct MetadataPropertyAggregates {
-    pub client: Vec<SetValueAggregate>,
-    pub project: Vec<SetValueAggregate>,
-    pub activity: Vec<SetValueAggregate>,
-}
-
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataSingleItem {
@@ -400,7 +380,6 @@ pub struct MetadataSelectionSnapshot {
     pub title: ScalarAggregate,
     pub notes: ScalarAggregate,
     pub tags: Vec<SetValueAggregate>,
-    pub properties: MetadataPropertyAggregates,
     pub single_item: Option<MetadataSingleItem>,
 }
 
@@ -436,17 +415,6 @@ pub enum SetValueIntentOp {
     Remove,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MetadataPropertyIntents {
-    #[serde(default)]
-    pub client: Vec<SetValueIntent>,
-    #[serde(default)]
-    pub project: Vec<SetValueIntent>,
-    #[serde(default)]
-    pub activity: Vec<SetValueIntent>,
-}
-
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataContentIntent {
@@ -465,8 +433,6 @@ pub struct MetadataSelectionIntent {
     pub notes: NotesIntent,
     #[serde(default)]
     pub tags: Vec<SetValueIntent>,
-    #[serde(default)]
-    pub properties: MetadataPropertyIntents,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -478,7 +444,6 @@ pub struct MetadataSelectionApplyResult {
     pub title_changed_count: usize,
     pub notes_changed_count: usize,
     pub tag_relation_changes: usize,
-    pub property_relation_changes: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -814,17 +779,6 @@ pub struct UpdateSavedHistoryViewRequest {
     pub capture_tags: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ScenarioProperties {
-    #[serde(default)]
-    pub client: Vec<String>,
-    #[serde(default)]
-    pub project: Vec<String>,
-    #[serde(default)]
-    pub activity: Vec<String>,
-}
-
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Scenario {
@@ -832,7 +786,6 @@ pub struct Scenario {
     pub name: String,
     pub query: String,
     pub revision: i64,
-    pub properties: ScenarioProperties,
     pub tags: Vec<String>,
     pub created_at_unix_ms: i64,
     pub updated_at_unix_ms: i64,
@@ -843,8 +796,6 @@ pub struct Scenario {
 pub struct CreateScenarioRequest {
     pub name: String,
     pub query: String,
-    #[serde(default)]
-    pub properties: ScenarioProperties,
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -857,8 +808,6 @@ pub struct UpdateScenarioRequest {
     pub id: i64,
     pub name: String,
     pub query: String,
-    #[serde(default)]
-    pub properties: ScenarioProperties,
     #[serde(default)]
     pub tags: Vec<String>,
 }
@@ -873,7 +822,6 @@ pub struct ActiveScenarioSession {
     pub scenario_name: String,
     pub scenario_revision: i64,
     pub query: String,
-    pub properties: ScenarioProperties,
     pub tags: Vec<String>,
     pub started_at_unix_ms: i64,
 }
@@ -1698,7 +1646,6 @@ impl AppStorage {
                 .collect::<Vec<_>>()
                 .join("\n")
         });
-        let normalized_properties = normalize_scenario_properties(&request.properties)?;
         let mime_primary = normalize_optional_text(request.mime_primary)
             .or_else(|| Some("text/plain".to_string()));
         let normalized_hash = hash_text(&text);
@@ -1743,15 +1690,6 @@ impl AppStorage {
                 let next_notes = append_optional_notes(existing_notes, notes);
                 for (slug, label) in &normalized_tags {
                     add_item_tag_relation(&conn, existing_id, slug, label, "manual", None)?;
-                }
-                for value in &normalized_properties.client {
-                    add_item_property(&conn, existing_id, "client", value, "manual")?;
-                }
-                for value in &normalized_properties.project {
-                    add_item_property(&conn, existing_id, "project", value, "manual")?;
-                }
-                for value in &normalized_properties.activity {
-                    add_item_property(&conn, existing_id, "activity", value, "manual")?;
                 }
                 let next_mime = mime_primary.or(existing_mime);
                 let event_mime = next_mime.clone();
@@ -1817,15 +1755,6 @@ impl AppStorage {
                 let item_id = conn.last_insert_rowid();
                 for (slug, label) in &normalized_tags {
                     add_item_tag_relation(&conn, item_id, slug, label, "manual", None)?;
-                }
-                for value in &normalized_properties.client {
-                    add_item_property(&conn, item_id, "client", value, "manual")?;
-                }
-                for value in &normalized_properties.project {
-                    add_item_property(&conn, item_id, "project", value, "manual")?;
-                }
-                for value in &normalized_properties.activity {
-                    add_item_property(&conn, item_id, "activity", value, "manual")?;
                 }
                 sync_legacy_tags_for_item(&conn, item_id)?;
                 record_capture_event(
@@ -2588,24 +2517,6 @@ impl AppStorage {
             )
             .map_err(|error| format!("failed to update clipboard item metadata: {error}"))?;
         set_item_tags_from_values(&transaction, request.id, &request.tags)?;
-        replace_item_property_values(
-            &transaction,
-            request.id,
-            "client",
-            &request.properties.client,
-        )?;
-        replace_item_property_values(
-            &transaction,
-            request.id,
-            "project",
-            &request.properties.project,
-        )?;
-        replace_item_property_values(
-            &transaction,
-            request.id,
-            "activity",
-            &request.properties.activity,
-        )?;
         transaction
             .commit()
             .map_err(|error| format!("failed to commit metadata update: {error}"))?;
@@ -2649,7 +2560,6 @@ impl AppStorage {
         let mut title_changed_count = 0;
         let mut notes_changed_count = 0;
         let mut tag_relation_changes = 0;
-        let mut property_relation_changes = 0;
 
         if let Some(content) = &intent.content {
             if item_ids.len() != 1 {
@@ -2766,14 +2676,7 @@ impl AppStorage {
                         }
                     }
                     (SetValueIntentOp::Remove, Some(existing_label)) => {
-                        suppress_metadata_value(
-                            &transaction,
-                            *item_id,
-                            "tag",
-                            "",
-                            &existing_label,
-                            &slug,
-                        )?;
+                        suppress_tag(&transaction, *item_id, &existing_label, &slug)?;
                         let tag_id = tag_id_by_slug(&transaction, &slug)?;
                         transaction
                             .execute(
@@ -2788,68 +2691,6 @@ impl AppStorage {
                         tag_changed_items.insert(*item_id);
                     }
                     _ => {}
-                }
-            }
-        }
-
-        for (property_key, intents) in [
-            ("client", &intent.properties.client),
-            ("project", &intent.properties.project),
-            ("activity", &intent.properties.activity),
-        ] {
-            for (value, normalized_value, op) in normalize_property_intents(intents)? {
-                if op == SetValueIntentOp::Untouched {
-                    continue;
-                }
-                for item_id in &item_ids {
-                    let existing = transaction
-                        .query_row(
-                            "SELECT value FROM clipboard_item_properties
-                             WHERE item_id = ?1 AND property_key = ?2 AND normalized_value = ?3",
-                            params![item_id, property_key, normalized_value],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .optional()
-                        .map_err(|error| {
-                            format!("failed to inspect selection property: {error}")
-                        })?;
-                    match (op, existing) {
-                        (SetValueIntentOp::Add, None) => {
-                            if add_item_property(
-                                &transaction,
-                                *item_id,
-                                property_key,
-                                &value,
-                                "manual",
-                            )? {
-                                property_relation_changes += 1;
-                                changed_items.insert(*item_id);
-                            }
-                        }
-                        (SetValueIntentOp::Remove, Some(existing_value)) => {
-                            suppress_metadata_value(
-                                &transaction,
-                                *item_id,
-                                "property",
-                                property_key,
-                                &existing_value,
-                                &normalized_value,
-                            )?;
-                            transaction
-                                .execute(
-                                    "DELETE FROM clipboard_item_properties
-                                     WHERE item_id = ?1 AND property_key = ?2
-                                       AND normalized_value = ?3",
-                                    params![item_id, property_key, normalized_value],
-                                )
-                                .map_err(|error| {
-                                    format!("failed to remove selection property relation: {error}")
-                                })?;
-                            property_relation_changes += 1;
-                            changed_items.insert(*item_id);
-                        }
-                        _ => {}
-                    }
                 }
             }
         }
@@ -2871,29 +2712,7 @@ impl AppStorage {
             title_changed_count,
             notes_changed_count,
             tag_relation_changes,
-            property_relation_changes,
         })
-    }
-
-    pub fn list_item_properties(&self, item_id: i64) -> Result<ScenarioProperties, String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        ensure_item_exists(&conn, item_id)?;
-        scenario_properties_for_item(&conn, item_id)
-    }
-
-    pub fn list_item_property_entries(
-        &self,
-        item_id: i64,
-    ) -> Result<Vec<MetadataPropertyEntry>, String> {
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
-        ensure_item_exists(&conn, item_id)?;
-        item_property_entries(&conn, item_id)
     }
 
     pub fn delete_item(&self, id: i64) -> Result<(), String> {
@@ -3156,8 +2975,7 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         let mut statement = conn
             .prepare(
-                "SELECT id, name, query, revision, client_values_json, project_values_json,
-                        activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+                "SELECT id, name, query, revision, tags_json, created_at_unix_ms, updated_at_unix_ms
                  FROM scenarios
                  ORDER BY name COLLATE NOCASE ASC, id ASC",
             )
@@ -3175,8 +2993,7 @@ impl AppStorage {
             .lock()
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         conn.query_row(
-            "SELECT id, name, query, revision, client_values_json, project_values_json,
-                    activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
+            "SELECT id, name, query, revision, tags_json, created_at_unix_ms, updated_at_unix_ms
              FROM scenarios
              WHERE id = ?1",
             params![id],
@@ -3188,7 +3005,6 @@ impl AppStorage {
     pub fn create_scenario(&self, request: CreateScenarioRequest) -> Result<Scenario, String> {
         let name = validate_scenario_name(&request.name)?;
         validate_scenario_query(&request.query)?;
-        let properties = normalize_scenario_properties(&request.properties)?;
         let tags = normalize_tag_values(&request.tags)?
             .into_iter()
             .map(|(_, label)| label)
@@ -3200,18 +3016,9 @@ impl AppStorage {
             .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         conn.execute(
             "INSERT INTO scenarios (
-                name, query, revision, client_values_json, project_values_json,
-                activity_values_json, tags_json, created_at_unix_ms, updated_at_unix_ms
-             ) VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, ?7)",
-            params![
-                name,
-                request.query.trim(),
-                encode_values(&properties.client)?,
-                encode_values(&properties.project)?,
-                encode_values(&properties.activity)?,
-                encode_values(&tags)?,
-                now,
-            ],
+                name, query, revision, tags_json, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, 1, ?3, ?4, ?4)",
+            params![name, request.query.trim(), encode_values(&tags)?, now,],
         )
         .map_err(|error| format!("failed to create scenario: {error}"))?;
         let id = conn.last_insert_rowid();
@@ -3236,7 +3043,6 @@ impl AppStorage {
     pub fn update_scenario(&self, request: UpdateScenarioRequest) -> Result<Scenario, String> {
         let name = validate_scenario_name(&request.name)?;
         validate_scenario_query(&request.query)?;
-        let properties = normalize_scenario_properties(&request.properties)?;
         let tags = normalize_tag_values(&request.tags)?
             .into_iter()
             .map(|(_, label)| label)
@@ -3251,18 +3057,12 @@ impl AppStorage {
                  SET name = ?1,
                      query = ?2,
                      revision = revision + 1,
-                     client_values_json = ?3,
-                     project_values_json = ?4,
-                     activity_values_json = ?5,
-                     tags_json = ?6,
-                     updated_at_unix_ms = ?7
-                 WHERE id = ?8",
+                     tags_json = ?3,
+                     updated_at_unix_ms = ?4
+                 WHERE id = ?5",
                 params![
                     name,
                     request.query.trim(),
-                    encode_values(&properties.client)?,
-                    encode_values(&properties.project)?,
-                    encode_values(&properties.activity)?,
                     encode_values(&tags)?,
                     now_unix_ms(),
                     request.id,
@@ -3595,7 +3395,7 @@ impl AppStorage {
                 }
                 ApplyItemTagsMode::Patch => {
                     for (slug, label) in &normalized_remove_tags {
-                        suppress_metadata_value(&tx, item_id, "tag", "", label, slug)?;
+                        suppress_tag(&tx, item_id, label, slug)?;
                         tx.execute(
                             "DELETE FROM clipboard_item_tags
                              WHERE item_id = ?1 AND tag_id = (SELECT id FROM tags WHERE slug = ?2)",
@@ -3945,7 +3745,6 @@ struct MetadataFingerprintProjection<'a> {
     item_ids: &'a [i64],
     scalars: &'a [(i64, Option<String>, Option<String>)],
     tags: &'a [(i64, String, String, Option<String>)],
-    properties: &'a [(i64, String, String, String, String)],
 }
 
 #[derive(Default)]
@@ -3989,28 +3788,6 @@ fn normalize_tag_intents(
             return Err(format!("duplicate metadata tag intent: {slug}"));
         }
         normalized.push((slug, label, intent.op));
-    }
-    Ok(normalized)
-}
-
-fn normalize_property_intents(
-    intents: &[SetValueIntent],
-) -> Result<Vec<(String, String, SetValueIntentOp)>, String> {
-    let mut normalized = Vec::with_capacity(intents.len());
-    let mut seen = BTreeSet::new();
-    for intent in intents {
-        let values = normalize_metadata_values(std::slice::from_ref(&intent.key))?;
-        let value = values
-            .into_iter()
-            .next()
-            .ok_or_else(|| "metadata property intent key cannot be empty".to_string())?;
-        let normalized_value = normalized_metadata_value(&value);
-        if !seen.insert(normalized_value.clone()) {
-            return Err(format!(
-                "duplicate metadata property intent: {normalized_value}"
-            ));
-        }
-        normalized.push((value, normalized_value, intent.op));
     }
     Ok(normalized)
 }
@@ -4205,84 +3982,6 @@ fn metadata_selection_snapshot_from_conn(
         );
     }
 
-    let mut property_builders: BTreeMap<String, BTreeMap<String, SetAggregateBuilder>> =
-        BTreeMap::new();
-    let mut property_projection = Vec::new();
-    let property_sql = format!(
-        "SELECT item_id, property_key, normalized_value, value, source
-         FROM clipboard_item_properties
-         WHERE item_id IN ({placeholders})
-           AND property_key IN ('client', 'project', 'activity')
-         ORDER BY item_id ASC, property_key ASC, normalized_value ASC"
-    );
-    let mut properties = conn
-        .prepare(&property_sql)
-        .map_err(|error| format!("failed to prepare metadata selection properties: {error}"))?;
-    let property_rows = properties
-        .query_map(params_from_iter(item_ids.iter()), |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .map_err(|error| format!("failed to query metadata selection properties: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read metadata selection property: {error}"))?;
-    for (item_id, property_key, normalized_value, value, source) in property_rows {
-        property_projection.push((
-            item_id,
-            property_key.clone(),
-            normalized_value.clone(),
-            value.clone(),
-            source.clone(),
-        ));
-        record_set_aggregate(
-            property_builders.entry(property_key).or_default(),
-            normalized_value,
-            value,
-            item_id,
-            source,
-            None,
-            None,
-        );
-    }
-
-    let mut property_catalog = conn
-        .prepare(
-            "SELECT property_key, normalized_value, MIN(value)
-             FROM clipboard_item_properties
-             WHERE property_key IN ('client', 'project', 'activity')
-             GROUP BY property_key, normalized_value
-             ORDER BY property_key ASC, normalized_value ASC",
-        )
-        .map_err(|error| format!("failed to prepare metadata property catalog: {error}"))?;
-    let property_catalog_rows = property_catalog
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })
-        .map_err(|error| format!("failed to query metadata property catalog: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read metadata property catalog: {error}"))?;
-    for (property_key, normalized_value, value) in property_catalog_rows {
-        property_builders
-            .entry(property_key)
-            .or_default()
-            .entry(normalized_value)
-            .or_insert_with(|| SetAggregateBuilder {
-                label: value,
-                item_ids: BTreeSet::new(),
-                sources: BTreeMap::new(),
-                tag_config: None,
-            });
-    }
-
     let title_values = scalars
         .iter()
         .map(|(_, title, _)| title.clone())
@@ -4295,19 +3994,12 @@ fn metadata_selection_snapshot_from_conn(
         item_ids,
         scalars: &scalars,
         tags: &tag_projection,
-        properties: &property_projection,
     })
     .map_err(|error| format!("failed to serialize metadata snapshot projection: {error}"))?;
     let snapshot_token = hash_text(
         std::str::from_utf8(&fingerprint)
             .map_err(|error| format!("metadata snapshot projection is not UTF-8: {error}"))?,
     );
-    let mut property_aggregates = |key: &str| {
-        finish_set_aggregates(
-            property_builders.remove(key).unwrap_or_default(),
-            item_ids.len(),
-        )
-    };
     let single_item = if item_ids.len() == 1 {
         let (_, content_kind, text) = &content[0];
         Some(MetadataSingleItem {
@@ -4333,11 +4025,6 @@ fn metadata_selection_snapshot_from_conn(
         title: scalar_aggregate(&title_values),
         notes: scalar_aggregate(&notes_values),
         tags: finish_set_aggregates(tag_builders, item_ids.len()),
-        properties: MetadataPropertyAggregates {
-            client: property_aggregates("client"),
-            project: property_aggregates("project"),
-            activity: property_aggregates("activity"),
-        },
         single_item,
     })
 }
@@ -4761,11 +4448,11 @@ fn add_item_tag_relation(
     source: &str,
     confidence: Option<f64>,
 ) -> Result<bool, String> {
-    if source != "manual" && metadata_value_is_suppressed(conn, item_id, "tag", "", slug)? {
+    if source != "manual" && tag_is_suppressed(conn, item_id, slug)? {
         return Ok(false);
     }
     if source == "manual" {
-        clear_metadata_suppression(conn, item_id, "tag", "", slug)?;
+        clear_tag_suppression(conn, item_id, slug)?;
     }
 
     let now = now_unix_ms();
@@ -4842,7 +4529,7 @@ fn set_item_tags_from_values(
         if desired_slugs.contains(slug.as_str()) {
             continue;
         }
-        suppress_metadata_value(conn, item_id, "tag", "", label, slug)?;
+        suppress_tag(conn, item_id, label, slug)?;
         let tag_id = tag_id_by_slug(conn, slug)?;
         conn.execute(
             "DELETE FROM clipboard_item_tags WHERE item_id = ?1 AND tag_id = ?2",
@@ -4918,206 +4605,52 @@ fn metadata_source_rank(source: &str) -> u8 {
     }
 }
 
-fn normalized_metadata_value(value: &str) -> String {
-    value.trim().to_lowercase()
-}
-
-fn normalize_metadata_values(values: &[String]) -> Result<Vec<String>, String> {
-    let mut normalized = Vec::new();
-    let mut seen = BTreeSet::new();
-    for value in values {
-        let value = value.trim();
-        if value.is_empty() {
-            continue;
-        }
-        if value.chars().count() > 160 {
-            return Err("metadata values cannot exceed 160 characters".to_string());
-        }
-        let key = normalized_metadata_value(value);
-        if seen.insert(key) {
-            normalized.push(value.to_string());
-        }
-    }
-    Ok(normalized)
-}
-
-fn normalize_scenario_properties(
-    properties: &ScenarioProperties,
-) -> Result<ScenarioProperties, String> {
-    Ok(ScenarioProperties {
-        client: normalize_metadata_values(&properties.client)?,
-        project: normalize_metadata_values(&properties.project)?,
-        activity: normalize_metadata_values(&properties.activity)?,
-    })
-}
-
-fn metadata_value_is_suppressed(
+fn tag_is_suppressed(
     conn: &Connection,
     item_id: i64,
-    metadata_kind: &str,
-    metadata_key: &str,
     normalized_value: &str,
 ) -> Result<bool, String> {
     conn.query_row(
         "SELECT EXISTS(
-            SELECT 1 FROM clipboard_item_metadata_suppressions
-            WHERE item_id = ?1 AND metadata_kind = ?2 AND metadata_key = ?3
-              AND normalized_value = ?4
+            SELECT 1 FROM clipboard_item_tag_suppressions
+            WHERE item_id = ?1 AND normalized_value = ?2
         )",
-        params![item_id, metadata_kind, metadata_key, normalized_value],
+        params![item_id, normalized_value],
         |row| row.get::<_, bool>(0),
     )
-    .map_err(|error| format!("failed to inspect metadata suppression: {error}"))
+    .map_err(|error| format!("failed to inspect tag suppression: {error}"))
 }
 
-fn suppress_metadata_value(
+fn suppress_tag(
     conn: &Connection,
     item_id: i64,
-    metadata_kind: &str,
-    metadata_key: &str,
     value: &str,
     normalized_value: &str,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO clipboard_item_metadata_suppressions (
-            item_id, metadata_kind, metadata_key, value, normalized_value, created_at_unix_ms
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT(item_id, metadata_kind, metadata_key, normalized_value) DO UPDATE SET
+        "INSERT INTO clipboard_item_tag_suppressions (
+            item_id, value, normalized_value, created_at_unix_ms
+         ) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(item_id, normalized_value) DO UPDATE SET
             value = excluded.value,
             created_at_unix_ms = excluded.created_at_unix_ms",
-        params![
-            item_id,
-            metadata_kind,
-            metadata_key,
-            value,
-            normalized_value,
-            now_unix_ms()
-        ],
+        params![item_id, value, normalized_value, now_unix_ms()],
     )
-    .map_err(|error| format!("failed to suppress metadata value: {error}"))?;
+    .map_err(|error| format!("failed to suppress tag: {error}"))?;
     Ok(())
 }
 
-fn clear_metadata_suppression(
+fn clear_tag_suppression(
     conn: &Connection,
     item_id: i64,
-    metadata_kind: &str,
-    metadata_key: &str,
     normalized_value: &str,
 ) -> Result<(), String> {
     conn.execute(
-        "DELETE FROM clipboard_item_metadata_suppressions
-         WHERE item_id = ?1 AND metadata_kind = ?2 AND metadata_key = ?3
-           AND normalized_value = ?4",
-        params![item_id, metadata_kind, metadata_key, normalized_value],
+        "DELETE FROM clipboard_item_tag_suppressions
+         WHERE item_id = ?1 AND normalized_value = ?2",
+        params![item_id, normalized_value],
     )
-    .map_err(|error| format!("failed to restore metadata value: {error}"))?;
-    Ok(())
-}
-
-fn add_item_property(
-    conn: &Connection,
-    item_id: i64,
-    property_key: &str,
-    value: &str,
-    source: &str,
-) -> Result<bool, String> {
-    let normalized_value = normalized_metadata_value(value);
-    if source != "manual"
-        && metadata_value_is_suppressed(conn, item_id, "property", property_key, &normalized_value)?
-    {
-        return Ok(false);
-    }
-    if source == "manual" {
-        clear_metadata_suppression(conn, item_id, "property", property_key, &normalized_value)?;
-    }
-    let existing_source = conn
-        .query_row(
-            "SELECT source FROM clipboard_item_properties
-             WHERE item_id = ?1 AND property_key = ?2 AND normalized_value = ?3",
-            params![item_id, property_key, normalized_value],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| format!("failed to inspect item property source: {error}"))?;
-    let now = now_unix_ms();
-    if let Some(existing_source) = existing_source {
-        if metadata_source_rank(source) > metadata_source_rank(&existing_source) {
-            conn.execute(
-                "UPDATE clipboard_item_properties
-                 SET value = ?1, source = ?2, updated_at_unix_ms = ?3
-                 WHERE item_id = ?4 AND property_key = ?5 AND normalized_value = ?6",
-                params![value, source, now, item_id, property_key, normalized_value],
-            )
-            .map_err(|error| format!("failed to promote item property source: {error}"))?;
-        }
-        return Ok(false);
-    }
-    conn.execute(
-        "INSERT INTO clipboard_item_properties (
-            item_id, property_key, value, normalized_value, source,
-            created_at_unix_ms, updated_at_unix_ms
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-        params![item_id, property_key, value, normalized_value, source, now],
-    )
-    .map_err(|error| format!("failed to add item property: {error}"))?;
-    Ok(true)
-}
-
-fn replace_item_property_values(
-    conn: &Connection,
-    item_id: i64,
-    property_key: &str,
-    values: &[String],
-) -> Result<(), String> {
-    let normalized = normalize_metadata_values(values)?;
-    let desired = normalized
-        .iter()
-        .map(|value| normalized_metadata_value(value))
-        .collect::<BTreeSet<_>>();
-    let mut statement = conn
-        .prepare(
-            "SELECT value, normalized_value FROM clipboard_item_properties
-             WHERE item_id = ?1 AND property_key = ?2",
-        )
-        .map_err(|error| format!("failed to prepare existing item properties: {error}"))?;
-    let existing = statement
-        .query_map(params![item_id, property_key], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| format!("failed to query existing item properties: {error}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read existing item property: {error}"))?;
-    drop(statement);
-    let existing_normalized = existing
-        .iter()
-        .map(|(_, normalized_value)| normalized_value.clone())
-        .collect::<BTreeSet<_>>();
-    for (value, normalized_value) in &existing {
-        if desired.contains(normalized_value) {
-            continue;
-        }
-        suppress_metadata_value(
-            conn,
-            item_id,
-            "property",
-            property_key,
-            value,
-            normalized_value,
-        )?;
-        conn.execute(
-            "DELETE FROM clipboard_item_properties
-             WHERE item_id = ?1 AND property_key = ?2 AND normalized_value = ?3",
-            params![item_id, property_key, normalized_value],
-        )
-        .map_err(|error| format!("failed to remove item property: {error}"))?;
-    }
-    for value in normalized {
-        if existing_normalized.contains(&normalized_metadata_value(&value)) {
-            continue;
-        }
-        add_item_property(conn, item_id, property_key, &value, "manual")?;
-    }
+    .map_err(|error| format!("failed to restore tag: {error}"))?;
     Ok(())
 }
 
@@ -5144,78 +4677,11 @@ fn item_tag_entries(conn: &Connection, item_id: i64) -> Result<Vec<MetadataTagEn
         .map_err(|error| format!("failed to read item tag entry row: {error}"))
 }
 
-fn item_property_entries(
-    conn: &Connection,
-    item_id: i64,
-) -> Result<Vec<MetadataPropertyEntry>, String> {
-    let mut statement = conn
-        .prepare(
-            "SELECT property_key, value, source FROM clipboard_item_properties
-             WHERE item_id = ?1
-             ORDER BY property_key ASC, value COLLATE NOCASE ASC",
-        )
-        .map_err(|error| format!("failed to prepare item property entries: {error}"))?;
-    let rows = statement
-        .query_map(params![item_id], |row| {
-            Ok(MetadataPropertyEntry {
-                key: row.get(0)?,
-                value: row.get(1)?,
-                source: row.get(2)?,
-            })
-        })
-        .map_err(|error| format!("failed to query item property entries: {error}"))?;
-    let entries = rows
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("failed to read item property entry row: {error}"))?;
-    Ok(entries
-        .into_iter()
-        .filter(|entry| matches!(entry.key.as_str(), "client" | "project" | "activity"))
-        .collect())
-}
-
-fn scenario_properties_for_item(
-    conn: &Connection,
-    item_id: i64,
-) -> Result<ScenarioProperties, String> {
-    let mut properties = ScenarioProperties::default();
-    let mut statement = conn
-        .prepare(
-            "SELECT property_key, value FROM clipboard_item_properties
-             WHERE item_id = ?1
-             ORDER BY property_key ASC, value COLLATE NOCASE ASC",
-        )
-        .map_err(|error| format!("failed to prepare item properties query: {error}"))?;
-    let rows = statement
-        .query_map(params![item_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| format!("failed to query item properties: {error}"))?;
-    for row in rows {
-        let (key, value) = row.map_err(|error| format!("failed to read item property: {error}"))?;
-        match key.as_str() {
-            "client" => properties.client.push(value),
-            "project" => properties.project.push(value),
-            "activity" => properties.activity.push(value),
-            _ => {}
-        }
-    }
-    Ok(properties)
-}
-
 fn apply_scenario_patch(
     conn: &Connection,
     item_id: i64,
     scenario: &ActiveScenarioSession,
 ) -> Result<(), String> {
-    for value in &scenario.properties.client {
-        add_item_property(conn, item_id, "client", value, "scenario")?;
-    }
-    for value in &scenario.properties.project {
-        add_item_property(conn, item_id, "project", value, "scenario")?;
-    }
-    for value in &scenario.properties.activity {
-        add_item_property(conn, item_id, "activity", value, "scenario")?;
-    }
     let tags = normalize_tag_values(&scenario.tags)?;
     for (slug, label) in tags {
         add_item_tag_relation(conn, item_id, &slug, &label, "scenario", None)?;
@@ -5605,25 +5071,18 @@ fn saved_history_view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Save
 }
 
 fn scenario_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Scenario> {
-    let decode = |index: usize| -> rusqlite::Result<Vec<String>> {
-        let json = row.get::<_, String>(index)?;
-        serde_json::from_str(&json).map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(index, Type::Text, Box::new(error))
-        })
-    };
+    let tags_json = row.get::<_, String>(4)?;
+    let tags = serde_json::from_str(&tags_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(4, Type::Text, Box::new(error))
+    })?;
     Ok(Scenario {
         id: row.get(0)?,
         name: row.get(1)?,
         query: row.get(2)?,
         revision: row.get(3)?,
-        properties: ScenarioProperties {
-            client: decode(4)?,
-            project: decode(5)?,
-            activity: decode(6)?,
-        },
-        tags: decode(7)?,
-        created_at_unix_ms: row.get(8)?,
-        updated_at_unix_ms: row.get(9)?,
+        tags,
+        created_at_unix_ms: row.get(5)?,
+        updated_at_unix_ms: row.get(6)?,
     })
 }
 
@@ -5977,7 +5436,6 @@ mod tests {
             title: ScalarIntent::Untouched,
             notes: NotesIntent::Untouched,
             tags: Vec::new(),
-            properties: MetadataPropertyIntents::default(),
         }
     }
 
@@ -6002,9 +5460,6 @@ mod tests {
             add_item_tag_relation(&conn, 1, "work", "Work", "scenario", Some(0.7)).unwrap();
             add_item_tag_relation(&conn, 2, "work", "Work", "manual", None).unwrap();
             add_item_tag_relation(&conn, 1, "partial", "Partial", "context", Some(0.4)).unwrap();
-            add_item_property(&conn, 1, "client", "Acme", "scenario").unwrap();
-            add_item_property(&conn, 2, "client", "Acme", "manual").unwrap();
-            add_item_property(&conn, 3, "project", "Launch", "manual").unwrap();
         }
 
         let snapshot = storage
@@ -6028,18 +5483,6 @@ mod tests {
             .find(|tag| tag.key == "partial")
             .unwrap();
         assert_eq!(partial.presence, MetadataPresence::Some);
-        assert_eq!(
-            snapshot.properties.client[0].presence,
-            MetadataPresence::All
-        );
-        let absent_project = snapshot
-            .properties
-            .project
-            .iter()
-            .find(|property| property.key == "launch")
-            .unwrap();
-        assert_eq!(absent_project.presence, MetadataPresence::None);
-        assert_eq!(absent_project.present_count, 0);
 
         let original_token = snapshot.snapshot_token.clone();
         storage
@@ -6047,7 +5490,7 @@ mod tests {
             .lock()
             .unwrap()
             .execute(
-                "UPDATE clipboard_item_properties SET value = 'ACME' WHERE item_id = 1 AND property_key = 'client'",
+                "UPDATE clipboard_item_tags SET source = 'enrichment' WHERE item_id = 1",
                 [],
             )
             .unwrap();
@@ -6133,8 +5576,8 @@ mod tests {
             .lock()
             .unwrap()
             .execute_batch(
-                "CREATE TRIGGER reject_property BEFORE INSERT ON clipboard_item_properties
-                 BEGIN SELECT RAISE(ABORT, 'synthetic property failure'); END;",
+                "CREATE TRIGGER reject_tag_relation BEFORE INSERT ON clipboard_item_tags
+                 BEGIN SELECT RAISE(ABORT, 'synthetic tag failure'); END;",
             )
             .unwrap();
         let mut failing = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
@@ -6145,14 +5588,14 @@ mod tests {
         failing.title = ScalarIntent::Set {
             value: "also rolls back".into(),
         };
-        failing.properties.client = vec![SetValueIntent {
+        failing.tags = vec![SetValueIntent {
             key: "Acme".into(),
             op: SetValueIntentOp::Add,
         }];
         assert!(storage.apply_metadata_selection_intent(failing).is_err());
         assert_eq!(storage.get_item(1).unwrap().title, None);
         assert_eq!(storage.get_item(1).unwrap().text, "external content");
-        assert!(storage.list_item_property_entries(1).unwrap().is_empty());
+        assert!(storage.get_item_tag_entries(1).unwrap().is_empty());
     }
 
     #[test]
@@ -6195,7 +5638,7 @@ mod tests {
         {
             let conn = storage.conn.lock().unwrap();
             add_item_tag_relation(&conn, 1, "work", "Work", "scenario", Some(0.8)).unwrap();
-            suppress_metadata_value(&conn, 2, "tag", "", "Work", "work").unwrap();
+            suppress_tag(&conn, 2, "Work", "work").unwrap();
         }
         let snapshot = storage
             .get_metadata_selection_snapshot(MetadataSelectionRequest {
@@ -6216,7 +5659,7 @@ mod tests {
         let second = storage.get_item_tag_entries(2).unwrap();
         assert_eq!(second[0].source, "manual");
         let conn = storage.conn.lock().unwrap();
-        assert!(!metadata_value_is_suppressed(&conn, 2, "tag", "", "work").unwrap());
+        assert!(!tag_is_suppressed(&conn, 2, "work").unwrap());
     }
 
     #[test]
@@ -6253,11 +5696,11 @@ mod tests {
         assert_eq!(result.tag_relation_changes, 5);
         let conn = storage.conn.lock().unwrap();
         for id in 1..=3 {
-            assert!(metadata_value_is_suppressed(&conn, id, "tag", "", "all").unwrap());
+            assert!(tag_is_suppressed(&conn, id, "all").unwrap());
         }
-        assert!(metadata_value_is_suppressed(&conn, 1, "tag", "", "some").unwrap());
-        assert!(metadata_value_is_suppressed(&conn, 2, "tag", "", "some").unwrap());
-        assert!(!metadata_value_is_suppressed(&conn, 3, "tag", "", "some").unwrap());
+        assert!(tag_is_suppressed(&conn, 1, "some").unwrap());
+        assert!(tag_is_suppressed(&conn, 2, "some").unwrap());
+        assert!(!tag_is_suppressed(&conn, 3, "some").unwrap());
     }
 
     #[test]
@@ -6267,74 +5710,10 @@ mod tests {
             "title": null,
             "notes": null,
             "tags": ["synthetic", "work/project"],
-            "properties": {
-                "client": ["Orca"],
-                "project": [],
-                "activity": []
-            },
             "mimePrimary": "text/plain"
         }))
         .unwrap();
         assert_eq!(request.tags, vec!["synthetic", "work/project"]);
-        assert_eq!(request.properties.client, vec!["Orca"]);
-    }
-
-    #[test]
-    fn metadata_selection_properties_and_create_dedupe_are_normalized_and_atomic() {
-        let storage = test_storage_with_migrations();
-        let first = storage
-            .create_text_item(CreateHistoryItemRequest {
-                text: "property item".into(),
-                title: None,
-                notes: None,
-                tags: Vec::new(),
-                properties: ScenarioProperties {
-                    client: vec![" Acme ".into()],
-                    project: vec![],
-                    activity: vec![],
-                },
-                mime_primary: None,
-            })
-            .unwrap();
-        let second = storage
-            .create_text_item(CreateHistoryItemRequest {
-                text: " property item ".into(),
-                title: None,
-                notes: None,
-                tags: Vec::new(),
-                properties: ScenarioProperties {
-                    client: vec!["acme".into()],
-                    project: vec!["Launch".into()],
-                    activity: vec![],
-                },
-                mime_primary: None,
-            })
-            .unwrap();
-        assert_eq!(second.id, first.id);
-        let entries = storage.list_item_property_entries(first.id).unwrap();
-        assert_eq!(entries.len(), 2);
-
-        let snapshot = storage
-            .get_metadata_selection_snapshot(MetadataSelectionRequest {
-                item_ids: vec![first.id],
-            })
-            .unwrap();
-        let mut intent = untouched_metadata_intent(vec![first.id], snapshot.snapshot_token);
-        intent.properties.client = vec![SetValueIntent {
-            key: "Acme".into(),
-            op: SetValueIntentOp::Remove,
-        }];
-        intent.properties.activity = vec![SetValueIntent {
-            key: "Review".into(),
-            op: SetValueIntentOp::Add,
-        }];
-        let result = storage.apply_metadata_selection_intent(intent).unwrap();
-        assert_eq!(result.property_relation_changes, 2);
-        let entries = storage.list_item_property_entries(first.id).unwrap();
-        assert!(entries
-            .iter()
-            .any(|entry| entry.key == "activity" && entry.value == "Review"));
-        assert!(!entries.iter().any(|entry| entry.key == "client"));
     }
 
     #[test]
@@ -6352,8 +5731,7 @@ mod tests {
                 Some(0.8),
             )
             .unwrap();
-            add_item_property(&conn, id, "client", "Synthetic client", "scenario").unwrap();
-            suppress_metadata_value(&conn, id, "tag", "", "Removed", "removed").unwrap();
+            suppress_tag(&conn, id, "Removed", "removed").unwrap();
             conn.execute(
                 "UPDATE clipboard_items SET title = 'Title', notes = '#removed stays a note',
                  tags = '#ghost', mime_primary = 'text/markdown', is_marked = 1,
@@ -6363,7 +5741,6 @@ mod tests {
             .unwrap();
         }
         let tags = storage.get_item_tag_entries(id).unwrap();
-        let properties = storage.list_item_property_entries(id).unwrap();
         let before = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
         storage.update_item_text(id, "after".into()).unwrap();
         let mut after = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
@@ -6374,10 +5751,9 @@ mod tests {
         }
         assert_eq!(after, before);
         assert_eq!(storage.get_item_tag_entries(id).unwrap(), tags);
-        assert_eq!(storage.list_item_property_entries(id).unwrap(), properties);
         let conn = storage.conn.lock().unwrap();
-        assert!(metadata_value_is_suppressed(&conn, id, "tag", "", "removed").unwrap());
-        assert!(!metadata_value_is_suppressed(&conn, id, "tag", "", "work/project").unwrap());
+        assert!(tag_is_suppressed(&conn, id, "removed").unwrap());
+        assert!(!tag_is_suppressed(&conn, id, "work/project").unwrap());
     }
 
     #[test]
@@ -6405,7 +5781,6 @@ mod tests {
                     title: Some(format!("title-{index}")),
                     notes: Some(format!("#unassigned notes-{index}")),
                     tags: vec![format!("work/{index}")],
-                    properties: ScenarioProperties::default(),
                 })
                 .unwrap();
         }
@@ -6427,7 +5802,6 @@ mod tests {
             tags: tags
                 .map(|value| vec![value.to_string()])
                 .unwrap_or_default(),
-            properties: ScenarioProperties::default(),
             mime_primary: None,
         };
         let first = storage
@@ -6496,7 +5870,6 @@ mod tests {
                 title: None,
                 notes: None,
                 tags: vec!["#Keep".into()],
-                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .unwrap()
@@ -6536,7 +5909,6 @@ mod tests {
                     title: Some("changed".into()),
                     notes: None,
                     tags: vec!["#Ghost".into()],
-                    properties: ScenarioProperties::default(),
                     mime_primary: None,
                 })
                 .is_err());
@@ -6562,7 +5934,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        assert!(!metadata_value_is_suppressed(&conn, id, "tag", "", "keep").unwrap());
+        assert!(!tag_is_suppressed(&conn, id, "keep").unwrap());
     }
 
     #[test]
@@ -6647,7 +6019,6 @@ mod tests {
                 title: Some("Fresh title".into()),
                 notes: Some("Fresh notes".into()),
                 tags: vec!["Fresh/Tag".into()],
-                properties: ScenarioProperties::default(),
             })
             .unwrap();
         let preview = storage
@@ -6681,7 +6052,6 @@ mod tests {
                 title: Some("Fresh title".into()),
                 notes: Some("Replaced notes".into()),
                 tags: vec!["Fresh/Tag".into()],
-                properties: ScenarioProperties::default(),
             })
             .unwrap();
         let refreshed = storage
@@ -7562,18 +6932,15 @@ mod tests {
                 title: Some("Editable title".into()),
                 notes: Some("#literal notes".into()),
                 tags: vec!["Retained/Tag".into()],
-                properties: ScenarioProperties::default(),
             })
             .unwrap();
         {
             let conn = storage.conn.lock().unwrap();
-            add_item_property(&conn, id, "client", "Synthetic client", "scenario").unwrap();
-            suppress_metadata_value(&conn, id, "tag", "", "Removed", "removed").unwrap();
+            suppress_tag(&conn, id, "Removed", "removed").unwrap();
             conn.execute("UPDATE clipboard_item_capture_events SET domain = 'old.example' WHERE item_id = ?1", params![id]).unwrap();
         }
         let before = serde_json::to_value(storage.get_item(id).unwrap()).unwrap();
         let tags = storage.get_item_tag_entries(id).unwrap();
-        let properties = storage.list_item_property_entries(id).unwrap();
         let descriptor = AppliedSearchDescriptor::for_query(
             "old context",
             "ctx:oldapp",
@@ -7681,15 +7048,7 @@ mod tests {
         }
         assert_eq!(after, before);
         assert_eq!(storage.get_item_tag_entries(id).unwrap(), tags);
-        assert_eq!(storage.list_item_property_entries(id).unwrap(), properties);
-        assert!(metadata_value_is_suppressed(
-            &storage.conn.lock().unwrap(),
-            id,
-            "tag",
-            "",
-            "removed"
-        )
-        .unwrap());
+        assert!(tag_is_suppressed(&storage.conn.lock().unwrap(), id, "removed").unwrap());
         drop(storage);
         let reopened = AppStorage::open(&dir).unwrap();
         assert!(reopened.read_find_items(&descriptor).unwrap().is_empty());
@@ -7849,7 +7208,6 @@ mod tests {
                     title: None,
                     notes: None,
                     tags: Vec::new(),
-                    properties: ScenarioProperties::default(),
                     mime_primary: None,
                 })
                 .unwrap();
@@ -7941,7 +7299,6 @@ mod tests {
                 title: None,
                 notes: Some("#manual from keyboard".to_string()),
                 tags: vec!["#manual".to_string()],
-                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .expect("manual text item should be created");
@@ -7966,7 +7323,6 @@ mod tests {
                 title: None,
                 notes: Some("#first".to_string()),
                 tags: vec!["#first".to_string()],
-                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .expect("first manual item should be created");
@@ -7976,7 +7332,6 @@ mod tests {
                 title: Some("Manual".to_string()),
                 notes: Some("#second".to_string()),
                 tags: vec!["#second".to_string(), "#first".to_string()],
-                properties: ScenarioProperties::default(),
                 mime_primary: None,
             })
             .expect("duplicate manual item should update existing item");
@@ -8417,7 +7772,6 @@ mod tests {
                 title: Some("Reference".to_string()),
                 notes: Some("Markdown note with #not-a-tag".to_string()),
                 tags: vec!["Work".to_string(), "Very Important".to_string()],
-                properties: ScenarioProperties::default(),
             })
             .expect("metadata should update");
 
@@ -8653,7 +8007,6 @@ mod tests {
             .create_scenario_from_query(CreateScenarioFromQueryRequest {
                 name: "Shared workspace".to_string(),
                 query: "tag:shared".to_string(),
-                properties: ScenarioProperties::default(),
                 tags: vec!["Shared".to_string()],
             })
             .expect("scenario should persist");
@@ -9872,7 +9225,7 @@ mod tests {
     fn scenario_query_migration_preserves_existing_scenarios_and_saved_views() {
         let mut conn = Connection::open_in_memory().expect("in-memory sqlite should open");
         let migrations_before_independent_scenarios =
-            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 2]);
+            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 3]);
         migrations_before_independent_scenarios
             .to_latest(&mut conn)
             .expect("legacy scenario migrations should run");
@@ -9910,8 +9263,30 @@ mod tests {
         assert_eq!(scenario.name, "Legacy scenario");
         assert_eq!(scenario.query, "tag:legacy kind:text");
         assert_eq!(scenario.revision, 3);
-        assert_eq!(scenario.properties.client, vec!["ACME"]);
         assert_eq!(scenario.tags, vec!["Work"]);
+        let conn = storage.conn.lock().unwrap();
+        for retired_table in [
+            "clipboard_item_properties",
+            "clipboard_item_metadata_suppressions",
+        ] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    params![retired_table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "{retired_table} should be removed");
+        }
+        let tag_suppression_table_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'clipboard_item_tag_suppressions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tag_suppression_table_count, 1);
+        drop(conn);
         let views = storage
             .list_saved_history_views()
             .expect("historical saved view should remain");
@@ -9938,16 +9313,10 @@ mod tests {
             .create_scenario_from_query(CreateScenarioFromQueryRequest {
                 name: "ACME review".to_string(),
                 query: "tag:acme kind:text".to_string(),
-                properties: ScenarioProperties {
-                    client: vec!["ACME".to_string(), " acme ".to_string()],
-                    project: vec!["Portal".to_string()],
-                    activity: vec!["Review".to_string()],
-                },
                 tags: vec!["Work".to_string()],
             })
             .expect("scenario should persist without creating a saved view");
         assert_eq!(scenario.query, "tag:acme kind:text");
-        assert_eq!(scenario.properties.client, vec!["ACME"]);
         assert_eq!(
             storage
                 .list_saved_history_views()
@@ -9960,7 +9329,6 @@ mod tests {
                 id: scenario.id,
                 name: "ACME QA".to_string(),
                 query: "tag:qa kind:text".to_string(),
-                properties: ScenarioProperties::default(),
                 tags: vec!["QA".to_string()],
             })
             .expect("scenario should update independently");
@@ -10006,7 +9374,6 @@ mod tests {
             .create_scenario_from_query(CreateScenarioFromQueryRequest {
                 name: "Broken".to_string(),
                 query: "kind:".to_string(),
-                properties: ScenarioProperties::default(),
                 tags: Vec::new(),
             })
             .expect_err("invalid scenario query must not persist");
@@ -10042,11 +9409,6 @@ mod tests {
             scenario_name: "Cliente ACME / Proyecto Web".to_string(),
             scenario_revision: 3,
             query: "tag:acme".to_string(),
-            properties: ScenarioProperties {
-                client: vec!["ACME".to_string()],
-                project: vec!["Web".to_string(), "Portal".to_string()],
-                activity: vec!["Development".to_string()],
-            },
             tags: vec!["ACME".to_string(), "Client work".to_string()],
             started_at_unix_ms: 10,
         };
@@ -10077,14 +9439,6 @@ mod tests {
         assert_eq!(first_id, second_id);
         assert_eq!(storage.list_recent().expect("history").len(), 1);
         assert_eq!(
-            storage.list_item_properties(first_id).expect("properties"),
-            ScenarioProperties {
-                client: vec!["ACME".to_string()],
-                project: vec!["Portal".to_string(), "Web".to_string()],
-                activity: vec!["Development".to_string()],
-            }
-        );
-        assert_eq!(
             storage.get_item_tags(first_id).expect("tags"),
             vec!["ACME".to_string(), "Client work".to_string()]
         );
@@ -10100,7 +9454,7 @@ mod tests {
     }
 
     #[test]
-    fn manual_metadata_removal_suppresses_scenario_until_manual_restore() {
+    fn manual_tag_removal_suppresses_scenario_until_manual_restore() {
         let storage = test_storage_with_migrations();
         let session = ActiveScenarioSession {
             session_id: "session-acme-2".to_string(),
@@ -10108,11 +9462,6 @@ mod tests {
             scenario_name: "ACME".to_string(),
             scenario_revision: 1,
             query: "tag:acme".to_string(),
-            properties: ScenarioProperties {
-                client: vec!["ACME".to_string()],
-                project: vec!["Web".to_string()],
-                activity: Vec::new(),
-            },
             tags: vec!["ACME".to_string()],
             started_at_unix_ms: 10,
         };
@@ -10127,22 +9476,12 @@ mod tests {
                 title: None,
                 notes: None,
                 tags: Vec::new(),
-                properties: ScenarioProperties {
-                    client: Vec::new(),
-                    project: vec!["Web".to_string()],
-                    activity: Vec::new(),
-                },
             })
             .expect("manual removal");
         storage
             .insert_text_with_scenario("suppression item", &hash, None, &[], Some(session.clone()))
             .expect("recapture after suppression");
         assert!(storage.get_item_tags(item_id).expect("tags").is_empty());
-        assert!(storage
-            .list_item_properties(item_id)
-            .expect("properties")
-            .client
-            .is_empty());
 
         storage
             .update_item_metadata(UpdateItemMetadataRequest {
@@ -10150,11 +9489,6 @@ mod tests {
                 title: None,
                 notes: None,
                 tags: vec!["ACME".to_string()],
-                properties: ScenarioProperties {
-                    client: vec!["ACME".to_string()],
-                    project: vec!["Web".to_string()],
-                    activity: Vec::new(),
-                },
             })
             .expect("manual restore");
         storage
@@ -10162,14 +9496,6 @@ mod tests {
             .expect("recapture after restore");
 
         let conn = storage.conn.lock().expect("sqlite lock");
-        let property_source: String = conn
-            .query_row(
-                "SELECT source FROM clipboard_item_properties
-                 WHERE item_id = ?1 AND property_key = 'client' AND normalized_value = 'acme'",
-                params![item_id],
-                |row| row.get(0),
-            )
-            .expect("client source");
         let tag_source: String = conn
             .query_row(
                 "SELECT source FROM clipboard_item_tags
@@ -10178,7 +9504,6 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("tag source");
-        assert_eq!(property_source, "manual");
         assert_eq!(tag_source, "manual");
     }
 
@@ -10191,11 +9516,6 @@ mod tests {
             scenario_name: "ACME".to_string(),
             scenario_revision: 1,
             query: "tag:acme".to_string(),
-            properties: ScenarioProperties {
-                client: vec!["ACME".to_string()],
-                project: vec!["Web".to_string()],
-                activity: Vec::new(),
-            },
             tags: vec!["ACME".to_string()],
             started_at_unix_ms: 10,
         };
@@ -10227,27 +9547,9 @@ mod tests {
                 confidence: Some(0.75),
             },
         ];
-        let expected_properties = vec![
-            MetadataPropertyEntry {
-                key: "client".to_string(),
-                value: "ACME".to_string(),
-                source: "scenario".to_string(),
-            },
-            MetadataPropertyEntry {
-                key: "project".to_string(),
-                value: "Web".to_string(),
-                source: "scenario".to_string(),
-            },
-        ];
         assert_eq!(
             storage.get_item_tag_entries(item_id).expect("tag entries"),
             expected_tags
-        );
-        assert_eq!(
-            storage
-                .list_item_property_entries(item_id)
-                .expect("property entries"),
-            expected_properties
         );
 
         storage
@@ -10256,11 +9558,6 @@ mod tests {
                 title: None,
                 notes: Some("edited notes".to_string()),
                 tags: vec!["ACME".to_string(), "Path".to_string()],
-                properties: ScenarioProperties {
-                    client: vec!["ACME".to_string()],
-                    project: vec!["Web".to_string()],
-                    activity: Vec::new(),
-                },
             })
             .expect("no-op metadata save");
 
@@ -10268,13 +9565,6 @@ mod tests {
             storage.get_item_tag_entries(item_id).expect("tag entries"),
             expected_tags,
             "a no-op save must not promote generated tags to manual"
-        );
-        assert_eq!(
-            storage
-                .list_item_property_entries(item_id)
-                .expect("property entries"),
-            expected_properties,
-            "a no-op save must not promote generated properties to manual"
         );
     }
 
@@ -10287,11 +9577,6 @@ mod tests {
             scenario_name: "ACME".to_string(),
             scenario_revision: 1,
             query: "tag:acme".to_string(),
-            properties: ScenarioProperties {
-                client: vec!["ACME".to_string()],
-                project: vec!["Web".to_string()],
-                activity: Vec::new(),
-            },
             tags: vec!["ACME".to_string()],
             started_at_unix_ms: 10,
         };
@@ -10312,11 +9597,6 @@ mod tests {
                 title: None,
                 notes: None,
                 tags: vec!["ACME".to_string(), "Invoice".to_string()],
-                properties: ScenarioProperties {
-                    client: vec!["ACME".to_string()],
-                    project: Vec::new(),
-                    activity: vec!["Billing".to_string()],
-                },
             })
             .expect("metadata save with additions and removals");
 
@@ -10334,35 +9614,6 @@ mod tests {
                     confidence: None,
                 },
             ]
-        );
-        assert_eq!(
-            storage
-                .list_item_property_entries(item_id)
-                .expect("property entries"),
-            vec![
-                MetadataPropertyEntry {
-                    key: "activity".to_string(),
-                    value: "Billing".to_string(),
-                    source: "manual".to_string(),
-                },
-                MetadataPropertyEntry {
-                    key: "client".to_string(),
-                    value: "ACME".to_string(),
-                    source: "scenario".to_string(),
-                },
-            ]
-        );
-
-        storage
-            .insert_text_with_scenario("mixed provenance item", &hash, None, &[], Some(session))
-            .expect("recapture after removal");
-        assert!(
-            storage
-                .list_item_property_entries(item_id)
-                .expect("property entries")
-                .iter()
-                .all(|entry| entry.key != "project"),
-            "a removed value stays suppressed against scenario recapture"
         );
     }
 
@@ -10662,7 +9913,6 @@ mod tests {
                 title: Some("recapture".to_string()),
                 notes: None,
                 tags: Vec::new(),
-                properties: ScenarioProperties::default(),
                 mime_primary: Some("text/plain".to_string()),
             })
             .expect("deduplicated recapture should succeed");
@@ -10679,7 +9929,6 @@ mod tests {
                 title: None,
                 notes: None,
                 tags: Vec::new(),
-                properties: ScenarioProperties::default(),
                 mime_primary: Some("text/plain".to_string()),
             })
             .expect("inert deduplicated recapture should succeed");
@@ -10708,7 +9957,6 @@ mod tests {
                 title: Some("Pinned note".to_string()),
                 notes: Some("Keep these notes".to_string()),
                 tags: vec!["#work".to_string()],
-                properties: ScenarioProperties::default(),
                 mime_primary: Some("text/markdown".to_string()),
             })
             .expect("item should be created");

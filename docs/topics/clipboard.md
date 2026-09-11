@@ -101,9 +101,9 @@ Hardening implementado:
 - No hay migracion ni poda global de eventos: un clip historico puede conservar
   mas de 3 hasta su siguiente captura, que aplica el limite al historial completo
   de ese clip. Abrir/leer/editar contenido o metadata no aplica esta poda.
-- La retencion de eventos no elimina contenido, notas, tags, properties,
-  provenance, suppression ni referencias a blobs. El contador de copias sigue
-  siendo acumulativo. Retencion global de items es una politica independiente.
+- La retencion de eventos no elimina contenido, notas, tags, provenance,
+  suppression ni referencias a blobs. El contador de copias sigue siendo
+  acumulativo. Retencion global de items es una politica independiente.
 - Reparacion de datos instalados e instalacion requieren gates propios.
 
 Regresiones sinteticas cubren rafagas, lecturas malformadas, self-writes y fallos

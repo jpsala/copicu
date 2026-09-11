@@ -2,11 +2,19 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-09-11 - Tags son el único conjunto de metadata editable
+
+Estado: accepted por JP.
+
+Decision: retirar los tres campos estructurados fijos que acompañaban a tags en items y capture modes. Title y notes permanecen como escalares; tags queda como el único conjunto normalizado con provenance y suppression. La migración de SQLite elimina los datos legacy de esos campos y conserva tags, incluidas sus suppressions.
+
+Motivo: los campos no respondían a un workflow validado, no participaban de Search ni alimentaban otra capacidad del producto. Mantener un segundo sistema de clasificación duplicaba UI, contratos y persistencia sin aportar comportamiento observable.
+
 ### 2026-09-10 - F2 edita content y metadata como un solo clip
 
 Estado: accepted por JP.
 
-Decision: `F2` abre dentro del picker una interfaz única para el clip activo, con CodeMirror para content y `MetadataInspector` para title, notes, tags y properties. Un solo dirty state, cancel guard y `Save changes` gobiernan ambos paneles; el backend valida hash de content y fingerprint de metadata y hace un commit SQLite all-or-nothing. En ventanas estrechas se alternan `Content` y `Metadata` mediante tabs.
+Decision: `F2` abre dentro del picker una interfaz única para el clip activo, con CodeMirror para content y `MetadataInspector` para title, notes y tags. Un solo dirty state, cancel guard y `Save changes` gobiernan ambos paneles; el backend valida hash de content y fingerprint de metadata y hace un commit SQLite all-or-nothing. En ventanas estrechas se alternan `Content` y `Metadata` mediante tabs.
 
 `Ctrl+F2` conserva el editor externo. `Shift+F2`, `Ctrl+Shift+C` y entradas metadata-only conservan la utility standalone, pero reutilizan el mismo inspector y contrato.
 
