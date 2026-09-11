@@ -2951,7 +2951,7 @@ test("current navigation stays separate from explicit bulk selection", async ({ 
   await expect(page.locator(".selection-action-bar")).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Picker status" })).toContainText("No clips selected.");
 
-  await page.getByLabel("Search clipboard history").press("ArrowDown");
+  await page.getByLabel("Search clipboard history").press("Control+Alt+ArrowDown");
   await expect(second).toHaveAttribute("aria-current", "true");
   await expect(page.locator(".selection-action-bar")).toHaveCount(0);
 
@@ -2967,7 +2967,7 @@ test("current navigation stays separate from explicit bulk selection", async ({ 
   await page.locator(".selection-action-bar").getByRole("button", { name: "Clear", exact: true }).click();
   await expect(page.locator(".selection-action-bar")).toHaveCount(0);
   await expect(first).toHaveAttribute("aria-current", "true");
-  await page.getByLabel("Search clipboard history").press("ArrowDown");
+  await page.getByLabel("Search clipboard history").press("Control+Alt+ArrowDown");
   await expect(second).toHaveAttribute("aria-current", "true");
   await expect(page.locator(".selection-action-bar")).toHaveCount(0);
 });
@@ -3023,7 +3023,7 @@ test("Inbox organizer entry applies a valid structured filter", async ({ page })
   await menu.getByRole("menuitem", { name: "Organize" }).click();
   await page.getByRole("menuitem", { name: "Inbox" }).click();
 
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("is:inbox");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("is:inbox");
   await expect(page.getByText("`is:inbox` is not a supported is filter.")).toHaveCount(0);
   await expect(page.locator(".history-feed > li")).toHaveCount(1);
   await expect(page.locator(".history-feed > li").first().getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
@@ -3234,7 +3234,7 @@ test("command palette navigates history, saved searches, and pinned tags", async
 
   await palette.getByRole("option", { name: /Work clips/ }).click();
   await expect(palette).toBeHidden();
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
       (call: any) => call.cmd === "history_search" && call.args.request.query === "tag:work kind:text",
@@ -3259,7 +3259,7 @@ test("picker discovers, opens, exits, and accesses saved searches without captur
   await expect(viewBar).toContainText("tag:work kind:text");
   await expect(viewBar).not.toContainText("#Work");
   await expect(page.getByRole("button", { name: "Capture here" })).toHaveCount(0);
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
 
   await page.getByLabel("Search clipboard history").fill("tag:context-smoke");
   await expect(viewBar).toHaveCount(0);
@@ -3271,7 +3271,7 @@ test("picker discovers, opens, exits, and accesses saved searches without captur
   await palette.getByRole("option", { name: /Work clips/ }).click();
   await page.getByRole("button", { name: "Exit saved search Work clips" }).click();
   await expect(page.getByTestId("saved-view-bar")).toHaveCount(0);
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
 
   viewsMenu = await openPickerOverflow(page);
   await viewsMenu.getByRole("menuitem", { name: "Organize" }).click();
@@ -3543,7 +3543,7 @@ test("delayed initial cannot steal foreground ownership or replay a stale query"
   expect(requestQueries.filter((query: string) => query === "").length).toBe(1);
   expect(requestQueries.filter((query: string) => query === "unbroken").length).toBeGreaterThanOrEqual(2);
   expect(requestQueries.at(-1)).toBe("unbroken");
-  await expect(search).toHaveValue("unbroken");
+  await expect(search).toHaveText("unbroken");
 });
 
 test("settings removes the summary chip strip and confirms global tag deletion", async ({ page }) => {
@@ -3673,7 +3673,7 @@ test("picker capture mode menu supports Alt+S, switching, and Stop at narrow wid
   await expect(menu).toBeHidden();
   await expect(page.getByTestId("scenario-session-bar")).toContainText("Internal review");
   await expect(page.getByTestId("saved-view-bar")).toHaveCount(0);
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
   const layout = await page.evaluate(() => {
     const interpretation = document.querySelector(".search-interpretation")?.getBoundingClientRect();
     const feed = document.querySelector(".feed-panel")?.getBoundingClientRect();
@@ -3732,13 +3732,13 @@ test("switching to an edited capture mode applies its updated picker view", asyn
   await menu.getByRole("menuitem", { name: "Organize" }).click();
   await page.getByRole("menuitem", { name: /Focused writing/ }).click();
   await expect(menu).toBeHidden();
-  await expect(search).toHaveValue("tag:work kind:text");
+  await expect(search).toHaveText("tag:work kind:text");
 
   await search.press("Alt+s");
   const nextMenu = page.getByRole("menu", { name: "Picker menu" });
   await nextMenu.getByRole("menuitem", { name: "Organize" }).click();
   await page.getByRole("menuitem", { name: /Internal review/ }).click();
-  await expect(search).toHaveValue("tag:context-smoke");
+  await expect(search).toHaveText("tag:context-smoke");
   await expect(page.getByTestId("scenario-session-bar")).toContainText("Internal review");
 });
 test("picker creates and activates a capture mode from the current query", async ({ page }) => {
@@ -3747,7 +3747,7 @@ test("picker creates and activates a capture mode from the current query", async
 
   const search = page.getByLabel("Search clipboard history");
   await search.fill("#111");
-  await expect(search).toHaveValue("#111");
+  await expect(search).toHaveText("#111");
   await search.press("Alt+s");
   const menu = page.getByRole("menu", { name: "Picker menu" });
   await menu.getByRole("menuitem", { name: "Organize" }).click();
@@ -3760,7 +3760,7 @@ test("picker creates and activates a capture mode from the current query", async
 
   await expect(creator).toBeHidden();
   await expect(page.getByTestId("scenario-session-bar")).toContainText("Writing session");
-  await expect(search).toHaveValue("#111");
+  await expect(search).toHaveText("#111");
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
       (call: any) => call.cmd === "create_scenario_from_query"
@@ -3776,10 +3776,10 @@ test("> scenario activates as an action and restores the capture mode query", as
 
   const search = page.getByLabel("Search clipboard history");
   await search.fill("> scenario Internal");
-  const actions = page.getByRole("listbox", { name: "Capture mode actions" });
+  const actions = page.locator(".cm-tooltip-autocomplete");
   await expect(actions.getByRole("option", { name: "Activate capture mode: Internal review" })).toBeVisible();
   await search.press("Enter");
-  await expect(search).toHaveValue("tag:work kind:text");
+  await expect(search).toHaveText("tag:work kind:text");
   await expect(page.getByTestId("scenario-session-bar")).toContainText("Internal review");
   await expect(actions).toHaveCount(0);
 });
@@ -3793,18 +3793,18 @@ test("active capture mode remains visible through picker hide and reopen until S
   const sessionBar = page.getByTestId("scenario-session-bar");
   await expect(sessionBar).toContainText("Focused writing");
   await expect(sessionBar).toContainText("#Work");
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
 
   await page.evaluate(async () => {
     const session = await (window as any).__TAURI_INTERNALS__.invoke("get_active_scenario_session");
     await (window as any).__copicuTestEmitEvent("copicu://scenario/session-changed", session);
   });
   await expect(sessionBar).toContainText("Capture mode active");
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
 
   await sessionBar.getByRole("button", { name: "Stop" }).click();
   await expect(sessionBar).toHaveCount(0);
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("tag:work kind:text");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("tag:work kind:text");
 });
 
 
@@ -4036,7 +4036,7 @@ test("mark menu uses Mantine menu actions", async ({ page }) => {
 
   await page.getByLabel("Mark options").click();
   await menu.getByRole("menuitem", { name: "Marked", exact: true }).click();
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("is:marked");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("is:marked");
   await expect(page.locator("[title='Result count']")).not.toHaveText("Filtering");
 });
 
@@ -4537,10 +4537,10 @@ test("pagination recovery survives a held draft discard", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 
   await search.fill("held draft");
-  await expect(search).toHaveValue("held draft");
+  await expect(search).toHaveText("held draft");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await search.press("Escape");
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 
@@ -4725,7 +4725,7 @@ test("explicit search survives a delayed picker reset snapshot", async ({ page }
 
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
   await page.waitForTimeout(180);
-  await expect(search).toHaveValue("unbroken");
+  await expect(search).toHaveText("unbroken");
   await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
 
@@ -4743,7 +4743,7 @@ test("keyboard selection survives delayed picker reset refresh", async ({ page }
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await page.waitForTimeout(20);
   for (let index = 0; index < 5; index += 1) {
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Control+Alt+ArrowDown");
   }
 
   await page.waitForTimeout(350);
@@ -4779,7 +4779,7 @@ test("picker navigation clears a pending compound shortcut without consuming Arr
   );
   await search.focus();
   await expect(search).toBeFocused();
-  await search.press("ArrowDown");
+  await search.press("Control+Alt+ArrowDown");
 
   await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toHaveClass(/is-selected/);
   const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
@@ -4882,7 +4882,7 @@ test("applied structured chips remove only their clause", async ({ page }) => {
   });
 
   await kindChip.click();
-  await expect(search).toHaveValue("tag:work");
+  await expect(search).toHaveText("tag:work");
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations
       .filter((call: any) => call.cmd === "history_search")
@@ -4925,13 +4925,13 @@ test("plain applied search stays quiet when it has no filters or warnings", asyn
   await expect(page.getByText("Interpreted", { exact: true })).toHaveCount(0);
 });
 
-test("search autocomplete suggests tags, operators, and closed values", async ({ page }) => {
+test("query editor completion suggests tags, operators, and closed values", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
   await search.fill("#");
-  const suggestions = page.getByRole("listbox", { name: "Search suggestions" });
   await expect(suggestions.getByRole("option", { name: "#work" })).toBeVisible();
   await expect(suggestions.getByRole("option", { name: "#backend" })).toBeVisible();
 
@@ -4950,7 +4950,7 @@ test("search autocomplete suggests tags, operators, and closed values", async ({
   await expect(suggestions).toHaveCount(0);
 });
 
-test("focus refreshes nested tag suggestions created in another window", async ({ page }) => {
+test("query editor refreshes tag completion options after focus", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
@@ -4984,35 +4984,35 @@ test("focus refreshes nested tag suggestions created in another window", async (
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "list_tags").length,
   )).toBeGreaterThan(1);
 
-  await page.getByLabel("Search clipboard history").fill("tag:project/");
-  const suggestions = page.getByRole("listbox", { name: "Search suggestions" });
+  const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
+  await search.fill("tag:project/");
   await expect(suggestions.getByRole("option", { name: "tag:project/key" })).toBeVisible();
   await expect(suggestions.getByRole("option", { name: "tag:project/show" })).toBeVisible();
 });
 
-test("search autocomplete accepts keyboard and click selections and dismisses Escape", async ({ page }) => {
+
+test("query editor accepts keyboard and click completions and closes Escape", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
-  const suggestions = page.getByRole("listbox", { name: "Search suggestions" });
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
   await search.fill("#");
   await expect(suggestions.getByRole("option", { name: "#work" })).toHaveAttribute("aria-selected", "true");
   await search.press("ArrowDown");
   await expect(suggestions.getByRole("option", { name: "#backend" })).toHaveAttribute("aria-selected", "true");
+
   await search.fill("ki");
   const kindSuggestion = suggestions.getByRole("option", { name: "kind:" });
   await expect(kindSuggestion).toBeVisible();
-  await expect(kindSuggestion).toHaveAttribute("aria-selected", "true");
-  await expect(search).toHaveAttribute("aria-activedescendant", "search-suggestion-0");
+  await search.press("Enter");
+  await expect.poll(() => search.textContent()).toBe("kind:");
+  await expect(suggestions).toHaveCount(0);
+
   await search.fill("#");
-  await search.press("Shift+Tab");
-  await expect(search).toHaveValue("#");
-  await expect(suggestions).toBeVisible();
-  await search.focus();
-  await search.press("Tab");
-  await expect(search).toHaveValue("#work");
-  await expect(search).toBeFocused();
+  await search.press("Escape");
+  await expect.poll(() => search.textContent()).toBe("#");
   await expect(suggestions).toHaveCount(0);
 
   await search.fill("tag:");
@@ -5020,62 +5020,67 @@ test("search autocomplete accepts keyboard and click selections and dismisses Es
     (window as any).__copicuTestInvocations = [];
   });
   await suggestions.getByRole("option", { name: "tag:work" }).click();
-  await expect(search).toHaveValue("tag:work");
+  await expect.poll(() => search.textContent()).toBe("tag:work");
   await expect(suggestions).toHaveCount(0);
-  await page.waitForTimeout(180);
-  expect(await page.evaluate(() =>
-    (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
-  )).toBe(0);
-
-  await search.fill("#");
-  await expect(suggestions).toBeVisible();
-  await search.press("Escape");
-  await expect(search).toHaveValue("#");
-  await expect(suggestions).toHaveCount(0);
+  await expect.poll(() =>
+    page.evaluate(() =>
+      (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length,
+    ),
+  ).toBeGreaterThan(0);
 });
 
-test("Enter executes the current autocomplete query without accepting it", async ({ page }) => {
+test("Enter accepts completion before applying the same query", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
   await gotoShell(page);
 
   const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
   await search.fill("kind:");
-  await expect(page.getByRole("option", { name: "kind:text" })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: "kind:text" })).toBeVisible();
   await page.evaluate(() => {
     (window as any).__copicuTestInvocations = [];
   });
 
   await search.press("Enter");
-  await expect(search).toHaveValue("kind:");
-  await expect(page.getByRole("listbox", { name: "Search suggestions" })).toHaveCount(0);
+  await expect.poll(() => search.textContent()).toBe("kind:text");
+  await expect(suggestions).toHaveCount(0);
   await page.waitForTimeout(180);
   expect(await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter(
-      (call: any) => call.cmd === "history_search" && call.args.request.query === "kind:",
+      (call: any) => call.cmd === "history_search",
     ).length,
   )).toBe(0);
+
+  await search.press("Enter");
+  await expect.poll(() =>
+    page.evaluate(() =>
+      (window as any).__copicuTestInvocations.filter(
+        (call: any) => call.cmd === "history_search" && call.args.request.query === "kind:text",
+      ).length,
+    ),
+  ).toBeGreaterThan(0);
 });
 
 test("search composer mode toggles with icon button", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByLabel("Search clipboard history");
+  const queryEditor = page.locator(".query-editor:not(.is-hidden) [contenteditable='true']");
   const toggle = page.getByRole("button", { name: "Search mode, switch to AI mode" });
 
-  await expect(search).toHaveAttribute("placeholder", "Search clips — re:pattern, meta:work, #tag, ai:find invoices");
-  await expect(search).toHaveJSProperty("tagName", "INPUT");
+  await expect(queryEditor).toBeVisible();
+  await expect(queryEditor).toHaveAttribute("aria-label", "Search clipboard history");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(toggle).toHaveAttribute("data-mode", "search");
 
   await toggle.click();
 
   const aiToggle = page.getByRole("button", { name: "AI mode, switch to search mode" });
+  const aiEditor = page.locator(".ai-query-editor:not(.is-hidden) textarea");
   await expect(aiToggle).toHaveAttribute("aria-pressed", "true");
   await expect(aiToggle).toHaveAttribute("data-mode", "ai");
-  await expect(search).toHaveAttribute("placeholder", "Ask Copicu AI");
-  await expect(search).toHaveJSProperty("tagName", "TEXTAREA");
-  await expect(search).toBeFocused();
+  await expect(aiEditor).toHaveAttribute("aria-label", "Ask Copicu AI");
+  await expect(aiEditor).toBeFocused();
 
   await aiToggle.click();
 
@@ -5083,8 +5088,7 @@ test("search composer mode toggles with icon button", async ({ page }) => {
     "data-mode",
     "search",
   );
-  await expect(search).toHaveAttribute("placeholder", "Search clips — re:pattern, meta:work, #tag, ai:find invoices");
-  await expect(search).toHaveJSProperty("tagName", "INPUT");
+  await expect(queryEditor).toBeVisible();
 });
 
 test("regex search, literal search, and invalid patterns keep the picker coherent", async ({ page }) => {
@@ -5106,7 +5110,7 @@ test("regex search, literal search, and invalid patterns keep the picker coheren
   await expect(page.getByRole("alert")).toContainText("Could not update results. Previous results remain visible.");
   await expect(page.getByRole("alert")).toContainText("Invalid regular expression");
   await expect(markdownItem).toBeVisible();
-  await expect(search).toHaveValue("re:(");
+  await expect(search).toHaveText("re:(");
 });
 
 test("plain query in AI composer still runs local search", async ({ page }) => {
@@ -5114,7 +5118,7 @@ test("plain query in AI composer still runs local search", async ({ page }) => {
   await gotoShell(page);
 
   await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
-  const search = page.getByLabel("Search clipboard history");
+  const search = page.getByLabel("Ask Copicu AI");
   await search.fill("unbroken");
   await page.keyboard.press("Enter");
 
@@ -5128,7 +5132,7 @@ test("plain query in AI composer search button still runs local search", async (
   await gotoShell(page);
 
   await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
-  const search = page.getByLabel("Search clipboard history");
+  const search = page.getByLabel("Ask Copicu AI");
   await search.fill("unbroken");
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
@@ -5378,7 +5382,7 @@ test("foreground search failure survives a focus refresh and retries the exact d
       (call: any) => call.args.request.query,
     ),
   )).toEqual(["unbroken"]);
-  await expect(search).toHaveValue("unbroken");
+  await expect(search).toHaveText("unbroken");
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches", { timeout: 5000 });
 });
 
@@ -5400,7 +5404,7 @@ test("failed foreground clear exits Clearing pending across focus and retries th
     (window as any).__copicuTestMockOptions.historySearchFailNext = true;
   });
   await page.getByRole("button", { name: "Clear filter" }).click();
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
   await expect(page.locator("[title='Result count']")).toHaveText("Clearing filter");
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.some(
@@ -5433,7 +5437,7 @@ test("failed foreground clear exits Clearing pending across focus and retries th
       (call: any) => call.args.request.query,
     ),
   )).toEqual([""]);
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
   await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
 });
 
@@ -5483,17 +5487,18 @@ test("foreground Retry recovers a pending Filter Lock after a focus failure", as
   await expect.poll(() => page.evaluate(() => localStorage.getItem("copicu.filter-lock.v1"))).toBe("unbroken");
 });
 
-test("focus refreshes the applied snapshot while autocomplete keeps a draft held", async ({ page }) => {
+test("focus refreshes the applied snapshot while completion keeps a draft held", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 80 });
   await gotoShell(page);
 
   await expect(page.locator("[title='Result count']")).toHaveText("4 total", { timeout: 5000 });
   const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
   await page.evaluate(() => {
     (window as any).__copicuTestInvocations = [];
   });
   await search.fill("ki");
-  await expect(page.getByRole("listbox", { name: "Search suggestions" })).toBeVisible();
+  await expect(suggestions).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
   await page.waitForFunction(() =>
@@ -5506,8 +5511,8 @@ test("focus refreshes the applied snapshot while autocomplete keeps a draft held
       (call: any) => call.cmd === "history_search" && call.args.request.query === "",
     ).length,
   )).toBe(1);
-  await expect(search).toHaveValue("ki");
-  await expect(page.getByRole("listbox", { name: "Search suggestions" })).toBeVisible();
+  await expect(search).toHaveText("ki");
+  await expect(suggestions).toBeVisible();
 });
 
 test("Retry replays a failed background refresh without applying the Enter draft", async ({ page }) => {
@@ -5538,7 +5543,7 @@ test("Retry replays a failed background refresh without applying the Enter draft
       (call: any) => call.args.request.query,
     ),
   )).toEqual([""]);
-  await expect(search).toHaveValue("unbroken");
+  await expect(search).toHaveText("unbroken");
 });
 
 test("search trigger control cycles and persists Realtime and Enter only", async ({ page }) => {
@@ -5693,7 +5698,7 @@ test("pinned picker keeps filter when activating item", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  const search = page.getByLabel("Search clipboard history");
   await search.fill("long");
   const pinButton = page.getByRole("button", { name: "Pin window on top" });
   await pinButton.click();
@@ -5712,38 +5717,38 @@ test("pinned picker keeps filter when activating item", async ({ page }) => {
   );
   expect(activationRequest.itemId).toBe(101);
   expect(activationRequest.hidePicker).toBe(false);
-  await expect(search).toHaveValue("long");
+  await expect(search).toHaveText("long");
 });
 
 test("filter lock survives picker hides and unlock restores normal reset", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  const search = page.getByLabel("Search clipboard history");
   await search.fill("long");
   await page.keyboard.press("Control+Shift+l");
   await expect(page.getByRole("button", { name: "Unlock persistent filter" })).toHaveAttribute("aria-pressed", "true");
 
   await page.getByLabel("Hide Copicu").click();
-  await expect(search).toHaveValue("long");
+  await expect(search).toHaveText("long");
 
   await search.focus();
   await page.keyboard.press("Control+Shift+l");
   await expect(page.getByRole("button", { name: "Lock filter across picker closes" })).toHaveAttribute("aria-pressed", "false");
   await page.getByLabel("Hide Copicu").click();
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
 });
 
 test("filter lock restores the applied query after renderer reload", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  const search = page.getByLabel("Search clipboard history");
   await search.fill("long");
   await page.getByRole("button", { name: "Lock filter across picker closes" }).click();
   await page.reload();
 
-  await expect(page.getByRole("textbox", { name: "Search clipboard history" })).toHaveValue("long");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("long");
   await expect(page.getByRole("button", { name: "Unlock persistent filter" })).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -5751,7 +5756,7 @@ test("filter lock rejects an incomplete draft without persisting it", async ({ p
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  const search = page.getByLabel("Search clipboard history");
   await search.fill("tag:");
   const lock = page.getByRole("button", { name: "Lock filter across picker closes" });
   await expect(lock).toHaveAttribute("aria-pressed", "false");
@@ -5769,12 +5774,12 @@ test("clear filter button clears and unlocks a persistent filter", async ({ page
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  const search = page.getByLabel("Search clipboard history");
   await search.fill("long");
   await page.getByRole("button", { name: "Lock filter across picker closes" }).click();
   await page.getByRole("button", { name: "Clear filter" }).click();
 
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
   await expect(page.getByRole("button", { name: "Clear filter" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Lock filter across picker closes" })).toBeDisabled();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("copicu.filter-lock.v1"))).toBeNull();
@@ -5787,7 +5792,7 @@ test("Escape during a delayed clear does not restore the applied filter", async 
   });
   await gotoShell(page);
 
-  const search = page.getByRole("textbox", { name: "Search clipboard history" });
+  const search = page.getByLabel("Search clipboard history");
   await search.fill("long");
   await search.press("Enter");
   await expect(page.locator("[title='Result count']")).toHaveText("2 / 4 matches", { timeout: 5000 });
@@ -5796,11 +5801,11 @@ test("Escape during a delayed clear does not restore the applied filter", async 
   });
 
   await search.press("Escape");
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
   await expect(page.locator("[title='Result count']")).toHaveText("Clearing filter");
   await search.press("Escape");
   await page.waitForTimeout(80);
-  await expect(search).toHaveValue("");
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
   expect(await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter(
       (call: any) => call.cmd === "history_search" && call.args.request.query === "long",
@@ -6044,7 +6049,7 @@ test("action filter effect settles history instead of leaving Filtering", async 
   await page.keyboard.press("Control+K");
   await page.getByRole("option", { name: /url-open-or-filter/ }).click();
 
-  await expect(page.getByLabel("Search clipboard history")).toHaveValue("unbroken");
+  await expect(page.getByLabel("Search clipboard history")).toHaveText("unbroken");
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
   await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
 });
@@ -6227,12 +6232,15 @@ test("delete key in search input preserves native text editing", async ({ page }
 
   const search = page.getByLabel("Search clipboard history");
   await search.fill("COPICU_DELETE_GUARD");
-  await search.evaluate((element) => {
-    const input = element as HTMLInputElement;
-    input.setSelectionRange(7, 13);
-  });
+  await search.press("Home");
+  for (let index = 0; index < 7; index += 1) {
+    await search.press("ArrowRight");
+  }
+  for (let index = 0; index < 6; index += 1) {
+    await search.press("Shift+ArrowRight");
+  }
   await page.keyboard.press("Delete");
-  await expect(search).toHaveValue("COPICU__GUARD");
+  await expect(search).toHaveText("COPICU__GUARD");
   await page.waitForTimeout(150);
 
   const deletedIdsAfterTextEdit = await page.evaluate(() =>
@@ -6252,7 +6260,7 @@ test("ctrl+a in search input replaces query text", async ({ page }) => {
   await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A");
   await page.keyboard.type("constelaciones");
 
-  await expect(search).toHaveValue("constelaciones");
+  await expect(search).toHaveText("constelaciones");
   await expect(page.locator(".feed-item.is-multi-selected")).toHaveCount(0);
 });
 

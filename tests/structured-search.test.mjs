@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyStructuredSearchDraft,
+  replaceActiveSearchToken,
   searchSuggestions,
+  searchTokenAt,
   shouldHoldStructuredSearchDraft,
 } from "../src/shared/search.ts";
 import {
@@ -132,14 +134,111 @@ test("negated autocomplete excludes non-negatable operators and values", () => {
 
 test("tag and operator autocomplete exposes keyboard-completable replacements", () => {
   assert.deepEqual(searchSuggestions("#wo", ["work", "world"]), [
-    { label: "#work", replacement: "#work" },
-    { label: "#world", replacement: "#world" },
+    { label: "#work", replacement: "#work", completionRange: { from: 0, to: 3 } },
+    { label: "#world", replacement: "#world", completionRange: { from: 0, to: 3 } },
   ]);
   assert.deepEqual(searchSuggestions("tag:wo", ["work", "world"]), [
+    { label: "tag:work", replacement: "tag:work", completionRange: { from: 0, to: 6 } },
+    { label: "tag:world", replacement: "tag:world", completionRange: { from: 0, to: 6 } },
+  ]);
+  assert.ok(searchSuggestions("ki", []).some((suggestion) => suggestion.replacement === "kind:"));
+});
+
+test("caret-local completion replaces only the active token", () => {
+  const query = "tag:wo x";
+  const cursor = 6;
+  assert.deepEqual(searchTokenAt(query, cursor), {
+    from: 0,
+    to: 6,
+    value: "tag:wo",
+    prefix: "tag:wo",
+    suffix: "",
+  });
+  assert.ok(searchSuggestions(query, ["work"], undefined, cursor).some((suggestion) => suggestion.replacement === "tag:work"));
+  assert.equal(replaceActiveSearchToken(query, "tag:work", cursor), "tag:work x");
+});
+
+test("tag-list completion targets the segment after the committed comma", () => {
+  const query = "tag:work,pe";
+  const suggestion = searchSuggestions(query, ["personal", "work"], undefined, query.length)
+    .find((candidate) => candidate.label === "tag:personal");
+  assert.deepEqual(suggestion, {
+    label: "tag:personal",
+    replacement: "personal",
+    completionRange: { from: 9, to: 11 },
+  });
+  const middleQuery = "tag:work,personality tail";
+  const middleSuggestion = searchSuggestions(middleQuery, ["personal"], undefined, 11)
+    .find((candidate) => candidate.label === "tag:personal");
+  assert.deepEqual(middleSuggestion?.completionRange, { from: 9, to: 20 });
+  assert.equal(replaceActiveSearchToken("kind:tezzz tail", "kind:text", 7), "kind:text tail");
+  const laterQuery = "tag:work,pe,other";
+  const laterSuggestion = searchSuggestions(laterQuery, ["personal"], undefined, 11)
+    .find((candidate) => candidate.label === "tag:personal");
+  assert.deepEqual(laterSuggestion?.completionRange, { from: 9, to: 11 });
+});
+
+test("closed value completion targets only the active comma segment", () => {
+  const firstSegment = searchSuggestions("kind:tezzz,image tail", [], undefined, 7)
+    .find((candidate) => candidate.label === "kind:text");
+  assert.deepEqual(firstSegment, {
+    label: "kind:text",
+    replacement: "kind:text",
+    completionRange: { from: 0, to: 10 },
+  });
+  const laterSegment = searchSuggestions("kind:text,im", [], undefined, 12)
+    .find((candidate) => candidate.label === "kind:image");
+  assert.deepEqual(laterSegment, {
+    label: "kind:image",
+    replacement: "image",
+    completionRange: { from: 10, to: 12 },
+  });
+
+});
+test("completion context respects regex mode, quotes, and selection direction", () => {
+  assert.deepEqual(searchSuggestions("re:foo tag:wo", ["work", "world"], undefined, 13), []);
+
+  const forward = searchSuggestions(
+    "tag:work tail",
+    ["work", "world"],
+    undefined,
+    8,
+    { anchor: 4, head: 8 },
+  );
+  const reverse = searchSuggestions(
+    "tag:work tail",
+    ["work", "world"],
+    undefined,
+    4,
+    { anchor: 8, head: 4 },
+  );
+  assert.deepEqual(reverse, forward);
+  assert.deepEqual(forward.map(({ label, replacement }) => ({ label, replacement })), [
     { label: "tag:work", replacement: "tag:work" },
     { label: "tag:world", replacement: "tag:world" },
   ]);
-  assert.ok(searchSuggestions("ki", []).some((suggestion) => suggestion.replacement === "kind:"));
+
+  assert.deepEqual(
+    searchSuggestions(
+      "tag:work tail",
+      ["work", "world"],
+      undefined,
+      8,
+      { anchor: 4, head: 10 },
+    ),
+    [],
+  );
+
+  assert.deepEqual(
+    searchSuggestions('kind:"tezzz","image" tail', [], undefined, 8).find(
+      (candidate) => candidate.label === 'kind:"text"',
+    ),
+    {
+      label: 'kind:"text"',
+      replacement: 'kind:"text"',
+      completionRange: { from: 0, to: 12 },
+    },
+  );
 });
 
 test("structured hold keeps incomplete drafts permanent and defers only complete drafts", () => {
@@ -149,8 +248,6 @@ test("structured hold keeps incomplete drafts permanent and defers only complete
   const base = {
     draftChanged: true,
     searchTriggerMode: "realtime",
-    autocompleteActive: false,
-    autocompleteCommitted: false,
   };
 
   assert.equal(
@@ -166,20 +263,11 @@ test("structured hold keeps incomplete drafts permanent and defers only complete
     true,
   );
   assert.equal(
-    shouldHoldStructuredSearchDraft(complete, {
-      ...base,
-      deferStructuredSearchUntilEnter: false,
-      autocompleteActive: true,
-    }),
-    true,
-  );
-  assert.equal(
     shouldHoldStructuredSearchDraft(operatorPrefix, {
       ...base,
       deferStructuredSearchUntilEnter: false,
-      autocompleteActive: true,
     }),
-    true,
+    false,
   );
 });
 
@@ -230,21 +318,32 @@ test("search scopes validate, expose truthful states, and replace one modifier",
   assert.equal(scopeOptions({ included: ["metadata"], excluded: ["notes"] }).find((option) => option.scope === "metadata")?.state, "partial");
 
   assert.ok(searchSuggestions("in:me", [], { included: ["content"], excluded: [] }).some((suggestion) =>
-    suggestion.queryReplacement === "in:content,metadata"));
+    sameSearchScopeSelection(suggestion.scopeSelection, { included: ["content", "metadata"], excluded: [] })));
+  const scopedCompletion = searchSuggestions("in:co invoice", [], { included: ["all"], excluded: [] }, 5)
+    .find((suggestion) => suggestion.label === "Content");
+  assert.deepEqual(scopedCompletion?.completionRange, { from: 0, to: 5 });
+  assert.deepEqual(scopedCompletion?.scopeSelection, { included: ["all"], excluded: [] });
+  assert.equal(replaceQueryScopes("in:co invoice", scopedCompletion.scopeSelection), "in:all invoice");
   const excludingNotes = searchSuggestions("in:-no", []).find((suggestion) => suggestion.label === "Notes");
-  assert.deepEqual(effectiveSearchScopeLeaves(scopeSelectionFromQuery(excludingNotes.queryReplacement)),
+  assert.deepEqual(effectiveSearchScopeLeaves(excludingNotes.scopeSelection),
     ["content", "title", "tags", "context"]);
   assert.deepEqual(searchSuggestions("in:metadata", []), []);
   assert.ok(searchSuggestions("in:all,", []).every((suggestion) =>
-    sameSearchScopeSelection(scopeSelectionFromQuery(suggestion.queryReplacement), { included: ["all"], excluded: [] })));
+    sameSearchScopeSelection(suggestion.scopeSelection, { included: ["all"], excluded: [] })));
 
   const activeDefault = { included: ["content", "title"], excluded: [] };
   assert.ok(searchSuggestions("in:", [], activeDefault).some((suggestion) =>
-    suggestion.label === "Notes" && suggestion.queryReplacement === "in:content,title,notes"));
+    suggestion.label === "Notes" && sameSearchScopeSelection(
+      suggestion.scopeSelection,
+      { included: ["content", "title", "notes"], excluded: [] },
+    )));
   assert.ok(searchSuggestions("in:", [], activeDefault).some((suggestion) =>
-    suggestion.label === "Content" && suggestion.queryReplacement === "in:content,title"));
+    suggestion.label === "Content" && sameSearchScopeSelection(
+      suggestion.scopeSelection,
+      { included: ["content", "title"], excluded: [] },
+    )));
   assert.ok(searchSuggestions("in:metadata,no", []).some((suggestion) =>
-    sameSearchScopeSelection(scopeSelectionFromQuery(suggestion.queryReplacement), { included: ["metadata"], excluded: [] })));
+    sameSearchScopeSelection(suggestion.scopeSelection, { included: ["metadata"], excluded: [] })));
   assert.deepEqual(scopeSelectionFromQuery("in:notes"), { included: ["notes"], excluded: [] });
 
   assert.deepEqual(scopeSelectionFromQuery("in:title old in:metadata,-notes"), {
@@ -270,8 +369,8 @@ test("scope edits preserve other fields, inherited exclusions, and an empty effe
   const restored = setSearchScopeEnabled({ included: ["all"], excluded: ["metadata"] }, "metadata", true);
   assert.equal(sameSearchScopeSelection(restored, { included: ["all"], excluded: [] }), true);
   const added = searchSuggestions('is:inbox "a  b" in:no', [], blocked).find((suggestion) => suggestion.label === "Notes");
-  assert.deepEqual(effectiveSearchScopeLeaves(scopeSelectionFromQuery(added.queryReplacement)), ["content", "notes"]);
-  assert.equal(replaceQueryScopes(added.queryReplacement, { included: [], excluded: [] }), 'is:inbox "a  b" ');
+  assert.deepEqual(effectiveSearchScopeLeaves(added.scopeSelection), ["content", "notes"]);
+  assert.equal(replaceQueryScopes('is:inbox "a  b" in:no', { included: [], excluded: [] }), 'is:inbox "a  b" ');
 });
 
 test("default scopes resolve at execution without capturing quoted or regex text", () => {
@@ -295,5 +394,6 @@ test("default scopes resolve at execution without capturing quoted or regex text
   assert.equal(queryHasExplicitSearchScope("in:content openai"), true);
   assert.equal(queryHasExplicitSearchScope('"in:content" openai'), false);
   assert.equal(scopeQuery({ included: ["all"], excluded: [] }, { includeAll: true }), "in:all");
-  assert.ok(searchSuggestions("in:a", []).some((suggestion) => suggestion.queryReplacement === "in:all"));
+  assert.ok(searchSuggestions("in:a", []).some((suggestion) =>
+    sameSearchScopeSelection(suggestion.scopeSelection, { included: ["all"], excluded: [] })));
 });

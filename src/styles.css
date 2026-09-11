@@ -931,6 +931,182 @@ button {
 .search-field {
   position: relative;
 }
+.query-editor,
+.ai-query-editor {
+  min-width: 0;
+  width: 100%;
+}
+
+.query-editor.is-hidden,
+.ai-query-editor.is-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.query-editor .cm-editor {
+  min-height: 28px;
+  max-height: 76px;
+  overflow: visible;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.34;
+}
+
+.query-editor .cm-scroller {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.query-editor .cm-content {
+  min-height: 28px;
+  padding: 4px 56px 4px 2px;
+  caret-color: var(--ink);
+}
+
+.query-editor .cm-cursor,
+.query-editor .cm-dropCursor {
+  border-left: 2px solid var(--ink);
+}
+
+.query-editor .cm-line {
+  padding: 0;
+}
+
+.query-editor .cm-editor.cm-focused {
+  outline: 0;
+}
+
+.query-editor .cm-placeholder {
+  color: var(--ink-soft);
+}
+
+.cm-copicu-query-operator {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.cm-copicu-query-negation {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.cm-copicu-query-tag,
+.cm-copicu-query-value {
+  color: var(--ink);
+}
+
+.cm-copicu-query-scope {
+  color: var(--success);
+}
+
+.cm-copicu-query-quote {
+  color: var(--warning);
+}
+
+.query-editor .cm-tooltip.cm-tooltip-autocomplete {
+  z-index: 25;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 18px var(--shadow-strong);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.query-editor .cm-tooltip-autocomplete > ul {
+  max-height: min(240px, 38vh);
+  min-width: min(260px, calc(100vw - 18px));
+  margin: 0;
+  padding: 4px;
+}
+
+.query-editor .cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  padding: 4px 7px;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.query-editor .cm-tooltip-autocomplete > ul > li:hover,
+.query-editor .cm-tooltip-autocomplete > ul > li[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--surface-raised);
+}
+
+.query-editor .cm-tooltip-autocomplete > ul > li[aria-selected="true"] {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: -2px;
+}
+
+.query-editor .cm-tooltip-autocomplete .cm-completionIcon {
+  flex: 0 0 auto;
+  padding-right: 0;
+  color: var(--accent);
+  opacity: 1;
+}
+
+.query-editor .cm-tooltip-autocomplete > ul > li:hover .cm-completionIcon,
+.query-editor .cm-tooltip-autocomplete > ul > li[aria-selected="true"] .cm-completionIcon {
+  color: currentColor;
+}
+
+.query-editor .cm-tooltip-autocomplete .cm-completionLabel {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-weight: 750;
+  text-overflow: ellipsis;
+}
+
+.query-editor .cm-tooltip-autocomplete .cm-completionMatchedText {
+  color: inherit;
+  font-weight: 900;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.query-editor .cm-tooltip-autocomplete .cm-completionDetail {
+  flex: 0 1 auto;
+  max-width: 46%;
+  overflow: hidden;
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 0.69rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.query-editor .cm-tooltip-autocomplete > ul > li:hover .cm-completionDetail,
+.query-editor .cm-tooltip-autocomplete > ul > li[aria-selected="true"] .cm-completionDetail {
+  color: color-mix(in srgb, currentColor 78%, transparent);
+}
+
+.query-editor .cm-tooltip.cm-completionInfo {
+  z-index: 26;
+  max-width: min(320px, calc(100vw - 18px));
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-muted);
+  box-shadow: 0 6px 14px var(--shadow-strong);
+  color: var(--ink);
+  font-family: var(--font-sans, var(--font-mono));
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
 
 .search-filter-strip {
   display: flex;
@@ -997,22 +1173,6 @@ button {
   color: var(--muted);
 }
 
-.search-autocomplete {
-  position: absolute;
-  z-index: 28;
-  top: calc(100% + 6px);
-  right: 0;
-  left: 0;
-  display: grid;
-  max-height: min(260px, 45vh);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  background: var(--surface-raised);
-  box-shadow: 0 8px 16px var(--shadow-strong);
-  padding: 4px;
-}
 
 .search-autocomplete-option {
   width: 100%;

@@ -1,7 +1,7 @@
 ---
 id: filtering-search-foundation
 status: active
-updated: 2026-07-10
+updated: 2026-09-11
 ---
 
 # Filtering Search Foundation
@@ -12,13 +12,24 @@ Topic estable: `docs/topics/filtering-and-query-syntax.md`.
 
 Topic de arquitectura nueva: `docs/topics/search-plan-engine.md`.
 
+## Corte CodeMirror Verificado 2026-09-11
+
+La spec [`012-codemirror-query-editor`](../../specs/012-codemirror-query-editor/spec.md)
+esta implementada y verificada con supervision independiente. Estudio,
+alternativas, contrato y mediciones:
+[`codemirror-query-editor`](../topics/codemirror-query-editor.md).
+
+Una instancia se carga y monta durante el arranque oculto y se conserva al
+reabrir. CodeMirror reemplaza el autocomplete manual; aceptar completion usa
+la misma politica Realtime/Enter que escribir o pegar. Rust conserva semantica.
+Rangos, listas, negaciones, seleccion y foco nativo tienen evidencia focalizada.
+
+Siguiente paso: dogfood del corte. IME real solo cuando este disponible;
+comparar perfiles/builds equivalentes antes de afirmar mejoras de rendimiento.
+No instalar ni publicar fuera del gate de distribucion.
+
 ## Estado Actual
 
-Actualizacion 2026-07-10 autocomplete (pendiente de validacion integrada):
-
-- el worktree agrega sugerencias locales keyboard-first para `#`/`tag:`, operadores conocidos y valores cerrados; Tab/click aceptan, flechas/Escape navegan o cierran y Enter conserva aplicar la busqueda;
-- el popup no debe aparecer para texto plain ni modo AI; no cambia Rust/SQLite ni envia contenido fuera del equipo;
-- el long task reporto `npm run build` y seis Playwright focalizados verdes, pero falta validacion independiente completa, smoke CUA y revisar el diff antes de promoverlo como aplicado;
 - Settings ahora indexa los controles internos de Picker, para que buscar `structured` encuentre `Confirm structured filters with Enter`.
 
 Actualizacion 2026-07-10 chips/explain y diagnostico sintactico:

@@ -18,6 +18,7 @@ Router liviano de conocimiento. Usar `docs/.generated/context-index.md` para ori
 | Open source, GitHub publico, launch, Show HN | [open-source-github](topics/open-source-github.md), [013-open-source-growth](tracks/013-open-source-growth.md), [018-public-launch-readiness](tracks/018-public-launch-readiness.md) |
 | Performance, memoria, idle, benchmarks, agente lento en repo | [performance-and-memory](topics/performance-and-memory.md), [014-performance-memory](tracks/014-performance-memory.md) |
 | Filtering, query syntax, SearchPlan, FTS, busqueda AI | [filtering-and-query-syntax](topics/filtering-and-query-syntax.md), [search-plan-engine](topics/search-plan-engine.md), [ai-search-and-actions](topics/ai-search-and-actions.md) |
+| CodeMirror, autocomplete, editor textual de consultas, precarga del picker | [codemirror-query-editor](topics/codemirror-query-editor.md), [filtering-and-query-syntax](topics/filtering-and-query-syntax.md), [008-filtering-search-foundation](tracks/008-filtering-search-foundation.md) |
 | Actions, scripts, plugins, debug de scripts | [actions-and-scripting-api](topics/actions-and-scripting-api.md), [004-actions-scripting](tracks/004-actions-scripting.md), [017-actions-modularization](tracks/017-actions-modularization.md) |
 | Markdown output, summaries, reportes | [markdown-output-surface](topics/markdown-output-surface.md) |
 | Clipboard, formatos, captura, rich MIME, enrichment | [clipboard](topics/clipboard.md), [sqlite-storage](topics/sqlite-storage.md), `specs/008-clipboard-enrichment/` |

@@ -1,7 +1,6 @@
 import type { SearchScope } from "./settings";
 import {
   parseSearchScopeModifier,
-  replaceQueryScopes,
   scopeQuery,
   scopeOptions,
   scopeSummary,
@@ -9,6 +8,11 @@ import {
   sameSearchScopeSelection,
   type SearchScopeSelection,
 } from "./searchScopes.ts";
+
+export function scenarioCommandSearch(query: string) {
+  const match = query.trim().match(/^>\s*(?:escenario|scenario)(?:\s+(.*))?$/i);
+  return match ? (match[1] ?? "").trim() : null;
+}
 
 // Matches storage::normalize_tag_label without migrating Unicode identities.
 export function tagKey(value: string): string {
@@ -32,7 +36,11 @@ export type SearchSuggestion = {
     actionLabel: string;
     summary: string;
   };
-  queryReplacement?: string;
+  scopeSelection?: SearchScopeSelection;
+  completionRange?: {
+    from: number;
+    to: number;
+  };
 };
 
 export type StructuredSearchDraftKind = "plain" | "complete" | "incomplete" | "invalid";
@@ -52,14 +60,71 @@ export type StructuredSearchHoldOptions = {
   draftChanged: boolean;
   searchTriggerMode: StructuredSearchTriggerMode;
   deferStructuredSearchUntilEnter: boolean;
-  autocompleteActive?: boolean;
-  autocompleteCommitted?: boolean;
 };
 
 type DraftToken = {
   value: string;
   hasUnclosedQuote: boolean;
 };
+
+export type SearchTokenRange = {
+  from: number;
+  to: number;
+  value: string;
+  prefix: string;
+  suffix: string;
+};
+export type SearchSelection = {
+  anchor: number;
+  head: number;
+};
+
+export function searchTokenAt(query: string, cursor = query.length): SearchTokenRange {
+  const position = Math.min(Math.max(cursor, 0), query.length);
+  const ranges: Array<{ from: number; to: number }> = [];
+  let start = -1;
+  let inQuote = false;
+  let escaped = false;
+
+  for (let index = 0; index < query.length; index += 1) {
+    const char = query[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inQuote) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      if (start === -1) start = index;
+      inQuote = !inQuote;
+      continue;
+    }
+    if (!inQuote && /\s/.test(char)) {
+      if (start !== -1) {
+        ranges.push({ from: start, to: index });
+        start = -1;
+      }
+      continue;
+    }
+    if (start === -1) start = index;
+  }
+  if (start !== -1) ranges.push({ from: start, to: query.length });
+
+  const range = ranges.find(({ from, to }) => position >= from && position <= to);
+  if (!range) {
+    return { from: position, to: position, value: "", prefix: "", suffix: "" };
+  }
+  return {
+    from: range.from,
+    to: range.to,
+    value: query.slice(range.from, range.to),
+    prefix: query.slice(range.from, position),
+    suffix: query.slice(position, range.to),
+  };
+}
+
 
 const OPERATOR_SUGGESTIONS = [
   "in:", "tag:", "kind:", "is:", "mime:", "has:", "meta:", "title:", "notes:",
@@ -187,9 +252,6 @@ function isValidDateFilterValue(value: string) {
     && offsetMinute <= 59;
 }
 
-function activeToken(query: string) {
-  return query.slice(query.lastIndexOf(" ") + 1);
-}
 
 function normalizeTokenValue(value: string) {
   // Keep this in lockstep with storage::search::tokenize_query: quotes group
@@ -423,8 +485,6 @@ export function shouldHoldStructuredSearchDraft(
   }
   return classification.kind === "incomplete"
     || classification.kind === "invalid"
-    || options.autocompleteActive === true
-    || options.autocompleteCommitted === true
     || (
       options.searchTriggerMode === "realtime"
       && options.deferStructuredSearchUntilEnter
@@ -443,11 +503,80 @@ function matchingTags(prefix: string, tags: string[], replacement: (tag: string)
     .map((tag) => ({ label: replacement(tag), replacement: replacement(tag) }));
 }
 
+function searchValueSegmentAt(query: string, valueFrom: number, valueTo: number, cursor: number) {
+  let segmentFrom = valueFrom;
+  let segmentTo = valueTo;
+  let inQuote = false;
+  let escaped = false;
+  const position = Math.min(Math.max(cursor, valueFrom), valueTo);
+  for (let index = valueFrom; index < valueTo; index += 1) {
+    const char = query[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inQuote) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (char !== "," || inQuote) {
+      continue;
+    }
+    if (index < position) {
+      segmentFrom = index + 1;
+    } else {
+      segmentTo = index;
+      break;
+    }
+  }
+  return { from: segmentFrom, to: segmentTo };
+}
+function searchValueCompletionAt(
+  query: string,
+  range: { from: number; to: number },
+  cursor: number,
+) {
+  const position = Math.min(Math.max(cursor, range.from), range.to);
+  let quoteStart = -1;
+  let inQuote = false;
+  let escaped = false;
+  for (let index = range.from; index < position; index += 1) {
+    const char = query[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inQuote) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      if (!inQuote && quoteStart === -1) quoteStart = index;
+      inQuote = !inQuote;
+    }
+  }
+  return {
+    prefix: normalizeTokenValue(query.slice(range.from, position)),
+    quoted: inQuote && quoteStart >= range.from && query.slice(range.from, quoteStart).trim() === "",
+  };
+}
+
+function formatSearchCompletionValue(value: string, quoted: boolean) {
+  return quoted ? `"${value.replace(/["\\]/g, "\\$&")}"` : value;
+}
+
 function scopeAutocompleteSuggestions(
   query: string,
   value: string,
   activeScope: SearchScopeSelection,
+  cursor: number,
 ): SearchSuggestion[] {
+  const tokenRange = searchTokenAt(query, cursor);
+  const completionRange = { from: tokenRange.from, to: tokenRange.to };
   const rawParts = value.split(",");
   const rawSuffix = rawParts.pop() ?? "";
   const negative = rawSuffix.startsWith("-");
@@ -471,7 +600,8 @@ function scopeAutocompleteSuggestions(
         actionLabel: "Search all fields",
         summary: scopeSummary(visibleSelection),
       },
-      queryReplacement: replaceQueryScopes(query, allSelection),
+      scopeSelection: allSelection,
+      completionRange,
     });
   }
   suggestions.push(
@@ -491,7 +621,8 @@ function scopeAutocompleteSuggestions(
             actionLabel,
             summary: scopeSummary(visibleSelection),
           },
-          queryReplacement: replaceQueryScopes(query, nextSelection),
+          scopeSelection: nextSelection,
+          completionRange,
         };
       }),
   );
@@ -502,14 +633,37 @@ export function searchSuggestions(
   query: string,
   tags: string[],
   activeScope: SearchScopeSelection = { included: ["all"], excluded: [] },
+  cursor = query.length,
+  selection?: SearchSelection,
 ): SearchSuggestion[] {
-  const token = activeToken(query);
+  if (query.trimStart().startsWith("re:")) return [];
+
+  const hasSelection = selection !== undefined && selection.anchor !== selection.head;
+  const selectionFrom = hasSelection
+    ? Math.max(0, Math.min(query.length, Math.min(selection.anchor, selection.head)))
+    : cursor;
+  const selectionTo = hasSelection
+    ? Math.max(0, Math.min(query.length, Math.max(selection.anchor, selection.head)))
+    : cursor;
+  const completionCursor = hasSelection ? selectionFrom : cursor;
+  const tokenRange = searchTokenAt(query, completionCursor);
+  if (
+    hasSelection
+    && (selectionFrom < tokenRange.from || selectionTo > tokenRange.to)
+  ) {
+    return [];
+  }
+  const token = tokenRange.prefix;
   if (!token) return [];
 
   const negated = token.startsWith("-") ? "-" : "";
   const rawToken = negated ? token.slice(1) : token;
   if (rawToken.startsWith("#")) {
-    return matchingTags(rawToken.slice(1), tags, (tag) => `${negated}#${tag}`);
+    return matchingTags(rawToken.slice(1), tags, (tag) => `${negated}#${tag}`)
+      .map((suggestion) => ({
+        ...suggestion,
+        completionRange: { from: tokenRange.from, to: tokenRange.to },
+      }));
   }
 
   const separator = rawToken.indexOf(":");
@@ -519,30 +673,73 @@ export function searchSuggestions(
       .filter((operator) => !negated || !NON_NEGATABLE_FILTER_KEYS.has(operator.slice(0, -1)))
       .filter((operator) => !negated || !DATE_FILTER_KEYS.has(operator.slice(0, -1)))
       .filter((operator) => operator.startsWith(prefix))
-      .map((operator) => ({ label: `${negated}${operator}`, replacement: `${negated}${operator}` }));
+      .map((operator) => ({
+        label: `${negated}${operator}`,
+        replacement: `${negated}${operator}`,
+        completionRange: { from: tokenRange.from, to: tokenRange.to },
+      }));
   }
 
   const key = rawToken.slice(0, separator).toLocaleLowerCase();
-  const value = rawToken.slice(separator + 1);
+  const valueStart = tokenRange.from + (negated ? 1 : 0) + separator + 1;
+  const activeValueRange = searchValueSegmentAt(query, valueStart, tokenRange.to, completionCursor);
+  const activeValueFrom = activeValueRange.from;
+  const activeValueTo = activeValueRange.to;
+  const value = query.slice(valueStart, completionCursor);
+  const activeValue = searchValueCompletionAt(query, activeValueRange, completionCursor);
   if (key === "tag" || key === "tags") {
-    return matchingTags(value, tags, (tag) => `${negated}tag:${tag}`);
+    const tagSuggestions = matchingTags(activeValue.prefix, tags, (tag) => tag);
+    if (activeValueFrom > valueStart) {
+      return tagSuggestions.map((suggestion) => {
+        const replacement = formatSearchCompletionValue(suggestion.replacement, activeValue.quoted);
+        return {
+          label: `${negated}${key}:${replacement}`,
+          replacement,
+          completionRange: { from: activeValueFrom, to: activeValueTo },
+        };
+      });
+    }
+    return tagSuggestions.map((suggestion) => {
+      const replacement = formatSearchCompletionValue(suggestion.replacement, activeValue.quoted);
+      const fullReplacement = `${negated}${key}:${replacement}`;
+      return {
+        label: fullReplacement,
+        replacement: fullReplacement,
+        completionRange: { from: tokenRange.from, to: activeValueTo },
+      };
+    });
   }
   if (key === "in" && !negated) {
-    return scopeAutocompleteSuggestions(query, value, activeScope);
+    return scopeAutocompleteSuggestions(query, value, activeScope, completionCursor);
   }
 
   const canonicalKey = VALUE_KEY_ALIASES[key] ?? key;
   if (negated && (DATE_FILTER_KEYS.has(key) || NON_NEGATABLE_FILTER_KEYS.has(key) || DATE_FILTER_KEYS.has(canonicalKey))) {
     return [];
   }
-  const normalizedValue = value.toLocaleLowerCase();
-  return (CLOSED_VALUES[canonicalKey] ?? [])
+  const closedValues = CLOSED_VALUES[canonicalKey] ?? [];
+  const normalizedValue = activeValue.prefix.toLocaleLowerCase();
+  return closedValues
     .filter((item) => item.startsWith(normalizedValue) && item !== normalizedValue)
-    .map((item) => ({ label: `${negated}${key}:${item}`, replacement: `${negated}${key}:${item}` }));
+    .map((item) => {
+      const renderedValue = formatSearchCompletionValue(item, activeValue.quoted);
+      const fullReplacement = `${negated}${key}:${renderedValue}`;
+      return activeValueFrom > valueStart
+        ? {
+            label: fullReplacement,
+            replacement: renderedValue,
+            completionRange: { from: activeValueFrom, to: activeValueTo },
+          }
+        : {
+            label: fullReplacement,
+            replacement: fullReplacement,
+            completionRange: { from: tokenRange.from, to: activeValueTo },
+          };
+    });
 }
-
-export function replaceActiveSearchToken(query: string, replacement: string) {
-  return `${query.slice(0, query.lastIndexOf(" ") + 1)}${replacement}`;
+export function replaceActiveSearchToken(query: string, replacement: string, cursor = query.length) {
+  const range = searchTokenAt(query, cursor);
+  return `${query.slice(0, range.from)}${replacement}${query.slice(range.to)}`;
 }
 
 function tokenizeSearchQuery(query: string) {

@@ -2,6 +2,22 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-09-11 - Editor de consultas CodeMirror residente
+
+Estado: accepted por JP; implementacion y smoke nativo verificados en `dev:built`, sin certificar rendimiento de release.
+
+Decision: replantear el filtro como editor textual con CodeMirror 6 precargado,
+montado en la WebView principal oculta y conservado al reabrir. No se exige
+mantener input nativo, UI ni atajos anteriores. Rust conserva semantica y
+ejecucion; aceptar completion no crea otra politica Realtime/Enter.
+
+Motivo: se prioriza una base extensible de edicion, seleccion, transacciones y
+asistencia de lenguaje sobre minimizar el cambio de UI. La residencia permite
+adelantar carga, pero las mediciones Node/bundle no certifican primera tecla ni
+foco/IME en Tauri. La aceptacion requiere esas pruebas.
+
+Estudio y contrato: [codemirror-query-editor](topics/codemirror-query-editor.md).
+
 ### 2026-09-11 - Tags son el único conjunto de metadata editable
 
 Estado: accepted por JP.

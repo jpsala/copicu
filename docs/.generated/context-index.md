@@ -2,7 +2,7 @@
 
 Generated cache. Do not edit by hand.
 
-Generated: 2026-09-11T10:29:24.578Z
+Generated: 2026-09-11T18:12:12.294Z
 
 ## Topics
 
@@ -11,6 +11,7 @@ Generated: 2026-09-11T10:29:24.578Z
 - active: [agentic-os-operations](../topics/agentic-os-operations.md)
 - draft: [ai-search-and-actions](../topics/ai-search-and-actions.md)
 - active: [clipboard](../topics/clipboard.md)
+- active: [codemirror-query-editor](../topics/codemirror-query-editor.md)
 - active: [compound-hotkeys-and-whichkey](../topics/compound-hotkeys-and-whichkey.md)
 - active: [copyq-technical-baseline](../topics/copyq-technical-baseline.md)
 - draft: [custom-window-system](../topics/custom-window-system.md)
@@ -60,6 +61,7 @@ Generated: 2026-09-11T10:29:24.578Z
 - [009-saved-history-views](../../specs/009-saved-history-views/)
 - [010-inbox-copy](../../specs/010-inbox-copy/)
 - [011-selection-aware-metadata-inspector](../../specs/011-selection-aware-metadata-inspector/)
+- [012-codemirror-query-editor](../../specs/012-codemirror-query-editor/)
 
 ## Skills
 

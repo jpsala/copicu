@@ -111,8 +111,7 @@ import { setupAutomaticUpdates, type AutoUpdateStatus } from "./autoUpdate";
 import { localPreviewImageSource } from "./shared/previewMedia";
 import {
   classifyStructuredSearchDraft,
-  replaceActiveSearchToken,
-  searchSuggestions,
+  scenarioCommandSearch,
   tagKey,
   shouldHoldStructuredSearchDraft,
 } from "./shared/search";
@@ -132,7 +131,7 @@ import {
   type SearchTriggerMode,
 } from "./shared/settings";
 import { queryHasExplicitSearchScope, queryHasValidSearchScope, replaceQueryScopes, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, type SearchScopeSelection } from "./shared/searchScopes";
-import { SearchScopeOption, SearchScopePicker } from "./ui/SearchScopeEditor";
+import { SearchScopePicker } from "./ui/SearchScopeEditor";
 import {
   UiBadge,
   UiButton,
@@ -152,6 +151,7 @@ import { ToastStack } from "./ui/ToastStack";
 import { ScenarioCreator } from "./ui/ScenarioSwitcher";
 import { SavedViewCreator } from "./ui/SavedViewCreator";
 import { MetadataInspector, createEmptyMetadataSnapshot } from "./ui/MetadataInspector";
+import { QueryEditor, type QueryEditorHandle, type QueryEditorReadyPhase } from "./ui/QueryEditor";
 import {
   PickerContextStrip,
   PickerFeed,
@@ -1187,10 +1187,6 @@ function isScenarioCommand(query: string) {
   return /^>\s*(?:escenario|scenario|capture\s+mode)(?:\s+.*)?$/i.test(query.trim());
 }
 
-function scenarioCommandSearch(query: string) {
-  const match = query.trim().match(/^>\s*(?:escenario|scenario)(?:\s+(.*))?$/i);
-  return match ? (match[1] ?? "").trim() : null;
-}
 
 function writeLockedFilterQuery(query: string | null) {
   try {
@@ -1235,6 +1231,8 @@ function App() {
   const [markedTotalCount, setMarkedTotalCount] = useState<number | null>(null);
   const [newClipsAvailable, setNewClipsAvailable] = useState(false);
   const [query, setQuery] = useState(initialFilterQuery);
+  const [queryComposing, setQueryComposing] = useState(false);
+  const [queryEditorReadyPhase, setQueryEditorReadyPhase] = useState<QueryEditorReadyPhase>("module");
   const [knownTagSlugs, setKnownTagSlugs] = useState<string[]>([]);
   const [paletteTags, setPaletteTags] = useState<TagSummary[]>([]);
   const [savedHistoryViews, setSavedHistoryViews] = useState<SavedHistoryView[]>([]);
@@ -1249,8 +1247,6 @@ function App() {
   const [scenarioSwitcherOpen, setScenarioSwitcherOpen] = useState(false);
   const [scenarioSwitcherLoading, setScenarioSwitcherLoading] = useState(false);
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
-  const [activeSearchSuggestion, setActiveSearchSuggestion] = useState(0);
-  const [dismissedAutocompleteQuery, setDismissedAutocompleteQuery] = useState<string | null>(null);
   const [pickerPinned, setPickerPinned] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -1283,7 +1279,10 @@ function App() {
   const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [whichKeyState, setWhichKeyState] = useState<WhichKeyState | null>(null);
-  const searchRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const queryEditorRef = useRef<QueryEditorHandle>(null);
+  const aiSearchRef = useRef<HTMLTextAreaElement>(null);
+  const aiComposerModeRef = useRef(aiComposerMode);
+  aiComposerModeRef.current = aiComposerMode;
   const scopePickerOpenRef = useRef(false);
   const onScopePickerOpenChange = useCallback((opened: boolean) => { scopePickerOpenRef.current = opened; }, []);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -1308,7 +1307,6 @@ function App() {
   const pickerSearchSettingsRef = useRef(settings.picker);
   const searchDebounceTimerRef = useRef<number | null>(null);
   const skipNextRealtimeSearchRef = useRef<SearchReplayToken | null>(null);
-  const autocompleteCommittedQueryRef = useRef<string | null>(null);
   const foregroundSearchInFlightRef = useRef(false);
   const foregroundSearchOwnerSeqRef = useRef<number | null>(null);
   const [deferredAppliedRefresh, setDeferredAppliedRefresh] = useState<SearchReplayToken | null>(null);
@@ -1415,27 +1413,15 @@ function App() {
     const normalized = scenarioCommandQuery.toLocaleLowerCase();
     return [...scenarios]
       .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs)
-      .filter((scenario) => !normalized || scenario.name.toLocaleLowerCase().includes(normalized));
+      .filter((scenario) => !normalized || scenario.name.toLocaleLowerCase().includes(normalized))
+      .map((scenario) => ({ id: scenario.id, label: scenario.name }));
   }, [scenarioCommandQuery, scenarios]);
-  const autocompleteScopeSelection = useMemo<SearchScopeSelection>(() => queryHasValidSearchScope(query)
+  const editorScopeSelection = useMemo<SearchScopeSelection>(() => queryHasValidSearchScope(query)
     ? scopeSelectionFromQuery(query)
     : {
       included: settings.picker.defaultSearchScopes,
       excluded: settings.picker.defaultExcludedSearchScopes,
     }, [query, settings.picker.defaultSearchScopes, settings.picker.defaultExcludedSearchScopes]);
-  const autocompleteSuggestions = useMemo(
-    () => (aiComposerMode || scenarioCommandQuery !== null ? [] : searchSuggestions(query, knownTagSlugs, autocompleteScopeSelection)),
-    [aiComposerMode, autocompleteScopeSelection, knownTagSlugs, query, scenarioCommandQuery],
-  );
-  const autocompleteOpen = autocompleteSuggestions.length > 0 && dismissedAutocompleteQuery !== query;
-  const scenarioCommandOpen = scenarioCommandOptions.length > 0 && dismissedAutocompleteQuery !== query;
-  const searchSuggestionsOpen = autocompleteOpen || scenarioCommandOpen;
-  const activeSearchSuggestionCount = scenarioCommandOpen
-    ? scenarioCommandOptions.length
-    : autocompleteSuggestions.length;
-  const activeSearchSuggestionIndex = activeSearchSuggestionCount > 0
-    ? Math.min(Math.max(activeSearchSuggestion, 0), activeSearchSuggestionCount - 1)
-    : 0;
   const structuredSearchDraft = useMemo(
     () => classifyStructuredSearchDraft(query),
     [query],
@@ -1445,10 +1431,8 @@ function App() {
     draftChanged: hasSearchDraft,
     searchTriggerMode,
     deferStructuredSearchUntilEnter: settings.picker.deferStructuredSearchUntilEnter,
-    autocompleteActive: autocompleteOpen && !scenarioCommandOpen,
-    autocompleteCommitted: autocompleteCommittedQueryRef.current === query,
   });
-  const effectiveSearchTriggerMode: SearchTriggerMode = structuredSearchHold ? "enter" : searchTriggerMode;
+  const effectiveSearchTriggerMode: SearchTriggerMode = queryComposing || structuredSearchHold ? "enter" : searchTriggerMode;
   const nextTriggerMode = nextSearchTriggerMode(searchTriggerMode);
   const searchTriggerAriaLabel = `Search trigger: ${searchTriggerModeName(searchTriggerMode)}, switch to ${searchTriggerModeName(nextTriggerMode)}`;
   const displayedHistory = useMemo(() => {
@@ -1528,13 +1512,8 @@ function App() {
   useEffect(() => {
     queryRef.current = query;
     queryInteractionSeqRef.current += 1;
-    setActiveSearchSuggestion(0);
   }, [query]);
 
-  useEffect(() => {
-    const suggestionCount = scenarioCommandOpen ? scenarioCommandOptions.length : autocompleteSuggestions.length;
-    setActiveSearchSuggestion((current) => Math.min(current, Math.max(suggestionCount - 1, 0)));
-  }, [autocompleteSuggestions.length, scenarioCommandOpen, scenarioCommandOptions.length]);
 
   useEffect(() => {
     historyInputQueryRef.current = historyInputQuery;
@@ -1567,7 +1546,12 @@ function App() {
 
   const focusSearch = useCallback(() => {
     window.setTimeout(() => {
-      if (!scopePickerOpenRef.current) searchRef.current?.focus();
+      if (scopePickerOpenRef.current) return;
+      if (aiComposerModeRef.current) {
+        aiSearchRef.current?.focus();
+      } else {
+        queryEditorRef.current?.focus();
+      }
     }, 0);
   }, []);
 
@@ -2413,7 +2397,6 @@ function App() {
     setAiComposerMode(false);
     setSearchInterpretation(null);
     setNewClipsAvailable(false);
-    autocompleteCommittedQueryRef.current = null;
     if (!filterLockedRef.current && !activeScenarioSessionRef.current) {
       queryRef.current = "";
       setQuery("");
@@ -2491,7 +2474,6 @@ function App() {
       setActiveScenarioSession(session);
       setPickerMenuOpen(false);
       setScenarioSwitcherOpen(false);
-      setDismissedAutocompleteQuery(session.query);
     } catch (error) {
       pushToast({ title: "Could not activate capture mode", message: String(error), tone: "danger" });
     } finally {
@@ -3621,8 +3603,6 @@ function App() {
           draftChanged: draft !== applied,
           searchTriggerMode: pickerSearch.searchTriggerMode,
           deferStructuredSearchUntilEnter: pickerSearch.deferStructuredSearchUntilEnter,
-          autocompleteActive: autocompleteOpen && !scenarioCommandOpen,
-          autocompleteCommitted: autocompleteCommittedQueryRef.current?.trim() === draft,
         },
       );
       if (foregroundSearchInFlightRef.current) {
@@ -3670,7 +3650,7 @@ function App() {
         descriptorOverride: appliedDescriptor,
       });
     },
-    [autocompleteOpen, refreshHistory, scenarioCommandOpen, updateDeferredAppliedRefresh],
+    [refreshHistory, updateDeferredAppliedRefresh],
   );
   const pickerEventHandlersRef = useRef({
     focusSearch,
@@ -4113,7 +4093,7 @@ function App() {
   );
 
   const runLocalShortcutAction = useCallback(
-    (keyboardEvent: ReactKeyboardEvent<HTMLElement>) => {
+    (keyboardEvent: KeyboardEvent) => {
       const shortcut = shortcutFromKeyboardEvent(keyboardEvent);
       if (!shortcut) {
         return false;
@@ -5495,7 +5475,6 @@ function App() {
         appliedGeneration: appliedSnapshotGenerationRef.current,
         reason: "foreground",
       };
-      autocompleteCommittedQueryRef.current = null;
       return refreshHistory({
         resetScroll: true,
         allowAi: true,
@@ -5552,7 +5531,6 @@ function App() {
       };
     }
     void closeFind({ restoreFocus: false });
-    autocompleteCommittedQueryRef.current = null;
     if (searchDebounceTimerRef.current !== null) {
       window.clearTimeout(searchDebounceTimerRef.current);
       searchDebounceTimerRef.current = null;
@@ -5593,8 +5571,8 @@ function App() {
       writeLockedFilterQuery(null);
       setFilterLocked(false);
     }
-    window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [aiComposerMode, historyInputQuery, query, runSearchNow, searchState.applied, structuredSearchDraft]);
+    focusSearch();
+  }, [aiComposerMode, focusSearch, historyInputQuery, query, runSearchNow, searchState.applied, structuredSearchDraft]);
   const clearSearchFilter = useCallback(() => {
     leaveOpenedSavedView();
     if (searchDebounceTimerRef.current !== null) {
@@ -5605,7 +5583,6 @@ function App() {
     writeLockedFilterQuery(null);
     setFilterLocked(false);
     const clearedQuery = "";
-    autocompleteCommittedQueryRef.current = null;
     queryRef.current = clearedQuery;
     setQuery(clearedQuery);
     supersedeSearchIntent(clearedQuery, "applying");
@@ -5616,15 +5593,14 @@ function App() {
       reason: "foreground",
     };
     updateClearSearchPending(true);
-    setDismissedAutocompleteQuery(null);
     setSearchInterpretation(null);
     setActionError(null);
     setSelectedItemId(null);
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({ resetScroll: true, queryOverride: clearedQuery, allowAi: false });
-    window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [leaveOpenedSavedView, refreshHistory, supersedeSearchIntent, updateClearSearchPending]);
+    focusSearch();
+  }, [focusSearch, leaveOpenedSavedView, refreshHistory, supersedeSearchIntent, updateClearSearchPending]);
   const removeSearchChip = useCallback((chip: SearchQueryChip) => {
     let nextQuery = chip.queryWithoutClause;
     const applied = searchState.applied?.descriptor;
@@ -5638,7 +5614,6 @@ function App() {
       }
     }
     leaveOpenedSavedView();
-    autocompleteCommittedQueryRef.current = null;
     queryRef.current = nextQuery;
     setQuery(nextQuery);
     supersedeSearchIntent(nextQuery, "applying");
@@ -5663,42 +5638,35 @@ function App() {
     const paginationRecoveryError = historyPaginationBlockMatchesCurrent
       ? historyPaginationBlocked?.error ?? null
       : null;
-    autocompleteCommittedQueryRef.current = null;
     queryRef.current = appliedQuery;
     setQuery(appliedQuery);
-    setDismissedAutocompleteQuery(appliedQuery);
     setHistoryPending(false);
     setHistoryError(null);
     supersedeSearchIntent(appliedQuery, "idle");
     if (paginationRecoveryError) {
       setHistoryError(paginationRecoveryError);
     }
-    window.setTimeout(() => searchRef.current?.focus(), 0);
-  }, [historyPaginationBlockMatchesCurrent, historyPaginationBlocked, supersedeSearchIntent]);
-  const acceptSearchSuggestion = useCallback((index = activeSearchSuggestionIndex) => {
-    if (scenarioCommandOpen) {
-      const scenario = scenarioCommandOptions[index];
-      if (scenario) void activateScenarioFromPicker(scenario.id);
-      return;
-    }
-    const suggestion = autocompleteSuggestions[index];
-    if (!suggestion) {
-      return;
-    }
-    const nextQuery = suggestion.queryReplacement ?? replaceActiveSearchToken(query, suggestion.replacement);
+    focusSearch();
+  }, [focusSearch, historyPaginationBlockMatchesCurrent, historyPaginationBlocked, supersedeSearchIntent]);
+  const handleQueryChange = useCallback((nextQuery: string, isComposing = false) => {
     if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
       leaveOpenedSavedView();
     }
+    if (clearSearchPendingRef.current) {
+      updateClearSearchPending(false);
+    }
     const nextStructuredDraft = classifyStructuredSearchDraft(nextQuery);
-    const nextStructuredHold = nextStructuredDraft.structured;
-    autocompleteCommittedQueryRef.current = nextQuery;
+    const nextStructuredHold = shouldHoldStructuredSearchDraft(nextStructuredDraft, {
+      draftChanged: nextQuery.trim() !== historyInputQuery,
+      searchTriggerMode,
+      deferStructuredSearchUntilEnter: settings.picker.deferStructuredSearchUntilEnter,
+    });
     queryRef.current = nextQuery;
-    setDismissedAutocompleteQuery(nextQuery);
     setQuery(nextQuery);
-    setHistoryPending(false);
+    setHistoryPending(!isComposing && !isScenarioCommand(nextQuery) && searchTriggerMode === "realtime" && !nextStructuredHold);
     supersedeSearchIntent(
       nextQuery,
-      nextStructuredHold ? "held" : searchTriggerMode === "realtime" ? "applying" : "idle",
+      isComposing ? "held" : nextStructuredHold ? "held" : searchTriggerMode === "realtime" ? "applying" : "idle",
     );
     setAiPlanning(false);
     setActionError(null);
@@ -5707,268 +5675,264 @@ function App() {
     setSelectedIds(new Set());
     selectionAnchorItemIdRef.current = null;
   }, [
-    activeSearchSuggestionIndex,
-    autocompleteSuggestions,
+    historyInputQuery,
     leaveOpenedSavedView,
     openedSavedView,
-    query,
-    scenarioCommandOpen,
-    scenarioCommandOptions,
     searchTriggerMode,
-    activateScenarioFromPicker,
+    settings.picker.deferStructuredSearchUntilEnter,
     supersedeSearchIntent,
+    updateClearSearchPending,
   ]);
-  const searchControlBaseProps = {
+  const handleQueryCompositionChange = useCallback((isComposing: boolean) => {
+    if (isComposing && searchDebounceTimerRef.current !== null) {
+      window.clearTimeout(searchDebounceTimerRef.current);
+      searchDebounceTimerRef.current = null;
+    }
+    setQueryComposing(isComposing);
+  }, []);
+  const handleSearchKeyDown = useCallback((event: KeyboardEvent, view?: unknown): boolean => {
+    if (isQuickActionsShortcut(event)) {
+      event.preventDefault();
+      openActionPicker();
+      return true;
+    }
+    if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "s") {
+      event.preventDefault();
+      openScenarioMenu();
+      return true;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
+      event.preventDefault();
+      openCommandPalette();
+      return true;
+    }
+    if (
+      event.ctrlKey
+      && event.shiftKey
+      && !event.altKey
+      && !event.metaKey
+      && event.key.toLocaleLowerCase() === "l"
+    ) {
+      event.preventDefault();
+      toggleFilterLock();
+      return true;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "n") {
+      event.preventDefault();
+      beginCreateItem();
+      return true;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "i") {
+      event.preventDefault();
+      setAiComposerMode((current) => !current);
+      setSearchInterpretation(null);
+      window.setTimeout(focusSearch, 0);
+      return true;
+    }
+    const shortcut = shortcutFromKeyboardEvent(event);
+    const settingsShortcut = normalizeShortcutString(settings.picker.settingsShortcut);
+    if (settingsShortcut && shortcut === settingsShortcut) {
+      event.preventDefault();
+      void openSettingsWindow();
+      return true;
+    }
+    const previewShortcut = normalizeShortcutString(settings.picker.previewShortcut);
+    if (previewShortcut && shortcut === previewShortcut) {
+      event.preventDefault();
+      if (selectedItem) {
+        void toggleItemPreview(selectedItem.id).catch((previewError) => {
+          setActionError(String(previewError));
+        });
+      }
+      return true;
+    }
+    if (shortcut === TAG_EDIT_SHORTCUT) {
+      event.preventDefault();
+      openActiveMetadata();
+      return true;
+    }
+    if (
+      event.ctrlKey
+      && !event.shiftKey
+      && !event.metaKey
+      && !event.altKey
+      && event.key.toLocaleLowerCase() === "d"
+    ) {
+      event.preventDefault();
+      void deleteItems(effectiveSelection);
+      return true;
+    }
+    if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
+      event.preventDefault();
+      void deleteItems(effectiveSelection);
+      return true;
+    }
+    if (runLocalShortcutAction(event)) {
+      return true;
+    }
+    if (view) {
+      if (
+        event.ctrlKey
+        && event.altKey
+        && !event.metaKey
+        && (event.key === "ArrowDown" || event.key === "ArrowUp")
+      ) {
+        event.preventDefault();
+        moveSelection(event.key === "ArrowDown" ? 1 : -1, event.shiftKey);
+        return true;
+      }
+      if (event.key === "F2") {
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          if (!hasMultiSelection) {
+            void openActiveExternalEditor();
+          }
+        } else {
+          beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+        }
+        return true;
+      }
+      return false;
+    }
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        moveSelection(1, event.shiftKey);
+        return true;
+      case "ArrowUp":
+        event.preventDefault();
+        moveSelection(-1, event.shiftKey);
+        return true;
+      case "PageDown":
+        event.preventDefault();
+        moveSelection(PAGE_STEP, event.shiftKey);
+        return true;
+      case "PageUp":
+        event.preventDefault();
+        moveSelection(-PAGE_STEP, event.shiftKey);
+        return true;
+      case "F2":
+        event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          if (!hasMultiSelection) {
+            void openActiveExternalEditor();
+          }
+        } else {
+          beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
+        }
+        return true;
+      default:
+        return false;
+    }
+  }, [
+    beginCreateItem,
+    beginSelectedItemEdit,
+    effectiveSelection,
+    focusSearch,
+    hasMultiSelection,
+    moveSelection,
+    openActionPicker,
+    openActiveExternalEditor,
+    openActiveMetadata,
+    openCommandPalette,
+    openScenarioMenu,
+    openSettingsWindow,
+    runLocalShortcutAction,
+    selectedItem,
+    settings.picker.previewShortcut,
+    settings.picker.settingsShortcut,
+    toggleFilterLock,
+    toggleItemPreview,
+  ]);
+  const handleSearchSubmit = useCallback((event: KeyboardEvent): boolean => {
+    event.preventDefault();
+    if (scenarioCommandQuery !== null) {
+      return true;
+    }
+    if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
+      runSearchNow();
+    } else if (!historyMatchesQuery) {
+      if (effectiveSearchTriggerMode === "enter" || effectiveSearchTriggerMode === "realtime") {
+        runSearchNow();
+      }
+    } else if (!hasMultiSelection) {
+      void activateItem(
+        selectedItem,
+        activationForEnter(settings.picker.enterAction, event.shiftKey),
+      );
+    }
+    return true;
+  }, [
+    activateItem,
+    aiDraftActive,
+    effectiveSearchTriggerMode,
+    hasMultiSelection,
+    historyMatchesQuery,
+    runSearchNow,
+    scenarioCommandQuery,
+    selectedItem,
+    settings.picker.enterAction,
+  ]);
+  const handleSearchEscape = useCallback((event: KeyboardEvent): boolean => {
+    event.preventDefault();
+    if (findState?.active) {
+      void closeFind();
+      return true;
+    }
+    setActionError(null);
+    if (openMarkMenu !== null) {
+      setOpenMarkMenu(null);
+    }
+    if (openItemMenu !== null) {
+      setOpenItemMenu(null);
+    }
+    if (hasSearchDraft && !clearSearchPending) {
+      discardSearchDraft();
+      return true;
+    }
+    if (historyInputQuery.trim() && !clearSearchPending) {
+      clearSearchFilter();
+      return true;
+    }
+    hidePickerWindow();
+    return true;
+  }, [
+    clearSearchFilter,
+    clearSearchPending,
+    closeFind,
+    discardSearchDraft,
+    findState?.active,
+    hasSearchDraft,
+    hidePickerWindow,
+    historyInputQuery,
+    openItemMenu,
+    openMarkMenu,
+  ]);
+  const searchTextareaProps = {
     className: "search-input",
     variant: "unstyled" as const,
-    role: !aiComposerMode && searchSuggestionsOpen ? "combobox" as const : "textbox" as const,
-    "aria-label": "Search clipboard history",
-    "aria-autocomplete": aiComposerMode ? "none" as const : "list" as const,
-    "aria-haspopup": !aiComposerMode && searchSuggestionsOpen ? "listbox" as const : undefined,
-    "aria-controls": !aiComposerMode && searchSuggestionsOpen ? "search-autocomplete" : undefined,
-    "aria-expanded": !aiComposerMode && searchSuggestionsOpen ? true : undefined,
-    "aria-activedescendant": !aiComposerMode && searchSuggestionsOpen
-      ? `search-suggestion-${activeSearchSuggestionIndex}`
-      : undefined,
+    role: "textbox" as const,
+    "aria-label": "Ask Copicu AI",
+    "aria-autocomplete": "none" as const,
     value: query,
-    placeholder: aiComposerMode ? "Ask Copicu AI" : 'Search · in: scopes, tag: tags, re: pattern',
+    placeholder: "Ask Copicu AI",
     title:
-      'Search help: in: scopes, plain text, re:regular expression, "phrases", -exclude, meta:/title:/notes:/ctx:, tag:/#tag, kind:, mime:, has:, is:, after:/before:/on:, or ai: natural language.',
-    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const nextQuery = event.currentTarget.value;
-      if (openedSavedView && nextQuery.trim() !== openedSavedView.query.trim()) {
-        leaveOpenedSavedView();
+      'Ask Copicu AI to search: plain language is converted to a structured query before filtering.',
+    onChange: (event: ChangeEvent<HTMLTextAreaElement>) => handleQueryChange(event.currentTarget.value),
+    onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+        return;
       }
-      if (clearSearchPendingRef.current) {
-        updateClearSearchPending(false);
+      if (event.key === "Enter") {
+        handleSearchSubmit(event.nativeEvent);
+        return;
       }
-      autocompleteCommittedQueryRef.current = null;
-      const nextStructuredDraft = classifyStructuredSearchDraft(nextQuery);
-      const nextAutocompleteActive = !aiComposerMode
-        && !isScenarioCommand(nextQuery)
-        && searchSuggestions(nextQuery, knownTagSlugs, autocompleteScopeSelection).length > 0;
-      const nextStructuredHold = shouldHoldStructuredSearchDraft(nextStructuredDraft, {
-        draftChanged: nextQuery.trim() !== historyInputQuery,
-        searchTriggerMode,
-        deferStructuredSearchUntilEnter: settings.picker.deferStructuredSearchUntilEnter,
-        autocompleteActive: nextAutocompleteActive,
-      });
-      queryRef.current = nextQuery;
-      setQuery(nextQuery);
-      setHistoryPending(!isScenarioCommand(nextQuery) && searchTriggerMode === "realtime" && !nextStructuredHold);
-      supersedeSearchIntent(
-        nextQuery,
-        nextStructuredHold ? "held" : searchTriggerMode === "realtime" ? "applying" : "idle",
-      );
-      setAiPlanning(false);
-      setActionError(null);
-      setSearchInterpretation(null);
-      setSelectedItemId(null);
-      setSelectedIds(new Set());
-      selectionAnchorItemIdRef.current = null;
+      if (event.key === "Escape") {
+        handleSearchEscape(event.nativeEvent);
+        return;
+      }
+      handleSearchKeyDown(event.nativeEvent);
     },
-    onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      if (isQuickActionsShortcut(event)) {
-        event.preventDefault();
-        openActionPicker();
-        return;
-      }
-      if (event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "s") {
-        event.preventDefault();
-        openScenarioMenu();
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
-        event.preventDefault();
-        openCommandPalette();
-        return;
-      }
-      if (
-        event.ctrlKey
-        && event.shiftKey
-        && !event.altKey
-        && !event.metaKey
-        && event.key.toLocaleLowerCase() === "l"
-      ) {
-        event.preventDefault();
-        toggleFilterLock();
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "n") {
-        event.preventDefault();
-        beginCreateItem();
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "i") {
-        event.preventDefault();
-        setAiComposerMode((current) => !current);
-        setSearchInterpretation(null);
-        window.setTimeout(() => searchRef.current?.focus(), 0);
-        return;
-      }
-      const shortcut = shortcutFromKeyboardEvent(event);
-      const settingsShortcut = normalizeShortcutString(settings.picker.settingsShortcut);
-      if (settingsShortcut && shortcut === settingsShortcut) {
-        event.preventDefault();
-        void openSettingsWindow();
-        return;
-      }
-      const previewShortcut = normalizeShortcutString(settings.picker.previewShortcut);
-      if (previewShortcut && shortcut === previewShortcut) {
-        event.preventDefault();
-        if (selectedItem) {
-          void toggleItemPreview(selectedItem.id).catch((previewError) => {
-            setActionError(String(previewError));
-          });
-        }
-        return;
-      }
-      if (shortcut === TAG_EDIT_SHORTCUT) {
-        event.preventDefault();
-        openActiveMetadata();
-        return;
-      }
-      if (
-        event.ctrlKey
-        && !event.shiftKey
-        && !event.metaKey
-        && !event.altKey
-        && event.key.toLocaleLowerCase() === "d"
-      ) {
-        event.preventDefault();
-        void deleteItems(effectiveSelection);
-        return;
-      }
-      if (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Delete") {
-        event.preventDefault();
-        void deleteItems(effectiveSelection);
-        return;
-      }
-      if (runLocalShortcutAction(event)) {
-        return;
-      }
-
-      switch (event.key) {
-        case "Tab":
-          if (searchSuggestionsOpen && !event.shiftKey) {
-            event.preventDefault();
-            acceptSearchSuggestion();
-          }
-          break;
-        case "ArrowDown":
-          event.preventDefault();
-          if (searchSuggestionsOpen) {
-            const count = scenarioCommandOpen ? scenarioCommandOptions.length : autocompleteSuggestions.length;
-            setActiveSearchSuggestion((current) => (current + 1) % count);
-          } else {
-            moveSelection(1, event.shiftKey);
-          }
-          break;
-        case "ArrowUp":
-          event.preventDefault();
-          if (searchSuggestionsOpen) {
-            const count = scenarioCommandOpen ? scenarioCommandOptions.length : autocompleteSuggestions.length;
-            setActiveSearchSuggestion((current) => (current - 1 + count) % count);
-          } else {
-            moveSelection(-1, event.shiftKey);
-          }
-          break;
-        case "PageDown":
-          event.preventDefault();
-          moveSelection(PAGE_STEP, event.shiftKey);
-          break;
-        case "PageUp":
-          event.preventDefault();
-          moveSelection(-PAGE_STEP, event.shiftKey);
-          break;
-        case "Home":
-          event.preventDefault();
-          if (event.shiftKey) {
-            setRangeSelection(0);
-          } else {
-            setSingleSelection(0);
-          }
-          rowVirtualizer.scrollToIndex(0, { align: "auto" });
-          break;
-        case "End":
-          event.preventDefault();
-          {
-            const lastIndex = history.length === 0 ? 0 : history.length - 1;
-            if (event.shiftKey) {
-              setRangeSelection(lastIndex);
-            } else {
-              setSingleSelection(lastIndex);
-            }
-            rowVirtualizer.scrollToIndex(lastIndex, { align: "auto" });
-          }
-          break;
-        case "Escape":
-          event.preventDefault();
-          if (findState?.active) {
-            void closeFind();
-            break;
-          }
-          if (searchSuggestionsOpen) {
-            setDismissedAutocompleteQuery(query);
-            break;
-          }
-          setActionError(null);
-          if (openMarkMenu !== null) {
-            setOpenMarkMenu(null);
-          }
-          if (openItemMenu !== null) {
-            setOpenItemMenu(null);
-          }
-          if (hasSearchDraft && !clearSearchPending) {
-            discardSearchDraft();
-            break;
-          }
-          if (historyInputQuery.trim() && !clearSearchPending) {
-            clearSearchFilter();
-            break;
-          }
-          hidePickerWindow();
-          break;
-        case "F2":
-          event.preventDefault();
-          if (event.ctrlKey || event.metaKey) {
-            if (!hasMultiSelection) {
-              void openActiveExternalEditor();
-            }
-          } else {
-            beginSelectedItemEdit(event.shiftKey ? "metadata" : "content");
-          }
-          break;
-        case "Enter":
-          event.preventDefault();
-          setDismissedAutocompleteQuery(query);
-          if (scenarioCommandQuery !== null) {
-            if (scenarioCommandOpen) acceptSearchSuggestion();
-          } else if ((event.ctrlKey || event.metaKey) || (aiDraftActive && !event.shiftKey)) {
-            autocompleteCommittedQueryRef.current = null;
-            runSearchNow();
-          } else if (!historyMatchesQuery) {
-            if (effectiveSearchTriggerMode === "enter" || effectiveSearchTriggerMode === "realtime") {
-              autocompleteCommittedQueryRef.current = null;
-              runSearchNow();
-            }
-          } else if (!hasMultiSelection) {
-            void activateItem(
-              selectedItem,
-              activationForEnter(settings.picker.enterAction, event.shiftKey),
-            );
-          }
-          break;
-      }
-    },
-  };
-  const searchTextInputProps = searchControlBaseProps as typeof searchControlBaseProps & {
-    onChange: (event: ChangeEvent<HTMLInputElement>) => void;
-    onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
-  };
-  const searchTextareaProps = searchControlBaseProps as typeof searchControlBaseProps & {
-    onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
-    onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   };
   const scopeUsesDefaults = !queryHasExplicitSearchScope(query)
     && !/^re:/iu.test(query.trim()) && !openedSavedView
@@ -5996,7 +5960,6 @@ function App() {
     const nextQuery = replaceQueryScopes(query, nextSelection);
     if (nextQuery === query) return;
     leaveOpenedSavedView();
-    autocompleteCommittedQueryRef.current = null;
     queryRef.current = nextQuery;
     setQuery(nextQuery);
     setHistoryPending(searchTriggerMode === "realtime");
@@ -6212,25 +6175,38 @@ function App() {
               </Menu>
             </div>
           </div>
-          <div className={`search-field${!aiComposerMode && canClearSearch ? " has-clear-button" : ""}`}>
-            {aiComposerMode ? (
+          <div
+            className={`search-field${!aiComposerMode && canClearSearch ? " has-clear-button" : ""}`}
+            data-query-editor-phase={queryEditorReadyPhase}
+          >
+            <QueryEditor
+              ref={queryEditorRef}
+              value={query}
+              knownTagSlugs={knownTagSlugs}
+              scopeSelection={editorScopeSelection}
+              scenarioOptions={scenarioCommandOptions}
+              placeholder='Search · in: scopes, plain text, re:regular expression, "phrases", -exclude, tag:/#tag'
+              hidden={aiComposerMode}
+              onChange={(nextQuery, _update, isComposing) => handleQueryChange(nextQuery, isComposing)}
+              onCompositionChange={handleQueryCompositionChange}
+              onReady={setQueryEditorReadyPhase}
+              onKeyDown={handleSearchKeyDown}
+              onSubmit={handleSearchSubmit}
+              onEscape={handleSearchEscape}
+              onScenarioActivate={(id) => {
+                void activateScenarioFromPicker(id);
+              }}
+            />
+            <div className={`ai-query-editor${aiComposerMode ? "" : " is-hidden"}`}>
               <UiTextarea
                 {...searchTextareaProps}
-                ref={(node) => {
-                  searchRef.current = node;
-                }}
+                ref={aiSearchRef}
+                tabIndex={aiComposerMode ? 0 : -1}
                 minRows={3}
                 maxRows={6}
                 autosize
               />
-            ) : (
-              <UiTextInput
-                {...searchTextInputProps}
-                ref={(node) => {
-                  searchRef.current = node;
-                }}
-              />
-            )}
+            </div>
             {!aiComposerMode ? (
               <UiTooltip
                 label={(
@@ -6271,48 +6247,6 @@ function App() {
                   <X size={14} strokeWidth={2.3} aria-hidden="true" />
                 </UiIconButton>
               </UiTooltip>
-            ) : null}
-            {searchSuggestionsOpen ? (
-              <div id="search-autocomplete" className="search-autocomplete" role="listbox" aria-label={scenarioCommandOpen ? "Capture mode actions" : "Search suggestions"}>
-                {autocompleteSuggestions.some((suggestion) => suggestion.scope) && !scenarioCommandOpen ? (
-                  <div className="search-scope-summary" role="presentation">
-                    {autocompleteSuggestions.find((suggestion) => suggestion.scope)?.scope?.summary}
-                  </div>
-                ) : null}
-                {scenarioCommandOpen
-                  ? scenarioCommandOptions.map((scenario, index) => (
-                    <button
-                      key={scenario.id}
-                      id={`search-suggestion-${index}`}
-                      type="button"
-                      className="search-autocomplete-option"
-                      role="option"
-                      aria-selected={index === activeSearchSuggestionIndex}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setActiveSearchSuggestion(index)}
-                      onClick={() => void activateScenarioFromPicker(scenario.id)}
-                    >
-                      Activate capture mode: {scenario.name}
-                    </button>
-                  ))
-                  : autocompleteSuggestions.map((suggestion, index) => (
-                    <button
-                      key={`${suggestion.label}:${index}`}
-                      id={`search-suggestion-${index}`}
-                      type="button"
-                      className="search-autocomplete-option"
-                      role="option"
-                      aria-selected={index === activeSearchSuggestionIndex}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onMouseEnter={() => setActiveSearchSuggestion(index)}
-                      onClick={() => acceptSearchSuggestion(index)}
-                    >
-                      {suggestion.scope
-                        ? <SearchScopeOption label={suggestion.label} {...suggestion.scope} />
-                        : suggestion.label}
-                    </button>
-                  ))}
-              </div>
             ) : null}
           </div>
           <UiTooltip
@@ -6356,7 +6290,7 @@ function App() {
                 }
                 setAiComposerMode((current) => !current);
                 setSearchInterpretation(null);
-                window.setTimeout(() => searchRef.current?.focus(), 0);
+                focusSearch();
               }}
             >
               {aiComposerMode ? (
@@ -6382,7 +6316,7 @@ function App() {
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 cycleSearchTriggerMode();
-                window.setTimeout(() => searchRef.current?.focus(), 0);
+                focusSearch();
               }}
             >
               {searchTriggerMode === "realtime" ? (
@@ -6499,7 +6433,7 @@ function App() {
                   }
                   setAiComposerMode((current) => !current);
                   setSearchInterpretation(null);
-                  window.setTimeout(() => searchRef.current?.focus(), 0);
+                  focusSearch();
                 }}
               >
                 {aiComposerMode ? "Switch to Search mode" : "Switch to AI mode"}
@@ -6510,7 +6444,7 @@ function App() {
                 onClick={() => {
                   setPickerMenuOpen(false);
                   cycleSearchTriggerMode();
-                  window.setTimeout(() => searchRef.current?.focus(), 0);
+                  focusSearch();
                 }}
               >
                 {searchTriggerAriaLabel}
@@ -6770,7 +6704,7 @@ function App() {
               aria-label={`Exit saved search ${openedSavedView.title}`}
               onClick={() => {
                 leaveOpenedSavedView();
-                window.setTimeout(() => searchRef.current?.focus(), 0);
+                focusSearch();
               }}
             >
               Exit view
@@ -7342,7 +7276,7 @@ function App() {
                             if (returnTarget?.isConnected) {
                               returnTarget.focus();
                             } else {
-                              searchRef.current?.focus();
+                              focusSearch();
                             }
                           }, 0);
                           return;
@@ -7809,9 +7743,11 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
             <h3>Keyboard</h3>
             <dl>
               <div><dt><code>Search</code> / <code>Ctrl+Enter</code></dt><dd>Run the current query.</dd></div>
+              <div><dt><code>Enter</code></dt><dd>Accept the active completion; without one, run the current query.</dd></div>
+              <div><dt><code>Tab</code></dt><dd>Move focus out of the editor without accepting completion.</dd></div>
+              <div><dt><code>Ctrl+Alt+↑/↓</code></dt><dd>Move the feed selection when completion is hidden; arrows, PageUp/PageDown, Home, End and Shift+arrows edit the query.</dd></div>
               <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit tags for the active clip or add tags to a selection.</dd></div>
               <div><dt><code>F2</code> / <code>Ctrl+F2</code> / <code>Shift+F2</code></dt><dd>Edit content, use the external editor, or edit metadata.</dd></div>
-              <div><dt><code>Settings → Picker</code></dt><dd>Choose the default scope and whether typing searches in realtime or waits for Enter.</dd></div>
             </dl>
           </section>
         </div>

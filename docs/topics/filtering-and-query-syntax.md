@@ -138,6 +138,31 @@ El boton `Search` aplica explicitamente desde ambos modos. El control rapido con
 
 El prefijo inicial exacto `re:` activa una expresion regular case-insensitive sobre los mismos campos que la busqueda plain. Sin ese prefijo, metacaracteres como `.` o `*` conservan el tratamiento literal previo. El motor es el crate `regex` de Rust: sin lookarounds ni backreferences. El prefijo es exclusivo: no se puede combinar con otros filtros en la misma query. `re:` sin patron se retiene como draft incompleto; un patron invalido falla cerrado, muestra el error y conserva el snapshot aplicado anterior.
 
+## Contrato Del Autocomplete
+
+El autocomplete es una ayuda de edicion; Rust conserva autoridad sobre la
+semantica y ejecucion de la query. La UI no debe introducir un parser alternativo
+que cambie el significado de filtros aceptados por el backend.
+
+El popup y la comprension de la query son responsabilidades distintas. Un
+combobox puede resolver foco, navegacion, seleccion y ARIA, pero la completion
+debe recibir la query completa y la posicion real del cursor, y devolver el rango
+exacto a reemplazar. Inferir el token activo solo desde el ultimo espacio no
+alcanza para listas separadas por comas, negaciones ni edicion intermedia.
+
+El 2026-09-11 JP autoriza replantear la UX e implementar CodeMirror 6 como editor
+textual de consultas precargado, montado y residente. No se exige conservar
+input nativo, popup, chips, atajos ni una sola linea visual. Se conserva toda la
+sintaxis y la autoridad Rust, junto con foco inicial, accesibilidad, IME y
+apertura confiable desde hotkey en WebView2. Aceptar una sugerencia es edicion:
+no crea una politica de aplicacion distinta de escribir o pegar la misma query.
+
+La implementacion residente esta verificada en la spec
+[`012-codemirror-query-editor`](../../specs/012-codemirror-query-editor/spec.md).
+Estudio, arquitectura, mediciones nativas acotadas y limites:
+[`codemirror-query-editor`](codemirror-query-editor.md). No equivalen a un
+benchmark comparativo de release ni certifican IME no disponible.
+
 ## Filter Lock
 
 El icono de candado dentro del search, o `Ctrl+Shift+L`, fija el filtro aplicado actual. Mientras esta activo:

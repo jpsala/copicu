@@ -2,7 +2,24 @@
 
 All notable changes to Copicu are documented here.
 
-## [Unreleased]
+## [0.4.17] - 2026-09-11
+
+### Added
+
+- Add a resident CodeMirror 6 structured query editor with contextual operator, value, tag, and scope completions.
+
+### Changed
+
+- Keep Tab on native focus traversal, reserve Enter for completion acceptance
+  or query application, and expose separate renderer-visible readiness from
+  connected/input readiness; preserve final composition text without re-entering
+  a composition hold for late `input.compose` transactions after `compositionend`.
+- Preserve exact caret ranges and suffixes when accepting completions, and unify
+  realtime, Enter, and IME composition search behavior.
+- Resolve capture-mode completions from the complete command, including names
+  with spaces and the empty search after `> scenario `.
+- Keep the query input's standard background without active-line tint, with a
+  steady 2 px theme-colored caret, unclipped at the start, and readable placeholder.
 
 ## [0.4.14] - 2026-09-10
 

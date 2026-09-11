@@ -1,7 +1,7 @@
 {
   "name": "copicu",
   "private": true,
-  "version": "0.4.16",
+  "version": "0.4.17",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
@@ -40,6 +40,8 @@
     "check:ci": "bun scripts/agent-context-audit.ts"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/language": "6.12.4",
     "@ai-sdk/openai-compatible": "^2.0.48",
     "@mantine/core": "^9.3.0",
     "@mantine/hooks": "^9.3.0",
