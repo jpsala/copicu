@@ -86,7 +86,7 @@ Separar las superficies por intencion:
 | Picker rapido | Buscar, preview, copiar/pegar | Ventana flotante compacta, sin header pesado. |
 | Command mode | Ejecutar acciones | Modo dentro del picker o palette dedicada, no modal grande dentro de panel. |
 | Settings | Configuracion durable | Ventana standalone con layout de preferencias, no overlay dentro del picker. |
-| Item editor | Editar contenido/metadata | Inspector o ventana dedicada segun tamano; evitar modal encima del feed. |
+| Item editor | Editar contenido/metadata | `F2` usa una superficie unificada dentro del picker: CodeMirror + `MetadataInspector`, responsive y con commit atómico. `Shift+F2` conserva metadata standalone; evitar modal encima del feed. |
 | UI host | Toast, confirm, input de scripts | Ventana auxiliar `ui-host`, ya iniciada. |
 | History manager futuro | Revision larga, colecciones, bulk | Ventana task-oriented separada del quick picker. |
 

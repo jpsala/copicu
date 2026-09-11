@@ -380,7 +380,14 @@ type MetadataVisualRuntime = Window & {
       id?: number;
       text?: string;
       request?: { itemIds: number[]; focusTarget: string };
-      intent?: { title: { op: string }; tags: Array<{ key: string; op: string }> };
+      intent?: {
+        itemIds: number[];
+        content?: { value: string; expectedHash: string };
+        title: { op: string; value?: string };
+        notes: { op: string; value?: string };
+        tags: Array<{ key: string; op: string }>;
+        properties: Record<"client" | "project" | "activity", Array<{ key: string; op: string }>>;
+      };
     };
   }>;
 };
@@ -2037,6 +2044,23 @@ async function mockTauriInvoke(
             return metadataSnapshot(args.request.itemIds, `reload-${Date.now()}`);
           case "apply_metadata_selection_intent": {
             const intent = args.intent;
+            const runtime = window as MetadataVisualRuntime;
+            const sourceItems = runtime.__copicuTestHistoryItems ?? items;
+            runtime.__copicuTestHistoryItems = sourceItems.map((item) => {
+              if (!intent.itemIds.includes(item.id)) return item;
+              return {
+                ...item,
+                ...(intent.content ? {
+                  text: intent.content.value,
+                  preview_text: intent.content.value,
+                  includes_content: true,
+                } : {}),
+                ...(intent.title.op === "set" ? { title: intent.title.value } : {}),
+                ...(intent.title.op === "clear" ? { title: null } : {}),
+                ...(intent.notes.op === "replaceAll" ? { notes: intent.notes.value } : {}),
+                ...(intent.notes.op === "clearAll" ? { notes: null } : {}),
+              };
+            });
             const nextSnapshot = metadataSnapshot(intent.itemIds, `saved-${Date.now()}`);
             const emitEvent = (window as MetadataVisualRuntime).__copicuTestEmitEvent;
             if (!emitEvent) throw new Error("Synthetic metadata event bridge is unavailable");
@@ -2044,6 +2068,7 @@ async function mockTauriInvoke(
             return {
               snapshot: nextSnapshot,
               changedItemCount: intent.itemIds.length,
+              contentChanged: Boolean(intent.content),
               titleChangedCount: intent.title.op === "untouched" ? 0 : intent.itemIds.length,
               notesChangedCount: intent.notes.op === "untouched" ? 0 : intent.itemIds.length,
               tagRelationChanges: intent.tags.length,
@@ -4270,18 +4295,18 @@ test("history feed uses preview DTO and edit fetches full content on demand", as
 
   const updateCall = await page.waitForFunction(() => {
     const calls = (window as MetadataVisualRuntime).__copicuTestInvocations ?? [];
-    return calls.find((call) => call.cmd === "update_history_item_text");
+    return calls.find((call) => call.cmd === "apply_metadata_selection_intent");
   });
-  const update = await updateCall.jsonValue() as unknown as { args: { text: string } };
-  expect(update.args.text).toBe(`${fullText} edited`);
-  expect(update.args.text).toContain("COPICU_SYNTH_FULL_CONTENT_END");
+  const update = await updateCall.jsonValue() as unknown as { args: { intent: { content: { value: string } } } };
+  expect(update.args.intent.content.value).toBe(`${fullText} edited`);
+  expect(update.args.intent.content.value).toContain("COPICU_SYNTH_FULL_CONTENT_END");
   const getCalls = await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "get_history_item"),
   );
   expect(getCalls).toHaveLength(1);
 });
 
-test("F2, Ctrl+F2, and Shift+F2 route to content, external, and metadata editors", async ({ page }) => {
+test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused routes", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, {
     editorSettings: {
       fontFamily: "consolas",
@@ -4314,6 +4339,9 @@ test("F2, Ctrl+F2, and Shift+F2 route to content, external, and metadata editors
   await page.keyboard.press("F2");
   const contentEditor = page.getByRole("region", { name: "Edit clipboard item" });
   await expect(contentEditor).toBeVisible();
+  const metadataPane = contentEditor.locator(".item-content-editor-pane.is-metadata");
+  await expect(metadataPane).toBeAttached();
+  const titleInput = contentEditor.getByLabel("Title");
   const contentInput = contentEditor.getByRole("textbox", { name: "Item content" });
   await expect(contentInput).toBeFocused();
   await expect(contentInput).toHaveCSS("font-size", "16px");
@@ -4327,8 +4355,26 @@ test("F2, Ctrl+F2, and Shift+F2 route to content, external, and metadata editors
   expect(editorBox?.height).toBe(pickerBox?.height);
   await page.keyboard.press("End");
   await page.keyboard.type(" edited");
-  await expect(contentEditor.getByText("Modified")).toBeVisible();
+  if ((page.viewportSize()?.width ?? 900) <= 720) {
+    await contentEditor.getByRole("tab", { name: "Metadata" }).click();
+  }
+  await expect(metadataPane).toBeVisible();
+  await expect(titleInput).toBeVisible();
+  await titleInput.fill("Unified editor title");
+  await expect(contentEditor.getByText("Modified", { exact: true })).toBeVisible();
   await page.keyboard.press("Control+s");
+  const unifiedSaveCall = await page.waitForFunction(() => {
+    const calls = (window as MetadataVisualRuntime).__copicuTestInvocations ?? [];
+    return calls.find((call) =>
+      call.cmd === "apply_metadata_selection_intent"
+      && call.args.intent?.title?.op === "set"
+    ) ?? false;
+  });
+  const unifiedSave = await unifiedSaveCall.jsonValue() as unknown as {
+    args: { intent: { content: { value: string }; title: { op: string; value: string } } };
+  };
+  expect(unifiedSave.args.intent.content.value).toContain(" edited");
+  expect(unifiedSave.args.intent.title).toEqual({ op: "set", value: "Unified editor title" });
   await expect(contentEditor).toBeHidden();
 
   await search.focus();

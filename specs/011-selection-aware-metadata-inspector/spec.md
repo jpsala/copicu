@@ -4,33 +4,35 @@ Status: implemented and verified on 2026-09-10
 
 ## Objetivo
 
-Consolidar la edición de metadata de uno o varios clips en una única superficie reusable, explícita y keyboard-first, sin mezclar contenido con metadata ni convertir el picker en un host de overlays ricos.
+Consolidar la edición de metadata de uno o varios clips en una superficie reusable, explícita y keyboard-first. Para edición focalizada de un solo clip, `F2` compone esa misma metadata con el contenido editable en una interfaz única; las operaciones batch y la entrada dedicada `Shift+F2` conservan la utility standalone.
 
-El patrón elegido se llama **Selection-aware Metadata Inspector**. Es un property inspector adaptativo: recibe una selección congelada, muestra valores escalares y conjuntos con su estado agregado, acumula intenciones de cambio y guarda todo en una única transacción SQLite.
+El patrón base se llama **Selection-aware Metadata Inspector**. Es un property inspector adaptativo: recibe una selección congelada, muestra valores escalares y conjuntos con su estado agregado, acumula intenciones de cambio y guarda todo en una única transacción SQLite. En `F2`, el inspector se embebe junto al editor CodeMirror y participa del mismo dirty state y commit.
 
 ## Decisión de dirección
 
-### Dirección elegida: inspector standalone adaptativo
+### Dirección elegida: inspector reusable con dos hosts
 
-Reusar la ventana Tauri `metadata`, su surface registry, lifecycle `CachedHidden`, prewarm, bounds y pending payload. La misma composición cambia por cardinalidad:
+Reusar la ventana Tauri `metadata`, su surface registry, lifecycle `CachedHidden`, prewarm, bounds y pending payload para edición dedicada y batch. Reusar la misma composición React dentro del editor `F2` para un único clip:
 
-- un clip: edición directa y compacta, con provenance por valor;
+- un clip por `F2`: contenido y metadata editables, dirty state compartido y un solo guardado atómico;
+- un clip por `Shift+F2` o entrada `Metadata`: edición directa y compacta en la utility standalone, con provenance por valor;
 - varios clips: valores agregados `all | some | none`, operaciones staged y resumen exacto antes de guardar;
 - futuro history manager: la misma composición React puede vivir como panel, sin cambiar el controlador ni los contratos.
 
 Razones:
 
-1. Sigue el modelo de superficies vigente en `docs/topics/ui-surface-architecture.md`: metadata rica fuera del picker.
-2. Conserva la inversión ya validada en `MetadataWindowApp`, surface registry, `CachedHidden` y prewarm.
-3. Elimina tres modelos de edición divergentes: `TagEditor`, batch metadata y metadata standalone.
-4. Hace visibles los estados mixtos y evita inferir intención desde un string o un placeholder gris.
-5. Permite una escritura atómica por intención, sin N+1 ni guardados parciales.
+1. `F2` representa editar el clip completo; separar content y metadata obliga a recordar dos rutas para una sola entidad.
+2. `Shift+F2` conserva una entrada rápida y focalizada para metadata sin duplicar implementación.
+3. Conserva la inversión validada en `MetadataInspector`, la ventana `metadata`, `CachedHidden` y prewarm.
+4. Mantiene visibles los estados mixtos y evita inferir intención desde un string o un placeholder gris.
+5. Permite una escritura atómica por intención, sin N+1 ni guardados parciales entre contenido y metadata.
 
 Tradeoffs:
 
-- La ventana necesita admitir múltiples IDs y una composición algo más rica.
+- El editor `F2` necesita un layout responsive: dos paneles cuando hay ancho y navegación por tabs cuando no lo hay.
 - El read model agregado y el control de concurrencia deben vivir en Rust/SQLite, no reconstruirse en React.
-- La primera migración visual exige reemplazar rutas viejas en una sola cutover, no coexistencia permanente.
+- El intent de single-item admite contenido opcional y debe verificar su fingerprint dentro de la misma transacción que metadata.
+- La migración visual exige reemplazar la ruta content-only en una sola cutover, no coexistencia permanente.
 
 ### Alternativa descartada: mantener overlays especializados en el picker
 
@@ -100,7 +102,7 @@ Conclusión: hay mecánica listbox repetida, pero no un único problema de ranki
 - `capture context`: hechos event-scoped read-only.
 - `clipboard_items.tags`: cache legacy derivada.
 
-No mezclar contenido (`text`, MIME, blob) con este modelo.
+El contenido (`text`, MIME, blob) sigue fuera del modelo de metadata. La única integración es el host `F2`: compone ambos modelos y envía una intención transaccional que puede incluir un cambio de texto para un solo item.
 
 ## Read model agregado
 
@@ -194,6 +196,10 @@ type SetValueIntent = {
 type MetadataSelectionIntent = {
   itemIds: number[];
   expectedSnapshotToken: string;
+  content?: {
+    value: string;
+    expectedHash: string;
+  };
   title: ScalarIntent;
   notes: NotesIntent;
   tags: SetValueIntent[];
@@ -216,15 +222,18 @@ Semántica:
 - Properties usan la misma semántica set que tags. La key sigue cerrada a `client | project | activity`.
 - La respuesta devuelve conteos reales y un nuevo snapshot, no un booleano ambiguo.
 
+`content` sólo es válido para una selección de un item. Su ausencia mantiene la semántica metadata-only. Si está presente, `expectedHash` protege el contenido contra cambios concurrentes y el texto se actualiza dentro de la misma transacción que title, notes, tags y properties.
+
 Toda validación, conflicto y escritura ocurre dentro de una única transacción SQLite:
 
 1. validar IDs exactos y límite;
-2. recomputar fingerprint;
+2. recomputar el fingerprint de metadata;
 3. comparar con `expectedSnapshotToken`;
-4. aplicar operaciones;
-5. sincronizar la cache legacy de tags sólo para items afectados;
-6. commit;
-7. emitir `HISTORY_CHANGED_EVENT` después del commit.
+4. si existe `content`, validar cardinalidad single y comparar `expectedHash`;
+5. aplicar contenido y operaciones de metadata;
+6. sincronizar la cache legacy de tags sólo para items afectados;
+7. commit;
+8. emitir `HISTORY_CHANGED_EVENT` después del commit.
 
 Un token viejo devuelve conflicto tipado y no escribe nada. La UI ofrece `Reload changes`; no hace merge silencioso.
 
@@ -387,8 +396,10 @@ No crear un renderer universal de fields ni schema-driven forms.
 
 ## Entradas finales
 
+- `F2`: abre dentro del picker el editor unificado del clip activo, con CodeMirror y `MetadataInspector`, un dirty state combinado y un único `Save changes`.
+- `Ctrl+F2`: conserva la apertura del editor externo de contenido.
+- `Shift+F2`, `Metadata`, shortcut global y `metadata.editActive`: abren la utility `metadata` con `focusTarget: "overview"`.
 - `Tags` en selection bar/item menu: abre `metadata` con los IDs congelados y `focusTarget: "tags"`.
-- `Metadata`, `Shift+F2`, shortcut global y `metadata.editActive`: abren la misma superficie con `focusTarget: "overview"`.
 - `Catalog Inbox item`: abre la misma superficie y conserva el efecto actual de quitar Inbox sólo después de save exitoso.
 - `Create`: mantiene Content como campo separado y embebe `MetadataInspector` en modo create. El request final incluye title, notes, tags y properties estructuradas.
 - Futuro `history-manager`: monta `MetadataInspector` como panel para su selección estable, usando los mismos comandos.
@@ -426,7 +437,7 @@ No crear un renderer universal de fields ni schema-driven forms.
 2. Cambiar `CreateHistoryItemRequest` a tags/properties estructurados.
 3. Eliminar parseo de properties que hoy se descarta.
 
-No modificar Find/search, feed virtualizado, content editor ni tag global manager en estos cortes.
+No modificar Find/search, feed virtualizado ni tag global manager en estos cortes.
 
 ## Riesgos y mitigaciones
 
@@ -445,22 +456,25 @@ No modificar Find/search, feed virtualizado, content editor ni tag global manage
 
 ## Criterios de aceptación
 
-1. La única edición de metadata de items existentes usa la surface `metadata` para single y multi.
-2. La selección queda congelada y visible; cambios del picker no retargetean el draft.
-3. Tags/properties muestran `all/some/none` con conteos y estado accesible.
-4. Cada valor set soporta `untouched/add/remove`; unchanged preserva provenance y confidence.
-5. Remove parcial no crea suppressions en items donde el valor estaba ausente.
-6. Notes mixed requiere una operación explícita; no existe Smart merge.
-7. Title mixed requiere set/clear explícito; default `untouched`.
-8. El footer muestra alcance exacto antes de guardar y Save se deshabilita sin cambios.
-9. Un payload entrante nunca reemplaza silenciosamente un draft dirty.
-10. Un save con snapshot stale falla sin writes y ofrece reload.
-11. Batch read no hace N+1 y batch write usa una única transacción global.
-12. Create persiste properties estructuradas además de title, notes y tags.
-13. `clipboard_item_tags` y `clipboard_item_properties` siguen siendo autoridad; cache legacy sólo se deriva.
-14. Tag color/nombre/pin permanecen configuración global separada.
-15. Search conserva ranking, navegación, replacement y sensación observables.
-16. La cutover elimina overlays y handlers obsoletos sin aliases o shims permanentes.
+1. Toda edición de metadata de items existentes reutiliza `MetadataInspector`; `F2` lo embebe para single y las entradas dedicadas usan la surface `metadata`.
+2. `F2` muestra content y metadata en una única interfaz responsive y guarda ambos con una sola acción.
+3. `Ctrl+F2` conserva el editor externo y `Shift+F2` conserva la utility metadata-only.
+4. La selección queda congelada y visible; cambios del picker no retargetean el draft.
+5. Tags/properties muestran `all/some/none` con conteos y estado accesible.
+6. Cada valor set soporta `untouched/add/remove`; unchanged preserva provenance y confidence.
+7. Remove parcial no crea suppressions en items donde el valor estaba ausente.
+8. Notes mixed requiere una operación explícita; no existe Smart merge.
+9. Title mixed requiere set/clear explícito; default `untouched`.
+10. El footer muestra alcance exacto antes de guardar y Save se deshabilita sin cambios.
+11. Un payload entrante nunca reemplaza silenciosamente un draft dirty.
+12. Un save con snapshot de metadata o hash de content stale falla sin writes y ofrece reload.
+13. Batch read no hace N+1 y batch write usa una única transacción global.
+14. Content y metadata staged por `F2` se guardan all-or-nothing en esa misma transacción.
+15. Create persiste properties estructuradas además de title, notes y tags.
+16. `clipboard_item_tags` y `clipboard_item_properties` siguen siendo autoridad; cache legacy sólo se deriva.
+17. Tag color/nombre/pin permanecen configuración global separada.
+18. Search conserva ranking, navegación, replacement y sensación observables.
+19. La cutover elimina la ruta F2 content-only sin aliases o shims permanentes.
 
 ## Verificación requerida
 
@@ -494,6 +508,12 @@ Evidencia del corte:
 - `npm run rust:test`: 237 tests pasan;
 - `cargo check --tests`: pasa;
 - `npm run visual:check`: 303/312 pasan; ocho fallas repetidas son baselines ajenos a metadata (initial-query ownership, capture-mode menu, initial-history error copy y placeholder Search), duplicadas desktop/narrow. La novena fue una corrida narrow transitoria de preview DTO que sí pasa en el corte focalizado. Search no se modificó para reanclar tests de wording.
+
+Extensión `F2` unificada verificada el 2026-09-10:
+
+- visual focalizado desktop+narrow: 4/4 para carga full-content, panel metadata, commit combinado y rutas `Ctrl+F2`/`Shift+F2`;
+- `npm run build` y `cargo check --tests`: pasan;
+- `npm run rust:test`: 238 tests pasan, incluidos commit content+metadata y rollback por conflicto/falla.
 
 El smoke Tauri aislado encontró y corrigió una incompatibilidad real `tags: string[]`/`Option<String>` en create. El contrato final usa `Vec<String>`, persiste tags/properties dentro de la misma transacción y conserva el string legacy sólo como proyección derivada.
 

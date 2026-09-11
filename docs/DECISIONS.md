@@ -2,6 +2,16 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-09-10 - F2 edita content y metadata como un solo clip
+
+Estado: accepted por JP.
+
+Decision: `F2` abre dentro del picker una interfaz única para el clip activo, con CodeMirror para content y `MetadataInspector` para title, notes, tags y properties. Un solo dirty state, cancel guard y `Save changes` gobiernan ambos paneles; el backend valida hash de content y fingerprint de metadata y hace un commit SQLite all-or-nothing. En ventanas estrechas se alternan `Content` y `Metadata` mediante tabs.
+
+`Ctrl+F2` conserva el editor externo. `Shift+F2`, `Ctrl+Shift+C` y entradas metadata-only conservan la utility standalone, pero reutilizan el mismo inspector y contrato.
+
+Motivo: content y metadata describen el mismo clip. Separarlos detrás de dos rutas para la edición normal agrega memoria operativa y permite guardados parciales; componer controles especializados mantiene velocidad y seguridad sin convertir metadata en texto libre.
+
 ### 2026-09-09 - Conservar tres capturas recientes por clip
 
 Estado: accepted por JP.
@@ -32,9 +42,9 @@ Motivo: Un repo publico temprano transmite mas confianza con pocos issues reales
 
 Proximo paso: si hace falta abrir `good first issue`, escribirlo como tarea real y verificable, preferentemente derivada de dogfood o feedback externo.
 
-### 2026-07-25 - `Ctrl+Shift+C` es el editor built-in simple de tags
+### 2026-07-25 - `Ctrl+Shift+C` fue el editor built-in simple de tags
 
-Estado: accepted; reemplaza el alcance del shortcut definido el 2026-06-29.
+Estado: superseded por `MetadataInspector` selection-aware y la decisión F2 del 2026-09-10.
 
 Decision: `Ctrl+Shift+C` es local al picker y abre un editor compacto dedicado solo a tags. Un item edita su conjunto exacto; una multiseleccion agrega tags de forma atomica y conserva los existentes. El control usa chips, autocomplete, creacion inline y teclado completo. Title, notes, capture context y los modos append/replace/merge quedan fuera de este flujo. El shortcut se reserva en backend para que scripts no puedan registrarlo globalmente.
 

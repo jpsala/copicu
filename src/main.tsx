@@ -92,6 +92,7 @@ import type {
   FindTargetResponse,
   MetadataFocusTarget,
   MetadataSelectionIntent,
+  MetadataSelectionPayload,
   MarkdownOutputPayload,
   RunActionRequest,
   SavedHistoryView,
@@ -397,16 +398,17 @@ type PickerSessionSnapshot = {
   pendingActivationItemId: number | null;
 };
 
-type EditMode = "content";
 
 type EditDraft = {
   id: number;
-  mode: EditMode;
   text: string;
   mimePrimary: string;
+  originalText: string;
+  normalizedHash: string;
+  metadataPayload: MetadataSelectionPayload;
 };
 
-type InlineEditDraft = Omit<EditDraft, "mode">;
+type InlineEditDraft = Pick<EditDraft, "id" | "text" | "mimePrimary">;
 
 type CreateItemDraft = {
   text: string;
@@ -923,6 +925,12 @@ function openMetadataWindow(itemIds: number[], focusTarget: MetadataFocusTarget)
   });
 }
 
+function getMetadataSelectionSnapshot(itemIds: number[]) {
+  return invoke<MetadataSelectionPayload["snapshot"]>("get_metadata_selection_snapshot", {
+    request: { itemIds },
+  });
+}
+
 function openItemPreview(itemId: number) {
   return invoke<boolean>("open_item_preview", { request: { itemId } });
 }
@@ -1250,6 +1258,7 @@ function App() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
   const [inlineEditDraft, setInlineEditDraft] = useState<InlineEditDraft | null>(null);
   const [inlineEditSaving, setInlineEditSaving] = useState(false);
   const [expandedItemIds, setExpandedItemIds] = useState<Set<number>>(() => new Set());
@@ -4285,14 +4294,21 @@ function App() {
         setEditError(null);
         setInlineEditDraft(null);
         setOpenItemMenu(null);
-        const fullItem = await ensureFullHistoryItem(item);
+        const [fullItem, metadataSnapshot] = await Promise.all([
+          ensureFullHistoryItem(item),
+          getMetadataSelectionSnapshot([item.id]),
+        ]);
         setEditDraft({
           id: fullItem.id,
-          mode: "content",
           text: fullItem.text,
+          originalText: fullItem.text,
+          normalizedHash: fullItem.normalized_hash,
           mimePrimary: fullItem.mime_primary ?? "",
+          metadataPayload: {
+            snapshot: metadataSnapshot,
+            focusTarget: "overview",
+          },
         });
-        window.setTimeout(() => editTextRef.current?.focus(), 0);
       } catch (error) {
         setEditError(String(error));
         focusSearch();
@@ -4720,24 +4736,38 @@ function App() {
     [beginEdit, effectiveSelection, hasMultiSelection, openMetadataForItems, selectedItem],
   );
 
-  const saveEdit = useCallback(async (textOverride?: string) => {
-    if (!editDraft) {
+  const saveEdit = useCallback(async (
+    text: string,
+    metadataIntent: MetadataSelectionIntent,
+  ) => {
+    if (!editDraft || editSaving) {
       return;
     }
 
-
     try {
+      setEditSaving(true);
       setEditError(null);
-      await invoke("update_history_item_text", { id: editDraft.id, text: textOverride ?? editDraft.text });
+      await invoke("apply_metadata_selection_intent", {
+        intent: {
+          ...metadataIntent,
+          content: text === editDraft.originalText
+            ? undefined
+            : {
+                value: text,
+                expectedHash: editDraft.normalizedHash,
+              },
+        },
+      });
       setEditDraft(null);
       await refreshAppliedHistory();
       rebaseFind();
       focusSearch();
     } catch (error) {
       setEditError(String(error));
-      window.setTimeout(() => editTextRef.current?.focus(), 0);
+    } finally {
+      setEditSaving(false);
     }
-  }, [editDraft, focusSearch, rebaseFind, refreshAppliedHistory]);
+  }, [editDraft, editSaving, focusSearch, rebaseFind, refreshAppliedHistory]);
 
   const catalogItem = useCallback((item: HistoryItem) => {
     void openMetadataForItems([item], "overview", item.id);
@@ -4967,13 +4997,6 @@ function App() {
     return () => document.removeEventListener("visibilitychange", closeEditorsWhenWindowHides);
   }, [closeTransientEditors]);
 
-  useEffect(() => {
-    if (!editDraft) {
-      return;
-    }
-
-    window.setTimeout(() => editTextRef.current?.focus(), 0);
-  }, [editDraft?.id]);
 
   useEffect(() => {
     if (!isTauriRuntime() || !rendererDebugDiagnosticsEnabled()) {
@@ -6061,7 +6084,7 @@ function App() {
           }
         }}
       >
-        {editDraft?.mode === "content" ? (
+        {editDraft ? (
           <Suspense fallback={(
             <div className="item-content-editor-loading" role="status">
               <UiLoader size="sm" />
@@ -6074,6 +6097,9 @@ function App() {
               value={editDraft.text}
               error={editError}
               settings={settings.editor}
+              metadataPayload={editDraft.metadataPayload}
+              availableTags={paletteTags}
+              saving={editSaving}
               onChange={(text) => setEditDraft((draft) => draft ? { ...draft, text } : draft)}
               onCancel={() => {
                 catalogItemIdRef.current = null;
@@ -6081,7 +6107,7 @@ function App() {
                 setEditError(null);
                 focusSearch();
               }}
-              onSave={(text) => void saveEdit(text)}
+              onSave={(text, metadataIntent) => void saveEdit(text, metadataIntent)}
             />
           </Suspense>
         ) : (
@@ -7214,6 +7240,8 @@ function App() {
                               event.preventDefault();
                               if (event.ctrlKey || event.metaKey) {
                                 void openExternalEditor(item.id);
+                              } else if (event.shiftKey) {
+                                void openMetadataForItems([item], "overview");
                               } else {
                                 void beginEdit(item);
                               }

@@ -320,6 +320,10 @@ export type MetadataSetValueIntent = {
 export type MetadataSelectionIntent = {
   itemIds: number[];
   expectedSnapshotToken: string;
+  content?: {
+    value: string;
+    expectedHash: string;
+  };
   title: MetadataScalarIntent;
   notes: MetadataNotesIntent;
   tags: MetadataSetValueIntent[];
@@ -329,6 +333,7 @@ export type MetadataSelectionIntent = {
 export type ApplyMetadataSelectionIntentResult = {
   snapshot: MetadataSelectionSnapshot;
   changedItemCount: number;
+  contentChanged: boolean;
   titleChangedCount: number;
   notesChangedCount: number;
   tagRelationChanges: number;

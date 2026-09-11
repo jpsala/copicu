@@ -2088,7 +2088,6 @@ async fn count_marked_history_items(
         .map_err(|error| format!("count marks worker failed: {error}"))?
 }
 
-
 #[cfg(not(test))]
 #[tauri::command]
 async fn update_history_item_text(
@@ -2117,11 +2116,9 @@ async fn get_metadata_selection_snapshot(
         "get_metadata_selection_snapshot",
     )?;
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        storage.get_metadata_selection_snapshot(request)
-    })
-    .await
-    .map_err(|error| format!("metadata snapshot worker failed: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || storage.get_metadata_selection_snapshot(request))
+        .await
+        .map_err(|error| format!("metadata snapshot worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -2134,7 +2131,7 @@ async fn apply_metadata_selection_intent(
 ) -> Result<storage::MetadataSelectionApplyResult, String> {
     require_surface_window(
         &window,
-        &[METADATA_WINDOW_LABEL],
+        &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL],
         "apply_metadata_selection_intent",
     )?;
     let storage = storage.inner().clone();
@@ -3264,9 +3261,6 @@ fn normalize_hotkey_sequence(input: String) -> HotkeyNormalizationResult {
         },
     }
 }
-
-
-
 
 #[cfg(not(test))]
 #[tauri::command]

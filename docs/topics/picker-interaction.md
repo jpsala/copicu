@@ -181,8 +181,8 @@ Navegacion por teclado:
 - Los menus WebView muestran shortcuts como keycaps compactas en tipografia mono, no como texto corrido. `Settings` siempre usa el valor configurado de `settingsShortcut`. El tray nativo conserva la convencion visual de Windows mediante accelerators del OS para abrir picker y Settings; ambos se actualizan despues de guardar Settings.
 - `P`: candidato para pin/unpin.
 - `Ctrl+N`: abre dialog para crear un item manual sin copiar nada al portapapeles.
-- `F2`: reemplaza el feed por el editor CodeMirror full-surface del item activo; funciona con foco en cualquier control del picker. `F2`, `Ctrl+S` y `Ctrl+Enter` guardan; `Escape` cancela.
-- `Shift+F2`: abre el editor completo de metadata del item activo. Metadata conserva su textarea compacto y autocomplete especifico; no usa CodeMirror por defecto.
+- `F2`: reemplaza el feed por el editor unificado del clip activo. CodeMirror edita content y `MetadataInspector` edita title, notes, tags y properties; en ancho normal se ven lado a lado y en ventana estrecha se alternan con tabs. `F2`, `Ctrl+S` y `Ctrl+Enter` guardan content + metadata atómicamente; `Escape` cancela o pide descartar si hay cambios.
+- `Shift+F2`: abre la utility standalone del mismo `MetadataInspector` para una edición focalizada metadata-only.
 - `Ctrl+Shift+C`: global app-owned; abre la utility de metadata para el item activo o el ultimo activado.
 - `Ctrl+Shift+Up` / `Ctrl+Shift+Down`: globales app-owned; activan y copian el item anterior (más viejo) o siguiente (más nuevo), con wrap en los extremos y feedback por toast. La implementación interna reemplaza la necesidad de los scripts `032`/`033` para este flujo cotidiano.
 - `Ctrl+Alt+F11` es el default global configurable de `Paste next`. Se procesa al soltar el chord, pega como maximo un item por ciclo press/release y una cola vacia nunca reutiliza el ultimo item.
@@ -204,10 +204,10 @@ Crear item manual:
 
 Metadata editable:
 
-- Una sola composición `MetadataInspector` sirve a existing-single, existing-multi y create; items existentes siempre usan la utility standalone `metadata`.
+- Una sola composición `MetadataInspector` sirve a existing-single, existing-multi y create. `F2` la embebe junto a content para single; batch y entradas metadata-only usan la utility standalone `metadata`.
 - La selección se congela al abrir. Multi muestra title/notes agregados y conjuntos `all | some | none`; ninguna operación mixta se infiere desde placeholders: set/clear/append/replace son explícitos y staged.
-- `Ctrl+Shift+C`, `Shift+F2`, Tags, Metadata, Catalog de Inbox y `copicu.metadata.editActive()` abren la misma surface y contratos.
-- `Ctrl+Enter` guarda una intención en una transacción SQLite; Escape limpio cierra y Escape/close dirty exige descartar. Un payload nuevo dirty queda pending y un fingerprint stale no escribe.
+- `Ctrl+Shift+C`, `Shift+F2`, Tags, Metadata, Catalog de Inbox y `copicu.metadata.editActive()` abren la misma utility y contratos.
+- En `F2`, `Ctrl+S`/`Ctrl+Enter` envían content opcional y la intención metadata en una única transacción SQLite, con hash de content y fingerprint de metadata. Escape limpio cierra; Escape dirty exige descartar. En la utility, un payload nuevo dirty queda pending y un fingerprint stale no escribe.
 - Tags y properties muestran provenance durable; no-op conserva source/confidence, remove suprime sólo relaciones existentes y add/reintroducción es manual.
 - `clipboard_item_tags` y `clipboard_item_properties` son autoridad. Title/notes viven como escalares separados; capture context queda read-only y single-only.
 - El autocomplete es scoped al inspector, accesible como listbox y no comparte draft, ranking ni reemplazo con Search.

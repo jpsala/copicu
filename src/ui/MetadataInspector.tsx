@@ -36,6 +36,8 @@ export type MetadataInspectorProps = {
   availableTags?: TagSummary[];
   closeRequestSignal?: number;
   showFooter?: boolean;
+  embedded?: boolean;
+  guardDirtyOnCancel?: boolean;
   onSave?: (intent: MetadataSelectionIntent) => Promise<ApplyMetadataSelectionIntentResult>;
   onSaved?: (snapshot: MetadataSelectionSnapshot) => void;
   onReload?: (itemIds: number[]) => Promise<MetadataSelectionSnapshot>;
@@ -280,6 +282,8 @@ export function MetadataInspector({
   availableTags = [],
   closeRequestSignal = 0,
   showFooter = true,
+  embedded = false,
+  guardDirtyOnCancel = true,
   onSave,
   onSaved,
   onReload,
@@ -353,9 +357,9 @@ export function MetadataInspector({
   }, [onReload, state.conflictingPayload, state.focusTarget, state.selection]);
 
   const requestClose = useCallback(() => {
-    if (state.dirty) setDiscardGuard(true);
+    if (guardDirtyOnCancel && state.dirty) setDiscardGuard(true);
     else onCancel?.();
-  }, [onCancel, state.dirty]);
+  }, [guardDirtyOnCancel, onCancel, state.dirty]);
 
   useEffect(() => {
     if (closeRequestSignal <= handledCloseRequestRef.current) return;
@@ -394,8 +398,12 @@ export function MetadataInspector({
     : "untouched";
 
   return (
-    <div ref={inspectorRef} className={`metadata-inspector is-${effectiveVariant}`} onKeyDown={handleKeyDown}>
-      {!isCreate ? (
+    <div
+      ref={inspectorRef}
+      className={`metadata-inspector is-${effectiveVariant}${embedded ? " is-embedded" : ""}`}
+      onKeyDown={handleKeyDown}
+    >
+      {!isCreate && !embedded ? (
         <header className="metadata-inspector-header">
           <div>
             <strong>Metadata</strong>
@@ -428,7 +436,7 @@ export function MetadataInspector({
       ) : null}
 
       <div className="metadata-inspector-body">
-        {!isCreate && snapshot.singleItem ? (
+        {!isCreate && !embedded && snapshot.singleItem ? (
           <details className="metadata-content-preview">
             <summary>Content preview <span>{snapshot.singleItem.contentKind}</span></summary>
             <pre>{snapshot.singleItem.contentPreview || "Empty clip"}</pre>
@@ -460,7 +468,7 @@ export function MetadataInspector({
             <UiTextInput
               id="metadata-title"
               aria-label="Title"
-              autoFocus={!isCreate && payload.focusTarget === "overview"}
+              autoFocus={!isCreate && !embedded && payload.focusTarget === "overview"}
               value={titleValue}
               placeholder="Optional title"
               onChange={(event) => {
@@ -527,8 +535,8 @@ export function MetadataInspector({
           values={snapshot.tags}
           candidates={allTagCandidates}
           intents={state.tags}
+          autoFocus={!isCreate && !embedded && payload.focusTarget === "tags"}
           multi={multi}
-          autoFocus={!isCreate && payload.focusTarget === "tags"}
           allowCreate
           dispatch={dispatch}
         />
@@ -549,7 +557,7 @@ export function MetadataInspector({
           ))}
         </div>
 
-        {!isCreate && snapshot.singleItem ? <MetadataFacts snapshot={snapshot} /> : null}
+        {!isCreate && !embedded && snapshot.singleItem ? <MetadataFacts snapshot={snapshot} /> : null}
         {state.saveState === "error" && state.error ? <UiAlert color="red" variant="light">{state.error}</UiAlert> : null}
       </div>
 

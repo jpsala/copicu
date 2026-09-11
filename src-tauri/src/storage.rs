@@ -449,9 +449,18 @@ pub struct MetadataPropertyIntents {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MetadataContentIntent {
+    pub value: String,
+    pub expected_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MetadataSelectionIntent {
     pub item_ids: Vec<i64>,
     pub expected_snapshot_token: String,
+    #[serde(default)]
+    pub content: Option<MetadataContentIntent>,
     pub title: ScalarIntent,
     pub notes: NotesIntent,
     #[serde(default)]
@@ -465,6 +474,7 @@ pub struct MetadataSelectionIntent {
 pub struct MetadataSelectionApplyResult {
     pub snapshot: MetadataSelectionSnapshot,
     pub changed_item_count: usize,
+    pub content_changed: bool,
     pub title_changed_count: usize,
     pub notes_changed_count: usize,
     pub tag_relation_changes: usize,
@@ -2635,17 +2645,48 @@ impl AppStorage {
 
         let mut changed_items = BTreeSet::new();
         let mut tag_changed_items = BTreeSet::new();
+        let mut content_changed = false;
         let mut title_changed_count = 0;
         let mut notes_changed_count = 0;
         let mut tag_relation_changes = 0;
         let mut property_relation_changes = 0;
+
+        if let Some(content) = &intent.content {
+            if item_ids.len() != 1 {
+                return Err("content can only be edited for one clipboard item".to_string());
+            }
+            let item_id = item_ids[0];
+            let (current_text, current_hash) = transaction
+                .query_row(
+                    "SELECT text, normalized_hash FROM clipboard_items WHERE id = ?1",
+                    params![item_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .map_err(|error| format!("failed to read clipboard item content: {error}"))?;
+            if current_hash != content.expected_hash {
+                return Err(format!(
+                    "{METADATA_SNAPSHOT_STALE}: clipboard item content changed; reload item"
+                ));
+            }
+            let normalized_text = normalize_text_for_storage(&content.value);
+            if normalized_text != current_text {
+                update_item_text_from_conn(&transaction, item_id, &content.value)?;
+                content_changed = true;
+                changed_items.insert(item_id);
+            }
+        }
 
         for item_id in &item_ids {
             let (current_title, current_notes) = transaction
                 .query_row(
                     "SELECT title, notes FROM clipboard_items WHERE id = ?1",
                     params![item_id],
-                    |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                        ))
+                    },
                 )
                 .map_err(|error| format!("failed to read scalar metadata: {error}"))?;
 
@@ -2802,9 +2843,7 @@ impl AppStorage {
                                     params![item_id, property_key, normalized_value],
                                 )
                                 .map_err(|error| {
-                                    format!(
-                                        "failed to remove selection property relation: {error}"
-                                    )
+                                    format!("failed to remove selection property relation: {error}")
                                 })?;
                             property_relation_changes += 1;
                             changed_items.insert(*item_id);
@@ -2828,6 +2867,7 @@ impl AppStorage {
         Ok(MetadataSelectionApplyResult {
             snapshot,
             changed_item_count: changed_items.len(),
+            content_changed,
             title_changed_count,
             notes_changed_count,
             tag_relation_changes,
@@ -4057,10 +4097,16 @@ fn record_set_aggregate(
     let source = builder.sources.entry(source).or_default();
     source.count += 1;
     if let Some(confidence) = confidence {
-        source.confidence_min =
-            Some(source.confidence_min.map_or(confidence, |value| value.min(confidence)));
-        source.confidence_max =
-            Some(source.confidence_max.map_or(confidence, |value| value.max(confidence)));
+        source.confidence_min = Some(
+            source
+                .confidence_min
+                .map_or(confidence, |value| value.min(confidence)),
+        );
+        source.confidence_max = Some(
+            source
+                .confidence_max
+                .map_or(confidence, |value| value.max(confidence)),
+        );
     }
 }
 
@@ -4265,7 +4311,10 @@ fn metadata_selection_snapshot_from_conn(
     let single_item = if item_ids.len() == 1 {
         let (_, content_kind, text) = &content[0];
         Some(MetadataSingleItem {
-            content_preview: text.chars().take(HISTORY_PREVIEW_CHAR_LIMIT as usize).collect(),
+            content_preview: text
+                .chars()
+                .take(HISTORY_PREVIEW_CHAR_LIMIT as usize)
+                .collect(),
             content_kind: content_kind.clone(),
             capture_context_events: capture_context_events_from_conn(
                 conn,
@@ -5924,6 +5973,7 @@ mod tests {
         MetadataSelectionIntent {
             item_ids,
             expected_snapshot_token,
+            content: None,
             title: ScalarIntent::Untouched,
             notes: NotesIntent::Untouched,
             tags: Vec::new(),
@@ -5978,7 +6028,10 @@ mod tests {
             .find(|tag| tag.key == "partial")
             .unwrap();
         assert_eq!(partial.presence, MetadataPresence::Some);
-        assert_eq!(snapshot.properties.client[0].presence, MetadataPresence::All);
+        assert_eq!(
+            snapshot.properties.client[0].presence,
+            MetadataPresence::All
+        );
         let absent_project = snapshot
             .properties
             .project
@@ -6026,7 +6079,10 @@ mod tests {
             .conn
             .lock()
             .unwrap()
-            .execute("UPDATE clipboard_items SET notes = 'external' WHERE id = 1", [])
+            .execute(
+                "UPDATE clipboard_items SET notes = 'external' WHERE id = 1",
+                [],
+            )
             .unwrap();
         let mut stale = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
         stale.title = ScalarIntent::Set {
@@ -6038,6 +6094,34 @@ mod tests {
         }];
         let error = storage.apply_metadata_selection_intent(stale).unwrap_err();
         assert!(error.contains(METADATA_SNAPSHOT_STALE));
+
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] })
+            .unwrap();
+        storage
+            .conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE clipboard_items SET text = 'external content', normalized_hash = 'external-hash' WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        let mut stale_content = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        stale_content.content = Some(MetadataContentIntent {
+            value: "local content".into(),
+            expected_hash: "hash-1".into(),
+        });
+        stale_content.title = ScalarIntent::Set {
+            value: "must not persist".into(),
+        };
+        let error = storage
+            .apply_metadata_selection_intent(stale_content)
+            .unwrap_err();
+        assert!(error.contains(METADATA_SNAPSHOT_STALE));
+        let item = storage.get_item(1).unwrap();
+        assert_eq!(item.text, "external content");
+        assert_eq!(item.title, None);
         assert_eq!(storage.get_item(1).unwrap().title, None);
         assert!(storage.get_item_tag_entries(1).unwrap().is_empty());
 
@@ -6054,6 +6138,10 @@ mod tests {
             )
             .unwrap();
         let mut failing = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        failing.content = Some(MetadataContentIntent {
+            value: "content also rolls back".into(),
+            expected_hash: "external-hash".into(),
+        });
         failing.title = ScalarIntent::Set {
             value: "also rolls back".into(),
         };
@@ -6063,7 +6151,40 @@ mod tests {
         }];
         assert!(storage.apply_metadata_selection_intent(failing).is_err());
         assert_eq!(storage.get_item(1).unwrap().title, None);
+        assert_eq!(storage.get_item(1).unwrap().text, "external content");
         assert!(storage.list_item_property_entries(1).unwrap().is_empty());
+    }
+
+    #[test]
+    fn metadata_selection_commits_content_and_metadata_together() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "first");
+        let snapshot = storage
+            .get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] })
+            .unwrap();
+        let mut intent = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        intent.content = Some(MetadataContentIntent {
+            value: "updated content".into(),
+            expected_hash: "hash-1".into(),
+        });
+        intent.title = ScalarIntent::Set {
+            value: "Updated title".into(),
+        };
+        intent.tags = vec![SetValueIntent {
+            key: "work".into(),
+            op: SetValueIntentOp::Add,
+        }];
+
+        let result = storage.apply_metadata_selection_intent(intent).unwrap();
+
+        assert!(result.content_changed);
+        assert_eq!(result.changed_item_count, 1);
+        assert_eq!(result.title_changed_count, 1);
+        assert_eq!(result.tag_relation_changes, 1);
+        let item = storage.get_item(1).unwrap();
+        assert_eq!(item.text, "updated content");
+        assert_eq!(item.title.as_deref(), Some("Updated title"));
+        assert_eq!(storage.get_item_tag_entries(1).unwrap()[0].value, "work");
     }
 
     #[test]
@@ -6117,8 +6238,7 @@ mod tests {
                 item_ids: vec![1, 2, 3],
             })
             .unwrap();
-        let mut intent =
-            untouched_metadata_intent(vec![1, 2, 3], snapshot.snapshot_token);
+        let mut intent = untouched_metadata_intent(vec![1, 2, 3], snapshot.snapshot_token);
         intent.tags = vec![
             SetValueIntent {
                 key: "all".into(),
@@ -6211,7 +6331,9 @@ mod tests {
         let result = storage.apply_metadata_selection_intent(intent).unwrap();
         assert_eq!(result.property_relation_changes, 2);
         let entries = storage.list_item_property_entries(first.id).unwrap();
-        assert!(entries.iter().any(|entry| entry.key == "activity" && entry.value == "Review"));
+        assert!(entries
+            .iter()
+            .any(|entry| entry.key == "activity" && entry.value == "Review"));
         assert!(!entries.iter().any(|entry| entry.key == "client"));
     }
 
