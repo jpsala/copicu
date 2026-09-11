@@ -151,6 +151,14 @@ Estado 2026-09-10: release estable `v0.4.14`, asset `Copicu_0.4.14_x64-setup.exe
 
 Estado 2026-09-10: release estable `v0.4.16`, asset `Copicu_0.4.16_x64-setup.exe`, firma y `latest.json`; SHA256 `4D052F9FF8D4316E209EDE3D6A72FB89E5831E8C636F96968C8E5D80782977DA`. `F2` edita content y metadata en una superficie responsive con commit atómico; el layout instalado ocupa todo el picker. Instalación local comprobada desde el instalador publicado, con apertura por shortcut, editor F2 y salida limpia por `Escape` sin writes. Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.16>.
 
+Estado 2026-09-11: release estable `v0.4.17`, instalador, firma y manifest publicados.
+SHA256 `75BD32EC565E49E9AC5C3EE830E9A4F9B2DA1E0B7E0393D2AC62A891CA0F4D77`,
+coincidente con el digest publico de GitHub. Instalado el mismo NSIS mediante
+`install:current -SkipBuild`; ejecutable `0.4.17`, apertura por shortcut y
+escritura con cursor fijo visible comprobadas. No certifica IME, rendimiento
+comparativo ni resolucion del hang intermitente.
+Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.17>.
+
 La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target y estado de auto-update. `Check now` consulta el manifest firmado y, cuando encuentra una version nueva, habilita `Update now`; esa accion vuelve a validar el canal, descarga, verifica la firma Tauri, instala y relanza aunque `autoUpdate.enabled` este apagado. El modo automatico conserva el mismo pipeline sin quitarle al usuario el control manual.

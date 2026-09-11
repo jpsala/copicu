@@ -10,9 +10,9 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete` para el corte CodeMirror.
+- **Estado:** `complete`; CodeMirror publicado e instalado en `v0.4.17`.
 - **Referencia:** `specs/012-codemirror-query-editor/spec.md`, `docs/topics/codemirror-query-editor.md`.
-- **Siguiente acción:** continuar dogfood y evaluar claridad de completion de scopes: `in:ti` con `content,title` heredados produce `in:content,title`, no `in:title`; ver topic. Priorizar mostrar el resultado sin cambiar semantica por sorpresa. Distribucion por su gate; IME real cuando este disponible y baseline comparable antes de afirmar mejoras de rendimiento.
+- **Siguiente acción:** continuar dogfood de la instalada y evaluar claridad de completion de scopes: `in:ti` con `content,title` heredados produce `in:content,title`, no `in:title`; ver topic. Priorizar mostrar el resultado sin cambiar semantica por sorpresa. IME real cuando este disponible y baseline comparable antes de afirmar mejoras de rendimiento.
 
 ## Lectura Rapida
 
@@ -25,7 +25,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | complete/dogfood | `specs/011-selection-aware-metadata-inspector/spec.md`, `docs/topics/filtering-and-query-syntax.md` | `F2` unifica content + metadata con commit atómico; utility standalone conserva single/multi. Continuar dogfood del corte distribuido sin cambiar Search/Find. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.16` sigue estable e instalada; `main` retiró la clasificación fija adicional, pero ese corte aún no fue instalado ni publicado. Próximo release: verificar que la migración conserve tags y sus suppressions, elimine los datos legacy retirados y luego continuar dogfood real sin declarar resuelto el hang intermitente. |
+| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.17` publicada e instalada: editor CodeMirror y cursor fijo visible comprobados en release. Continuar dogfood; el smoke no certifica la migración de tags/suppressions ni resuelve el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 

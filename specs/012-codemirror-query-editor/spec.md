@@ -218,7 +218,8 @@ cotas por screenshot viven en el topic `codemirror-query-editor`.
 
 IME real no disponible en este Windows. La aceptacion funcional no certifica
 un benchmark comparativo del input anterior ni rendimiento de una release.
-No se instalo ni publico este corte.
+Publicado e instalado como `v0.4.17`; version del ejecutable, apertura por
+shortcut y escritura con cursor visible comprobadas en la instalada.
 
 ## Riesgos y límites
 
