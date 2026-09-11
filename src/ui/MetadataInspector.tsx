@@ -396,6 +396,19 @@ export function MetadataInspector({
   const notesMode = state.notes.op === "appendToEach" || state.notes.op === "replaceAll" || state.notes.op === "clearAll"
     ? state.notes.op
     : "untouched";
+  const propertyFields = PROPERTY_KEYS.map((key) => (
+    <MetadataSetSection
+      key={key}
+      label={PROPERTY_LABELS[key]}
+      field={key}
+      values={snapshot.properties[key]}
+      candidates={snapshot.properties[key]}
+      intents={state.properties[key]}
+      multi={multi}
+      allowCreate
+      dispatch={dispatch}
+    />
+  ));
 
   return (
     <div
@@ -541,21 +554,21 @@ export function MetadataInspector({
           dispatch={dispatch}
         />
 
-        <div className="metadata-properties" aria-label="Properties">
-          {PROPERTY_KEYS.map((key) => (
-            <MetadataSetSection
-              key={key}
-              label={PROPERTY_LABELS[key]}
-              field={key}
-              values={snapshot.properties[key]}
-              candidates={snapshot.properties[key]}
-              intents={state.properties[key]}
-              multi={multi}
-              allowCreate
-              dispatch={dispatch}
-            />
-          ))}
-        </div>
+        {embedded ? (
+          <details className="metadata-properties-details">
+            <summary>
+              Properties
+              <span>Client · Project · Activity</span>
+            </summary>
+            <div className="metadata-properties" aria-label="Properties">
+              {propertyFields}
+            </div>
+          </details>
+        ) : (
+          <div className="metadata-properties" aria-label="Properties">
+            {propertyFields}
+          </div>
+        )}
 
         {!isCreate && !embedded && snapshot.singleItem ? <MetadataFacts snapshot={snapshot} /> : null}
         {state.saveState === "error" && state.error ? <UiAlert color="red" variant="light">{state.error}</UiAlert> : null}

@@ -4339,6 +4339,7 @@ test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused ro
   await page.keyboard.press("F2");
   const contentEditor = page.getByRole("region", { name: "Edit clipboard item" });
   await expect(contentEditor).toBeVisible();
+  await expect(contentEditor.getByRole("button", { name: "Save changes" })).toBeVisible();
   const metadataPane = contentEditor.locator(".item-content-editor-pane.is-metadata");
   await expect(metadataPane).toBeAttached();
   const titleInput = contentEditor.getByLabel("Title");
@@ -4352,6 +4353,11 @@ test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused ro
   const editorBox = await contentEditor.boundingBox();
   const pickerBox = await page.locator(".picker-panel").boundingBox();
   expect(editorBox?.width).toBe(pickerBox?.width);
+  const footerBox = await contentEditor.locator(".item-content-editor-footer").boundingBox();
+  expect(Math.abs(
+    ((footerBox?.y ?? 0) + (footerBox?.height ?? 0))
+    - ((editorBox?.y ?? 0) + (editorBox?.height ?? 0)),
+  )).toBeLessThanOrEqual(1);
   expect(editorBox?.height).toBe(pickerBox?.height);
   await page.keyboard.press("End");
   await page.keyboard.type(" edited");
@@ -4360,6 +4366,9 @@ test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused ro
   }
   await expect(metadataPane).toBeVisible();
   await expect(titleInput).toBeVisible();
+  const propertiesDetails = contentEditor.locator(".metadata-properties-details");
+  await expect(propertiesDetails.locator(":scope > summary")).toContainText("Properties");
+  await expect(propertiesDetails).not.toHaveAttribute("open", "");
   await titleInput.fill("Unified editor title");
   await expect(contentEditor.getByText("Modified", { exact: true })).toBeVisible();
   await page.keyboard.press("Control+s");

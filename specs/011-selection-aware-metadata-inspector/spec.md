@@ -29,7 +29,7 @@ Razones:
 
 Tradeoffs:
 
-- El editor `F2` necesita un layout responsive: dos paneles cuando hay ancho y navegación por tabs cuando no lo hay.
+- El editor `F2` necesita un layout responsive: dos paneles que ocupan toda la superficie cuando hay ancho y navegación por tabs cuando no lo hay. Las properties `client`, `project` y `activity` quedan disponibles, pero plegadas por defecto en esta variante por su baja frecuencia.
 - El read model agregado y el control de concurrencia deben vivir en Rust/SQLite, no reconstruirse en React.
 - El intent de single-item admite contenido opcional y debe verificar su fingerprint dentro de la misma transacción que metadata.
 - La migración visual exige reemplazar la ruta content-only en una sola cutover, no coexistencia permanente.

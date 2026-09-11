@@ -326,9 +326,9 @@ Vigésimo tercer corte aplicado 2026-09-10:
 Vigésimo cuarto corte aplicado 2026-09-10:
 
 - `F2` pasó de content-only a editar el clip completo: CodeMirror y `MetadataInspector` comparten una superficie full-picker, dirty state, cancel guard y acción `Save changes`.
-- El layout muestra ambos paneles lado a lado con ancho normal y usa tabs `Content` / `Metadata` por debajo de 720 px. `Ctrl+F2` sigue externo; `Shift+F2` sigue metadata-only standalone.
+- El layout ocupa todo el panel disponible: content y metadata quedan lado a lado con ancho normal y usan tabs `Content` / `Metadata` por debajo de 720 px. Las properties infrecuentes `Client`, `Project` y `Activity` quedan plegadas bajo `Properties`; `Ctrl+F2` sigue externo y `Shift+F2` metadata-only standalone.
 - `MetadataSelectionIntent` acepta content opcional sólo para single-item. Rust valida el hash de content y el fingerprint de metadata, y aplica text, title, notes, tags y properties en una única transacción.
-- Verificación del corte: `npm run build`, 4 checks visuales F2 desktop+narrow, `cargo check --tests` y 238 tests Rust pasan. El smoke nativo aislado queda sujeto a liberar/registrar un hotkey de dev sin colisión con la instalada.
+- Verificación del corte: `npm run build`, checks visuales F2 desktop+narrow, `cargo check --tests` y 238 tests Rust pasan. El smoke sobre la app instalada confirmó que la superficie llena el picker, mantiene el footer al borde inferior y que `Escape` limpio vuelve al feed.
 
 ## Diagnostico Inicial
 

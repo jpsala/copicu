@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.15](https://github.com/jpsala/copicu/releases/tag/v0.4.15)
-- Asset: `Copicu_0.4.15_x64-setup.exe`
+- [v0.4.16](https://github.com/jpsala/copicu/releases/tag/v0.4.16)
+- Asset: `Copicu_0.4.16_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `0D632286B85D4BEBED6800C2124E816C9BED9739C9722B0F828A3C248B98D9A6`
+- SHA256: `4D052F9FF8D4316E209EDE3D6A72FB89E5831E8C636F96968C8E5D80782977DA`
 
-F2 now edits content and metadata together in one responsive interface with an atomic save.
+F2 now edits clip content and metadata in one responsive surface. Content and metadata save atomically; low-frequency properties remain available in a collapsed section.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
