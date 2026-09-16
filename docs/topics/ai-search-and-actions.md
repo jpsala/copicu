@@ -14,9 +14,9 @@ triggers:
 primary_refs:
   - ../tracks/006-ai-vague-search.md
   - ../tracks/004-actions-scripting.md
-  - search-plan-engine.md
-  - filtering-and-query-syntax.md
-  - product-ambition.md
+  - docs/topics/search-plan-engine.md
+  - docs/topics/filtering-and-query-syntax.md
+  - docs/topics/product-ambition.md
 ---
 
 # AI Search And Actions

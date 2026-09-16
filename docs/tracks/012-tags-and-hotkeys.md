@@ -2,7 +2,7 @@
 status: complete
 updated: 2026-07-25
 execution_route: balanced
-topic: docs/topics/tag-management-hotkeys.md
+topic: tag-management-hotkeys
 related:
   - docs/topics/hotkeys.md
   - docs/topics/whichkey.md

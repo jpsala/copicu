@@ -11,8 +11,8 @@ triggers:
   - design system
 primary_refs:
   - docs/topics/ui-surface-architecture.md
-  - docs/topics/ui-rethink.md
-  - docs/tracks/010-ui-rethink.md
+  - docs/topics/appearance-and-themes.md
+  - docs/tracks/036-appearance-settings.md
   - src/mantineTheme.ts
   - src/themeCatalog.ts
   - src/main.tsx
@@ -130,6 +130,15 @@ Noveno slice 2026-06-06:
 - visual checks cubren que Settings liste nuevos presets y que guardar Code/Dark aplique `--accent` esperado.
 - `npm run build`, `npm run visual:check` 52/52 y `cargo check` pasaron. `npm run rust:test` sigue compilando y fallando al arrancar con `STATUS_ENTRYPOINT_NOT_FOUND` conocido.
 
+Décimo slice 2026-09-16:
+
+- Appearance reemplazó selects por `SegmentedControl` para Color mode y Density,
+  y `UnstyledButton` con semántica radio para los ocho presets.
+- La preview permanece presentacional/custom porque comparte geometría del feed;
+  no monta runtime, historial ni virtualización dentro de Settings.
+- Verificación: `npm run build`, `npm run visual:check` 328/328 y smoke nativo
+  desktop/angosto; High Contrast conserva foco no-texto >= 3:1.
+
 ## Reglas De Uso
 
 - Para decidir si usar Mantine, empezar por `docs/topics/ui-surface-architecture.md`.
@@ -145,11 +154,9 @@ Noveno slice 2026-06-06:
 ## Siguiente Trabajo
 
 1. Mantener toasts custom por ventana Tauri; no usar `@mantine/notifications` para el flujo multi-monitor.
-2. Pulir Appearance:
-   - revisar contraste de presets;
-   - evaluar `cssVariablesResolver` solo para variables Mantine que no podamos cubrir desde `themeCatalog.ts`;
-   - decidir si Settings necesita preview compacta de preset.
-3. Evaluar wrappers faltantes (`UiMenu`, `UiMenuItem`, `Modal`, `Popover`, `FocusTrap`, `ScrollArea`) cuando aparezca un segundo consumidor real.
+2. Appearance quedó implementado en `docs/tracks/036-appearance-settings.md`; este topic mantiene sólo la infraestructura Mantine que consume.
+3. Evaluar `cssVariablesResolver` únicamente si `themeCatalog.ts` no puede cubrir una variable Mantine necesaria.
+4. Evaluar wrappers faltantes (`UiMenu`, `UiMenuItem`, `Modal`, `Popover`, `FocusTrap`, `ScrollArea`) cuando aparezca un segundo consumidor real.
 
 ## Audit Mantine 2026-06-06
 

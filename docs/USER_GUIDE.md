@@ -4,16 +4,15 @@ Copicu conserva una capa AOS local de conocimiento durable sobre OMP. No copia r
 
 ## Frontera
 
-AOS mantiene `AGENTS.md`, el índice, `WORKING_MEMORY.md`, topics, tracks, specs, skills y gates locales. OMP gobierna modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime.
+AOS mantiene `AGENTS.md`, `WORKING_MEMORY.md`, topics, tracks, specs, skills y gates locales; el contexto se consulta en vivo. OMP gobierna modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime.
 
 `realinear os` audita esta capa contextual. `computer` es el built-in local para dogfood explícito: está fuera del runtime de producto, exige aviso antes de UI visible y mantiene aprobación para input. El oracle C0 parte de una app externa y escribe tras `Ctrl+Shift+.` sin enfocar Copicu manualmente.
 
 ## Modelo Mental
 
-- `AGENTS.md`: reglas críticas y frontera.
-- `docs/.generated/context-index.md`: índice generado.
+- `bun run context -- show`: resumen fresco del catálogo; no existe un índice persistido.
 - `docs/WORKING_MEMORY.md`: foco y estado vivo.
-- `docs/TOPICS.md`: router humano.
+- `bun run context -- topics`: router dinámico de conocimiento.
 - `docs/topics/`: conocimiento reusable.
 - `docs/tracks/`: trabajo retomable.
 - `docs/skills/`: skills locales portables.
@@ -25,7 +24,7 @@ La memoria principal son los docs versionados. La ruta caliente debe permanecer 
 ## Verificación
 
 ```powershell
-bun run context:index
+bun run context -- show
 bun run context:audit
 npm run skills:status
 ```

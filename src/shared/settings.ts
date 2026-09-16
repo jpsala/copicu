@@ -1,5 +1,5 @@
 import type { EnrichmentSettings, EnterAction } from "./contracts";
-import type { ThemeId, ThemeSetting } from "../themeCatalog";
+import type { DensitySetting, ThemeId, ThemeSetting } from "../themeCatalog";
 
 export type SearchTriggerMode = "realtime" | "enter";
 export type SearchScope = "all" | "content" | "metadata" | "title" | "notes" | "tags" | "context";
@@ -80,6 +80,7 @@ export type AppSettings = {
   appearance: {
     theme: ThemeSetting;
     themeId: ThemeId;
+    density: DensitySetting;
   };
   editor: EditorSettings;
   scripts: {
@@ -127,6 +128,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     theme: "system",
     themeId: "default",
+    density: "standard",
   },
   editor: {
     fontFamily: "systemMono",
@@ -205,7 +207,11 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
       defaultExcludedSearchScopes: normalizeExcludedSearchScopes(picker.defaultExcludedSearchScopes),
     },
     history: { ...DEFAULT_SETTINGS.history, ...settings.history },
-    appearance: { ...DEFAULT_SETTINGS.appearance, ...settings.appearance },
+    appearance: {
+      ...DEFAULT_SETTINGS.appearance,
+      ...settings.appearance,
+      density: settings.appearance?.density === "compact" ? "compact" : "standard",
+    },
     editor: {
       ...DEFAULT_SETTINGS.editor,
       ...settings.editor,

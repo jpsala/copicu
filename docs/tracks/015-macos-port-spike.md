@@ -1,7 +1,7 @@
 ---
 status: parked
 updated: 2026-06-10
-topic: docs/topics/macos-portability-research-unindexed.md
+topic: macos-portability-research-unindexed
 ---
 
 # 015 macOS Port Spike

@@ -14,7 +14,7 @@ Fuente estable para abreviaturas, nombres cortos y definiciones recurrentes del 
 | CQ | CopyQ | Referencia funcional principal; baseline, no objetivo de compatibilidad total. |
 | CC | copycu | Alias corto pedido para el producto/proyecto. El resto de docs todavia usa `Copicu`; reconciliar el nombre cuando se formalice la marca. |
 | Context Bloat | Contaminacion de contexto: cuando reglas, working memory, topics o tracks crecen hasta volverse lectura obligatoria amplia. |
-| Context Index | `docs/.generated/context-index.md`, cache generado de topics, tracks, specs y aliases. |
+| Context Catalog | `bun run context -- show|topics|query` consulta metadata viva; no hay índice persistido. |
 | Local Skill | Skill local portable versionada dentro del repo. |
 | Skills Canonicas | Carpeta `docs/skills/`, fuente de verdad de las skills locales. |
 | Skills Compat | Carpeta `.agents/skills`, junction de compatibilidad hacia `docs/skills/`. |

@@ -10,8 +10,8 @@ triggers:
   - whichkey
   - which key
 primary_refs:
-  - global-shortcut-and-tray.md
-  - tag-management-hotkeys.md
+  - docs/topics/global-shortcut-and-tray.md
+  - docs/topics/tag-management-hotkeys.md
   - ../tracks/012-tags-and-hotkeys.md
   - ../../specs/006-tags-and-hotkeys/spec.md
 ---

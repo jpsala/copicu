@@ -15,7 +15,7 @@ primary_refs:
   - ../DECISIONS.md
   - ../OPEN_QUESTIONS.md
   - ../reference/copyq-feature-inventory.md
-  - product-ambition.md
+  - docs/topics/product-ambition.md
 ---
 
 # Direccion De Producto

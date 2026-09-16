@@ -7,13 +7,13 @@ description: Audit an AOS repo's agentic system and propose which commands, topi
 
 ## Workflow
 
-1. Read the repo hot path first: `docs/.generated/context-index.md` if present, `docs/WORKING_MEMORY.md`, then `docs/TOPICS.md`.
+1. Run `bun run context -- show` first, then read `docs/WORKING_MEMORY.md` and query `bun run context -- topics`.
 2. Open `docs/topics/local-codex-skills.md`; treat it as the canonical rubric.
-3. Inspect candidates without loading everything: search `AGENTS.md`, `docs/TOPICS.md`, `docs/topics/`, `docs/tracks/`, and `docs/skills/README.md` for commands, repeated workflows, and named user intents.
+3. Inspect candidates without loading everything: search `AGENTS.md`, `docs/topics/`, `docs/tracks/`, and `docs/skills/README.md` for commands, repeated workflows, and named user intents.
 4. Classify each candidate as `skill`, `hybrid skill`, `topic`, `active rule`, `track`, or `do not promote`.
 5. Produce a shortlist with reason, trigger phrase, canonical source, and risk/cost.
 6. If JP asks to implement, create or update only `docs/skills/<name>/`; keep durable logic in topics/scripts/docs and avoid duplicating long procedures.
-7. Run `scripts/ensure-skills-link.ps1`, validate changed skills, regenerate the context index, and run the audit.
+7. Run `scripts/ensure-skills-link.ps1`, validate changed skills, query the context catalog, and run the audit.
 
 ## Default Recommendation
 

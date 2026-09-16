@@ -7,7 +7,7 @@ Este directorio guarda el contexto estable y recuperable para trabajar el proyec
 Leer en capas:
 
 ```text
-docs/.generated/context-index.md -> WORKING_MEMORY -> TOPICS -> topic/track/spec especifico -> referencia profunda -> codigo puntual
+bun run context -- show -> WORKING_MEMORY -> bun run context -- topics|query -> topic/track/spec especifico -> referencia profunda -> codigo puntual
 ```
 
 No abrir documentos largos si el topic de entrada alcanza para decidir.
@@ -16,9 +16,9 @@ No abrir documentos largos si el topic de entrada alcanza para decidir.
 
 Para entender el estado actual sin inflar contexto:
 
-1. `docs/.generated/context-index.md`: indice rapido generado, si existe.
+1. Ejecutar `bun run context -- show` para leer metadata actual.
 2. `WORKING_MEMORY.md`: estado vivo, riesgos y siguiente paso probable.
-3. `TOPICS.md`: router para elegir topic o track.
+3. `bun run context -- topics`: catálogo dinámico para elegir topic o track.
 4. Topic, track o spec especifico.
 5. Documentos raiz y referencias profundas solo bajo demanda.
 
@@ -36,7 +36,7 @@ Para entender el estado actual sin inflar contexto:
 
 La discusion inicial sobre stack, producto, arquitectura, spikes, milestones y riesgos ya fue integrada en estos documentos. No debe quedar un archivo raiz paralelo como fuente de verdad.
 
-Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en `TOPICS.md` o preguntar antes de eliminarlo.
+Si aparece un documento preexistente nuevo, integrarlo en `docs/` y promover sus referencias a metadata o fuente estable; no eliminarlo sin revisar.
 
 ## Organizacion
 
@@ -48,12 +48,12 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 - `GLOSSARY.md`: aliases y definiciones recurrentes.
 - `USER_GUIDE.md`: guia humana breve del sistema agentico.
 - `OS_PLAYBOOK.md`: guia practica de la capa AOS local y su frontera con OMP.
-- `TOPICS.md` y `topics/`: conocimiento recuperable.
+- `bun run context -- topics` y `docs/topics/`: conocimiento recuperable.
 - `WORKING_MEMORY.md`: memoria operativa actual.
 - `tracks/`: trabajos vivos retomables.
 - `skills/`: skills locales portables; fuente canonica.
 - `.agents/skills`: junction estable de compatibilidad hacia `docs/skills/`.
-- `.generated/context-index.md`: cache generado; no editar a mano.
+- El catálogo dinámico se consulta con `bun run context -- show|topics|query`; no editar ni recrear índices derivados.
 
 ## Skills Locales
 
@@ -64,6 +64,6 @@ Si aparece un documento preexistente nuevo, integrarlo en `docs/`, indexarlo en 
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
-bun run context:index
+bun run context -- show
 bun run context:audit
 ```

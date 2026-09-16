@@ -11,7 +11,7 @@ triggers:
   - reportes
   - export markdown
 primary_refs:
-  - actions-and-scripting-api.md
+  - docs/topics/actions-and-scripting-api.md
   - ../user/scripts.md
   - ../tracks/004-actions-scripting.md
 ---

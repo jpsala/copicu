@@ -55,8 +55,9 @@ import Square from "lucide-react/dist/esm/icons/square.mjs";
 import Tags from "lucide-react/dist/esm/icons/tags.mjs";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
+import ZoomIn from "lucide-react/dist/esm/icons/zoom-in.mjs";
 import { copicuMantineTheme } from "./mantineTheme";
-import { applyCopicuAppearance } from "./themeCatalog";
+import { applyCopicuAppearance, getDensityMetrics } from "./themeCatalog";
 import type {
   ActionContext,
   ActionDefinition,
@@ -130,7 +131,7 @@ import {
   type AppSettings,
   type SearchTriggerMode,
 } from "./shared/settings";
-import { queryHasExplicitSearchScope, queryHasValidSearchScope, replaceQueryScopes, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, type SearchScopeSelection } from "./shared/searchScopes";
+import { queryHasExplicitSearchScope, queryHasValidSearchScope, replaceQueryScopes, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, scopeSummary, type SearchScopeSelection } from "./shared/searchScopes";
 import { SearchScopePicker } from "./ui/SearchScopeEditor";
 import {
   UiBadge,
@@ -156,7 +157,6 @@ import {
   PickerContextStrip,
   PickerFeed,
   PickerHeader,
-  PickerSelectionBar,
   PickerStatusAnnouncer,
 } from "./ui/PickerShell";
 import { FindBar, type FindBarStatus } from "./ui/FindBar";
@@ -450,10 +450,6 @@ type ItemMenuAnchor = {
   y: number;
 };
 
-type MarkMenuAnchor = {
-  x: number;
-  y: number;
-};
 
 type CommandPaletteState = {
   query: string;
@@ -554,9 +550,7 @@ const NOTIFICATIONS_WINDOW_WIDTH = 340;
 const NOTIFICATION_ROW_HEIGHT = 78;
 const NOTIFICATIONS_WINDOW_CHROME = 10;
 const NOTIFICATIONS_WINDOW_MAX_HEIGHT = 430;
-const FEED_ITEM_MIN_HEIGHT = 62;
-const FEED_ITEM_VERTICAL_CHROME = 18;
-const FEED_ITEM_GRID_ROW_GAP = 5;
+const FEED_ITEM_BORDER_CHROME = 2;
 const FEED_ITEM_TITLE_ESTIMATE = 21;
 const FEED_ITEM_METADATA_VERTICAL_CHROME = 13;
 const FEED_ITEM_METADATA_LINE_HEIGHT = 15;
@@ -1243,7 +1237,9 @@ function App() {
   const [activeScenarioBusy, setActiveScenarioBusy] = useState(false);
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [pickerMenuOpen, setPickerMenuOpen] = useState(false);
+  const [selectionMenuOpen, setSelectionMenuOpen] = useState(false);
   const [pickerMenuView, setPickerMenuView] = useState<"actions" | "organize">("actions");
+  const [markMenuOpen, setMarkMenuOpen] = useState(false);
   const [scenarioSwitcherOpen, setScenarioSwitcherOpen] = useState(false);
   const [scenarioSwitcherLoading, setScenarioSwitcherLoading] = useState(false);
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
@@ -1259,7 +1255,6 @@ function App() {
   const [expandedItemIds, setExpandedItemIds] = useState<Set<number>>(() => new Set());
   const [createItemDraft, setCreateItemDraft] = useState<CreateItemDraft | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
-  const [openMarkMenu, setOpenMarkMenu] = useState<MarkMenuAnchor | null>(null);
   const [markedActionItems, setMarkedActionItems] = useState<HistoryItem[] | null>(null);
   const [markedActionItemsLoading, setMarkedActionItemsLoading] = useState(false);
   const [openItemMenu, setOpenItemMenu] = useState<ItemMenuAnchor | null>(null);
@@ -1392,12 +1387,6 @@ function App() {
     () => history.filter((item) => item.is_marked),
     [history],
   );
-  const selectedVisibleCount = useMemo(
-    () => history.reduce((count, item) => count + (selectedIds.has(item.id) ? 1 : 0), 0),
-    [history, selectedIds],
-  );
-  const allVisibleSelected = history.length > 0 && selectedVisibleCount === history.length;
-  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
   const historyPaginationBlockMatchesCurrent = historyPaginationBlocked !== null
     && historyNextCursor !== null
     && historyPaginationBlocked.descriptorFingerprint === appliedDescriptorRef.current?.fingerprint
@@ -1449,23 +1438,121 @@ function App() {
     measureElement: (element) => element.getBoundingClientRect().height,
     estimateSize: (index) => {
       const item = displayedHistory[index];
-      if (!item) {
-        return 38;
-      }
-      const markdownImageCount = markdownImages(item.text).length;
-      if (markdownImageCount > 0) {
-        return Math.min(900, 100 + markdownImageCount * 180);
-      }
-      if (item.content_kind === "image") {
-        return 190;
-      }
-      return estimateTextRowSize(item);
+      return item
+        ? estimateHistoryRowSize(item, settings.appearance.density)
+        : 38;
     },
     getItemKey: (index) => displayedHistory[index]?.id ?? `loader-${index}`,
     ...({ shouldAdjustScrollPositionOnItemSizeChange: () => false } as Record<string, unknown>),
     overscan: 24,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const previousDensityRef = useRef(settings.appearance.density);
+  const pendingDensityAnchorRef = useRef<{
+    id: number;
+    index: number;
+    offset: number;
+  } | null>(null);
+  const captureDensityAnchor = useCallback(() => {
+    const scrollElement = historyScrollRef.current;
+    if (!scrollElement) return null;
+
+    const viewportRect = scrollElement.getBoundingClientRect();
+    const visibleRows = Array.from(
+      scrollElement.querySelectorAll<HTMLElement>('li[id^="history-item-"]'),
+    ).filter((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.bottom > viewportRect.top && rect.top < viewportRect.bottom;
+    });
+    const selectedRow = selectedItemIdRef.current === null
+      ? null
+      : document.getElementById(`history-item-${selectedItemIdRef.current}`);
+    const anchorRow = selectedRow instanceof HTMLElement && visibleRows.includes(selectedRow)
+      ? selectedRow
+      : visibleRows[0];
+    if (!anchorRow) return null;
+
+    return {
+      id: Number(anchorRow.id.slice("history-item-".length)),
+      index: Number(anchorRow.dataset.index),
+      offset: anchorRow.getBoundingClientRect().top - viewportRect.top,
+    };
+  }, []);
+
+
+  useLayoutEffect(() => {
+    const previousDensity = previousDensityRef.current;
+    if (previousDensity === settings.appearance.density) {
+      return undefined;
+    }
+    previousDensityRef.current = settings.appearance.density;
+
+    const scrollElement = historyScrollRef.current;
+    if (!scrollElement) {
+      return undefined;
+    }
+
+    const anchor = pendingDensityAnchorRef.current ?? captureDensityAnchor();
+
+    applyAppearance(settings.appearance);
+    rowVirtualizer.measure();
+    for (const row of scrollElement.querySelectorAll<HTMLElement>("li[data-index]")) {
+      rowVirtualizer.measureElement(row);
+    }
+
+    if (!anchor) {
+      return undefined;
+    }
+    pendingDensityAnchorRef.current = anchor;
+    rowVirtualizer.scrollToIndex(anchor.index, { align: "start" });
+
+    let remainingSettleFrames = 2;
+    let remainingAttempts = 12;
+    let remainingExactCorrections = 2;
+    let anchorMeasured = false;
+    const settleDensityAnchor = () => {
+      const pendingAnchor = pendingDensityAnchorRef.current;
+      const currentScrollElement = historyScrollRef.current;
+      if (!pendingAnchor || !currentScrollElement) {
+        pendingDensityAnchorRef.current = null;
+        return;
+      }
+      if (remainingSettleFrames > 0) {
+        remainingSettleFrames -= 1;
+        window.requestAnimationFrame(settleDensityAnchor);
+        return;
+      }
+      const row = document.getElementById(`history-item-${pendingAnchor.id}`);
+      if (!(row instanceof HTMLElement)) {
+        if (remainingAttempts <= 0) {
+          pendingDensityAnchorRef.current = null;
+          return;
+        }
+        remainingAttempts -= 1;
+        rowVirtualizer.scrollToIndex(pendingAnchor.index, { align: "start" });
+        remainingSettleFrames = 1;
+        window.requestAnimationFrame(settleDensityAnchor);
+        return;
+      }
+      if (!anchorMeasured) {
+        rowVirtualizer.measureElement(row);
+        anchorMeasured = true;
+      }
+      const exactScrollTop = currentScrollElement.scrollTop
+        + row.getBoundingClientRect().top
+        - currentScrollElement.getBoundingClientRect().top
+        - pendingAnchor.offset;
+      currentScrollElement.scrollTo({ top: Math.max(0, exactScrollTop) });
+      if (remainingExactCorrections > 0) {
+        remainingExactCorrections -= 1;
+        window.requestAnimationFrame(settleDensityAnchor);
+        return;
+      }
+      pendingDensityAnchorRef.current = null;
+    };
+    window.requestAnimationFrame(settleDensityAnchor);
+    return undefined;
+  }, [captureDensityAnchor, displayedHistory, rowVirtualizer, settings.appearance]);
 
   useLayoutEffect(() => {
     const anchor = retainedScrollAnchorRef.current;
@@ -2380,6 +2467,8 @@ function App() {
     setOpenItemMenu(null);
     setActionPicker(null);
     setPickerMenuOpen(false);
+    setMarkMenuOpen(false);
+    setSelectionMenuOpen(false);
     setPickerMenuView("actions");
     setSavedViewCreatorOpen(false);
     setEditError(null);
@@ -2392,7 +2481,6 @@ function App() {
     setActionPicker(null);
     setScenarioSwitcherOpen(false);
     setSearchHelpOpen(false);
-    setOpenMarkMenu(null);
     setActionError(null);
     setAiComposerMode(false);
     setSearchInterpretation(null);
@@ -2954,6 +3042,10 @@ function App() {
           leaveOpenedSavedView();
           queryRef.current = effect.query;
           setQuery(effect.query);
+          selectedIdsRef.current = new Set();
+          selectionInteractionSeqRef.current += 1;
+          selectedItemIdRef.current = null;
+          setSelectionMenuOpen(false);
           setSelectedIds(new Set());
           setSelectedItemId(null);
           selectionAnchorItemIdRef.current = null;
@@ -2991,7 +3083,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (openMarkMenu === null || (markedTotalCount === 0 && visibleMarkedItems.length === 0)) {
+    if (!markMenuOpen || (markedTotalCount === 0 && visibleMarkedItems.length === 0)) {
       setMarkedActionItems(null);
       setMarkedActionItemsLoading(false);
       return;
@@ -3011,13 +3103,14 @@ function App() {
           setActionError(String(error));
           setMarkedActionItems(null);
           setMarkedActionItemsLoading(false);
+          setMarkMenuOpen(false);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [loadMarkedItems, markedTotalCount, openMarkMenu, visibleMarkedItems.length]);
+  }, [loadMarkedItems, markedTotalCount, markMenuOpen, visibleMarkedItems.length]);
 
   const refreshHistory = useCallback(
     async ({
@@ -3544,10 +3637,12 @@ function App() {
       return;
     }
     const defaultScope = defaultSearchScopePrefix(settings.picker);
-    if (lastHydratedDefaultScopeRef.current === defaultScope) {
+    const previousScope = lastHydratedDefaultScopeRef.current
+      ?? defaultSearchScopePrefix(DEFAULT_SETTINGS.picker);
+    lastHydratedDefaultScopeRef.current = defaultScope;
+    if (previousScope === defaultScope) {
       return;
     }
-    lastHydratedDefaultScopeRef.current = defaultScope;
     if (queryRef.current.trim() !== (searchState.applied?.descriptor.displayQuery ?? "").trim()) {
       return;
     }
@@ -3577,6 +3672,10 @@ function App() {
     setQuery(nextQuery);
     setSearchInterpretation(null);
     setSelectedIds(new Set());
+    selectedIdsRef.current = new Set();
+    selectedItemIdRef.current = null;
+    selectionInteractionSeqRef.current += 1;
+    setSelectionMenuOpen(false);
     setSelectedItemId(null);
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({
@@ -3750,6 +3849,10 @@ function App() {
       setQuery(nextQuery);
       setSearchInterpretation(null);
       setSelectedIds(new Set());
+      selectedIdsRef.current = new Set();
+      selectedItemIdRef.current = null;
+      selectionInteractionSeqRef.current += 1;
+      setSelectionMenuOpen(false);
       setSelectedItemId(null);
       selectionAnchorItemIdRef.current = null;
       void pickerEventHandlersRef.current.refreshHistory({
@@ -3898,28 +4001,12 @@ function App() {
   const visibleSearchInterpretation = historyMatchesQuery ? searchInterpretation : null;
   const hasActivePickerContext = Boolean(activeScenarioSession || openedSavedView);
 
-  const setSingleSelection = useCallback((index: number) => {
+  const setCurrentItem = useCallback((index: number) => {
     selectionInteractionSeqRef.current += 1;
-    const item = history[index];
-    if (!item) {
-      const emptySelection = new Set<number>();
-      selectedIdsRef.current = emptySelection;
-      selectedItemIdRef.current = null;
-      setSelectedIds(emptySelection);
-      setSelectedItemId(null);
-      selectionAnchorItemIdRef.current = null;
-      return;
-    }
-
-    // Current navigation is intentionally separate from explicit bulk
-    // selection. A plain click/Arrow/Home/End changes the active row without
-    // checking it or opening the batch action bar.
-    const emptySelection = new Set<number>();
-    selectedIdsRef.current = emptySelection;
-    selectedItemIdRef.current = item.id;
-    setSelectedItemId(item.id);
-    setSelectedIds(emptySelection);
-    selectionAnchorItemIdRef.current = item.id;
+    const itemId = history[index]?.id ?? null;
+    selectedItemIdRef.current = itemId;
+    setSelectedItemId(itemId);
+    selectionAnchorItemIdRef.current = itemId;
   }, [history]);
 
   const setRangeSelection = useCallback((toIndex: number) => {
@@ -3964,8 +4051,7 @@ function App() {
   const moveSelection = useCallback(
     (delta: number, extend: boolean) => {
       if (history.length === 0) {
-        setSelectedItemId(null);
-        setSelectedIds(new Set());
+        setCurrentItem(-1);
         return;
       }
 
@@ -3977,12 +4063,24 @@ function App() {
         }
         setRangeSelection(nextIndex);
       } else {
-        setSingleSelection(nextIndex);
+        setCurrentItem(nextIndex);
       }
       rowVirtualizer.scrollToIndex(nextIndex, { align: "auto" });
     },
-    [history.length, rowVirtualizer, selectedIndex, selectedItem, setRangeSelection, setSingleSelection],
+    [history.length, rowVirtualizer, selectedIndex, selectedItem, setCurrentItem, setRangeSelection],
   );
+
+  const clearExplicitSelection = useCallback((restoreFocus = false) => {
+    selectionInteractionSeqRef.current += 1;
+    const emptySelection = new Set<number>();
+    selectedIdsRef.current = emptySelection;
+    setSelectedIds(emptySelection);
+    setSelectionMenuOpen(false);
+    selectionAnchorItemIdRef.current = selectedItemIdRef.current;
+    if (restoreFocus) {
+      focusSearch();
+    }
+  }, [focusSearch]);
 
   const activateItem = useCallback(
     async (
@@ -4036,7 +4134,6 @@ function App() {
       try {
         setActionError(null);
         setOpenItemMenu(null);
-        setOpenMarkMenu(null);
         setCommandPalette(null);
         setActionPicker(null);
         const result = await runHostAction({
@@ -4311,7 +4408,6 @@ function App() {
       return;
     }
     setOpenItemMenu(null);
-    setOpenMarkMenu(null);
     setEditError(null);
     try {
       await openMetadataWindow(items.map((item) => item.id), focusTarget);
@@ -4447,11 +4543,11 @@ function App() {
       try {
         setActionError(null);
         setOpenItemMenu(null);
-        setOpenMarkMenu(null);
+        setSelectionMenuOpen(false);
         for (const item of items) {
           await invoke("delete_history_item", { id: item.id });
         }
-        setSelectedIds(new Set());
+        clearExplicitSelection();
         await refreshAppliedHistory();
         rebaseFind();
         focusSearch();
@@ -4460,7 +4556,7 @@ function App() {
         focusSearch();
       }
     },
-    [focusSearch, rebaseFind, refreshAppliedHistory],
+    [clearExplicitSelection, focusSearch, rebaseFind, refreshAppliedHistory],
   );
 
   const refreshAfterMarkedChange = useCallback(async () => {
@@ -4477,7 +4573,10 @@ function App() {
 
       try {
         setActionError(null);
-        setOpenMarkMenu(null);
+        setPickerMenuOpen(false);
+        setMarkMenuOpen(false);
+        setSelectionMenuOpen(false);
+        setPickerMenuView("actions");
         const ids = items.map((item) => item.id);
         const idSet = new Set(ids);
         await setHistoryItemsMarked({ ids, marked });
@@ -4501,18 +4600,14 @@ function App() {
     [focusSearch, refreshAfterMarkedChange],
   );
 
-  const toggleItemMarked = useCallback(
-    async (item: HistoryItem) => {
-      await setItemsMarked([item], !item.is_marked);
-    },
-    [setItemsMarked],
-  );
-
   const setCurrentQueryMarked = useCallback(
     async (marked: boolean) => {
       try {
         setActionError(null);
-        setOpenMarkMenu(null);
+        setPickerMenuOpen(false);
+        setMarkMenuOpen(false);
+        setSelectionMenuOpen(false);
+        setPickerMenuView("actions");
         if (!historyMatchesQuery) {
           setActionError("Apply the current search before changing all results.");
           focusSearch();
@@ -4540,20 +4635,17 @@ function App() {
     [aiComposerMode, focusSearch, historyMatchesQuery, historyQuery, refreshAfterMarkedChange],
   );
 
-  const showMarkMenu = useCallback((event: React.MouseEvent) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setOpenItemMenu(null);
-    setOpenMarkMenu((current) =>
-      current ? null : { x: Math.round(rect.left), y: Math.round(rect.bottom + 4) },
-    );
-  }, []);
 
   const showMarkedFilter = useCallback((mode: "all" | "marked" | "unmarked") => {
     leaveOpenedSavedView();
-    setOpenMarkMenu(null);
+    setPickerMenuOpen(false);
+    setMarkMenuOpen(false);
+    setSelectionMenuOpen(false);
+    setPickerMenuView("actions");
     setSelectedItemId(null);
+    selectedItemIdRef.current = null;
     setSelectedIds(new Set());
-    selectionAnchorItemIdRef.current = null;
+    selectedIdsRef.current = new Set();
     const baseQuery = aiComposerMode ? "" : removeMarkedQueryTerms(query);
     const nextQuery =
       mode === "all"
@@ -4569,6 +4661,9 @@ function App() {
   }, [aiComposerMode, focusSearch, leaveOpenedSavedView, query, refreshHistory]);
 
   const selectForContextMenu = useCallback((item: HistoryItem, index: number) => {
+    setSelectionMenuOpen(false);
+    setPickerMenuOpen(false);
+    setMarkMenuOpen(false);
     if (selectedIdsRef.current.has(item.id)) {
       selectionInteractionSeqRef.current += 1;
       selectedItemIdRef.current = item.id;
@@ -4576,8 +4671,13 @@ function App() {
       return;
     }
 
-    setSingleSelection(index);
-  }, [setSingleSelection]);
+    // A context menu on an unchecked row explicitly switches to single-item context.
+    const emptySelection = new Set<number>();
+    selectionInteractionSeqRef.current += 1;
+    selectedIdsRef.current = emptySelection;
+    setSelectedIds(emptySelection);
+    setCurrentItem(index);
+  }, [setCurrentItem]);
 
   const showItemMenu = useCallback((item: HistoryItem, index: number, event: React.MouseEvent) => {
     selectForContextMenu(item, index);
@@ -4598,7 +4698,6 @@ function App() {
     setEditError(null);
     setActionError(null);
     setOpenItemMenu(null);
-    setOpenMarkMenu(null);
     setCommandPalette(null);
     setEditDraft(null);
     catalogItemIdRef.current = null;
@@ -4615,25 +4714,28 @@ function App() {
     ({
       items,
       noun,
+      surface,
       onClear,
     }: {
       items: HistoryItem[];
       noun: "selected" | "marked";
+      surface: "header" | "context";
       onClear?: () => void;
     }) => {
       const hasItems = items.length > 0;
       const contextualActions = hasItems
         ? itemMenuRegistryActions(actionDefinitions, items, items.length === 1 ? items[0] : selectedItem)
         : [];
+      const ActionButton = surface === "header" ? Menu.Item : UiUnstyledButton;
 
       return (
         <>
           {actionById.has(BUILTIN_ACTIONS.joinSelected) ? (
-            <UiUnstyledButton
+            <ActionButton
               type="button"
               role="menuitem"
               tabIndex={-1}
-              className="item-menu-action"
+              className="item-menu-action batch-item-menu-action"
               disabled={!hasItems}
               onClick={() => {
                 if (hasItems) {
@@ -4641,15 +4743,17 @@ function App() {
                 }
               }}
             >
-              <Command size={14} strokeWidth={2.2} aria-hidden="true" />
-              <span>Join {noun}</span>
-            </UiUnstyledButton>
+              <span className="batch-item-menu-content">
+                <Command size={14} strokeWidth={2.2} aria-hidden="true" />
+                <span>Join {noun}</span>
+              </span>
+            </ActionButton>
           ) : null}
-          <UiUnstyledButton
+          <ActionButton
             type="button"
             role="menuitem"
             tabIndex={-1}
-            className="item-menu-action"
+            className="item-menu-action batch-item-menu-action"
             disabled={!hasItems}
             onClick={() => {
               if (hasItems) {
@@ -4657,37 +4761,43 @@ function App() {
               }
             }}
           >
-            <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
-            <span>Edit tags for {noun}</span>
-            <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
-          </UiUnstyledButton>
+            <span className="batch-item-menu-content">
+              <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
+              <span>Edit tags for {noun}</span>
+              <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
+            </span>
+          </ActionButton>
           {contextualActions.map((action) => (
-            <UiUnstyledButton
+            <ActionButton
               key={action.id}
               type="button"
               role="menuitem"
               tabIndex={-1}
-              className="item-menu-action"
+              className="item-menu-action batch-item-menu-action"
               onClick={() => void runActionDefinition(action, items, "itemMenu")}
             >
-              {action.source === "script"
-                ? <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                : <Command size={14} strokeWidth={2.2} aria-hidden="true" />}
-              <span>{action.title}</span>
-              <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
-            </UiUnstyledButton>
+              <span className="batch-item-menu-content">
+                {action.source === "script"
+                  ? <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                  : <Command size={14} strokeWidth={2.2} aria-hidden="true" />}
+                <span>{action.title}</span>
+                <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
+              </span>
+            </ActionButton>
           ))}
           {onClear ? (
-            <UiUnstyledButton
+            <ActionButton
               type="button"
               role="menuitem"
               tabIndex={-1}
-              className="item-menu-action"
+              className="item-menu-action batch-item-menu-action"
               onClick={onClear}
             >
-              <X size={14} strokeWidth={2.2} aria-hidden="true" />
-              <span>Clear selection</span>
-            </UiUnstyledButton>
+              <span className="batch-item-menu-content">
+                <X size={14} strokeWidth={2.2} aria-hidden="true" />
+                <span>Clear selection</span>
+              </span>
+            </ActionButton>
           ) : null}
         </>
       );
@@ -4794,7 +4904,11 @@ function App() {
       leaveOpenedSavedView();
       queryRef.current = "";
       setQuery("");
+      selectedItemIdRef.current = null;
+      setSelectionMenuOpen(false);
       setSelectedIds(new Set());
+      selectedIdsRef.current = new Set();
+      selectionInteractionSeqRef.current += 1;
       await refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
       setSelectedItemId(result.id);
       selectionAnchorItemIdRef.current = result.id;
@@ -4869,49 +4983,54 @@ function App() {
 
   useEffect(() => {
     let active = true;
-
-    invoke<AppSettings>("get_settings")
-      .then((nextSettings) => {
-        if (active) {
-          const normalized = normalizeSettings(nextSettings);
-          pickerSearchSettingsRef.current = normalized.picker;
-          settingsHydratedRef.current = true;
-          setSettings(normalized);
-        }
-      })
-      .catch((error) => {
-        if (active) {
-          setSettingsError(String(error));
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-  useEffect(() => {
-    if (!isTauriRuntime()) {
-      return undefined;
-    }
-    let active = true;
     let unlisten: (() => void) | null = null;
-    void listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event: Event<AppSettings>) => {
-      if (active) {
+    let settingsRevision = 0;
+
+    const unlistenPromise = listen<AppSettings>(
+      SETTINGS_UPDATED_EVENT,
+      (event: Event<AppSettings>) => {
+        if (!active) return;
+        settingsRevision += 1;
         const normalized = normalizeSettings(event.payload);
+        if (normalized.appearance.density !== previousDensityRef.current) {
+          pendingDensityAnchorRef.current = captureDensityAnchor();
+        }
         pickerSearchSettingsRef.current = normalized.picker;
         settingsHydratedRef.current = true;
         setSettings(normalized);
         setSettingsError(null);
-      }
-    }).then((nextUnlisten) => {
-      if (active) unlisten = nextUnlisten;
-      else nextUnlisten();
-    });
+      },
+    );
+
+    void unlistenPromise
+      .then((nextUnlisten) => {
+        if (!active) {
+          nextUnlisten();
+          return;
+        }
+        unlisten = nextUnlisten;
+        const revisionAtRequest = settingsRevision;
+        void invoke<AppSettings>("get_settings")
+          .then((nextSettings) => {
+            if (!active || settingsRevision !== revisionAtRequest) return;
+            const normalized = normalizeSettings(nextSettings);
+            pickerSearchSettingsRef.current = normalized.picker;
+            settingsHydratedRef.current = true;
+            setSettings(normalized);
+          })
+          .catch((error) => {
+            if (active) setSettingsError(String(error));
+          });
+      })
+      .catch((error) => {
+        if (active) setSettingsError(String(error));
+      });
+
     return () => {
       active = false;
       unlisten?.();
     };
-  }, []);
+  }, [captureDensityAnchor]);
 
 
   useEffect(() => {
@@ -5437,7 +5556,9 @@ function App() {
     const totalCount = historyTotalCount ?? history.length;
     const filteredCount = historyFilteredCount ?? history.length;
     if (query.trim()) {
-      return `${formatCount(filteredCount)} / ${formatCount(totalCount)} matches`;
+      return filteredCount === totalCount
+        ? `${formatCount(totalCount)} ${totalCount === 1 ? "clip" : "clips"}`
+        : `${formatCount(filteredCount)} / ${formatCount(totalCount)} matches`;
     }
     return `${formatCount(totalCount)} total`;
   }, [
@@ -5501,12 +5622,8 @@ function App() {
         )
       )
     );
-  const markMenuCountLabel = markedTotalCount !== null && markedTotalCount > 0
-    ? formatCount(markedTotalCount)
-    : null;
-  const markMenuCountAria = "marked";
-  const checkedActionItems = markedActionItems ?? visibleMarkedItems;
-  const checkedActionCount = markedTotalCount ?? checkedActionItems.length;
+  const markMenuCountLabel = markedTotalCount === null ? "…" : formatCount(markedTotalCount);
+  const checkedActionCount = markedTotalCount ?? markedActionItems?.length ?? 0;
   const runSearchNow = useCallback(() => {
     if (!aiComposerMode && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")) {
       const error = structuredSearchDraft.message ?? "Complete the structured filter before applying.";
@@ -5596,7 +5713,11 @@ function App() {
     setSearchInterpretation(null);
     setActionError(null);
     setSelectedItemId(null);
+    selectedItemIdRef.current = null;
+    setSelectionMenuOpen(false);
     setSelectedIds(new Set());
+    selectedIdsRef.current = new Set();
+    selectionInteractionSeqRef.current += 1;
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({ resetScroll: true, queryOverride: clearedQuery, allowAi: false });
     focusSearch();
@@ -5625,7 +5746,11 @@ function App() {
     };
     setSearchInterpretation(null);
     setSelectedItemId(null);
+    selectedItemIdRef.current = null;
+    setSelectionMenuOpen(false);
     setSelectedIds(new Set());
+    selectedIdsRef.current = new Set();
+    selectionInteractionSeqRef.current += 1;
     selectionAnchorItemIdRef.current = null;
     void refreshHistory({
       resetScroll: true,
@@ -5672,7 +5797,11 @@ function App() {
     setActionError(null);
     setSearchInterpretation(null);
     setSelectedItemId(null);
+    selectedItemIdRef.current = null;
+    setSelectionMenuOpen(false);
     setSelectedIds(new Set());
+    selectedIdsRef.current = new Set();
+    selectionInteractionSeqRef.current += 1;
     selectionAnchorItemIdRef.current = null;
   }, [
     historyInputQuery,
@@ -5690,6 +5819,14 @@ function App() {
     }
     setQueryComposing(isComposing);
   }, []);
+  const toggleComposerMode = useCallback(() => {
+    if (!aiComposerMode) {
+      leaveOpenedSavedView();
+    }
+    setAiComposerMode((current) => !current);
+    setSearchInterpretation(null);
+    focusSearch();
+  }, [aiComposerMode, focusSearch, leaveOpenedSavedView]);
   const handleSearchKeyDown = useCallback((event: KeyboardEvent, view?: unknown): boolean => {
     if (isQuickActionsShortcut(event)) {
       event.preventDefault();
@@ -5724,9 +5861,7 @@ function App() {
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "i") {
       event.preventDefault();
-      setAiComposerMode((current) => !current);
-      setSearchInterpretation(null);
-      window.setTimeout(focusSearch, 0);
+      toggleComposerMode();
       return true;
     }
     const shortcut = shortcutFromKeyboardEvent(event);
@@ -5771,6 +5906,25 @@ function App() {
       return true;
     }
     if (view) {
+      const plainFeedNavigation = !event.ctrlKey
+        && !event.altKey
+        && !event.metaKey
+        && !event.shiftKey;
+      if (
+        plainFeedNavigation
+        && ["ArrowDown", "ArrowUp", "PageDown", "PageUp"].includes(event.key)
+      ) {
+        event.preventDefault();
+        const step = event.key === "ArrowDown"
+          ? 1
+          : event.key === "ArrowUp"
+            ? -1
+            : event.key === "PageDown"
+              ? PAGE_STEP
+              : -PAGE_STEP;
+        moveSelection(step, false);
+        return true;
+      }
       if (
         event.ctrlKey
         && event.altKey
@@ -5842,6 +5996,7 @@ function App() {
     settings.picker.previewShortcut,
     settings.picker.settingsShortcut,
     toggleFilterLock,
+    toggleComposerMode,
     toggleItemPreview,
   ]);
   const handleSearchSubmit = useCallback((event: KeyboardEvent): boolean => {
@@ -5880,8 +6035,11 @@ function App() {
       return true;
     }
     setActionError(null);
-    if (openMarkMenu !== null) {
-      setOpenMarkMenu(null);
+    setMarkMenuOpen(false);
+    setSelectionMenuOpen(false);
+    if (pickerMenuOpen) {
+      setPickerMenuOpen(false);
+      setPickerMenuView("actions");
     }
     if (openItemMenu !== null) {
       setOpenItemMenu(null);
@@ -5906,7 +6064,7 @@ function App() {
     hidePickerWindow,
     historyInputQuery,
     openItemMenu,
-    openMarkMenu,
+    pickerMenuOpen,
   ]);
   const searchTextareaProps = {
     className: "search-input",
@@ -5943,9 +6101,11 @@ function App() {
   } : scopeSelectionFromQuery(query);
   const scopeEditing = structuredSearchDraft.operator === "in"
     && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid");
-  const scopeSource = scopeEditing ? "Draft" : scopeUsesDefaults ? "Default"
-    : openedSavedView || activeScenarioSession?.query.trim() === query.trim() ? "Saved"
-      : /^re:/iu.test(query.trim()) ? "Regex" : "Query";
+  const scopeChangePending = hasSearchDraft || appliedResultsDiffer;
+  const scopePlannedByAi = aiComposerMode && (!query.trim() || aiDraftActive);
+  const displayedScopeSelection = aiComposerMode && historyMatchesQuery
+    ? scopeSelectionFromQuery(historyQuery)
+    : scopeSelection;
   const visibleFilterChips = visibleSearchInterpretation?.chips
     .filter((chip) => !queryHasExplicitSearchScope(chip.label)) ?? [];
   const applyScopeSelection = useCallback((nextSelection: SearchScopeSelection) => {
@@ -6069,112 +6229,85 @@ function App() {
         <>
         <PickerHeader>
         <div className={`search-row${aiComposerMode ? " is-ai-mode" : ""}`}>
-          <div className="selection-controls">
-            <UiTooltip label={allVisibleSelected ? "Clear visible selection" : "Select all visible"}>
-              <UiCheckbox
-                className="selection-master-checkbox"
-                checked={allVisibleSelected}
-                indeterminate={someVisibleSelected}
-                disabled={history.length === 0}
-                aria-label={allVisibleSelected ? "Clear visible selection" : "Select all visible"}
-                onMouseDown={(event) => event.stopPropagation()}
-                onChange={(event) => setVisibleSelection(event.currentTarget.checked)}
-              />
-            </UiTooltip>
-            <div className="mark-control">
-              <Menu
-                withinPortal
-                position="bottom-start"
-                opened={openMarkMenu !== null}
-                onChange={(opened) => setOpenMarkMenu(opened ? { x: 0, y: 0 } : null)}
+          <Menu
+            withinPortal
+            position="bottom-start"
+            width={320}
+            opened={selectionMenuOpen}
+            onChange={(opened) => {
+              setSelectionMenuOpen(opened);
+              if (opened) {
+                setMarkMenuOpen(false);
+                setPickerMenuOpen(false);
+                setPickerMenuView("actions");
+                setOpenItemMenu(null);
+              }
+            }}
+          >
+            <Menu.Target>
+              <UiTooltip label="Selected clips, cleared between searches" disabled={selectionMenuOpen}>
+              <UiButton
+                type="button"
+                className="selection-menu-button"
+                variant="default"
+                aria-label={`Open selected clips menu, ${formatCount(selectedItems.length)} selected`}
+                aria-expanded={selectionMenuOpen}
+                data-has-selection={selectedItems.length > 0 ? "true" : undefined}
+                onMouseDown={(event) => event.preventDefault()}
               >
-                <Menu.Target>
-                  <UiIconButton
-                    type="button"
-                    className={`mark-menu-button${markMenuCountLabel ? " has-count" : ""}`}
-                    aria-label={
-                      markMenuCountLabel
-                        ? `Mark options, ${markMenuCountLabel} ${markMenuCountAria}`
-                        : "Mark options"
-                    }
-                    aria-expanded={openMarkMenu !== null}
-                    disabled={history.length === 0 && !query.trim()}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={showMarkMenu}
-                  >
-                    <Flag size={14} strokeWidth={2.1} aria-hidden="true" />
-                    {markMenuCountLabel ? (
-                      <span className="mark-menu-count" aria-hidden="true">
-                        {markMenuCountLabel}
-                      </span>
-                    ) : null}
-                  </UiIconButton>
-                </Menu.Target>
-                <Menu.Dropdown aria-label="Mark options">
+                <ListChecks size={16} strokeWidth={2.2} aria-hidden="true" />
+                <span className="selection-menu-count">{formatCount(selectedItems.length)}</span>
+              </UiButton>
+              </UiTooltip>
+            </Menu.Target>
+            <Menu.Dropdown className="picker-menu-dropdown selection-menu-dropdown" aria-label="Selected clips">
+              <Menu.Label>Selected clips · {formatCount(selectedItems.length)}</Menu.Label>
+              <Menu.Item
+                leftSection={<CheckCheck size={14} strokeWidth={2.2} />}
+                disabled={history.length === 0}
+                onClick={() => setVisibleSelection(true)}
+              >
+                Select visible
+              </Menu.Item>
+              <Menu.Item
+                leftSection={<X size={14} strokeWidth={2.2} />}
+                disabled={selectedItems.length === 0}
+                onClick={() => clearExplicitSelection(true)}
+              >
+                Clear selection
+              </Menu.Item>
+              {selectedItems.length > 0 ? (
+                <>
+                  <Menu.Divider />
+                  {renderBatchItemActions({
+                    items: selectedItems,
+                    noun: "selected",
+                    surface: "header",
+                  })}
                   <Menu.Item
-                    leftSection={<CheckCheck size={14} strokeWidth={2.2} />}
-                    onClick={() => void setItemsMarked(history, true)}
+                    leftSection={<Pencil size={14} strokeWidth={2.2} />}
+                    onClick={() => void openMetadataForItems(selectedItems, "overview")}
                   >
-                    Mark visible
+                    Edit metadata for selected
                   </Menu.Item>
                   <Menu.Item
-                    leftSection={<Square size={14} strokeWidth={2.2} />}
-                    onClick={() => void setItemsMarked(history, false)}
+                    leftSection={<Flag size={14} strokeWidth={2.2} />}
+                    onClick={() => void setItemsMarked(selectedItems, !selectedItems.every((item) => item.is_marked))}
                   >
-                    Unmark visible
-                  </Menu.Item>
-                  <Menu.Item
-                    leftSection={<ListChecks size={14} strokeWidth={2.2} />}
-                    onClick={() => void setCurrentQueryMarked(true)}
-                  >
-                    Mark all results
-                  </Menu.Item>
-                  <Menu.Item
-                    leftSection={<CircleSlash size={14} strokeWidth={2.2} />}
-                    onClick={() => void setCurrentQueryMarked(false)}
-                  >
-                    Unmark all results
+                    {selectedItems.every((item) => item.is_marked) ? "Unmark selected" : "Mark selected"}
                   </Menu.Item>
                   <Menu.Divider />
                   <Menu.Item
-                    leftSection={<Flag size={14} strokeWidth={2.2} />}
-                    onClick={() => showMarkedFilter("marked")}
+                    color="red"
+                    leftSection={<Trash2 size={14} strokeWidth={2.2} />}
+                    onClick={() => void deleteItems(selectedItems)}
                   >
-                    Marked
+                    Delete {formatCount(selectedItems.length)} selected
                   </Menu.Item>
-                  <Menu.Item
-                    leftSection={<Square size={14} strokeWidth={2.2} />}
-                    onClick={() => showMarkedFilter("unmarked")}
-                  >
-                    Unmarked
-                  </Menu.Item>
-                  <Menu.Item
-                    leftSection={<ListRestart size={14} strokeWidth={2.2} />}
-                    onClick={() => showMarkedFilter("all")}
-                  >
-                    All history
-                  </Menu.Item>
-                  {checkedActionCount > 0 ? (
-                    <>
-                      <Menu.Divider />
-                      <div className="mark-menu-section-label">
-                        Marked items
-                        {markedActionItemsLoading ? (
-                          <span>Loading</span>
-                        ) : (
-                          <span>{formatCount(checkedActionCount)}</span>
-                        )}
-                      </div>
-                      {renderBatchItemActions({
-                        items: checkedActionItems,
-                        noun: "marked",
-                      })}
-                    </>
-                  ) : null}
-                </Menu.Dropdown>
-              </Menu>
-            </div>
-          </div>
+                </>
+              ) : null}
+            </Menu.Dropdown>
+          </Menu>
           <div
             className={`search-field${!aiComposerMode && canClearSearch ? " has-clear-button" : ""}`}
             data-query-editor-phase={queryEditorReadyPhase}
@@ -6185,7 +6318,7 @@ function App() {
               knownTagSlugs={knownTagSlugs}
               scopeSelection={editorScopeSelection}
               scenarioOptions={scenarioCommandOptions}
-              placeholder='Search · in: scopes, plain text, re:regular expression, "phrases", -exclude, tag:/#tag'
+              placeholder="Search clipboard history"
               hidden={aiComposerMode}
               onChange={(nextQuery, _update, isComposing) => handleQueryChange(nextQuery, isComposing)}
               onCompositionChange={handleQueryCompositionChange}
@@ -6284,14 +6417,7 @@ function App() {
               aria-pressed={aiComposerMode}
               data-mode={aiComposerMode ? "ai" : "search"}
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                if (!aiComposerMode) {
-                  leaveOpenedSavedView();
-                }
-                setAiComposerMode((current) => !current);
-                setSearchInterpretation(null);
-                focusSearch();
-              }}
+              onClick={toggleComposerMode}
             >
               {aiComposerMode ? (
                 <Sparkles size={15} strokeWidth={2.3} aria-hidden="true" />
@@ -6319,7 +6445,7 @@ function App() {
                 focusSearch();
               }}
             >
-              {searchTriggerMode === "realtime" ? (
+              {effectiveSearchTriggerMode === "realtime" ? (
                 <Radio size={15} strokeWidth={2.3} aria-hidden="true" />
               ) : (
                 <CornerDownLeft size={15} strokeWidth={2.3} aria-hidden="true" />
@@ -6365,10 +6491,84 @@ function App() {
           <Menu
             withinPortal
             position="bottom-end"
+            width={320}
+            opened={markMenuOpen}
+            onChange={(opened) => {
+              setMarkMenuOpen(opened);
+              if (opened) {
+                setSelectionMenuOpen(false);
+                setPickerMenuOpen(false);
+                setPickerMenuView("actions");
+                setOpenItemMenu(null);
+              }
+            }}
+          >
+            <Menu.Target>
+              <UiTooltip label="Marked clips, kept between searches" disabled={markMenuOpen}>
+                <UiButton
+                  type="button"
+                  className="mark-menu-button"
+                  variant="default"
+                  aria-label={`Open marked clips menu, ${markedTotalCount === null ? "count loading" : `${markMenuCountLabel} marked`}`}
+                  aria-expanded={markMenuOpen}
+                  data-has-marks={markedTotalCount !== null && markedTotalCount > 0 ? "true" : undefined}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  <Flag size={16} strokeWidth={2.2} aria-hidden="true" />
+                  <span className="mark-menu-count">{markMenuCountLabel}</span>
+                </UiButton>
+              </UiTooltip>
+            </Menu.Target>
+            <Menu.Dropdown className="picker-menu-dropdown mark-menu-dropdown" aria-label="Marked clips">
+              <Menu.Label>Marked clips · {markMenuCountLabel}</Menu.Label>
+              <Menu.Item leftSection={<Flag size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("marked")}>
+                Marked
+              </Menu.Item>
+              <Menu.Item leftSection={<Square size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("unmarked")}>
+                Unmarked
+              </Menu.Item>
+              <Menu.Item leftSection={<ListRestart size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("all")}>
+                All history
+              </Menu.Item>
+              {checkedActionCount > 0 ? (
+                <>
+                  <Menu.Divider />
+                  <div className="mark-menu-section-label">
+                    Marked items
+                    <span>{markedActionItemsLoading || markedActionItems === null ? "Loading…" : formatCount(checkedActionCount)}</span>
+                  </div>
+                  {markedActionItems !== null && !markedActionItemsLoading
+                    ? renderBatchItemActions({ items: markedActionItems, noun: "marked", surface: "header" })
+                    : null}
+                </>
+              ) : null}
+              <Menu.Divider />
+              <Menu.Label>Current results</Menu.Label>
+              <Menu.Item leftSection={<CheckCheck size={14} strokeWidth={2.2} />} onClick={() => void setItemsMarked(history, true)}>
+                Mark visible
+              </Menu.Item>
+              <Menu.Item leftSection={<Square size={14} strokeWidth={2.2} />} onClick={() => void setItemsMarked(history, false)}>
+                Unmark visible
+              </Menu.Item>
+              <Menu.Item leftSection={<ListChecks size={14} strokeWidth={2.2} />} onClick={() => void setCurrentQueryMarked(true)}>
+                Mark all results
+              </Menu.Item>
+              <Menu.Item leftSection={<CircleSlash size={14} strokeWidth={2.2} />} onClick={() => void setCurrentQueryMarked(false)}>
+                Unmark all results
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+          <Menu
+            withinPortal
+            position="bottom-end"
             width={280}
             opened={pickerMenuOpen}
             onChange={(opened) => {
               setPickerMenuOpen(opened);
+              if (opened) {
+                setSelectionMenuOpen(false);
+                setMarkMenuOpen(false);
+              }
               if (!opened) {
                 setPickerMenuView("actions");
               }
@@ -6428,12 +6628,7 @@ function App() {
                 rightSection={<ShortcutBadge shortcut="Ctrl+I" className="menu-shortcut-badge" />}
                 onClick={() => {
                   setPickerMenuOpen(false);
-                  if (!aiComposerMode) {
-                    leaveOpenedSavedView();
-                  }
-                  setAiComposerMode((current) => !current);
-                  setSearchInterpretation(null);
-                  focusSearch();
+                  toggleComposerMode();
                 }}
               >
                 {aiComposerMode ? "Switch to Search mode" : "Switch to AI mode"}
@@ -6449,7 +6644,6 @@ function App() {
               >
                 {searchTriggerAriaLabel}
               </Menu.Item>
-              <Menu.Divider />
                   <Menu.Item
                     closeMenuOnClick={false}
                     leftSection={<Bookmark size={14} strokeWidth={2.2} />}
@@ -6600,45 +6794,51 @@ function App() {
           </Menu>
         </div>
 
-        {!aiComposerMode && !aiDraftActive ? (
-          <div className="search-filter-strip" aria-label="Search fields and filters">
-            <span className="search-filter-label">Search in</span>
-            {scopeEditing ? <span className="search-scope-empty">Editing scopes…</span> : <SearchScopePicker
-              selection={scopeSelection}
-              onOpenChange={onScopePickerOpenChange}
-              defaultSelection={{
-                included: settings.picker.defaultSearchScopes,
-                excluded: settings.picker.defaultExcludedSearchScopes,
-              }}
-              onChange={applyScopeSelection}
-              onSaveDefault={() => void saveScopeAsDefault()}
-              onResetDefault={resetScopeToDefault}
-              hasExplicitOverride={queryHasExplicitSearchScope(query)}
-              saveState={scopeSaveState}
-              saveError={scopeSaveError}
-              disabled={scopeEditing || aiComposerMode || filterLocked || Boolean(openedSavedView) || Boolean(activeScenarioSession)
-                || /^re:/iu.test(query.trim())}
-            />}
-            {visibleFilterChips.length > 0 ? (
-              <span className="search-filter-chips" aria-label="Applied filters">
-                {visibleFilterChips.map((chip) => (
-                  <button key={`${chip.label}:${chip.queryWithoutClause}`}
-                    type="button" className="search-interpretation-chip"
-                    aria-label={`Remove filter ${chip.label}`}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => removeSearchChip(chip)}>
-                    <span>{chip.label}</span>
-                    <X size={12} strokeWidth={2.5} aria-hidden="true" />
-                  </button>
-                ))}
-              </span>
-            ) : null}
-            <span className="search-scope-source"
-              title={scopeEditing ? "Complete the in: filter to apply these fields" : scopeQuery(scopeSelection, { includeAll: true })}>
-              {scopeSource}
-            </span>
+        <div className="search-filter-strip" aria-label="Search fields and filters">
+          <div className="search-scope-control">
+            <span className="search-filter-label">{scopeChangePending ? "Next search in:" : "Search in:"}</span>
+            {scopePlannedByAi ? <span className="search-scope-empty">Determined by AI</span>
+              : scopeEditing ? <span className="search-scope-empty">Editing fields…</span> : <SearchScopePicker
+                selection={displayedScopeSelection}
+                onOpenChange={onScopePickerOpenChange}
+                defaultSelection={{
+                  included: settings.picker.defaultSearchScopes,
+                  excluded: settings.picker.defaultExcludedSearchScopes,
+                }}
+                onChange={applyScopeSelection}
+                onSaveDefault={() => void saveScopeAsDefault()}
+                onResetDefault={resetScopeToDefault}
+                hasExplicitOverride={queryHasExplicitSearchScope(query)}
+                saveState={scopeSaveState}
+                saveError={scopeSaveError}
+                disabled={scopeEditing || aiComposerMode || filterLocked || Boolean(openedSavedView) || Boolean(activeScenarioSession)
+                  || /^re:/iu.test(query.trim())}
+              />}
           </div>
-        ) : null}
+          {scopeChangePending ? (
+            <span className="search-scope-pending" role="status"
+              title={historyQuery.trim()
+                ? `Current results search in: ${scopeSummary(scopeSelectionFromQuery(historyQuery))}`
+                : "Current results show all history, without a search."}>
+              {historyPending || aiPlanning ? "Applying…" : "Not applied"}
+            </span>
+          ) : null}
+          {visibleFilterChips.length > 0 ? (
+            <span className="search-filter-chips" aria-label="Applied filters">
+              <span className="search-filter-label">Filters:</span>
+              {visibleFilterChips.map((chip) => (
+                <button key={`${chip.label}:${chip.queryWithoutClause}`}
+                  type="button" className="search-interpretation-chip"
+                  aria-label={`Remove filter ${chip.label}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => removeSearchChip(chip)}>
+                  <span>{chip.label}</span>
+                  <X size={12} strokeWidth={2.5} aria-hidden="true" />
+                </button>
+              ))}
+            </span>
+          ) : null}
+        </div>
 
         {findState?.active ? (
           <FindBar
@@ -6807,44 +7007,6 @@ function App() {
           }} />
         ) : null}
 
-        {selectedItems.length > 0 ? (
-          <PickerSelectionBar ariaLabel={`${selectedItems.length} selected`}>
-            <strong>{selectedItems.length} selected</strong>
-            <div className="selection-action-buttons">
-              <UiButton type="button" size="xs" variant="subtle" onClick={() => void openMetadataForItems(selectedItems, "tags")}>
-                <Tags size={13} strokeWidth={2.2} aria-hidden="true" />
-                <span>Tags</span>
-              </UiButton>
-              <UiButton type="button" size="xs" variant="subtle" onClick={() => void openMetadataForItems(selectedItems, "overview")}>
-                <Pencil size={13} strokeWidth={2.2} aria-hidden="true" />
-                <span>Metadata</span>
-              </UiButton>
-              <UiButton type="button" size="xs" variant="subtle" onClick={openActionPicker}>
-                <Command size={13} strokeWidth={2.2} aria-hidden="true" />
-                <span>Actions</span>
-              </UiButton>
-              <UiButton type="button" size="xs" color="red" variant="subtle" onClick={() => void deleteItems(selectedItems)}>
-                <Trash2 size={13} strokeWidth={2.2} aria-hidden="true" />
-                <span>Delete</span>
-              </UiButton>
-              <UiButton
-                type="button"
-                size="xs"
-                variant="subtle"
-                onClick={() => {
-                  const emptySelection = new Set<number>();
-                  selectedIdsRef.current = emptySelection;
-                  setSelectedIds(emptySelection);
-                  selectionAnchorItemIdRef.current = selectedItemIdRef.current;
-                  focusSearch();
-                }}
-              >
-                <X size={13} strokeWidth={2.2} aria-hidden="true" />
-                <span>Clear</span>
-              </UiButton>
-            </div>
-          </PickerSelectionBar>
-        ) : null}
 
         {historyError ? (
           <UiAlert className="error-text" color="red" variant="light" role="alert" aria-live="assertive">
@@ -6968,6 +7130,8 @@ function App() {
                   key={item.id}
                   id={`history-item-${item.id}`}
                   data-index={virtualRow.index}
+                  data-current={itemIsSelected ? "true" : undefined}
+                  data-menu-open={openItemMenu?.itemId === item.id ? "true" : undefined}
                   aria-posinset={itemIsRemoteFindTarget ? undefined : index + 1}
                   aria-setsize={itemIsRemoteFindTarget ? undefined : (historyAriaSetSize ?? undefined)}
                   ref={rowVirtualizer.measureElement}
@@ -6976,7 +7140,7 @@ function App() {
                   }}
                 >
                   <UiCheckbox
-                    className="item-selection-button"
+                    className={`item-selection-button${hasExplicitSelection || itemIsMultiSelected || itemIsSelected ? " is-visible" : ""}`}
                     checked={itemIsMultiSelected}
                     aria-label={itemIsMultiSelected ? "Deselect item" : "Select item"}
                     onMouseDown={(event) => event.stopPropagation()}
@@ -6998,28 +7162,6 @@ function App() {
                       focusSearch();
                     }}
                   />
-                  <UiIconButton
-                    type="button"
-                    className={`item-mark-button${item.is_marked ? " is-marked" : ""}`}
-                    aria-label={item.is_marked ? "Unmark item" : "Mark item"}
-                    variant="subtle"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void toggleItemMarked(item).then(focusSearch);
-                    }}
-                  >
-                    <Flag
-                      size={14}
-                      strokeWidth={2.1}
-                      fill={item.is_marked ? "currentColor" : "none"}
-                      aria-hidden="true"
-                    />
-                  </UiIconButton>
                   {item.is_inbox ? (
                     <UiUnstyledButton
                       type="button"
@@ -7042,7 +7184,7 @@ function App() {
                   <div
                     className={`feed-item${itemIsSelected ? " is-selected" : ""}${
                       itemIsMultiSelected ? " is-multi-selected" : ""
-                    }${
+                    }${item.is_marked ? " is-marked" : ""}${
                       item.content_kind === "image" ? " is-image" : ""
                     }${item.is_inbox ? " is-inbox" : ""}${itemIsFindTarget ? " has-find-target" : ""}`}
                     role="group"
@@ -7056,19 +7198,17 @@ function App() {
                         void activateItem(item);
                       } else if (event.key === " ") {
                         event.preventDefault();
-                        setSingleSelection(index);
+                        setCurrentItem(index);
                       } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                         event.preventDefault();
                         const nextIndex = Math.max(0, Math.min(history.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
-                        setSingleSelection(nextIndex);
+                        setCurrentItem(nextIndex);
                         rowVirtualizer.scrollToIndex(nextIndex, { align: "auto" });
                         window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`#history-item-${history[nextIndex]?.id} .feed-item`)?.focus());
                       }
                     }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={(event) => {
-                      const imageWasClicked = event.target instanceof Element
-                        && Boolean(event.target.closest(".image-preview, .markdown-image-frame"));
                       if (event.shiftKey) {
                         setRangeSelection(index);
                       } else if (event.ctrlKey || event.metaKey) {
@@ -7092,17 +7232,11 @@ function App() {
                         setSelectedIds(nextSelectedIds);
                         selectionAnchorItemIdRef.current = item.id;
                       } else {
-                        setSingleSelection(index);
+                        setCurrentItem(index);
                       }
                       setActionError(null);
                       setOpenItemMenu(null);
-                      setOpenMarkMenu(null);
                       focusSearch();
-                      if (imageWasClicked) {
-                        void openItemPreview(item.id).catch((previewError) => {
-                          setActionError(String(previewError));
-                        });
-                      }
                     }}
                     onDoubleClick={() => {
                       void activateItem(item);
@@ -7114,6 +7248,7 @@ function App() {
                     }}
                   >
                     <span className="item-main">
+                      <HistorySearchMatches matches={item.search_matches} />
                       {item.title ? (
                         <FindHighlightedText
                           matches={findFieldMatches(itemFindMatches?.fields, "title")}
@@ -7140,7 +7275,6 @@ function App() {
                           ) : null}
                         </span>
                       ) : null}
-                      <HistorySearchMatches matches={item.search_matches} />
                     </span>
                     {inlineEditDraft?.id === item.id ? (
                       <div
@@ -7191,7 +7325,7 @@ function App() {
                         </div>
                       </div>
                     ) : item.content_kind === "image" && item.thumbnail_data_url ? (
-                      <span className="image-preview" title="Open full preview">
+                      <span className="image-preview">
                         <img
                           src={localPreviewImageSource(item.thumbnail_data_url)}
                           alt={item.title || "Clipboard image"}
@@ -7199,6 +7333,30 @@ function App() {
                           height={imageHeight}
                           onLoad={measureImageRow}
                         />
+                        <UiTooltip label="Zoom image">
+                          <UiIconButton
+                            type="button"
+                            className="image-zoom-button"
+                            aria-label="Zoom image"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              void openItemPreview(item.id).catch((previewError) => {
+                                setActionError(String(previewError));
+                              });
+                            }}
+                            onDoubleClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                          >
+                            <ZoomIn size={16} strokeWidth={2.2} aria-hidden="true" />
+                          </UiIconButton>
+                        </UiTooltip>
                       </span>
                     ) : markdownImages(item.text).length > 0 ? (
                       <MarkdownPreview
@@ -7207,6 +7365,11 @@ function App() {
                         imageAltMatches={findFieldMatches(itemFindMatches?.fields, "imageAlt")}
                         currentOrdinal={findState?.currentOrdinal ?? null}
                         onImageLoad={measureImageRow}
+                        onZoom={() => {
+                          void openItemPreview(item.id).catch((previewError) => {
+                            setActionError(String(previewError));
+                          });
+                        }}
                       />
                     ) : (
                       <TextPreview
@@ -7219,6 +7382,36 @@ function App() {
                       />
                     )}
                   </div>
+                  <div className="item-actions">
+                    <UiTooltip
+                      events={{ hover: true, focus: true, touch: false }}
+                      label={item.is_marked
+                        ? "Remove this clip from marked items."
+                        : "Mark for batch actions. Kept after closing the picker."}
+                    >
+                      <UiIconButton
+                        type="button"
+                        className={`item-mark-button${item.is_marked ? " is-marked" : ""}`}
+                        aria-label={item.is_marked ? "Unmark item" : "Mark item"}
+                        variant="subtle"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void setItemsMarked([item], !item.is_marked).then(focusSearch);
+                        }}
+                      >
+                        <Flag
+                          size={16}
+                          strokeWidth={2.1}
+                          fill={item.is_marked ? "currentColor" : "none"}
+                          aria-hidden="true"
+                        />
+                      </UiIconButton>
+                    </UiTooltip>
                   <UiIconButton
                     type="button"
                     className="item-delete-button"
@@ -7233,7 +7426,7 @@ function App() {
                       void deleteItems(itemDeleteTargets);
                     }}
                   >
-                    <Trash2 size={14} strokeWidth={2.3} aria-hidden="true" />
+                    <Trash2 size={16} strokeWidth={2.2} aria-hidden="true" />
                   </UiIconButton>
                   <UiIconButton
                     type="button"
@@ -7255,7 +7448,7 @@ function App() {
                       showItemMenu(item, index, event);
                     }}
                   >
-                    <MoreVertical size={15} strokeWidth={2.4} aria-hidden="true" />
+                    <MoreVertical size={16} strokeWidth={2.3} aria-hidden="true" />
                   </UiIconButton>
                   {openItemMenu?.itemId === item.id ? createPortal(
                     <div
@@ -7302,10 +7495,10 @@ function App() {
                           {renderBatchItemActions({
                             items: effectiveSelection,
                             noun: "selected",
+                            surface: "context",
                             onClear: () => {
                               setOpenItemMenu(null);
-                              setSingleSelection(index);
-                              focusSearch();
+                              clearExplicitSelection(true);
                             },
                           })}
                         </div>
@@ -7368,6 +7561,21 @@ function App() {
                           </div>
                           <div className="item-menu-group" role="group" aria-label="Editar">
                             <span className="item-menu-group-label">Editar</span>
+                          <UiUnstyledButton
+                            type="button"
+                            role="menuitem"
+                            tabIndex={-1}
+                            className="item-menu-action"
+                            onClick={() => void setItemsMarked([item], !item.is_marked)}
+                          >
+                            <Flag
+                              size={14}
+                              strokeWidth={2.2}
+                              fill={item.is_marked ? "currentColor" : "none"}
+                              aria-hidden="true"
+                            />
+                            <span>{item.is_marked ? "Unmark" : "Mark"}</span>
+                          </UiUnstyledButton>
                           {item.content_kind === "text" ? (
                             <>
                               <UiUnstyledButton
@@ -7491,6 +7699,7 @@ function App() {
                     </div>,
                     document.body,
                   ) : null}
+                  </div>
                   </li>
                 );
               })
@@ -7745,7 +7954,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>Search</code> / <code>Ctrl+Enter</code></dt><dd>Run the current query.</dd></div>
               <div><dt><code>Enter</code></dt><dd>Accept the active completion; without one, run the current query.</dd></div>
               <div><dt><code>Tab</code></dt><dd>Move focus out of the editor without accepting completion.</dd></div>
-              <div><dt><code>Ctrl+Alt+↑/↓</code></dt><dd>Move the feed selection when completion is hidden; arrows, PageUp/PageDown, Home, End and Shift+arrows edit the query.</dd></div>
+              <div><dt><code>↑/↓</code> / <code>PageUp/PageDown</code></dt><dd>Move through feed items when completion is hidden. Home, End and Shift+arrows edit the query; Ctrl+Alt+↑/↓ remains available.</dd></div>
               <div><dt><code>Ctrl+Shift+C</code></dt><dd>Edit tags for the active clip or add tags to a selection.</dd></div>
               <div><dt><code>F2</code> / <code>Ctrl+F2</code> / <code>Shift+F2</code></dt><dd>Edit content, use the external editor, or edit metadata.</dd></div>
             </dl>
@@ -8582,7 +8791,22 @@ function metadataNotesPreview(notes: string | null, _tags: string | null) {
   return notes?.trim() ?? "";
 }
 
-function estimateTextRowSize(item: HistoryItem) {
+function estimateHistoryRowSize(
+  item: HistoryItem,
+  density: AppSettings["appearance"]["density"],
+) {
+  const markdownImageCount = markdownImages(item.text).length;
+  if (markdownImageCount > 0) {
+    return Math.min(900, 100 + markdownImageCount * 180);
+  }
+  if (item.content_kind === "image") {
+    return 190;
+  }
+  return estimateTextRowSize(item, density);
+}
+function estimateTextRowSize(item: HistoryItem, density: AppSettings["appearance"]["density"]) {
+  const densityMetrics = getDensityMetrics(density);
+
   const visiblePreview = item.text.trim();
   const previewLines = visiblePreview
     ? Math.min(
@@ -8609,7 +8833,7 @@ function estimateTextRowSize(item: HistoryItem) {
       )
     : 0;
   const estimatedHeight =
-    FEED_ITEM_VERTICAL_CHROME
+    densityMetrics.paddingY * 2 + FEED_ITEM_BORDER_CHROME
     + (item.title ? FEED_ITEM_TITLE_ESTIMATE : 0)
     + (
       metadataLines > 0
@@ -8618,10 +8842,10 @@ function estimateTextRowSize(item: HistoryItem) {
     )
     + (
       previewLines > 0
-        ? FEED_ITEM_GRID_ROW_GAP + previewLines * FEED_ITEM_PREVIEW_LINE_HEIGHT
+        ? densityMetrics.gap + previewLines * FEED_ITEM_PREVIEW_LINE_HEIGHT
         : 0
     );
-  return Math.max(FEED_ITEM_MIN_HEIGHT, estimatedHeight);
+  return Math.max(densityMetrics.minHeight, estimatedHeight);
 }
 
 function markdownImages(text: string): MarkdownImage[] {
@@ -8744,12 +8968,14 @@ function MarkdownPreview({
   imageAltMatches,
   currentOrdinal,
   onImageLoad,
+  onZoom,
 }: {
   text: string;
   contentMatches?: FindFieldMatches | null;
   imageAltMatches?: FindFieldMatches | null;
   currentOrdinal?: number | null;
   onImageLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
+  onZoom?: () => void;
 }) {
   const segments = markdownSegments(
     text,
@@ -8779,11 +9005,37 @@ function MarkdownPreview({
               key={`${segment.image.src}-${index}`}
             >
               {imageSource ? (
-                <img
-                  src={imageSource}
-                  alt={segment.image.alt}
-                  onLoad={onImageLoad}
-                />
+                <>
+                  <img
+                    src={imageSource}
+                    alt={segment.image.alt}
+                    onLoad={onImageLoad}
+                  />
+                  {onZoom ? (
+                    <UiTooltip label="Zoom image">
+                      <UiIconButton
+                        type="button"
+                        className="image-zoom-button"
+                        aria-label="Zoom image"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onZoom();
+                        }}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                      >
+                        <ZoomIn size={16} strokeWidth={2.2} aria-hidden="true" />
+                      </UiIconButton>
+                    </UiTooltip>
+                  ) : null}
+                </>
               ) : (
                 <span className="item-preview-remote-media">
                   Remote image blocked{!altMatches?.ranges.length && segment.image.alt ? `: ${segment.image.alt}` : ""}

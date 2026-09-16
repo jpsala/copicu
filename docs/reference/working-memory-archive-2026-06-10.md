@@ -38,7 +38,7 @@ Ultima actualizacion manual: 2026-06-09.
 | 007 CopyQ Import | imported | `docs/tracks/007-copyq-import.md` |
 | 008 Filtering Search Foundation | ai-script-mode-v1-dogfooded | `docs/tracks/008-filtering-search-foundation.md` |
 | 009 UI Host Custom Surface | confirm-input-implemented | `docs/tracks/009-ui-host-custom-surface.md` |
-| 010 UI Rethink | active | `docs/tracks/010-ui-rethink.md` |
+| 010 UI Rethink | retired; conocimiento promovido a topics específicos | Sin entrada activa |
 | 011 Mantine Component Migration | ready | `docs/tracks/011-mantine-component-migration.md` |
 | 012 Hotkeys, WhichKey And Tags | tag-hotkey-routing-validated | `docs/tracks/012-tags-and-hotkeys.md` |
 | 013 Open Source Growth | active | `docs/tracks/013-open-source-growth.md` |
@@ -198,7 +198,7 @@ En sesion nueva:
 4. Si se sigue con AI/busqueda potente no-script, abrir `docs/topics/search-plan-engine.md`, `specs/005-search-plan-engine/spec.md`, `docs/tracks/008-filtering-search-foundation.md` y `docs/topics/ai-search-and-actions.md`. Proximo corte recomendado: migrar planner de busqueda a `SearchPlanV1` completo y explicar planes parseados.
 5. Si se sigue jugando con Actions/Scripting UI auxiliar, abrir `docs/tracks/009-ui-host-custom-surface.md`, `docs/tracks/004-actions-scripting.md`, `docs/topics/actions-and-scripting-api.md` y `specs/004-actions-scripting-api/spec.md`. Próximo corte recomendado: dogfood real de `ui.confirm`/`ui.input` con scripts `004-url-open-or-filter.ts` y `005-triage-clipboard-batch.ts`, después decidir `ui.alert` y toast custom global en `ui-host`.
 6. Abrir `docs/topics/picker-interaction.md` si el experimento toca selección, filtros visibles o activación desde picker.
-7. Si se sigue con custom windows, abrir `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md` y `docs/tracks/010-ui-rethink.md`. El primer corte ya esta parcialmente implementado; proximo paso es validacion manual con JP de hide/focus-lost/shortcut/tray/paste/DPI/monitor y decidir fixed-size vs rollback/native vs otro corte de resize.
+7. Si se sigue con custom windows, abrir `docs/topics/custom-window-system.md` y `docs/topics/ui-surface-architecture.md`. El primer corte ya esta parcialmente implementado; proximo paso es validacion manual con JP de hide/focus-lost/shortcut/tray/paste/DPI/monitor y decidir fixed-size vs rollback/native vs otro corte de resize.
 8. Abrir `docs/tracks/post-mvp-hardening.md` o `docs/tracks/copyq-capability-roadmap.md` solo si se pausa Actions/Scripting/AI para elegir otro corte.
 9. Si se sigue con busqueda no-AI, abrir `docs/topics/filtering-and-query-syntax.md` y `docs/tracks/008-filtering-search-foundation.md`; proximo corte recomendado: parse result serializable + chips/summary "Interpreted as".
 10. Si se vuelve a hardening de historial, seguir con `docs/tracks/003-history-ordering-dedupe.md`: validar recaptura real con clipboard sintetico y despues diseñar drag/manual order (`manual_rank`).

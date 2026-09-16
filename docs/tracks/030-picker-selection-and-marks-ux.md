@@ -5,7 +5,6 @@ updated: 2026-07-29
 execution_route: balanced
 related:
   - docs/topics/picker-interaction.md
-  - docs/tracks/010-ui-rethink.md
   - docs/tracks/012-tags-and-hotkeys.md
 ---
 

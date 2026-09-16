@@ -1,7 +1,7 @@
 ---
 id: 011-mantine-component-migration
-status: active-next-theme-contrast-polish
-updated: 2026-06-06
+status: active-component-adoption
+updated: 2026-09-16
 ---
 
 # 011 Mantine Component Migration
@@ -15,7 +15,7 @@ Fuentes obligatorias para retomar:
 - `docs/topics/ui-surface-architecture.md`
 - `docs/topics/mantine-ui-system.md`
 - `docs/topics/ui-design-and-impeccable.md`
-- `docs/tracks/010-ui-rethink.md`
+- `docs/topics/appearance-and-themes.md`
 - `src/main.tsx`
 - `src/styles.css`
 - `src/mantineTheme.ts`
@@ -35,7 +35,7 @@ Estado actual:
 - Mantine Notifications queda descartado para posicionamiento multi-monitor: renderiza dentro de una ventana React; Copicu mantiene ventana Tauri `notifications`.
 - Theme infra ahora vive en `src/themeCatalog.ts`; permite N presets desde un catalogo central y alimenta CSS variables Copicu + variables primarias Mantine.
 - Temas built-in actuales: Default, Graphite, Code, High contrast, Midnight, Blueprint, Moss y Rose.
-- Lo pendiente de mayor valor es revisar contraste/polish de presets y decidir si hace falta preview compacta en Settings.
+- El trabajo futuro de Appearance, incluido contraste, selector, preview y density, se retiró de este track y vive en `docs/tracks/036-appearance-settings.md`.
 - Ultimos checks: `npm run build`, `npm run visual:check` 52/52 y `cargo check` pasan. `npm run rust:test` compila pero el binario de tests falla al arrancar con `STATUS_ENTRYPOINT_NOT_FOUND` conocido.
 
 ## Objetivo
@@ -310,28 +310,12 @@ Decision 2026-06-06: no usar `@mantine/notifications` para toasts principales mi
 
 ### L. Appearance y temas
 
-- [x] Separar conceptualmente:
-  - [x] `mode`: `system | light | dark`
-  - [x] `themeId`: preset visual
-- [x] Definir presets built-in iniciales:
-  - [x] Default
-  - [x] High Contrast
-  - [x] Graphite
-  - [x] Code
-  - [x] Midnight
-  - [x] Blueprint
-  - [x] Moss
-  - [x] Rose
-- [x] Mapear presets a:
-  - [x] CSS variables Copicu
-  - [x] Mantine `theme.colors`
-  - [x] Mantine `primaryColor`
-  - [x] `data-theme` existente si se mantiene
-  - [x] `data-mantine-color-scheme`
-- [x] Decidir storage schema para `themeId`.
-- [x] Actualizar Settings Appearance.
-- [ ] Crear preview compacta de tema si suma valor.
-- [ ] No agregar import/export theme hasta cerrar presets.
+- [x] Separar `mode` (`system | light | dark`) de `themeId`.
+- [x] Definir los ocho presets built-in y mapearlos a variables Copicu, paletas Mantine y `data-mantine-color-scheme`.
+- [x] Persistir `themeId` y actualizar Settings Appearance.
+- [x] Transferir selector visual, preview, contraste y Density al track dedicado `docs/tracks/036-appearance-settings.md`.
+
+Este track ya no planifica Appearance. Su canon es `docs/topics/appearance-and-themes.md`; import/export y temas custom siguen fuera del corte acordado allí.
 
 ### M. Iconos
 

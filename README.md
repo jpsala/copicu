@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.17](https://github.com/jpsala/copicu/releases/tag/v0.4.17)
-- Asset: `Copicu_0.4.17_x64-setup.exe`
+- [v0.4.18](https://github.com/jpsala/copicu/releases/tag/v0.4.18)
+- Asset: `Copicu_0.4.18_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `75BD32EC565E49E9AC5C3EE830E9A4F9B2DA1E0B7E0393D2AC62A891CA0F4D77`
+- SHA256: `E218402A62771FB34C91C972B22481C24B7412834D76B9368B2916A32C9725B7`
 
-Resident CodeMirror query editor with contextual autocomplete and a clearly visible, steady caret.
+Appearance settings, compact density, picker refinements, and reliability fixes.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -325,7 +325,6 @@ Project and contributor docs:
 - [docs/README.md](docs/README.md)
 - [docs/PROJECT.md](docs/PROJECT.md)
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
-- [docs/TOPICS.md](docs/TOPICS.md)
 
 ## Name
 

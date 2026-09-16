@@ -2,6 +2,37 @@
 
 All notable changes to Copicu are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Add accessible Appearance settings for color mode, eight built-in themes,
+  Standard/Compact density, a synthetic preview, and live propagation to every
+  consumer window.
+
+### Changed
+
+- Restore direct icon-based picker header controls, with a full-width search row in narrow windows.
+- Expose persistent marks through a direct header flag and global count, prioritizing marked-item actions and preserving full-history targets while filtering.
+- Replace the transient selection bar and master checkbox with a counted header menu before the search field, consolidating batch actions without shifting the feed.
+- Keep search fields visible below the picker header, with one compact selector, separate filter chips, and an explicit pending state before applying a search.
+- Align flag, Delete, and menu in one right-hand action row, revealed on hover, current item, keyboard focus, and open menus; keep persistent marks visible and previews clear of the action gutter.
+- Place search-match evidence before clip metadata while preserving original text and large image previews.
+- Add a subtle themed one-pixel perimeter to shared custom window frames, separating them from the desktop without shadows.
+
+### Fixed
+
+- Respect configurable Enter-based shortcuts such as Alt+Enter before normal query submission.
+- Avoid a redundant initial search when settings hydrate with unchanged scope defaults, preserving initial error recovery.
+- Activate image clips and local Markdown images on double-click like other clips; reserve preview opening for the hover/keyboard magnifier.
+- Keep filter lock and clear controls from covering the query text.
+- Make marked-item batch actions keyboard-navigable and wait for the complete marked set instead of using a visible-only fallback.
+- Preserve explicit checks while moving the current clip with mouse or keyboard; keep query/hide resets and single-item context menus independent from persistent marks.
+- Preserve the visual feed anchor across deep virtualized density changes even
+  when the original row node unmounts.
+- Prevent Settings bootstrap responses from overwriting newer Appearance events.
+- Raise High Contrast focus indicators to at least 3:1 non-text contrast.
+
 ## [0.4.17] - 2026-09-11
 
 ### Added

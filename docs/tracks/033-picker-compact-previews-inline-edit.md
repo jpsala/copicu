@@ -6,7 +6,6 @@ execution_route: balanced
 related:
   - docs/topics/picker-interaction.md
   - docs/topics/ui-surface-architecture.md
-  - docs/tracks/010-ui-rethink.md
   - docs/tracks/023-item-preview-window.md
 ---
 

@@ -46,23 +46,6 @@ export function PickerStatusAnnouncer({ children, className, label = "Picker sta
   );
 }
 
-/** Contextual multi-selection actions; hidden entirely when there is no selection. */
-export function PickerSelectionBar({
-  children,
-  className,
-  label = "Selection actions",
-  ariaLabel,
-}: PickerShellProps & { ariaLabel?: string }) {
-  return (
-    <div
-      className={shellClassName("selection-action-bar", className)}
-      aria-label={ariaLabel ?? label}
-      aria-live="polite"
-    >
-      {children}
-    </div>
-  );
-}
 
 /** Presentational boundary for the semantic virtualized history feed. */
 export function PickerFeed({ children, className, label = "Clipboard picker" }: PickerShellProps) {

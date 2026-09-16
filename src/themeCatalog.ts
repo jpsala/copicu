@@ -1,6 +1,7 @@
 import type { MantineColorsTuple } from "@mantine/core";
 
 export type ThemeSetting = "system" | "light" | "dark";
+export type DensitySetting = "standard" | "compact";
 export type ThemeId =
   | "default"
   | "graphite"
@@ -14,6 +15,7 @@ export type ThemeId =
 export type AppearanceSettings = {
   theme: ThemeSetting;
   themeId: ThemeId;
+  density: DensitySetting;
 };
 
 type SchemeTokens = {
@@ -246,7 +248,7 @@ export const COPICU_THEME_PRESETS: ThemePreset[] = [
       danger: "#8f1d1d",
       shadow: "rgb(0 0 0 / 18%)",
       shadowStrong: "rgb(0 0 0 / 26%)",
-      focusRing: "rgb(0 79 99 / 24%)",
+      focusRing: "#004f63",
     },
     {
       surface: "#0b0d0f",
@@ -262,7 +264,7 @@ export const COPICU_THEME_PRESETS: ThemePreset[] = [
       danger: "#ffb0b0",
       shadow: "rgb(0 0 0 / 48%)",
       shadowStrong: "rgb(0 0 0 / 62%)",
-      focusRing: "rgb(130 223 255 / 28%)",
+      focusRing: "#82dfff",
     },
   ),
   theme(
@@ -425,6 +427,19 @@ export const COPICU_THEME_PRESETS: ThemePreset[] = [
   ),
 ];
 
+export const DENSITY_METRICS = {
+  standard: { minHeight: 62, paddingY: 8, gap: 5 },
+  compact: { minHeight: 54, paddingY: 4, gap: 3 },
+} as const satisfies Record<DensitySetting, {
+  minHeight: number;
+  paddingY: number;
+  gap: number;
+}>;
+
+export function getDensityMetrics(density: DensitySetting) {
+  return DENSITY_METRICS[density];
+}
+
 export const DEFAULT_THEME_ID: ThemeId = "default";
 export const THEME_PRESET_OPTIONS = COPICU_THEME_PRESETS.map((preset) => ({
   value: preset.id,
@@ -458,6 +473,7 @@ export function applyCopicuAppearance(root: HTMLElement, appearance: AppearanceS
   const effectiveScheme = getEffectiveColorScheme(appearance.theme);
   const preset = getThemePreset(appearance.themeId);
   const tokens = preset[effectiveScheme];
+  const densityMetrics = getDensityMetrics(appearance.density);
 
   if (appearance.theme === "system") {
     delete root.dataset.theme;
@@ -465,6 +481,7 @@ export function applyCopicuAppearance(root: HTMLElement, appearance: AppearanceS
     root.dataset.theme = appearance.theme;
   }
   root.dataset.themeId = preset.id;
+  root.dataset.density = appearance.density;
   root.setAttribute("data-mantine-color-scheme", effectiveScheme);
   root.style.colorScheme = effectiveScheme;
   root.style.color = tokens.color;
@@ -498,6 +515,9 @@ export function applyCopicuAppearance(root: HTMLElement, appearance: AppearanceS
   setToken(root.style, "--toast-danger-bg", tokens.toastDangerBg);
   setToken(root.style, "--overlay-bg", tokens.overlayBg);
   setToken(root.style, "--focus-ring", tokens.focusRing);
+  setToken(root.style, "--feed-item-min-height", `${densityMetrics.minHeight}px`);
+  setToken(root.style, "--feed-item-padding-y", `${densityMetrics.paddingY}px`);
+  setToken(root.style, "--feed-item-gap", `${densityMetrics.gap}px`);
 
   preset.mantineColor.forEach((color, index) => {
     setToken(root.style, `--mantine-color-${preset.primaryColor}-${index}`, color);

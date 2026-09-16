@@ -44,7 +44,8 @@ o cerrar.
 - `impeccable/`: UI/frontend.
 
 El research con consumidor real vive como `.omp/commands/research.md`; release
-usa su script/doc canónico y los taskflows Pi quedaron sólo en backup.
+usa `npm run release:install` y su script/doc canónico, no una skill ceremonial.
+Los taskflows Pi quedaron sólo en backup.
 `computer` es built-in OMP, no una skill ni un adapter local.
 
 ## Validación
@@ -52,7 +53,7 @@ usa su script/doc canónico y los taskflows Pi quedaron sólo en backup.
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
 powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
-bun run context:index
+bun run context -- show
 bun run context:audit
 ```
 

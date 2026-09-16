@@ -46,6 +46,7 @@ export function MetadataWindowApp() {
   const [appearance, setAppearance] = useState<AppSettings["appearance"]>({
     theme: "system",
     themeId: "default",
+    density: "standard",
   });
   const [closeRequestSignal, setCloseRequestSignal] = useState(0);
   const dirtyRef = useRef(false);
@@ -61,12 +62,33 @@ export function MetadataWindowApp() {
   }, []);
   useEffect(() => {
     let active = true;
-    void Promise.all([pendingMetadataEditor(), listTags(), invoke<AppSettings>("get_settings")])
-      .then(([initialPayload, tags, settings]) => {
+    let settingsRevision = 0;
+    const unlistenSettings = listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event) => {
+      if (!active) return;
+      settingsRevision += 1;
+      setAppearance(event.payload.appearance);
+    });
+    void unlistenSettings
+      .then(() => {
+        const revisionAtRequest = settingsRevision;
+        return Promise.all([
+          pendingMetadataEditor(),
+          listTags(),
+          invoke<AppSettings>("get_settings"),
+        ]).then(([initialPayload, tags, settings]) => ({
+          initialPayload,
+          tags,
+          settings,
+          revisionAtRequest,
+        }));
+      })
+      .then(({ initialPayload, tags, settings, revisionAtRequest }) => {
         if (!active) return;
         setPayload(initialPayload);
         setAvailableTags(tags);
-        setAppearance(settings.appearance);
+        if (settingsRevision === revisionAtRequest) {
+          setAppearance(settings.appearance);
+        }
       })
       .catch((error) => {
         if (active) setLoadError(String(error));
@@ -83,9 +105,6 @@ export function MetadataWindowApp() {
         });
       },
     );
-    const unlistenSettings = listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event) => {
-      if (active) setAppearance(event.payload.appearance);
-    });
     const unlistenClose = getCurrentWindow().onCloseRequested((event) => {
       event.preventDefault();
       if (dirtyRef.current) setCloseRequestSignal((current) => current + 1);

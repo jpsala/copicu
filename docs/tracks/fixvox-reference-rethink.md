@@ -1,7 +1,7 @@
 ---
 status: paused
 updated: 2026-06-05
-topic: docs/topics/product-ambition.md
+topic: product-ambition
 ---
 
 # Fixvox Reference Rethink

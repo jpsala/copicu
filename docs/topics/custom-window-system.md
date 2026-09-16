@@ -15,7 +15,6 @@ primary_refs:
   - docs/topics/ui-surface-architecture.md
   - docs/topics/window-state-and-monitor-policy.md
   - docs/tracks/009-ui-host-custom-surface.md
-  - docs/tracks/010-ui-rethink.md
   - docs/reference/custom-window-system-archive-2026-06-25.md
   - src-tauri/src/surface_registry.rs
   - src-tauri/src/window_state.rs
@@ -58,6 +57,8 @@ Router compacto para ventanas custom Tauri/WebView2. La version larga previa que
 - `toast`: no interactiva o interaccion minima.
 
 Mantener variantes como politica, no como CSS suelto por componente.
+
+El `CustomWindowFrame` compartido delimita la ventana con un borde interior de 1 px usando `--line-strong`; separa la superficie del fondo sin sumar sombras ni cambiar los bounds nativos.
 
 ## Guardrails Tauri/WebView2
 

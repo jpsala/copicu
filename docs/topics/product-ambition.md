@@ -11,7 +11,7 @@ triggers:
   - product ambition
 primary_refs:
   - ../PROJECT.md
-  - product-direction.md
+  - docs/topics/product-direction.md
   - ../reference/copyq-feature-inventory.md
 ---
 

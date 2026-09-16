@@ -11,8 +11,8 @@ triggers:
   - filtros avanzados
 primary_refs:
   - ../../specs/005-search-plan-engine/spec.md
-  - filtering-and-query-syntax.md
-  - ai-search-and-actions.md
+  - docs/topics/filtering-and-query-syntax.md
+  - docs/topics/ai-search-and-actions.md
   - ../tracks/008-filtering-search-foundation.md
 ---
 

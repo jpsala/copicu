@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import type { Stats } from "node:fs";
 import { join, relative } from "node:path";
+import { loadContextCatalog } from "./lib/context-catalog.ts";
 
 type Finding = {
   level: "error" | "warn";
@@ -9,6 +10,10 @@ type Finding = {
 
 const root = process.cwd();
 const findings: Finding[] = [];
+const contextCatalog = loadContextCatalog(root, { allTracks: true });
+for (const diagnostic of contextCatalog.diagnostics) {
+  add(diagnostic.level, `Context catalog ${diagnostic.code} (${diagnostic.path}): ${diagnostic.message}`);
+}
 const retiredAgenticPaths = [
   ".pi",
   "aos.requirements.json",
@@ -93,9 +98,6 @@ function warnIfFrontmatterYamlLooksUnsafe(path: string, fm: string) {
   }
 }
 
-function modifiedMs(path: string) {
-  return statSync(join(root, path)).mtimeMs;
-}
 
 function sectionContent(content: string, heading: string) {
   const lines = content.split(/\r?\n/);
@@ -158,7 +160,7 @@ function walkMarkdownFiles(dir: string): string[] {
 }
 
 
-for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md", "docs/TOPICS.md"]) {
+for (const path of ["AGENTS.md", "docs/WORKING_MEMORY.md"]) {
   if (!exists(path)) add("error", `Missing ${path}`);
 }
 
@@ -173,7 +175,7 @@ if (exists("docs/WORKING_MEMORY.md")) {
 }
 
 if (!exists("docs/GLOSSARY.md")) {
-  add("warn", "Missing docs/GLOSSARY.md; aliases will not be included in the generated context index");
+  add("warn", "Missing docs/GLOSSARY.md; aliases remain available through topic metadata in the context catalog");
 }
 
 if (!exists("docs/skills")) {
@@ -183,12 +185,10 @@ if (!exists("docs/skills")) {
 warnIfTooLarge("AGENTS.md", 6000, "AGENTS.md");
 warnIfTooLarge("docs/README.md", 5000, "docs/README.md");
 warnIfTooLarge("docs/WORKING_MEMORY.md", 6000, "docs/WORKING_MEMORY.md");
-warnIfTooLarge("docs/TOPICS.md", 11000, "docs/TOPICS.md");
 warnIfTooLarge("docs/DEVELOPMENT.md", 12000, "docs/DEVELOPMENT.md");
 
 const hotPathFiles = [
   "AGENTS.md",
-  "docs/.generated/context-index.md",
   "docs/WORKING_MEMORY.md",
 ].filter(exists);
 const hotPathChars = hotPathFiles.reduce((total, path) => total + read(path).length, 0);
@@ -199,12 +199,7 @@ if (hotPathChars > 18000) {
   );
 }
 
-const topicsIndex = exists("docs/TOPICS.md") ? read("docs/TOPICS.md") : "";
 const agents = exists("AGENTS.md") ? read("AGENTS.md") : "";
-const docsReadme = exists("docs/README.md") ? read("docs/README.md") : "";
-const docsKnowledge = exists("docs/topics/docs-knowledge-system.md")
-  ? read("docs/topics/docs-knowledge-system.md")
-  : "";
 for (const [marker, contract] of [
   ["<!-- aos-bootstrap: stable-bootstrap-v1 -->", "stable bootstrap"],
   ["<!-- aos-runtime-authority: omp -->", "OMP runtime authority"],
@@ -225,36 +220,7 @@ if ((exists("docs/topics/agentic-os-operations.md") || exists("docs/skills/aos-r
   add("warn", "AGENTS.md should keep a short `aos-realinear-os` pointer to docs/topics/agentic-os-operations.md");
 }
 
-if (docsReadme) {
-  const readingRoute = sectionContent(docsReadme, "Regla De Lectura Liviana");
-  if (readingRoute && !readingRoute.includes("docs/.generated/context-index.md")) {
-    add("warn", "docs/README.md reading route should explicitly start from docs/.generated/context-index.md");
-  }
-}
 
-if (docsKnowledge && !docsKnowledge.includes("docs/.generated/context-index.md")) {
-  add("warn", "docs/topics/docs-knowledge-system.md should document docs/.generated/context-index.md in the hot route");
-}
-
-if (exists("docs/USER_GUIDE.md") && !topicsIndex.includes("USER_GUIDE.md")) {
-  add("warn", "docs/USER_GUIDE.md exists but is not listed in docs/TOPICS.md");
-}
-
-if (exists("docs/OS_PROJECTS.md") && !topicsIndex.includes("OS_PROJECTS.md")) {
-  add("warn", "docs/OS_PROJECTS.md exists but is not listed in docs/TOPICS.md");
-}
-
-if (exists("docs/topics/agentic-os-operations.md") && !topicsIndex.includes("topics/agentic-os-operations.md")) {
-  add("warn", "docs/topics/agentic-os-operations.md exists but is not linked from docs/TOPICS.md");
-}
-
-if (exists("docs/topics/docs-knowledge-system.md") && !topicsIndex.includes("topics/docs-knowledge-system.md")) {
-  add("warn", "docs/topics/docs-knowledge-system.md exists but is not linked from docs/TOPICS.md");
-}
-
-if (exists("docs/topics/omp-agentic-os.md") && !topicsIndex.includes("topics/omp-agentic-os.md")) {
-  add("warn", "docs/topics/omp-agentic-os.md exists but is not linked from docs/TOPICS.md");
-}
 
 const topicFiles = exists("docs/topics")
   ? readdirSync(join(root, "docs", "topics")).filter((name) => name.endsWith(".md")).sort()
@@ -284,9 +250,6 @@ for (const file of topicFiles) {
     }
   }
 
-  if (!topicsIndex.includes(`topics/${file}`)) {
-    add("warn", `${topicPath} is not linked from docs/TOPICS.md`);
-  }
 }
 
 for (const file of walkMarkdownFiles(join(root, "docs", "tracks"))) {
@@ -359,7 +322,6 @@ const agenticHotFiles = [
   "docs/OS_PLAYBOOK.md",
   "docs/USER_GUIDE.md",
   "docs/WORKING_MEMORY.md",
-  "docs/TOPICS.md",
   "docs/topics/agent-tool-routing.md",
   "docs/topics/docs-knowledge-system.md",
   "docs/topics/omp-agentic-os.md",
@@ -381,8 +343,8 @@ if (!exists(".omp/config.yml")) {
   if (!ompConfig.includes("computer:\n  enabled: true")) {
     add("error", ".omp/config.yml must enable the native computer tool");
   }
-  if (!ompConfig.includes("tools:\n  approvalMode: write")) {
-    add("error", ".omp/config.yml must preserve read-only inspection and approval for input");
+  if (ompConfig.includes("approvalMode:")) {
+    add("error", ".omp/config.yml must inherit the OMP approval mode");
   }
 }
 if (!exists(".omp/commands/research.md")) {
@@ -459,55 +421,6 @@ for (const [prefix, paths] of specPrefixes) {
   }
 }
 
-if (!exists("docs/.generated/context-index.md")) {
-  add("warn", "Missing generated context index docs/.generated/context-index.md");
-} else {
-  const generatedIndex = read("docs/.generated/context-index.md");
-  const tracksSection = sectionContent(generatedIndex, "Tracks") ?? "";
-  const indexedTracks = [...tracksSection.matchAll(/\]\(\.\.\/(tracks\/[^)#]+\.md)\)/g)]
-    .map((match) => `docs/${match[1]}`)
-    .sort();
-  const memoryFocus = exists("docs/WORKING_MEMORY.md")
-    ? sectionContent(read("docs/WORKING_MEMORY.md"), "Foco Único De Ejecución") ?? ""
-    : "";
-  const focusState = memoryFocus.match(/^- \*\*Estado:\*\* `([^`]+)`/m)?.[1];
-  const focusField = focusState === "ready" ? "Plan" : focusState === "blocked" || focusState === "waiting_gate" ? "Referencia" : undefined;
-  const focusedTracks = focusField
-    ? [...memoryFocus.matchAll(new RegExp("^- \\*\\*" + focusField + ":\\*\\* `(docs/tracks/[^`]+\\.md)`", "gm"))].map((match) => match[1]).sort()
-    : [];
-  if (JSON.stringify(indexedTracks) !== JSON.stringify(focusedTracks)) {
-    add("error", `Generated context index tracks must match the current execution focus (expected: ${focusedTracks.join(", ") || "none"}; found: ${indexedTracks.join(", ") || "none"})`);
-  }
-
-  const indexTime = modifiedMs("docs/.generated/context-index.md");
-  const trackMarkdown = walkMarkdownFiles(join(root, "docs", "tracks")).map((path) =>
-    relative(root, path).replaceAll("\\", "/"),
-  );
-  const specMarkdown = specDirs.flatMap((spec) =>
-    walkMarkdownFiles(join(root, spec.path)).map((path) => relative(root, path).replaceAll("\\", "/")),
-  );
-  const indexSources = [
-    "scripts/context-index.ts",
-    "docs/WORKING_MEMORY.md",
-    "docs/GLOSSARY.md",
-    "docs/TOPICS.md",
-    "docs/OS_PROJECTS.md",
-    "docs/skills/README.md",
-    "docs/tracks/README.md",
-    ".omp/config.yml",
-    ".omp/commands/research.md",
-    ...topicFiles.map((file) => `docs/topics/${file}`),
-    ...walkMarkdownFiles(join(root, "docs", "skills")).map((path) => relative(root, path).replaceAll("\\", "/")),
-    ...trackMarkdown,
-    ...specMarkdown,
-  ];
-
-  for (const path of indexSources) {
-    if (exists(path) && modifiedMs(path) > indexTime) {
-      add("warn", `docs/.generated/context-index.md is older than ${path}`);
-    }
-  }
-}
 
 
 const errors = findings.filter((finding) => finding.level === "error");

@@ -2,6 +2,7 @@ import CodeMirror, {
   Decoration,
   EditorState,
   EditorView,
+  Prec,
   drawSelection,
   ExternalChange,
   ViewPlugin,
@@ -454,7 +455,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, QueryEditorProps>(funct
       closeOnBlur: true,
       override: [completionSource],
     }),
-    EditorView.domEventHandlers({
+    Prec.high(EditorView.domEventHandlers({
       compositionstart: () => {
         onCompositionChangeRef.current?.(true);
         return false;
@@ -472,7 +473,8 @@ export const QueryEditor = forwardRef<QueryEditorHandle, QueryEditorProps>(funct
         }
         if (completionStatus(view.state) === "active") return false;
         if (keyboardEvent.key === "Enter") {
-          const handled = onSubmitRef.current(keyboardEvent, view);
+          const handled = onKeyDownRef.current?.(keyboardEvent, view)
+            || onSubmitRef.current(keyboardEvent, view);
           if (handled) {
             keyboardEvent.preventDefault();
             return true;
@@ -494,7 +496,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, QueryEditorProps>(funct
         }
         return false;
       },
-    }),
+    })),
   ], [completionSource]);
 
   const handleChange = (nextValue: string, update: ViewUpdate) => {

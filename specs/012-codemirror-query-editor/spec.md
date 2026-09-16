@@ -2,7 +2,7 @@
 id: 012-codemirror-query-editor
 status: complete
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-16
 ---
 
 # CodeMirror 6 Query Editor
@@ -115,9 +115,10 @@ rangos a partir de una clasificación frontend.
 ### Teclado, foco e IME
 
 - El editor recibe foco al abrir y al recuperar foco del picker.
-- Sin completion visible, ArrowUp/Down, PageUp/PageDown, Home/End y
-  Shift+arrows permanecen como edición de texto; `Ctrl+Alt+ArrowUp/Down` mueve
-  la selección del feed.
+- Sin completion visible, ArrowUp/Down mueve un item y PageUp/PageDown salta
+  una página visual del feed sin sacar foco del editor. Home/End y Shift+arrows
+  permanecen como edición de texto; `Ctrl+Alt+ArrowUp/Down` sigue disponible
+  como alternativa de navegación.
 - Con completion visible, ArrowUp/Down y PageUp/PageDown navegan sus opciones;
   Enter acepta sólo si la composición IME está inactiva. Tab conserva el
   recorrido de foco y nunca acepta completion.

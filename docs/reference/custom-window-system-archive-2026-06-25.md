@@ -21,9 +21,8 @@ triggers:
 primary_refs:
   - docs/topics/window-state-and-monitor-policy.md
   - docs/topics/ui-surface-architecture.md
-  - docs/topics/ui-rethink.md
+  - docs/topics/appearance-and-themes.md
   - docs/topics/mantine-ui-system.md
-  - docs/tracks/010-ui-rethink.md
   - src-tauri/tauri.conf.json
   - src-tauri/src/lib.rs
   - src-tauri/capabilities/default.json

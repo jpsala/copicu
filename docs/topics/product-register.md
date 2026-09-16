@@ -10,8 +10,8 @@ triggers:
   - audience
 primary_refs:
   - ../PROJECT.md
-  - ./product-direction.md
-  - ./ui-surface-architecture.md
+  - docs/topics/product-direction.md
+  - docs/topics/ui-surface-architecture.md
 ---
 
 # Product Register

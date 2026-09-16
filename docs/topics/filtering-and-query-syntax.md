@@ -13,9 +13,9 @@ triggers:
   - AI search
 primary_refs:
   - ../../src-tauri/src/storage.rs
-  - search-plan-engine.md
-  - picker-interaction.md
-  - ai-search-and-actions.md
+  - docs/topics/search-plan-engine.md
+  - docs/topics/picker-interaction.md
+  - docs/topics/ai-search-and-actions.md
   - ../tracks/008-filtering-search-foundation.md
 ---
 
@@ -150,18 +150,12 @@ debe recibir la query completa y la posicion real del cursor, y devolver el rang
 exacto a reemplazar. Inferir el token activo solo desde el ultimo espacio no
 alcanza para listas separadas por comas, negaciones ni edicion intermedia.
 
-El 2026-09-11 JP autoriza replantear la UX e implementar CodeMirror 6 como editor
-textual de consultas precargado, montado y residente. No se exige conservar
-input nativo, popup, chips, atajos ni una sola linea visual. Se conserva toda la
-sintaxis y la autoridad Rust, junto con foco inicial, accesibilidad, IME y
-apertura confiable desde hotkey en WebView2. Aceptar una sugerencia es edicion:
-no crea una politica de aplicacion distinta de escribir o pegar la misma query.
-
-La implementacion residente esta verificada en la spec
-[`012-codemirror-query-editor`](../../specs/012-codemirror-query-editor/spec.md).
-Estudio, arquitectura, mediciones nativas acotadas y limites:
-[`codemirror-query-editor`](codemirror-query-editor.md). No equivalen a un
-benchmark comparativo de release ni certifican IME no disponible.
+La implementacion CodeMirror 6 residente, autorizada el 2026-09-11, conserva
+la sintaxis y autoridad Rust. Aceptar una sugerencia es edición y sigue la misma
+política que escribir o pegar. Contrato y verificación:
+[`012-codemirror-query-editor`](../../specs/012-codemirror-query-editor/spec.md);
+arquitectura, mediciones y límites:
+[`codemirror-query-editor`](codemirror-query-editor.md).
 
 ## Filter Lock
 

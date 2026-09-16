@@ -9,8 +9,8 @@ triggers:
   - cheat sheet
   - shortcut menu
 primary_refs:
-  - hotkeys.md
-  - ui-surface-architecture.md
+  - docs/topics/hotkeys.md
+  - docs/topics/ui-surface-architecture.md
   - ../tracks/012-tags-and-hotkeys.md
   - ../../specs/006-tags-and-hotkeys/spec.md
 ---

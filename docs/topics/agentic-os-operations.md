@@ -21,13 +21,13 @@ primary_refs:
   - AGENTS.md
   - docs/GLOSSARY.md
   - docs/WORKING_MEMORY.md
-  - docs/TOPICS.md
-  - docs/.generated/context-index.md
   - docs/skills/
   - docs/tracks/
   - .omp/config.yml
   - scripts/toggle-skills-link.ps1
-  - scripts/context-index.ts
+  - scripts/context.ts
+  - scripts/lib/context-catalog.ts
+  - scripts/lib/context-router.ts
   - scripts/agent-context-audit.ts
 ---
 
@@ -61,20 +61,20 @@ Objetivo: volver a alinear la capa agentica con el proposito real del proyecto s
 ### Lectura Minima
 
 1. `AGENTS.md`.
-2. `docs/.generated/context-index.md` si existe.
+2. Ejecutar `bun run context -- show`.
 3. `docs/WORKING_MEMORY.md`.
-4. `docs/TOPICS.md`.
+4. `bun run context -- topics`.
 5. Track relevante en `docs/tracks/`.
 6. `docs/topics/local-codex-skills.md` si el drift involucra skills o slash commands.
 7. Este topic.
-8. `scripts/agent-context-audit.ts` y `scripts/context-index.ts` si hay que corregir validacion o generacion.
+8. `scripts/agent-context-audit.ts` y `scripts/context.ts` si hay que corregir validacion o consultas.
 
 No abrir docs largos, specs completas, rationale, archivos archivados ni referencias profundas salvo que una inconsistencia concreta lo requiera.
 
 ### Revisar
 
-- Ruta caliente: `AGENTS.md`, indice generado, `WORKING_MEMORY.md`, `TOPICS.md` y tracks activos siguen chicos y no son transcript.
-- Routing: topics relevantes existen, tienen triggers utiles y estan linkeados desde `docs/TOPICS.md`.
+- Ruta caliente: `AGENTS.md`, consulta dinámica, `WORKING_MEMORY.md` y tracks activos siguen chicos y no son transcript.
+- Routing: topics relevantes existen, tienen triggers utiles y se descubren mediante el catálogo dinámico.
 - Continuidad: track activo tiene estado, next step y refs que existen.
 - Skills: `docs/skills/` existe; `.agents/skills` es junction estable de compatibilidad y `skills:off` es no-op legacy.
 - OMP: `.omp/config.yml` sólo habilita `computer`; no hay lifecycle, wrapper local ni manifest/package project-local.
@@ -90,7 +90,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 - Actualizar links, triggers, frontmatter y referencias rotas obvias.
 - Mover informacion durable desde tracks a topic, decision o doc estable.
 - Marcar o archivar trabajos cerrados cuando el estado sea claro.
-- Regenerar `docs/.generated/context-index.md`.
+- Consultar `bun run context -- show` y ajustar fuentes canónicas.
 - Ajustar el audit para cubrir drift recurrente y barato de validar.
 
 ### Preguntar Antes
@@ -109,7 +109,7 @@ No abrir docs largos, specs completas, rationale, archivos archivados ni referen
 4. Ejecutar:
 
 ```powershell
-bun run context:index
+bun run context -- show
 bun run context:audit
 ```
 

@@ -9,9 +9,9 @@ triggers:
   - pantalla de tags
   - colecciones
 primary_refs:
-  - filtering-and-query-syntax.md
-  - global-shortcut-and-tray.md
-  - ui-surface-architecture.md
+  - docs/topics/filtering-and-query-syntax.md
+  - docs/topics/global-shortcut-and-tray.md
+  - docs/topics/ui-surface-architecture.md
   - ../../specs/006-tags-and-hotkeys/spec.md
   - ../tracks/012-tags-and-hotkeys.md
 ---

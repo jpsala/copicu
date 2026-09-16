@@ -10,9 +10,9 @@ triggers:
   - precarga
   - picker instantaneo
 primary_refs:
-  - filtering-and-query-syntax.md
-  - performance-and-memory.md
-  - picker-interaction.md
+  - docs/topics/filtering-and-query-syntax.md
+  - docs/topics/performance-and-memory.md
+  - docs/topics/picker-interaction.md
   - ../tracks/008-filtering-search-foundation.md
   - ../../scripts/research/codemirror-bundle-study.mjs
   - ../../scripts/research/codemirror-range-study.mjs
@@ -344,8 +344,10 @@ conserva el recorrido de foco y nunca acepta completion. Un mismo keypress no
 debe aceptar sugerencia Y activar un clip/aplicar efectos extra.
 Escape cierra la capa activa antes de descartar/esconder. Composicion IME gana
 sobre bindings de completion y aplicacion; una transaccion `input.compose`
-posterior a `compositionend` no prueba composicion vigente. No asumir que
-basicSetup protege handlers externos personalizados.
+posterior a `compositionend` no prueba composicion vigente. Los bindings del
+picker que se superponen con el keymap default de CodeMirror deben registrarse
+con precedencia alta y ceder cuando completion esta activa; un DOM handler sin
+precedencia puede quedar consumido por `basicSetup` antes de llegar a App.
 
 La configuracion recomendada es explicita, sin cargar por reflejo un IDE:
 historia, keymaps pertinentes, completion, presentacion accesible y soporte de

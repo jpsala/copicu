@@ -11,7 +11,7 @@ triggers:
   - impeccable
 primary_refs:
   - docs/topics/ui-surface-architecture.md
-  - docs/topics/ui-rethink.md
+  - docs/topics/appearance-and-themes.md
   - docs/topics/mantine-ui-system.md
   - docs/topics/picker-interaction.md
   - docs/tracks/001-settings-design.md
@@ -32,7 +32,7 @@ Antes de tocar UI, abrir `docs/topics/ui-surface-architecture.md`. Ese topic def
 1. Identificar superficie: picker, settings, command mode, item editor, `ui-host`, notifications o futuro history manager.
 2. Abrir el topic correspondiente:
    - arquitectura general: `docs/topics/ui-surface-architecture.md`;
-   - replanteo visual/superficies/temas: `docs/topics/ui-rethink.md`;
+   - Appearance, temas y density: `docs/topics/appearance-and-themes.md`;
    - controles Mantine/tema: `docs/topics/mantine-ui-system.md`;
    - interaccion del picker: `docs/topics/picker-interaction.md`;
    - prompts/toasts/scripts: `docs/tracks/009-ui-host-custom-surface.md`.
@@ -89,6 +89,6 @@ La UI de Copicu debe seguir siendo:
 
 Aplicarlo en el proximo corte UI relevante:
 
-1. Appearance con `mode + themeId` y presets built-in.
+1. Appearance según `docs/tracks/036-appearance-settings.md`.
 2. Decision de item editor standalone/inline.
 3. Auditoria visual de picker, Settings standalone, command palette, editor y `ui-host`.

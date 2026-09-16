@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Menu, Tabs } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen, type Event } from "@tauri-apps/api/event";
+import { emit, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import Keyboard from "lucide-react/dist/esm/icons/keyboard.mjs";
@@ -23,10 +23,7 @@ import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import {
   applyCopicuAppearance,
-  THEME_PRESET_OPTIONS,
   THEME_PRESET_SEARCH_TEXT,
-  type ThemeId,
-  type ThemeSetting,
 } from "../themeCatalog";
 import type {
   ActionContext,
@@ -82,6 +79,7 @@ import {
   UiTextarea,
   UiTooltip,
 } from "../ui/controls";
+import { AppearanceSettingsControl } from "../ui/AppearanceSettingsControl";
 import { ShortcutBadge } from "../ui/ShortcutBadge";
 import { SearchScopeEditor } from "../ui/SearchScopeEditor";
 import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
@@ -618,7 +616,7 @@ export function SettingsWindowApp() {
       setDraft(effectiveSettings);
       setShortcutStatus(await getAppShortcutStatus());
       if (isTauriRuntime()) {
-        await emitTo("main", SETTINGS_UPDATED_EVENT, nextSettings);
+        await emit(SETTINGS_UPDATED_EVENT, nextSettings);
         await closeSettingsWindow();
       }
     } catch (saveError) {
@@ -1162,24 +1160,6 @@ export function SettingsWindowApp() {
   useEffect(() => {
     let active = true;
 
-    Promise.all([
-      invoke<AppSettings>("get_settings"),
-      getAutostartStatus().catch(() => null),
-    ])
-      .then(([nextSettings, nextAutostartStatus]) => {
-        if (active) {
-          const normalizedSettings = normalizeSettings(nextSettings);
-          const effectiveSettings = settingsWithEffectiveAutostart(normalizedSettings, nextAutostartStatus);
-          setAutostartStatus(nextAutostartStatus);
-          setSettings(effectiveSettings);
-          setDraft(effectiveSettings);
-        }
-      })
-      .catch((loadError) => {
-        if (active) {
-          setError(String(loadError));
-        }
-      });
 
     listActions()
       .then((actions) => {
@@ -1254,36 +1234,76 @@ export function SettingsWindowApp() {
     let active = true;
     let unlisten: (() => void) | null = null;
     let unlistenScenario: (() => void) | null = null;
-    void listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event: Event<AppSettings>) => {
-      if (!active) {
-        return;
-      }
-      const nextSettings = normalizeSettings(event.payload);
-      const currentSettings = persistedSettingsRef.current;
-      const pickerChanged = {
-        searchTriggerMode: currentSettings.picker.searchTriggerMode !== nextSettings.picker.searchTriggerMode,
-        defaultSearchScopes: JSON.stringify(currentSettings.picker.defaultSearchScopes)
-          !== JSON.stringify(nextSettings.picker.defaultSearchScopes),
-        defaultExcludedSearchScopes: JSON.stringify(currentSettings.picker.defaultExcludedSearchScopes)
-          !== JSON.stringify(nextSettings.picker.defaultExcludedSearchScopes),
-      };
-      persistedSettingsRef.current = nextSettings;
-      setSettings(nextSettings);
-      setDraft((currentDraft) => ({
-        ...currentDraft,
-        picker: {
-          ...currentDraft.picker,
-          ...(pickerChanged.searchTriggerMode ? { searchTriggerMode: nextSettings.picker.searchTriggerMode } : {}),
-          ...(pickerChanged.defaultSearchScopes ? { defaultSearchScopes: nextSettings.picker.defaultSearchScopes } : {}),
-          ...(pickerChanged.defaultExcludedSearchScopes
-            ? { defaultExcludedSearchScopes: nextSettings.picker.defaultExcludedSearchScopes }
-            : {}),
-        },
-      }));
-    }).then((nextUnlisten) => {
-      if (active) unlisten = nextUnlisten;
-      else nextUnlisten();
-    });
+    let settingsRevision = 0;
+    let settingsHydrated = false;
+    const unlistenSettings = listen<AppSettings>(
+      SETTINGS_UPDATED_EVENT,
+      (event: Event<AppSettings>) => {
+        if (!active) return;
+        settingsRevision += 1;
+        const nextSettings = normalizeSettings(event.payload);
+        const currentSettings = persistedSettingsRef.current;
+        const pickerChanged = {
+          searchTriggerMode: currentSettings.picker.searchTriggerMode !== nextSettings.picker.searchTriggerMode,
+          defaultSearchScopes: JSON.stringify(currentSettings.picker.defaultSearchScopes)
+            !== JSON.stringify(nextSettings.picker.defaultSearchScopes),
+          defaultExcludedSearchScopes: JSON.stringify(currentSettings.picker.defaultExcludedSearchScopes)
+            !== JSON.stringify(nextSettings.picker.defaultExcludedSearchScopes),
+        };
+        persistedSettingsRef.current = nextSettings;
+        setSettings(nextSettings);
+        setDraft((currentDraft) => {
+          const draftWasClean = JSON.stringify(currentDraft) === JSON.stringify(currentSettings);
+          if (!settingsHydrated || draftWasClean) {
+            return nextSettings;
+          }
+          return {
+            ...currentDraft,
+            picker: {
+              ...currentDraft.picker,
+              ...(pickerChanged.searchTriggerMode ? { searchTriggerMode: nextSettings.picker.searchTriggerMode } : {}),
+              ...(pickerChanged.defaultSearchScopes ? { defaultSearchScopes: nextSettings.picker.defaultSearchScopes } : {}),
+              ...(pickerChanged.defaultExcludedSearchScopes
+                ? { defaultExcludedSearchScopes: nextSettings.picker.defaultExcludedSearchScopes }
+                : {}),
+            },
+          };
+        });
+        settingsHydrated = true;
+      },
+    );
+    void unlistenSettings
+      .then((nextUnlisten) => {
+        if (!active) {
+          nextUnlisten();
+          return;
+        }
+        unlisten = nextUnlisten;
+        const revisionAtRequest = settingsRevision;
+        void Promise.all([
+          invoke<AppSettings>("get_settings"),
+          getAutostartStatus().catch(() => null),
+        ])
+          .then(([nextSettings, nextAutostartStatus]) => {
+            if (!active || settingsRevision !== revisionAtRequest) return;
+            const normalizedSettings = normalizeSettings(nextSettings);
+            const effectiveSettings = settingsWithEffectiveAutostart(
+              normalizedSettings,
+              nextAutostartStatus,
+            );
+            settingsHydrated = true;
+            setAutostartStatus(nextAutostartStatus);
+            persistedSettingsRef.current = effectiveSettings;
+            setSettings(effectiveSettings);
+            setDraft(effectiveSettings);
+          })
+          .catch((loadError) => {
+            if (active) setError(String(loadError));
+          });
+      })
+      .catch((loadError) => {
+        if (active) setError(String(loadError));
+      });
     void listen<ActiveScenarioSession | null>(SCENARIO_SESSION_CHANGED_EVENT, (event) => {
       if (active) setActiveScenarioSession(event.payload);
     }).then((nextUnlisten) => {
@@ -1761,6 +1781,13 @@ function SettingsPanel({
     "in realtime mode tags and conditions wait for enter",
     `item preview full image markdown text zoom context menu magnifier shortcut ${draft.picker.previewShortcut}`,
   ].join(" ");
+  const appearanceSearchText = [
+    "color mode system light dark",
+    "theme preset colors",
+    "density standard compact row spacing",
+    "appearance preview",
+    THEME_PRESET_SEARCH_TEXT,
+  ].join(" ");
   const aboutSearchText = [
     appInfo?.name ?? "Copicu",
     appInfo?.version ?? "",
@@ -1855,6 +1882,7 @@ function SettingsPanel({
     (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "picker" && pickerSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "appearance" && appearanceSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "scenarios" && scenarioSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "scripts" && scriptSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "tags" && tagSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
@@ -2304,48 +2332,17 @@ function SettingsPanel({
             ) : null}
 
             {displayedSections.some((section) => section.id === "appearance") ? (
-              <SettingsSection title="Appearance" description="Visual behavior for the picker and settings.">
-                {visible("appearance", "Theme", "System light dark mode") ? (
-                  <SettingRow label="Theme" description="Use the OS theme or force a specific appearance.">
-                    <UiSelect
-                      aria-label="Theme"
-                      value={draft.appearance.theme}
-                      data={[
-                        { value: "system", label: "System" },
-                        { value: "light", label: "Light" },
-                        { value: "dark", label: "Dark" },
-                      ]}
-                      allowDeselect={false}
-                      onChange={(value) =>
-                        onDraftChange({
-                          ...draft,
-                          appearance: {
-                            ...draft.appearance,
-                            theme: (value ?? "system") as ThemeSetting,
-                          },
-                        })
-                      }
-                    />
-                  </SettingRow>
-                ) : null}
-                {visible("appearance", "Preset", THEME_PRESET_SEARCH_TEXT) ? (
-                  <SettingRow label="Preset" description="Visual token preset shared by picker, prompts and Mantine controls.">
-                    <UiSelect
-                      aria-label="Theme preset"
-                      value={draft.appearance.themeId}
-                      data={THEME_PRESET_OPTIONS}
-                      allowDeselect={false}
-                      onChange={(value) =>
-                        onDraftChange({
-                          ...draft,
-                          appearance: {
-                            ...draft.appearance,
-                            themeId: (value ?? "default") as ThemeId,
-                          },
-                        })
-                      }
-                    />
-                  </SettingRow>
+              <SettingsSection title="Appearance" description="Color, theme and density across Copicu.">
+                {visible("appearance", "Color mode Theme Density Preview", appearanceSearchText) ? (
+                  <AppearanceSettingsControl
+                    appearance={draft.appearance}
+                    onChange={(appearance) =>
+                      onDraftChange({
+                        ...draft,
+                        appearance,
+                      })
+                    }
+                  />
                 ) : null}
               </SettingsSection>
             ) : null}

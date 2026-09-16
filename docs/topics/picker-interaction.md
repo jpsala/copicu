@@ -79,17 +79,25 @@ Implementacion actual 2026-06-05:
 
 El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 
-- search arriba como unica cabecera;
+- search como cabecera, con accesos directos mediante iconos a New item, Search/AI, Realtime/Enter y ayuda; en ventana estrecha la busqueda ocupa una fila completa y los controles una segunda;
+- bandera y contador global siempre visibles junto al kebab abren directamente el menu de marcados; no representan la seleccion transitoria de checkboxes ni se reducen al filtro actual. Las acciones sobre marcados preceden las de resultados actuales y esperan la carga completa del conjunto global; Enter abre, Escape devuelve foco al boton y todas las acciones participan de la navegacion de teclado;
+- la seleccion explicita usa un boton con contador a la izquierda del buscador; en ventana estrecha inicia la fila de controles. Permanece visible incluso en cero; su menu reune seleccionar visibles, limpiar, acciones compartidas, metadata, marcar y borrar el grupo. Reemplaza el checkbox maestro y la barra adicional, sin cambiar la altura del feed al seleccionar;
+- el alcance de busqueda permanece visible debajo del header, incluso con query vacia: un unico selector muestra los campos efectivos, mientras los filtros adicionales quedan separados; la indicacion de defaults vive dentro del selector;
+- un borrador pendiente distingue los campos de la proxima busqueda de los resultados aplicados; limpiar recupera los campos predeterminados sin ocultarlos. En modo AI no se anticipan campos que el planner aun no determino;
 - feed preview-first;
 - cada item muestra solo contenido por defecto;
 - no mostrar fecha/hora, tipo, cantidad de caracteres ni cantidad de lineas en items normales;
 - si hay metadata (`title`, `tags`, `notes`), mostrarla como franja visual separada arriba del contenido;
-- acciones por item en boton vertical `...`/kebab dentro del item, sin reservar espacio grande;
+- checkbox, marca persistente, Delete y menu kebab aparecen al pasar el mouse, enfocar la fila, navegar hasta ella o abrir su menu; Delete siempre queda disponible en hover;
+- bandera, Delete y kebab forman una unica fila de controles alineados a la derecha; la marca persistente sigue visible fuera de esos estados y no significa favorito ni pin; el gutter de acciones es estable, sin tapar ni desplazar el preview;
+- current, hover y seleccion multiple son estados distintos: clic simple y navegacion por teclado mueven current sin quitar checks. La seleccion sigue limitada a los resultados cargados y se limpia al aplicar otra busqueda u ocultar el picker; las marcas permanecen. El contextual de una fila fuera del grupo limpia la seleccion y opera solo esa fila;
 - acciones actuales: activate, paste, edit, edit metadata, delete;
 - texto normal se muestra como preview monospace;
 - Markdown con imagenes se renderiza preservando el orden del origen: bloques de texto y lineas `![...](...)` aparecen en la misma secuencia;
 - imagenes Markdown se muestran en el punto donde aparecen, no reordenadas arriba;
 - items `image` usan el PNG principal como preview visible grande; el thumbnail chico queda solo como artefacto auxiliar, no como preview principal del picker.
+- tanto en clips de imagen como en imagenes Markdown locales, un clic selecciona y el doble clic activa el clip igual que el texto; la lupa en hover o foco de teclado abre el preview con zoom, sin activar ni copiar el clip;
+- cuando el backend entrega snippets de coincidencia, aparecen antes del titulo y la metadata, con el fragmento resaltado como evidencia principal; el preview original sigue disponible y expandible, sin cambiar la activacion;
 - `Inbox` es estado durable del item, no una view, tag ni seleccion `marked`: aparece como pill compacto `Inbox ×` sin aumentar la altura base de la fila. El pill es una accion directa `Remove from Inbox`; quita solo ese estado y nunca borra el item.
 - Los items Inbox se ordenan antes que el historial regular; dentro de cada grupo se conserva el orden mas reciente primero.
 
@@ -167,10 +175,11 @@ Modos de filtro:
 
 Navegacion por teclado:
 
-- `Up`/`Down`: mover seleccion un item.
+- Con el editor de consulta enfocado y sin completion visible, `Up`/`Down`
+  mueve la selección un item sin perder foco.
 - `Ctrl+click`: selección aditiva estándar. El primer `Ctrl+click` conserva el ítem activo como parte del conjunto y alterna la fila clickeada; los siguientes alternan sobre el conjunto explícito.
-- `PgUp`/`PgDown`: saltar una pagina visual.
-- `Home`/`End`: ir al primer/ultimo item visible.
+- En ese mismo estado, `PgUp`/`PgDown` salta una pagina visual.
+- `Home`/`End` y `Shift`+flechas conservan edición y selección de texto.
 - `Enter`: activar item seleccionado.
 - `Shift+Enter`: pegar item seleccionado en ventana previa en MVP 0 Windows.
 - `Escape`: limpiar filtro si hay texto; si no hay filtro, ocultar/cerrar ventana segun setting.
@@ -225,7 +234,7 @@ Activacion:
 - Todo item nuevo capturado desde el clipboard pasa a ser el activo despues del refresh o en la proxima apertura del picker.
 - MVP inmediato: `Enter` copia el item seleccionado al clipboard y oculta la ventana.
 - Despues: setting para que `Enter` pegue en la ventana previa.
-- Click selecciona.
+- Click cambia current sin modificar los checks; checkbox, Ctrl-click y Shift-click modifican la seleccion explicita.
 - Doble click activa.
 
 Mouse y acciones contextuales:
@@ -284,10 +293,9 @@ Settings a prever:
   - plain;
   - regex;
   - fuzzy.
-- `Preview density`:
-  - compact;
-  - comfortable;
-  - large previews.
+- `Density`: `Standard | Compact`, según el contrato único de
+  `docs/topics/appearance-and-themes.md` y el trabajo retomable en
+  `docs/tracks/036-appearance-settings.md`.
 
 En MVP 0, aunque no haya settings UI completa, el codigo debe evitar acoplar estos comportamientos de forma que sean dificiles de configurar despues.
 

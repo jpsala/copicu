@@ -4,12 +4,12 @@ Guía humana mínima para mantener la capa AOS local sin duplicar el runtime OMP
 
 ## Ruta Contextual
 
-1. Consultar `docs/.generated/context-index.md`.
+1. Ejecutar `bun run context -- show`.
 2. Leer `docs/WORKING_MEMORY.md`.
-3. Elegir el topic, track o spec puntual desde `docs/TOPICS.md`.
+3. Elegir el topic, track o spec puntual desde `bun run context -- topics` o `bun run context -- query`.
 4. Promover sólo valor durable faltante a su fuente estable.
 
-AOS conserva docs, índices, memoria, topics, tracks, specs, skills y gates locales. OMP decide modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime.
+AOS conserva docs, memoria, topics, tracks, specs, skills y gates locales; el catálogo se lee bajo demanda. OMP decide modelos, effort, tools, browser, todos, agentes, planificación, paralelización, idioma, estilo y modos runtime.
 
 ## Gates Locales
 
@@ -28,7 +28,7 @@ El binding local `computer` se habilita en `.omp/config.yml`; no hay extensión 
 ## Checks De Contexto
 
 ```powershell
-bun run context:index
+bun run context -- show
 bun run context:audit
 npm run skills:status
 ```

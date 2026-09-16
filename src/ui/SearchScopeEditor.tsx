@@ -1,10 +1,8 @@
 import { Popover } from "@mantine/core";
-import { Check, CircleDot, CornerDownRight, Minus } from "lucide-react";
+import { Check, ChevronDown, CircleDot, CornerDownRight, Minus } from "lucide-react";
 import { useEffect } from "react";
 import {
-  effectiveSearchScopeLeaves,
   sameSearchScopeSelection,
-  SEARCH_SCOPE_LABELS,
   scopeOptions,
   scopeQuery,
   scopeSummary,
@@ -34,32 +32,6 @@ export function SearchScopeOption({ label, state, detail, actionLabel }: {
         <span className="scope-option-detail">{detail}</span>
       </span>
       <span className="scope-option-action">{actionLabel}</span>
-    </span>
-  );
-}
-export function SearchScopeSummary({ selection }: { selection: SearchScopeSelection }) {
-  const normalizedAll = selection.included.length === 0 || selection.included.includes("all");
-  const leaves = effectiveSearchScopeLeaves(selection);
-  const labels = leaves.map((scope) => SEARCH_SCOPE_LABELS[scope]);
-  if (normalizedAll && selection.excluded.length > 0) {
-    labels.push("MIME", "Kind");
-  }
-  return (
-    <span className="search-scope-tokens">
-      {normalizedAll && selection.excluded.length === 0 ? (
-        <span className="search-scope-token" aria-label="Included: all searchable fields">
-          <Check size={12} aria-hidden="true" /> All fields
-        </span>
-      ) : (
-        <>
-          {labels.length === 0 ? <span className="search-scope-empty">No text fields</span> : null}
-          {labels.map((label) => (
-            <span key={label} className="search-scope-token" aria-label={`${label}: included`}>
-              <Check size={12} aria-hidden="true" /> {label}
-            </span>
-          ))}
-        </>
-      )}
     </span>
   );
 }
@@ -93,9 +65,10 @@ export function SearchScopePicker({
   return (
     <Popover withinPortal position="bottom-start" shadow="md" trapFocus returnFocus onChange={onOpenChange}>
       <Popover.Target>
-        <button type="button" className="search-scope-trigger" aria-label="Edit search fields"
+        <button type="button" className="search-scope-trigger" aria-label={`Edit search fields: ${scopeSummary(selection)}`}
           aria-haspopup="dialog" disabled={disabled}>
-          <SearchScopeSummary selection={selection} />
+          <span className="search-scope-value">{scopeSummary(selection)}</span>
+          {!disabled ? <ChevronDown size={12} aria-hidden="true" /> : null}
         </button>
       </Popover.Target>
       <Popover.Dropdown className="picker-menu-dropdown search-scope-menu" role="dialog" aria-label="Search fields">

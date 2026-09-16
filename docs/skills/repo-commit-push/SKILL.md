@@ -16,7 +16,7 @@ Use this skill to close a repository batch cleanly.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
-bun scripts/context-index.ts
+bun scripts/context.ts
 bun scripts/agent-context-audit.ts
 ```
 

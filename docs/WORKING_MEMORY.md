@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-09-11. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-09-16. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -10,21 +10,27 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete`; CodeMirror publicado e instalado en `v0.4.17`.
-- **Referencia:** `specs/012-codemirror-query-editor/spec.md`, `docs/topics/codemirror-query-editor.md`.
-- **Siguiente acción:** continuar dogfood de la instalada y evaluar claridad de completion de scopes: `in:ti` con `content,title` heredados produce `in:content,title`, no `in:title`; ver topic. Priorizar mostrar el resultado sin cambiar semantica por sorpresa. IME real cuando este disponible y baseline comparable antes de afirmar mejoras de rendimiento.
+- **Estado:** `complete`; Appearance 036 implementado y verificado en desarrollo.
+- **Referencia:** `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md`.
+- **Resultado:** Color mode segmentado, selector accesible de ocho temas,
+  `Density: Standard | Compact`, preview sintética y propagación global de
+  Appearance; build y visual suite `328/328` pasan.
+- **Próximo paso:** dogfood antes de decidir publicación o promoción a instalada.
+  La instalada permanece en `v0.4.17`. El worktree conserva cambios previos
+  mezclados: separar autoría y alcance antes de commit o publicación.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
+| Appearance | complete/dev | `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md` | Dogfood de temas y Density; no publicado ni promovido a instalada. |
 | Confiabilidad picker / metadata | complete | `docs/tracks/035-picker-reliability.md` | Fixes y retencion verificados; historicos se limitan solo al recapturarse. Ver estado de distribucion debajo. |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | RPC / automatizacion externa | planned | `docs/tracks/034-local-rpc-cli.md`, `docs/topics/actions-and-scripting-api.md` | Implementar V1 en una pasada; PowerShell y AutoHotkey usan CLI sobre Named Pipe, sin SQL/Tauri/Host passthrough. |
 | Actions/scripts/hotkeys | complete | `docs/tracks/012-tags-and-hotkeys.md`, `docs/topics/tag-management-hotkeys.md`, `docs/tracks/004-actions-scripting.md` | Installer distribuye solo `030` Extract URLs y `031` Join Markdown, sin sobrescribir; ejemplos restantes quedan como fixtures del repo. |
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | complete/dogfood | `specs/011-selection-aware-metadata-inspector/spec.md`, `docs/topics/filtering-and-query-syntax.md` | `F2` unifica content + metadata con commit atómico; utility standalone conserva single/multi. Continuar dogfood del corte distribuido sin cambiar Search/Find. |
-| Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/tracks/010-ui-rethink.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
+| Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
 | Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.17` publicada e instalada: editor CodeMirror y cursor fijo visible comprobados en release. Continuar dogfood; el smoke no certifica la migración de tags/suppressions ni resuelve el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
@@ -43,7 +49,7 @@ Updater: trust root rotada en `v0.3.7`; `<=0.3.6` requiere instalacion manual. C
 
 ## Comandos De Contexto
 
-OS: `bun run context:index`, `bun run context:audit`.
+OS: `bun run context -- show`, `bun run context:audit`.
 Producto segun riesgo: `npm run build`, cargo/Tauri tests, `node --test tests/ai-query-planner.test.mjs`, `npm run rust:test`, `mise run release-vite-chunk-check`, perf/visual focalizado. Release/instalada: `npm run install:current`, `npm run release:windows`.
 
 ## Promocion De Memoria

@@ -8,10 +8,10 @@ Es downstream de AOS: recibe una capa agentica local adaptada, no el metasistema
 
 Antes de trabajar en este proyecto, usar una ruta liviana:
 
-1. Consultar `docs/.generated/context-index.md` si existe; no volcarlo entero si solo hace falta elegir ruta.
+1. `bun run context -- show` para obtener un resumen fresco, sin cache persistente.
 2. Leer `docs/WORKING_MEMORY.md`.
 3. Leer `docs/README.md` solo si hace falta mapa documental.
-4. Consultar `docs/TOPICS.md` o buscar por triggers para elegir topic.
+4. `bun run context -- topics` o búsqueda por triggers para elegir un topic.
 5. Abrir solo el topic, track, spec o codigo puntual segun el pedido.
 
 No abrir por defecto docs largos (`PROJECT`, `ASSISTANT_RULES`, `DEVELOPMENT`, specs completas, referencias). Preferir búsquedas scoped (`src`, `src-tauri/src`, `docs/topics`); `docs/skills/impeccable/` es solo para UI/impeccable.
@@ -45,7 +45,12 @@ Bootstrap estable: OMP gobierna la ejecución y el runtime de agentes; Copicu co
 - `aos-realinear-os` / `realinear os` es operación manager: abrir `docs/topics/agentic-os-operations.md`; no crear prompt.
 - `computer` built-in vive sólo en `.omp/config.yml`: avisar UI visible, inspeccionar `read_only`, AX no basta para WebView2 y C0 exige app externa -> hotkey foreground -> type global sin targetear Copicu -> token visible.
 - Capacidades locales en `docs/skills/`, discovery en `.agents/skills` y comando opt-in `.omp/commands/research.md`; cero superficie activa `.pi`.
-- App instalada: si JP pide promover dev a instalada/crear instalador/instalar current, ejecutar `npm run install:current`; toca procesos Copicu instalados, asi que avisar y verificar evidencia.
+- Cierre de producto por default: tras completar y verificar un batch publicable,
+  ejecutar `npm run release:install` sin esperar otro pedido; publica el siguiente
+  release estable, instala ese mismo artefacto y reporta la URL. Omitir sólo ante
+  instrucción explícita, cambios ajenos/inseguros, destino ambiguo, credenciales
+  faltantes o una salvaguarda obligatoria; dejar el bloqueo exacto. Para promoción
+  local sin publicación solicitada explícitamente, usar `npm run install:current`.
 
 ## Persistencia
 

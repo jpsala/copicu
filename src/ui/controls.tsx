@@ -61,6 +61,7 @@ export const UiIconButton = forwardRef<
     children?: ReactNode;
     type?: ButtonElementType;
     onClick?: MouseEventHandler<HTMLButtonElement>;
+    onDoubleClick?: MouseEventHandler<HTMLButtonElement>;
     onMouseDown?: MouseEventHandler<HTMLButtonElement>;
     onContextMenu?: MouseEventHandler<HTMLButtonElement>;
   }

@@ -14,7 +14,7 @@ Este archivo es router operativo, no historia. La version larga previa quedo arc
 | --- | --- | --- | --- |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Revisar otra extraccion mecanica chica sin tocar runner Node. |
 | Actions/scripts/hotkeys | active/validated | `docs/tracks/004-actions-scripting.md`, `docs/tracks/012-tags-and-hotkeys.md`, `specs/008-clipboard-enrichment/spec.md` | Flujo manual de edicion de shortcuts de scripts validado; patch preview queda opcional/futuro si JP lo pide. |
-| Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/tracks/010-ui-rethink.md` | Dogfood prewarm de `metadata`; mantenerlo si la velocidad percibida compensa el coste idle. |
+| Performance/UI windows | active | `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md` | Dogfood prewarm de `metadata`; mantenerlo si la velocidad percibida compensa el coste idle. |
 | Open source growth | active | `docs/tracks/013-open-source-growth.md` | `v0.2.1` publicado y PR `#10` mergeado a `main`; siguiente paso: elegir proximo frente de crecimiento o release hardening. |
 | Dev/instalada | active | `docs/topics/windows-installer.md`, `docs/tracks/014-performance-memory.md` | `install:current` ya quedo revalidado end-to-end; siguiente corte: decidir si recuperar code split o atacar el warning de chunk grande. |
 | AOS/docs | active | `docs/topics/docs-knowledge-system.md` | Mantener ruta caliente liviana; usar `docs/topics/agentic-os-operations.md` para `realinear os`. |

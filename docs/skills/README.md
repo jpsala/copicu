@@ -9,14 +9,6 @@
 - Si se agrega o modifica una skill, editar `docs/skills/<nombre>/`.
 - Si una skill es operativa del sistema, documentarla tambien en topics/working memory/decisions cuando cambie el comportamiento durable.
 
-## Contenido Actual
-
-- `impeccable/`: skill local para trabajo de UI/frontend.
-- `speckit-*/`: skills locales del workflow SpecKit.
-- `evaluar-skills/`, `realinear-os/`, `repo-commit-push/`, SpecKit e `impeccable/`: capacidades locales preservadas; no son aliases lifecycle.
-- La intención cotidiana y las tools generales pertenecen a OMP nativo, no a skills locales.
-- `computer` es built-in OMP habilitado por `.omp/config.yml`; research vive en
-  `.omp/commands/research.md`, release en su script/doc y taskflows sólo en backup.
 
 ## Validacion
 
@@ -24,7 +16,7 @@
 powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
 powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
 python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/<nombre>
-bun run context:index
+bun run context -- show
 bun run context:audit
 ```
 

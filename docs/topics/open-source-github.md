@@ -335,7 +335,7 @@ Se publica como parte del repo:
 - `docs/PROJECT.md`;
 - `docs/ASSISTANT_RULES.md`;
 - `docs/DEVELOPMENT.md`;
-- `docs/TOPICS.md`;
+- `bun run context -- topics`;
 - `docs/topics/`;
 - `docs/tracks/`;
 - `specs/`.

@@ -21,7 +21,7 @@ primary_refs:
   - src/ui/window/windowChrome.ts
   - src/ui/window/windowVariants.ts
   - src-tauri/tauri.conf.json
-  - src-tauri/capabilities/default.json
+  - src-tauri/capabilities/surface-main.json
 ---
 
 # Window State And Monitor Policy

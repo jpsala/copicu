@@ -957,6 +957,8 @@ pub struct AppearanceSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub theme_id: ThemeId,
+    #[serde(default)]
+    pub density: DensitySetting,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1061,6 +1063,14 @@ pub enum ThemeSetting {
     Dark,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DensitySetting {
+    #[default]
+    Standard,
+    Compact,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ThemeId {
@@ -1106,6 +1116,7 @@ impl Default for AppSettings {
             appearance: AppearanceSettings {
                 theme: ThemeSetting::System,
                 theme_id: ThemeId::Default,
+                density: DensitySetting::Standard,
             },
             editor: EditorSettings::default(),
             tray: TraySettings::default(),
@@ -6325,6 +6336,7 @@ mod tests {
         assert_eq!(settings.ai, AiSettings::default());
         assert_eq!(settings.ai.api_key, "");
         assert_eq!(settings.appearance.theme_id, ThemeId::Default);
+        assert_eq!(settings.appearance.density, DensitySetting::Standard);
         assert_eq!(settings.editor, EditorSettings::default());
         assert!(settings.general.capture_enabled);
         assert!(settings.picker.promote_active_on_copy);

@@ -17,12 +17,13 @@ primary_refs:
   - AGENTS.md
   - docs/README.md
   - docs/WORKING_MEMORY.md
-  - docs/TOPICS.md
   - docs/GLOSSARY.md
   - docs/skills/
   - docs/topics/omp-agentic-os.md
   - docs/topics/agent-tool-routing.md
-  - scripts/context-index.ts
+  - scripts/context.ts
+  - scripts/lib/context-catalog.ts
+  - scripts/lib/context-router.ts
   - scripts/agent-context-audit.ts
 ---
 
@@ -33,12 +34,12 @@ Copicu usa una capa AOS local mínima para conocimiento durable. La regla es lee
 ## Ruta Caliente
 
 ```text
-docs/.generated/context-index.md -> docs/WORKING_MEMORY.md -> docs/TOPICS.md -> topic/track/spec puntual
+bun run context -- show -> docs/WORKING_MEMORY.md -> context -- topics -> topic/track/spec puntual
 ```
 
 `WORKING_MEMORY.md` es router operativo corto; tracks, topics, decisiones y specs
-son las fuentes durables según el tipo de conocimiento. El índice se regenera con
-`bun run context:index` y la auditoría con `bun run context:audit`.
+son las fuentes durables según el tipo de conocimiento. El catálogo se consulta
+en vivo con `bun run context -- show|topics|query`, sin escritura ni cache.
 
 ## Continuidad Durable
 
@@ -66,6 +67,6 @@ El built-in `computer`, el comando opt-in `.omp/commands/research.md` y las skil
 
 ## Mantenimiento
 
-No convertir ruta caliente, tracks activas o docs en transcript. Integrar,
-indexar o archivar documentos preexistentes con destino claro. Para cambios de
-la capa agentica, regenerar índice, auditar y revisar `git diff --check`.
+No convertir ruta caliente, tracks activas o docs en transcript. Integrar o
+archivar documentos preexistentes con destino claro. Para cambios de la capa
+agentica, consultar el catálogo dinámico y auditar con `bun run context:audit`.

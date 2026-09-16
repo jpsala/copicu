@@ -13,11 +13,10 @@ triggers:
   - impeccable
 primary_refs:
   - docs/topics/window-state-and-monitor-policy.md
-  - docs/topics/ui-rethink.md
+  - docs/topics/appearance-and-themes.md
   - docs/topics/custom-window-system.md
   - docs/topics/mantine-ui-system.md
   - docs/topics/ui-design-and-impeccable.md
-  - docs/tracks/010-ui-rethink.md
   - src/main.tsx
   - src/styles.css
   - src/mantineTheme.ts
@@ -31,15 +30,14 @@ Contrato operativo para tocar UI en Copicu.
 
 ## Regla Corta
 
-Antes de cambiar UI, abrir:
+Antes de cambiar UI, abrir este topic y `docs/topics/ui-design-and-impeccable.md`.
+Agregar sólo el canon de la superficie afectada:
 
-1. `docs/topics/ui-surface-architecture.md`
-2. `docs/topics/ui-rethink.md`
-3. `docs/topics/mantine-ui-system.md`
-4. `docs/topics/ui-design-and-impeccable.md`
-5. `docs/tracks/010-ui-rethink.md`
+- Appearance, temas o density: `docs/topics/appearance-and-themes.md`;
+- controles Mantine: `docs/topics/mantine-ui-system.md`;
+- picker o selección: `docs/topics/picker-interaction.md`;
+- ventanas standalone o chrome: `docs/topics/custom-window-system.md`.
 
-Si el cambio toca picker o seleccion, abrir tambien `docs/topics/picker-interaction.md`.
 
 Si el cambio toca ventanas standalone, labels/routing/capabilities por ventana, `decorations`, `transparent`, frameless/custom titlebar, drag regions o window chrome, abrir tambien `docs/topics/custom-window-system.md`.
 
@@ -188,8 +186,8 @@ Si la ventana principal queda vacia en dev tras instalar/cambiar deps:
 
 Cuando se toca UI:
 
-- `docs/tracks/010-ui-rethink.md` para estado vivo del corte.
-- `docs/topics/ui-rethink.md` si cambia el modelo de superficies, temas o direccion visual.
+- el track específico del corte para estado retomable;
+- `docs/topics/appearance-and-themes.md` si cambia modo, temas o density;
 - `docs/topics/mantine-ui-system.md` si cambia uso de Mantine/wrappers/theme.
 - `docs/topics/ui-design-and-impeccable.md` si cambia el workflow de QA/polish.
 - `docs/WORKING_MEMORY.md` solo para una linea corta de estado operativo.
