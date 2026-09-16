@@ -242,17 +242,17 @@ Release Windows local todo-en-uno:
 npm run release:windows
 ```
 
-Cierre automático canónico — publica el siguiente patch estable, instala el
-mismo instalador ya construido, verifica proceso/versión y devuelve la URL:
+Cierre manual canónico cuando JP autoriza explícitamente publicar e instalar:
 
 ```powershell
 npm run release:install
 ```
 
-Acepta `-- -Bump minor|major|rc`, `-Title`, `-Notes` y `-PreRelease`. Es el
-default al terminar un batch publicable; detenerse antes de publicar si hay
-cambios ajenos/inseguros, secretos, destino ambiguo, validaciones fallidas o
-credenciales faltantes.
+Publica el siguiente release estable, instala el mismo artefacto, verifica
+proceso/versión y devuelve la URL. Acepta `-- -Bump minor|major|rc`, `-Title`,
+`-Notes` y `-PreRelease`. Nunca ejecutarlo por default al terminar un batch:
+detenerse sin publicar ante ausencia de autorización, cambios ajenos/inseguros,
+secretos, destino ambiguo, validaciones fallidas o credenciales faltantes.
 
 ### Separar Codigo, Release E Instalada
 

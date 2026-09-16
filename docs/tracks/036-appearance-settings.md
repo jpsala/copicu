@@ -119,4 +119,4 @@ item seleccionado y su ancla visual, no sólo el offset numérico de scroll.
   Settings angosto, los ocho temas, Standard/Compact, preview y propagación en
   vivo de High Contrast/Compact al picker; se restauró Dark/Moss/Standard.
 
-El corte queda completo en desarrollo. No fue publicado, instalado ni promovido.
+El corte fue publicado e instalado como `v0.4.19`; continuar dogfood desde ese release.

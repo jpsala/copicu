@@ -45,12 +45,12 @@ Bootstrap estable: OMP gobierna la ejecución y el runtime de agentes; Copicu co
 - `aos-realinear-os` / `realinear os` es operación manager: abrir `docs/topics/agentic-os-operations.md`; no crear prompt.
 - `computer` built-in vive sólo en `.omp/config.yml`: avisar UI visible, inspeccionar `read_only`, AX no basta para WebView2 y C0 exige app externa -> hotkey foreground -> type global sin targetear Copicu -> token visible.
 - Capacidades locales en `docs/skills/`, discovery en `.agents/skills` y comando opt-in `.omp/commands/research.md`; cero superficie activa `.pi`.
-- Cierre de producto por default: tras completar y verificar un batch publicable,
-  ejecutar `npm run release:install` sin esperar otro pedido; publica el siguiente
-  release estable, instala ese mismo artefacto y reporta la URL. Omitir sólo ante
-  instrucción explícita, cambios ajenos/inseguros, destino ambiguo, credenciales
-  faltantes o una salvaguarda obligatoria; dejar el bloqueo exacto. Para promoción
-  local sin publicación solicitada explícitamente, usar `npm run install:current`.
+- Publicar o instalar requiere pedido explícito de JP. `npm run release:install`
+  es el cierre manual canónico cuando JP autoriza ambas acciones: publica el
+  siguiente release estable, instala ese mismo artefacto y reporta la URL.
+  Sin esa autorización, limitarse a verificar el batch y dejar el estado listo;
+  `npm run install:current` también requiere pedido explícito porque toca
+  procesos y la instalación local.
 
 ## Persistencia
 

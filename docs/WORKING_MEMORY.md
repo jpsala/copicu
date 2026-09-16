@@ -15,8 +15,8 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 - **Resultado:** `v0.4.19` publica Color mode segmentado, ocho temas,
   `Density: Standard | Compact`, preview sintética y propagación global;
   build y visual suite `328/328` pasan.
-- **Próximo paso:** dogfood del release instalado. El cierre canónico
-  `npm run release:install` publica, instala el mismo artefacto y devuelve URL.
+- **Próximo paso:** dogfood de `v0.4.19`. `npm run release:install` queda como
+  cierre manual sólo cuando JP autoriza explícitamente publicar e instalar.
 
 ## Lectura Rapida
 
