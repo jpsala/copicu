@@ -159,6 +159,16 @@ escritura con cursor fijo visible comprobadas. No certifica IME, rendimiento
 comparativo ni resolucion del hang intermitente.
 Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.17>.
 
+Estado 2026-09-16: `v0.4.18` publicó el corte funcional, pero el build tomó una
+private key global ajena y su firma updater no coincide con la trust root de
+Copicu. Se conserva el tag inmutable y queda supersedido por `v0.4.19`.
+
+`v0.4.19` recompiló el mismo corte con la key canónica local, sin warning de
+mismatch; instalador, firma y `latest.json` publicados. SHA256
+`067D8A5AF394B0CBFC175555738880AE56C91CE279CBAF7F7027FA45284DDF1E`.
+El manifest `latest` declara `0.4.19` y la app instalada reporta `0.4.19`.
+Release: <https://github.com/jpsala/copicu/releases/tag/v0.4.19>.
+
 La private key anterior no estaba disponible al cortar `v0.3.7`, por lo que JP aprobo rotar la trust root del updater. Consecuencia: instalaciones `v0.3.6` o anteriores no pueden verificar `latest.json` de `v0.3.7` y necesitan instalar este corte manualmente; desde `v0.3.7`, futuros updates vuelven a funcionar con la nueva clave. No rotar otra vez salvo perdida/compromiso explicito.
 
 La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, version local, target y estado de auto-update. `Check now` consulta el manifest firmado y, cuando encuentra una version nueva, habilita `Update now`; esa accion vuelve a validar el canal, descarga, verifica la firma Tauri, instala y relanza aunque `autoUpdate.enabled` este apagado. El modo automatico conserva el mismo pipeline sin quitarle al usuario el control manual.

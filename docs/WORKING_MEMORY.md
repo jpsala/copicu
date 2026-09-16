@@ -10,20 +10,19 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete`; Appearance 036 implementado y verificado en desarrollo.
+- **Estado:** `complete/released`; Appearance 036 publicado e instalado.
 - **Referencia:** `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md`.
-- **Resultado:** Color mode segmentado, selector accesible de ocho temas,
-  `Density: Standard | Compact`, preview sintética y propagación global de
-  Appearance; build y visual suite `328/328` pasan.
-- **Próximo paso:** dogfood antes de decidir publicación o promoción a instalada.
-  La instalada permanece en `v0.4.17`. El worktree conserva cambios previos
-  mezclados: separar autoría y alcance antes de commit o publicación.
+- **Resultado:** `v0.4.19` publica Color mode segmentado, ocho temas,
+  `Density: Standard | Compact`, preview sintética y propagación global;
+  build y visual suite `328/328` pasan.
+- **Próximo paso:** dogfood del release instalado. El cierre canónico
+  `npm run release:install` publica, instala el mismo artefacto y devuelve URL.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
-| Appearance | complete/dev | `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md` | Dogfood de temas y Density; no publicado ni promovido a instalada. |
+| Appearance | complete/released | `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md` | Dogfood de temas y Density en `v0.4.19`. |
 | Confiabilidad picker / metadata | complete | `docs/tracks/035-picker-reliability.md` | Fixes y retencion verificados; historicos se limitan solo al recapturarse. Ver estado de distribucion debajo. |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | RPC / automatizacion externa | planned | `docs/tracks/034-local-rpc-cli.md`, `docs/topics/actions-and-scripting-api.md` | Implementar V1 en una pasada; PowerShell y AutoHotkey usan CLI sobre Named Pipe, sin SQL/Tauri/Host passthrough. |
@@ -31,7 +30,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | complete/dogfood | `specs/011-selection-aware-metadata-inspector/spec.md`, `docs/topics/filtering-and-query-syntax.md` | `F2` unifica content + metadata con commit atómico; utility standalone conserva single/multi. Continuar dogfood del corte distribuido sin cambiar Search/Find. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.17` publicada e instalada: editor CodeMirror y cursor fijo visible comprobados en release. Continuar dogfood; el smoke no certifica la migración de tags/suppressions ni resuelve el hang intermitente. |
+| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.19` publicada e instalada; Appearance/picker y firma updater canónica incluidos. Continuar dogfood; el smoke no resuelve el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 

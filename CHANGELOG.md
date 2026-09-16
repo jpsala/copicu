@@ -4,6 +4,8 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.19] - 2026-09-16
+
 ### Added
 
 - Add accessible Appearance settings for color mode, eight built-in themes,
@@ -176,6 +178,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.19]: https://github.com/jpsala/copicu/releases/tag/v0.4.19
 [0.4.14]: https://github.com/jpsala/copicu/releases/tag/v0.4.14
 [0.4.13]: https://github.com/jpsala/copicu/releases/tag/v0.4.13
 [0.4.1-rc.2]: https://github.com/jpsala/copicu/releases/tag/v0.4.1-rc.2
