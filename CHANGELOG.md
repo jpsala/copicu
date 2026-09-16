@@ -32,6 +32,8 @@ All notable changes to Copicu are documented here.
   when the original row node unmounts.
 - Prevent Settings bootstrap responses from overwriting newer Appearance events.
 - Raise High Contrast focus indicators to at least 3:1 non-text contrast.
+- Bind Windows releases to Copicu's canonical ignored updater key and password
+  instead of accepting an unrelated process-wide signing key.
 
 ## [0.4.17] - 2026-09-11
 

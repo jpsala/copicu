@@ -85,9 +85,19 @@ function Assert-UpdaterSigningConfigured() {
     return
   }
 
+  $defaultSigningKeyPath = Join-Path $repoRoot ".codex-run\secrets\copicu-updater.key"
+  $defaultSigningPasswordPath = Join-Path $repoRoot ".codex-run\secrets\copicu-updater.password"
+  $usingDefaultSigningKey = -not $env:TAURI_SIGNING_PRIVATE_KEY_PATH -and (Test-Path -LiteralPath $defaultSigningKeyPath)
+  if ($usingDefaultSigningKey) {
+    $env:TAURI_SIGNING_PRIVATE_KEY_PATH = $defaultSigningKeyPath
+  }
+
   if ($env:TAURI_SIGNING_PRIVATE_KEY_PATH) {
     $signingKeyPath = (Resolve-Path -LiteralPath $env:TAURI_SIGNING_PRIVATE_KEY_PATH).Path
     $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content -LiteralPath $signingKeyPath -Raw).Trim()
+    if ($usingDefaultSigningKey -and (Test-Path -LiteralPath $defaultSigningPasswordPath)) {
+      $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (Get-Content -LiteralPath $defaultSigningPasswordPath -Raw).TrimStart([char]0xFEFF).Trim()
+    }
     return
   }
 
