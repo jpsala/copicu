@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.19](https://github.com/jpsala/copicu/releases/tag/v0.4.19)
-- Asset: `Copicu_0.4.19_x64-setup.exe`
+- [v0.4.20](https://github.com/jpsala/copicu/releases/tag/v0.4.20)
+- Asset: `Copicu_0.4.20_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `067D8A5AF394B0CBFC175555738880AE56C91CE279CBAF7F7027FA45284DDF1E`
+- SHA256: `60F657105637CA798BF267C20F886A47273C72609DBA9469C04844285EA025DB`
 
-Correct updater signing key selection and include the Appearance and picker reliability release.
+Adds adaptive Appearance controls with immediate autosave, synchronized virtualized picker geometry, accessible action sizing, and selected-item details.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

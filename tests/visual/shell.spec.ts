@@ -172,6 +172,17 @@ const syntheticCompactPreviewHistory = [
   })),
 ];
 
+const syntheticAppearanceMarkdownImage = {
+  ...syntheticCompactPreviewHistory[0],
+  id: 1300,
+  content_kind: "text",
+  text: `![Appearance preview](${pngDataUrl(120, 640, "#245f53")})`,
+  normalized_hash: "appearance-markdown-image",
+  mime_primary: "text/markdown",
+  title: "Markdown image",
+  tags: "markdown",
+};
+
 const syntheticPagedHistory = Array.from({ length: 80 }, (_, index) => ({
   id: 5000 - index,
   content_kind: "text",
@@ -394,7 +405,14 @@ type MetadataVisualRuntime = Window & {
 type SettingsRaceRuntime = Window & {
   __copicuTestSettings: AppSettings;
   __copicuTestEmitEvent: (event: string, payload: unknown) => Promise<number>;
-  __copicuTestInvocations: Array<{ cmd: string }>;
+  __copicuTestSettingsUpdateMaxActive?: number;
+  __copicuTestInvocations: Array<{
+    cmd: string;
+    args?: {
+      event?: string;
+      settings?: AppSettings;
+    };
+  }>;
 };
 
 type MockTauriOptions = {
@@ -418,6 +436,8 @@ type MockTauriOptions = {
   searchTriggerUpdateDelayMs?: number;
   previewShortcut?: string;
   settingsLoadDelayMs?: number;
+  settingsUpdateDelaySequenceMs?: number[];
+  settingsUpdateFailureSequence?: Array<string | null>;
   findStartDelayMs?: number;
   findNavigateDelayMs?: number;
   findTargetDelayMs?: number;
@@ -438,11 +458,7 @@ type MockTauriOptions = {
     highlightActiveLine: boolean;
   }>;
   metadataItemIds?: number[];
-  appearance?: {
-    theme: "system" | "light" | "dark";
-    themeId: string;
-    density?: "standard" | "compact";
-  };
+  appearance?: Partial<AppSettings["appearance"]>;
 };
 
 async function mockTauriInvoke(
@@ -1121,6 +1137,11 @@ async function mockTauriInvoke(
         theme: mockOptions.appearance?.theme ?? "system",
         themeId: mockOptions.appearance?.themeId ?? "default",
         density: mockOptions.appearance?.density ?? "standard",
+        imagePreview: mockOptions.appearance?.imagePreview ?? "large",
+        itemActions: mockOptions.appearance?.itemActions ?? "auto",
+        actionSize: mockOptions.appearance?.actionSize ?? "auto",
+        textPreviewLines: mockOptions.appearance?.textPreviewLines ?? 4,
+        itemDetails: mockOptions.appearance?.itemDetails ?? "always",
       },
       editor: {
         fontFamily: "systemMono",
@@ -2350,9 +2371,39 @@ async function mockTauriInvoke(
             }
             return settingsSnapshot;
           }
-          case "update_settings":
-            (window as any).__copicuTestSettings = args.settings;
-            return args.settings;
+          case "update_settings": {
+            const testWindow = window as Window & {
+              __copicuTestSettings: AppSettings;
+              __copicuTestMockOptions?: MockTauriOptions;
+              __copicuTestSettingsUpdateIndex?: number;
+              __copicuTestSettingsUpdateActive?: number;
+              __copicuTestSettingsUpdateMaxActive?: number;
+            };
+            const updateIndex = testWindow.__copicuTestSettingsUpdateIndex ?? 0;
+            testWindow.__copicuTestSettingsUpdateIndex = updateIndex + 1;
+            testWindow.__copicuTestSettingsUpdateActive =
+              (testWindow.__copicuTestSettingsUpdateActive ?? 0) + 1;
+            testWindow.__copicuTestSettingsUpdateMaxActive = Math.max(
+              testWindow.__copicuTestSettingsUpdateMaxActive ?? 0,
+              testWindow.__copicuTestSettingsUpdateActive,
+            );
+            try {
+              const delayMs =
+                testWindow.__copicuTestMockOptions?.settingsUpdateDelaySequenceMs?.[updateIndex] ?? 0;
+              if (delayMs > 0) {
+                const { promise, resolve } = Promise.withResolvers<void>();
+                window.setTimeout(resolve, delayMs);
+                await promise;
+              }
+              const failure =
+                testWindow.__copicuTestMockOptions?.settingsUpdateFailureSequence?.[updateIndex];
+              if (failure) throw new Error(failure);
+              testWindow.__copicuTestSettings = structuredClone(args.settings);
+              return structuredClone(args.settings);
+            } finally {
+              testWindow.__copicuTestSettingsUpdateActive -= 1;
+            }
+          }
           case "set_picker_search_trigger_mode":
             if ((window as any).__copicuTestMockOptions?.searchTriggerUpdateDelayMs > 0) {
               await new Promise((resolve) => window.setTimeout(
@@ -2391,6 +2442,27 @@ async function mockTauriInvoke(
 
 function gotoShell(page: Page, url = "/") {
   return page.goto(url, { waitUntil: "domcontentloaded" });
+}
+
+async function broadcastAppearance(
+  page: Page,
+  appearance: Partial<AppSettings["appearance"]>,
+) {
+  await page.evaluate(async (appearancePatch) => {
+    const runtime = window as Window & {
+      __copicuTestSettings: AppSettings;
+      __copicuTestEmitEvent: (event: string, payload: unknown) => Promise<number>;
+    };
+    const nextSettings = {
+      ...runtime.__copicuTestSettings,
+      appearance: {
+        ...runtime.__copicuTestSettings.appearance,
+        ...appearancePatch,
+      },
+    };
+    runtime.__copicuTestSettings = nextSettings;
+    await runtime.__copicuTestEmitEvent("copicu://settings/updated", nextSettings);
+  }, appearance);
 }
 
 async function openPickerOverflow(page: Page) {
@@ -2843,7 +2915,9 @@ test("descriptor mock fails closed for unmodeled filter shapes", async ({ page }
 });
 
 test("Find rebase keeps the nearest anchor through edit and advances on delete", async ({ page }) => {
-  await mockTauriInvoke(page, findFixtureHistory);
+  await mockTauriInvoke(page, findFixtureHistory, null, {
+    appearance: { itemActions: "inline" },
+  });
   await gotoShell(page);
   await expect(page.locator(".feed-item").first()).toBeVisible();
   const { input } = await openFind(page, "NEEDLE");
@@ -3084,7 +3158,9 @@ test("row actions reveal for hover and current without covering or moving previe
     tags: null,
     is_marked: false,
   }));
-  await mockTauriInvoke(page, items);
+  await mockTauriInvoke(page, items, null, {
+    appearance: { itemActions: "inline" },
+  });
   await gotoShell(page);
   const search = page.getByLabel("Search clipboard history");
   const rows = page.locator(".history-feed.has-items > li");
@@ -4104,7 +4180,9 @@ test("selection menu disables visible selection when history is empty", async ({
 });
 
 test("mark menu marks visible and individual items", async ({ page }) => {
-  await mockTauriInvoke(page);
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { itemActions: "inline" },
+  });
   await gotoShell(page);
 
   const menu = await openMarksMenu(page);
@@ -4152,7 +4230,10 @@ test("marked menu supports keyboard focus and filtering", async ({ page }) => {
 });
 
 test("marked header count and batch actions include clips outside the current filter", async ({ page }) => {
-  await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchDelayMs: 180 });
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    historySearchDelayMs: 180,
+    appearance: { itemActions: "inline" },
+  });
   await gotoShell(page);
 
   const counter = page.getByRole("button", { name: /^Open marked clips menu/ }).locator(".mark-menu-count");
@@ -4301,15 +4382,15 @@ test("compact previews expose only real overflow and keep inline editing stable"
   await longRow.locator(".feed-item").click();
   const collapsedHeight = await longRow.evaluate((row) => row.getBoundingClientRect().height);
   const scrollBeforeExpand = await feedScroll.evaluate((feed) => feed.scrollTop);
-  await overflow.getByRole("button", { name: "Expand" }).click();
+  await overflow.getByRole("button", { name: "Show more" }).click();
   await page.waitForFunction(() =>
     (window as any).__copicuTestInvocations.filter((entry: any) => entry.cmd === "get_history_item").length === 1,
   );
   await expect(longRow.locator(".feed-item")).toHaveAttribute("aria-current", "true");
-  await expect(overflow.getByRole("button", { name: "Collapse" })).toBeVisible();
+  await expect(overflow.getByRole("button", { name: "Show less" })).toBeVisible();
   expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeGreaterThan(collapsedHeight);
   expect(await feedScroll.evaluate((feed) => feed.scrollTop)).toBe(scrollBeforeExpand);
-  await overflow.getByRole("button", { name: "Collapse" }).click();
+  await overflow.getByRole("button", { name: "Show less" }).click();
   expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeCloseTo(collapsedHeight, 0);
 
   await longRow.getByRole("button", { name: "Open item actions" }).click();
@@ -5130,9 +5211,9 @@ test("search evidence precedes metadata while preserving the original long previ
   expect(titleBox).not.toBeNull();
   expect(evidenceBox!.y + evidenceBox!.height).toBeLessThanOrEqual(titleBox!.y);
   await expect(row.locator("pre")).toContainText("Original preview remains available.");
-  await expect(row.getByRole("button", { name: "Expand", exact: true })).toBeVisible();
-  await row.getByRole("button", { name: "Expand", exact: true }).click();
-  await expect(row.getByRole("button", { name: "Collapse", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Show more", exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Show less", exact: true })).toBeVisible();
   await expect(row.locator("pre")).toContainText("Deployment needle at the end.");
 });
 
@@ -6076,7 +6157,7 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await expect(menu.getByRole("group", { name: "Editar" })).toBeVisible();
   await expect(menu.getByRole("group", { name: "Más" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit tags" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Delete item" })).toBeVisible();
 
   await menu.getByRole("menuitem", { name: "Paste", exact: true }).click();
   await expect(menu).toBeHidden();
@@ -6316,7 +6397,9 @@ test("local shortcut runs matching ready script with shortcut context", async ({
 
 for (const hideTrigger of ["Escape", "hide button"] as const) {
   test(`hiding picker via ${hideTrigger} resets selection and preserves marks`, async ({ page }) => {
-    await mockTauriInvoke(page);
+    await mockTauriInvoke(page, syntheticLongHistory, null, {
+      appearance: { itemActions: "inline" },
+    });
     await gotoShell(page);
 
     await page.getByLabel("Mark item").first().click();
@@ -6687,7 +6770,12 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await page.getByRole("radiogroup", { name: "Density" })
     .getByText("Compact", { exact: true })
     .click();
-  await expect(page.getByLabel("Code dark preview with compact density")).toBeVisible();
+  await page.getByRole("radiogroup", { name: "Image preview" }).getByText("Medium", { exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Item actions" }).getByText("Menu only", { exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Action size" }).getByText("Large", { exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Text preview lines" }).getByText("6 lines", { exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Item details" }).getByText("Selected only", { exact: true }).click();
+  await expect(page.getByLabel("Code dark appearance preview")).toBeVisible();
 
   await page.getByLabel("Search settings").fill("");
   await page.getByRole("tab", { name: /Editor/ }).click();
@@ -6720,6 +6808,11 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   const savedSettings = await page.evaluate(() => (window as any).__copicuTestSettings);
   expect(savedSettings.appearance.theme).toBe("dark");
   expect(savedSettings.appearance.themeId).toBe("code");
+  expect(savedSettings.appearance.imagePreview).toBe("medium");
+  expect(savedSettings.appearance.itemActions).toBe("menuOnly");
+  expect(savedSettings.appearance.actionSize).toBe("large");
+  expect(savedSettings.appearance.textPreviewLines).toBe(6);
+  expect(savedSettings.appearance.itemDetails).toBe("selectedOnly");
   expect(savedSettings.appearance.density).toBe("compact");
   expect(savedSettings.editor).toMatchObject({
     fontFamily: "consolas",
@@ -6739,6 +6832,175 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await expect(page.getByLabel("AI endpoint")).toBeVisible();
   await expect(page.getByLabel("AI model")).toBeVisible();
   await expect(page.getByLabel("AI API key")).toBeVisible();
+});
+
+test("Appearance autosaves immediately from confirmed settings and broadcasts", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=settings");
+
+  const captureSwitch = page.getByRole("switch", { name: "Capture clipboard changes" });
+  await captureSwitch.click();
+  await page.getByRole("tab", { name: /Appearance/ }).click();
+  await expect(page.getByText(
+    "Changes here save automatically. Save and Cancel apply to all other preferences.",
+  )).toBeVisible();
+  await page.getByRole("radiogroup", { name: "Color mode" })
+    .getByText("Dark", { exact: true })
+    .click();
+
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.waitForFunction(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations
+      .some((entry) => entry.cmd === "update_settings"),
+  );
+  const result = await page.evaluate(() => {
+    const calls = (window as SettingsRaceRuntime).__copicuTestInvocations;
+    const update = calls.find((entry) => entry.cmd === "update_settings");
+    if (!update?.args?.settings) throw new Error("Appearance update was not recorded");
+    return {
+      payload: update.args.settings,
+      updateCount: calls.filter((entry) => entry.cmd === "update_settings").length,
+      broadcastCount: calls.filter(
+        (entry) =>
+          entry.cmd === "plugin:event|emit"
+          && entry.args?.event === "copicu://settings/updated",
+      ).length,
+    };
+  });
+  expect(result.payload.appearance.theme).toBe("dark");
+  expect(result.payload.general.captureEnabled).toBe(true);
+  expect(result.updateCount).toBe(1);
+  expect(result.broadcastCount).toBe(1);
+});
+
+test("Appearance autosave waits for bootstrap before composing its settings payload", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { theme: "light" },
+    editorSettings: { fontSize: 17 },
+    settingsLoadDelayMs: 1000,
+  });
+  await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /Appearance/ }).click();
+  const colorMode = page.getByRole("radiogroup", { name: "Color mode" });
+  await colorMode.getByText("Dark", { exact: true }).click();
+  await expect(colorMode.getByRole("radio", { name: "Dark" })).toBeChecked();
+
+  await page.waitForFunction(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations
+      .some((entry) => entry.cmd === "update_settings"),
+  );
+  const update = await page.evaluate(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations
+      .find((entry) => entry.cmd === "update_settings")?.args?.settings,
+  );
+  expect(update?.appearance.theme).toBe("dark");
+  expect(update?.editor.fontSize).toBe(17);
+  await expect(colorMode.getByRole("radio", { name: "Dark" })).toBeChecked();
+});
+
+test("rapid Appearance writes stay serialized and last-write-wins", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { theme: "system" },
+    settingsUpdateDelaySequenceMs: [1000, 0, 0],
+    settingsUpdateFailureSequence: [null, "stale Appearance failure", null],
+  });
+  await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /Appearance/ }).click();
+
+  const colorMode = page.getByRole("radiogroup", { name: "Color mode" });
+  await colorMode.getByText("Light", { exact: true }).click();
+  await colorMode.getByText("Dark", { exact: true }).click();
+  await colorMode.getByText("System", { exact: true }).click();
+  await expect(colorMode.getByRole("radio", { name: "System" })).toBeChecked();
+
+  await page.waitForFunction(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations.filter(
+      (entry) => entry.cmd === "update_settings",
+    ).length === 3,
+  );
+  await expect(colorMode.getByRole("radio", { name: "System" })).toBeChecked();
+  await expect.poll(async () =>
+    page.evaluate(() => (window as SettingsRaceRuntime).__copicuTestSettings.appearance.theme),
+  ).toBe("system");
+  await expect(page.getByText(/stale Appearance failure/)).toHaveCount(0);
+  expect(await page.evaluate(() =>
+    (window as SettingsRaceRuntime).__copicuTestSettingsUpdateMaxActive,
+  )).toBe(1);
+});
+
+test("current Appearance failure rolls back to confirmed value with actionable error", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { density: "standard" },
+    settingsUpdateDelaySequenceMs: [80],
+    settingsUpdateFailureSequence: ["synthetic Appearance write failed"],
+  });
+  await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /Appearance/ }).click();
+
+  const density = page.getByRole("radiogroup", { name: "Density" });
+  await density.getByText("Compact", { exact: true }).click();
+  await expect(density.getByRole("radio", { name: "Compact" })).toBeChecked();
+  await expect(page.getByText(
+    /Appearance couldn't be saved\. Try the change again\./,
+  ).first()).toBeVisible();
+  await expect(page.getByText(/synthetic Appearance write failed/).first()).toBeVisible();
+  await expect(density.getByRole("radio", { name: "Standard" })).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-density", "standard");
+  expect(await page.evaluate(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations.filter(
+      (entry) => entry.cmd === "plugin:event|emit"
+        && entry.args?.event === "copicu://settings/updated",
+    ).length,
+  )).toBe(0);
+});
+
+test("Save and Cancel preserve autosaved Appearance and isolate other drafts", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { density: "standard" },
+    settingsUpdateDelaySequenceMs: [0, 180, 0],
+  });
+  await gotoShell(page, "/?window=settings");
+
+  const captureSwitch = page.getByRole("switch", { name: "Capture clipboard changes" });
+  await captureSwitch.click();
+  await page.getByRole("tab", { name: /Appearance/ }).click();
+  const density = page.getByRole("radiogroup", { name: "Density" });
+  await density.getByText("Compact", { exact: true }).click();
+  await expect.poll(async () =>
+    page.evaluate(() => (window as SettingsRaceRuntime).__copicuTestSettings.appearance.density),
+  ).toBe("compact");
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await page.getByRole("tab", { name: /General/ }).click();
+  await expect(captureSwitch).toBeChecked();
+  await captureSwitch.click();
+  await page.getByRole("tab", { name: /Appearance/ }).click();
+  await expect(density.getByRole("radio", { name: "Compact" })).toBeChecked();
+  await density.getByText("Standard", { exact: true }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+
+  await page.waitForFunction(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations.filter(
+      (entry) => entry.cmd === "update_settings",
+    ).length === 3,
+  );
+  const updates = await page.evaluate(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations
+      .filter((entry) => entry.cmd === "update_settings")
+      .map((entry) => entry.args?.settings),
+  );
+  await expect.poll(async () =>
+    page.evaluate(() => (window as SettingsRaceRuntime).__copicuTestSettings.general.captureEnabled),
+  ).toBe(false);
+  expect(updates[0]?.general.captureEnabled).toBe(true);
+  expect(updates[0]?.appearance.density).toBe("compact");
+  expect(updates[1]?.general.captureEnabled).toBe(true);
+  expect(updates[1]?.appearance.density).toBe("standard");
+  expect(updates[2]?.general.captureEnabled).toBe(false);
+  expect(updates[2]?.appearance.density).toBe("standard");
+  expect(await page.evaluate(() =>
+    (window as SettingsRaceRuntime).__copicuTestSettingsUpdateMaxActive,
+  )).toBe(1);
 });
 
 test("Appearance controls keep keyboard focus and all themes usable", async ({ page }) => {
@@ -6771,6 +7033,16 @@ test("Appearance controls keep keyboard focus and all themes usable", async ({ p
   await standardDensity.focus();
   await page.keyboard.press("ArrowRight");
   await expect(density.getByRole("radio", { name: "Compact" })).toBeChecked();
+  const imagePreview = page.getByRole("radiogroup", { name: "Image preview" });
+  await imagePreview.getByRole("radio", { name: "Large" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await expect(imagePreview.getByRole("radio", { name: "Small" })).toBeChecked();
+
+  const textPreview = page.getByRole("radiogroup", { name: "Text preview lines" });
+  await textPreview.getByRole("radio", { name: "4 lines" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(textPreview.getByRole("radio", { name: "6 lines" })).toBeChecked();
 
   const columns = await page.locator(".appearance-theme-grid").evaluate(
     (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
@@ -6778,7 +7050,7 @@ test("Appearance controls keep keyboard focus and all themes usable", async ({ p
   expect(columns).toBe(page.viewportSize()!.width <= 560 ? 1 : 2);
 });
 
-test("Settings bootstrap cannot overwrite a newer Appearance broadcast", async ({ page }) => {
+test("Settings broadcast beats delayed bootstrap without autosave loops", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, {
     appearance: { theme: "light", themeId: "default", density: "standard" },
     settingsLoadDelayMs: 200,
@@ -6796,6 +7068,11 @@ test("Settings bootstrap cannot overwrite a newer Appearance broadcast", async (
         theme: "dark",
         themeId: "highContrast",
         density: "compact",
+        imagePreview: "small",
+        itemActions: "menuOnly",
+        actionSize: "large",
+        textPreviewLines: 6,
+        itemDetails: "selectedOnly",
       },
     };
     runtime.__copicuTestSettings = nextSettings;
@@ -6809,6 +7086,11 @@ test("Settings bootstrap cannot overwrite a newer Appearance broadcast", async (
   await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
   await page.waitForTimeout(250);
   await expect(page.locator("html")).toHaveAttribute("data-theme-id", "highContrast");
+  await expect(page.locator("html")).toHaveAttribute("data-image-preview", "small");
+  await expect(page.locator("html")).toHaveAttribute("data-item-actions", "menuOnly");
+  await expect(page.locator("html")).toHaveAttribute("data-action-size", "large");
+  await expect(page.locator("html")).toHaveAttribute("data-text-preview-lines", "6");
+  await expect(page.locator("html")).toHaveAttribute("data-item-details", "selectedOnly");
   await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
 
   await page.getByRole("tab", { name: /Appearance/ }).click();
@@ -6818,8 +7100,208 @@ test("Settings bootstrap cannot overwrite a newer Appearance broadcast", async (
   );
   await expect(page.getByRole("radiogroup", { name: "Density" })
     .getByRole("radio", { name: "Compact" })).toBeChecked();
+  await expect(page.getByRole("radiogroup", { name: "Image preview" })
+    .getByRole("radio", { name: "Small" })).toBeChecked();
+  await expect(page.getByRole("radiogroup", { name: "Item actions" })
+    .getByRole("radio", { name: "Menu only" })).toBeChecked();
+  expect(await page.evaluate(() =>
+    (window as SettingsRaceRuntime).__copicuTestInvocations.filter(
+      (entry) => entry.cmd === "update_settings",
+    ).length,
+  )).toBe(0);
 });
 
+
+test("invalid and legacy Appearance values normalize to closed defaults", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: {
+      imagePreview: "oversized",
+      itemActions: "floating",
+      actionSize: "tiny",
+      textPreviewLines: 12,
+      itemDetails: "never",
+    } as unknown as Partial<AppSettings["appearance"]>,
+  });
+  await gotoShell(page);
+
+  await expect(page.locator("html")).toHaveAttribute("data-image-preview", "large");
+  await expect(page.locator("html")).toHaveAttribute("data-item-actions", "auto");
+  await expect(page.locator("html")).toHaveAttribute("data-action-size", "auto");
+  await expect(page.locator("html")).toHaveAttribute("data-text-preview-lines", "4");
+  await expect(page.locator("html")).toHaveAttribute("data-item-details", "always");
+});
+
+test("image, text and detail geometry follows Appearance without false expansion", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 720 });
+  const appearanceHistory = [
+    syntheticLongHistory[3],
+    syntheticCompactPreviewHistory[0],
+    syntheticAppearanceMarkdownImage,
+    syntheticCompactPreviewHistory[3],
+  ];
+  await mockTauriInvoke(page, appearanceHistory, null, {
+    historyPageSizeOverride: appearanceHistory.length,
+    appearance: { imagePreview: "large", textPreviewLines: 4, itemDetails: "always" },
+  });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+
+  const multiline = page.locator("#history-item-103");
+  const shortText = page.locator("#history-item-1201");
+  await expect(multiline.getByRole("button", { name: "Show more" })).toBeVisible();
+  await expect(shortText.getByRole("button", { name: "Show more" })).toHaveCount(0);
+
+  for (const [lines, expectedMax] of [[2, 36], [4, 70], [6, 104]] as const) {
+    await broadcastAppearance(page, { textPreviewLines: lines });
+    const height = await multiline.locator("pre").evaluate((element) => element.clientHeight);
+    expect(height).toBeLessThanOrEqual(expectedMax);
+    expect(height).toBeGreaterThan(expectedMax - 22);
+  }
+  await multiline.getByRole("button", { name: "Show more" }).click();
+  await expect(multiline.getByRole("button", { name: "Show less" })).toBeVisible();
+  const expanded = await multiline.locator("pre").evaluate((element) => ({
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(expanded.clientHeight).toBeLessThan(expanded.scrollHeight);
+
+  for (const [imagePreview, expected] of [["small", 96], ["medium", 140], ["large", 180]] as const) {
+    await broadcastAppearance(page, { imagePreview });
+    const regularHeight = await page.locator(".image-preview img").evaluate((element) => element.getBoundingClientRect().height);
+    const markdownHeight = await page.locator(".markdown-image-frame img").first().evaluate((element) => element.getBoundingClientRect().height);
+    expect(regularHeight).toBeLessThanOrEqual(expected);
+    expect(markdownHeight).toBeLessThanOrEqual(expected);
+    expect(Math.max(regularHeight, markdownHeight)).toBeGreaterThan(expected - 2);
+  }
+  await page.setViewportSize({ width: 420, height: 720 });
+  await broadcastAppearance(page, { imagePreview: "large" });
+  const responsiveImageHeight = await page.locator(".image-preview img")
+    .evaluate((element) => element.getBoundingClientRect().height);
+  const responsiveMarkdownHeight = await page.locator(".markdown-image-frame img").first()
+    .evaluate((element) => element.getBoundingClientRect().height);
+  expect(Math.max(responsiveImageHeight, responsiveMarkdownHeight)).toBeLessThanOrEqual(148);
+
+  await broadcastAppearance(page, { itemDetails: "selectedOnly" });
+  await expect(multiline.locator(".item-title")).toBeVisible();
+  await expect(page.locator("#history-item-1300 .item-metadata")).toHaveCount(0);
+  await page.locator("#history-item-1300 .feed-item").click();
+  await expect(page.locator("#history-item-1300 .item-metadata")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#history-item-1204 .feed-item")).toHaveAttribute("aria-current", "true");
+});
+
+test("selected-only details preserve the next row offset in a scrolled mixed feed", async ({ page }) => {
+  const selectionHistory = Array.from({ length: 240 }, (_, index) => ({
+    ...syntheticLongHistory[index % syntheticLongHistory.length],
+    id: 30_000 + index,
+    normalized_hash: `selection-anchor-${index}`,
+    title: `Selection row ${index}`,
+    notes: index % 2 === 0
+      ? "First metadata line\nSecond metadata line\nThird metadata line"
+      : null,
+    tags: index % 2 === 0 ? "anchor, multiline" : null,
+  }));
+  await mockTauriInvoke(page, selectionHistory, null, {
+    appearance: { itemDetails: "selectedOnly" },
+    historyPageSizeOverride: selectionHistory.length,
+  });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("240 total");
+  const feed = page.locator(".history-feed-scroll");
+  await feed.evaluate((element) => element.scrollTo({ top: 4_000 }));
+  await page.waitForTimeout(400);
+  const pair = await feed.evaluate((element) => {
+    const rows = Array.from(
+      element.querySelectorAll<HTMLElement>('li[id^="history-item-"]'),
+    ).sort((left, right) => Number(left.dataset.index) - Number(right.dataset.index));
+    const pairIndex = rows.findIndex((row, index) =>
+      index < rows.length - 1
+      && Number(row.dataset.index) % 2 === 0
+      && Number(rows[index + 1].dataset.index) === Number(row.dataset.index) + 1);
+    const current = rows[pairIndex];
+    const next = rows[pairIndex + 1];
+    if (!current || !next) throw new Error("Expected consecutive visible selection rows");
+    return {
+      currentId: Number(current.id.replace("history-item-", "")),
+      nextId: Number(next.id.replace("history-item-", "")),
+    };
+  });
+  const currentRow = page.locator(`#history-item-${pair.currentId} .feed-item`);
+  await currentRow.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await page.waitForTimeout(100);
+  await currentRow.click();
+  const nextRow = page.locator(`#history-item-${pair.nextId} .feed-item`);
+  const nextOffset = await nextRow.evaluate((element) => {
+    const viewport = document.querySelector(".history-feed-scroll")!.getBoundingClientRect();
+    return element.getBoundingClientRect().top - viewport.top;
+  });
+  await page.keyboard.press("ArrowDown");
+  await expect(nextRow).toHaveAttribute("aria-current", "true");
+  await expect.poll(async () => nextRow.evaluate((element, previousOffset) => {
+    const viewport = document.querySelector(".history-feed-scroll")!.getBoundingClientRect();
+    return Math.abs(element.getBoundingClientRect().top - viewport.top - previousOffset);
+  }, nextOffset)).toBeLessThanOrEqual(2);
+});
+
+test("desktop and narrow item action modes keep the complete menu reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 720 });
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  const currentRow = page.locator("#history-item-100");
+
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeVisible();
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeVisible();
+  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toBeVisible();
+
+  await page.setViewportSize({ width: 420, height: 720 });
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeHidden();
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeHidden();
+  await currentRow.getByRole("button", { name: "Open item actions" }).click();
+  const menu = page.getByRole("menu", { name: "Item actions" });
+  await expect(menu.getByRole("menuitem", { name: "Mark" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Delete item" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await broadcastAppearance(page, { itemActions: "inline", actionSize: "large" });
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeVisible();
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeVisible();
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("width", "44px");
+
+  await broadcastAppearance(page, { itemActions: "menuOnly", actionSize: "small" });
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeHidden();
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeHidden();
+  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toHaveCSS("width", "32px");
+});
+
+test("Auto action size keeps compact coarse-pointer rows separated", async ({ browser }) => {
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 900, height: 720 },
+  });
+  const page = await context.newPage();
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    appearance: { density: "compact", actionSize: "auto", itemActions: "inline" },
+  });
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  const firstVisibleRow = page.locator(".history-feed li").first();
+  await expect(firstVisibleRow.getByRole("button", { name: "Open item actions" }))
+    .toHaveCSS("width", "44px");
+  const rowGeometry = await page.locator(".history-feed li").evaluateAll((rows) => {
+    const ordered = rows.slice(0, 8)
+      .map((row) => row.getBoundingClientRect())
+      .sort((left, right) => left.top - right.top);
+    return {
+      heights: ordered.map((rect) => rect.height),
+      separations: ordered.slice(1).map((rect, index) => rect.top - ordered[index].bottom),
+    };
+  });
+  expect(rowGeometry.heights.every((height) => height >= 58)).toBe(true);
+  expect(rowGeometry.separations.every((gap) => gap >= -1)).toBe(true);
+  await context.close();
+});
 for (const colorScheme of ["light", "dark"] as const) {
   test(`High Contrast ${colorScheme} focus indicators meet non-text contrast`, async ({ page }) => {
     await mockTauriInvoke(page, syntheticLongHistory, null, {
@@ -6848,16 +7330,19 @@ for (const colorScheme of ["light", "dark"] as const) {
         return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
       };
       const root = getComputedStyle(document.documentElement);
-      const ring = luminance(root.getPropertyValue("--focus-ring"));
+      const style = getComputedStyle(element);
+      const ring = luminance(style.outlineColor);
       const surface = luminance(root.getPropertyValue("--surface-raised"));
       const ratio = (Math.max(ring, surface) + 0.05) / (Math.min(ring, surface) + 0.05);
       return {
         ratio,
-        outlineStyle: getComputedStyle(element).outlineStyle,
+        outlineColor: style.outlineColor,
+        outlineStyle: style.outlineStyle,
       };
     });
     expect(pickerContrast.ratio).toBeGreaterThanOrEqual(3);
     expect(pickerContrast.outlineStyle).toBe("solid");
+    expect(pickerContrast.outlineColor).not.toBe("rgba(0, 0, 0, 0)");
 
     await gotoShell(page, "/?window=settings");
     await page.getByRole("tab", { name: /Appearance/ }).click();
@@ -6897,7 +7382,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-test("Density remeasures a mixed virtual feed without moving its visual anchor", async ({ page }) => {
+test("Appearance geometry remeasures a mixed virtual feed without moving its visual anchor", async ({ page }) => {
   const densityHistory = Array.from({ length: 1200 }, (_, index) => {
     const source = syntheticPagedHistory[index % syntheticPagedHistory.length];
     const identity = {
@@ -6909,6 +7394,13 @@ test("Density remeasures a mixed virtual feed without moving its visual anchor",
         ...syntheticCompactPreviewHistory[2],
         ...identity,
         normalized_hash: `density-image-${index}`,
+      };
+    }
+    if (index % 23 === 3) {
+      return {
+        ...syntheticAppearanceMarkdownImage,
+        ...identity,
+        normalized_hash: `appearance-markdown-${index}`,
       };
     }
     if (index % 11 === 5) {
@@ -6953,23 +7445,31 @@ test("Density remeasures a mixed virtual feed without moving its visual anchor",
       }).length;
   });
 
-  await page.evaluate(async () => {
-    const runtime = window as Window & {
-      __copicuTestSettings: {
-        appearance: { theme: string; themeId: string; density: string };
-        [key: string]: unknown;
-      };
-      __copicuTestEmitEvent: (event: string, payload: unknown) => Promise<number>;
-    };
-    const nextSettings = {
-      ...runtime.__copicuTestSettings,
-      appearance: {
-        ...runtime.__copicuTestSettings.appearance,
-        density: "compact",
-      },
-    };
-    runtime.__copicuTestSettings = nextSettings;
-    await runtime.__copicuTestEmitEvent("copicu://settings/updated", nextSettings);
+  await broadcastAppearance(page, { density: "compact" });
+  await expect.poll(async () => feed.evaluate((element, anchorPosition) => {
+    const row = element.querySelector<HTMLElement>(`#history-item-${anchorPosition.id}`);
+    if (!row) return Number.POSITIVE_INFINITY;
+    return Math.abs(
+      row.getBoundingClientRect().top
+      - element.getBoundingClientRect().top
+      - anchorPosition.offset,
+    );
+  }, anchor)).toBeLessThanOrEqual(2);
+  const compactDensityVisibleCount = await feed.evaluate((element) => {
+    const viewport = element.getBoundingClientRect();
+    return Array.from(element.querySelectorAll<HTMLElement>('li[id^="history-item-"]'))
+      .filter((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.top >= viewport.top && rect.bottom <= viewport.bottom;
+      }).length;
+  });
+  expect(compactDensityVisibleCount).toBeGreaterThanOrEqual(standardVisibleCount);
+
+  await broadcastAppearance(page, {
+    imagePreview: "small",
+    actionSize: "large",
+    textPreviewLines: 6,
+    itemDetails: "selectedOnly",
   });
   await expect.poll(async () => feed.evaluate((element, anchorPosition) => {
     const row = element.querySelector<HTMLElement>(`#history-item-${anchorPosition.id}`);
@@ -6996,13 +7496,41 @@ test("Density remeasures a mixed virtual feed without moving its visual anchor",
       .sort((left, right) => left.top - right.top);
     return {
       offset: anchorRow.getBoundingClientRect().top - viewport.top,
-      fullCount: ordered.filter((rect) => rect.top >= viewport.top && rect.bottom <= viewport.bottom).length,
       separations: ordered.slice(1).map((rect, index) => rect.top - ordered[index].bottom),
     };
   }, anchor.id);
   expect(Math.abs(compactSnapshot.offset - anchor.offset)).toBeLessThanOrEqual(2);
-  expect(compactSnapshot.fullCount).toBeGreaterThanOrEqual(standardVisibleCount);
-  expect(compactSnapshot.separations.every((gap) => gap >= -1 && gap <= 2)).toBe(true);
+  await expect.poll(async () => feed.evaluate((element) => {
+    const viewport = element.getBoundingClientRect();
+    const ordered = Array.from(
+      element.querySelectorAll<HTMLElement>('li[id^="history-item-"]'),
+    ).filter((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.bottom > viewport.top && rect.top < viewport.bottom;
+    }).map((row) => row.getBoundingClientRect())
+      .sort((left, right) => left.top - right.top);
+    return ordered.slice(1).every(
+      (rect, index) => rect.top - ordered[index].bottom >= -1
+        && rect.top - ordered[index].bottom <= 2,
+    );
+  })).toBe(true);
+
+  await page.setViewportSize({ width: 420, height: 720 });
+  await broadcastAppearance(page, { imagePreview: "large" });
+  await expect.poll(async () => feed.evaluate((element) => {
+    const viewport = element.getBoundingClientRect();
+    const ordered = Array.from(
+      element.querySelectorAll<HTMLElement>('li[id^="history-item-"]'),
+    ).filter((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.bottom > viewport.top && rect.top < viewport.bottom;
+    }).map((row) => row.getBoundingClientRect())
+      .sort((left, right) => left.top - right.top);
+    return ordered.slice(1).every(
+      (rect, index) => rect.top - ordered[index].bottom >= -1
+        && rect.top - ordered[index].bottom <= 2,
+    );
+  })).toBe(true);
 
   const image = page.locator(".image-preview img").first();
   await image.evaluate((element) => {

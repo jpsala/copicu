@@ -4,6 +4,28 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.20] - 2026-09-16
+
+### Added
+
+- Add Appearance controls for image preview size, item action layout and size,
+  collapsed text lines, and selected-item details.
+
+### Changed
+
+- Keep picker image, Markdown, text, metadata and action geometry synchronized
+  with the virtualizer across desktop, narrow and pointer-coarse layouts.
+- Save and propagate every Appearance change immediately while keeping Save and
+  Cancel scoped to the remaining Settings sections.
+
+### Fixed
+
+- Match narrow image estimates to the responsive 148 px cap so deeply
+  virtualized image and Markdown rows do not leave transient gaps.
+- Reserve compact-row height for 44 px actions, preserve the viewport anchor
+  while selected-only details move between rows, and assert the rendered High
+  Contrast focus outline rather than only its source token.
+
 ## [0.4.19] - 2026-09-16
 
 ### Added
@@ -178,6 +200,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.20]: https://github.com/jpsala/copicu/releases/tag/v0.4.20
 [0.4.19]: https://github.com/jpsala/copicu/releases/tag/v0.4.19
 [0.4.14]: https://github.com/jpsala/copicu/releases/tag/v0.4.14
 [0.4.13]: https://github.com/jpsala/copicu/releases/tag/v0.4.13

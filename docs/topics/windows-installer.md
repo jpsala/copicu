@@ -248,6 +248,18 @@ Cierre manual canónico cuando JP autoriza explícitamente publicar e instalar:
 npm run release:install
 ```
 
+Comando agéntico del repo:
+
+```text
+/release [patch|minor|major|rc] [notas opcionales]
+```
+
+La invocación autoriza el cierre completo sobre `jpsala/copicu`: preflight de
+worktree/destino/secrets, validaciones, `npm run release:install`, commit y push
+de `main`, GitHub Release con instalador/firma/`latest.json`, instalación local,
+postflight remoto y devolución de la página del release más la URL HTTPS directa
+del `.exe`. El contrato vive en `.omp/commands/release.md`.
+
 Publica el siguiente release estable, instala el mismo artefacto, verifica
 proceso/versión y devuelve la URL. Acepta `-- -Bump minor|major|rc`, `-Title`,
 `-Notes` y `-PreRelease`. Nunca ejecutarlo por default al terminar un batch:

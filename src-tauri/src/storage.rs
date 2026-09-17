@@ -5,7 +5,7 @@ use rusqlite::{
     types::{Type, Value, ValueRef},
     Connection, Error as SqliteError, OpenFlags, OptionalExtension,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -959,6 +959,16 @@ pub struct AppearanceSettings {
     pub theme_id: ThemeId,
     #[serde(default)]
     pub density: DensitySetting,
+    #[serde(default, deserialize_with = "deserialize_image_preview")]
+    pub image_preview: ImagePreviewSetting,
+    #[serde(default, deserialize_with = "deserialize_item_actions")]
+    pub item_actions: ItemActionsSetting,
+    #[serde(default, deserialize_with = "deserialize_action_size")]
+    pub action_size: ActionSizeSetting,
+    #[serde(default = "default_text_preview_lines", deserialize_with = "deserialize_text_preview_lines")]
+    pub text_preview_lines: u8,
+    #[serde(default, deserialize_with = "deserialize_item_details")]
+    pub item_details: ItemDetailsSetting,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1071,6 +1081,104 @@ pub enum DensitySetting {
     Compact,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ImagePreviewSetting {
+    Small,
+    Medium,
+    #[default]
+    Large,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ItemActionsSetting {
+    #[default]
+    Auto,
+    Inline,
+    MenuOnly,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ActionSizeSetting {
+    #[default]
+    Auto,
+    Small,
+    Large,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ItemDetailsSetting {
+    #[default]
+    Always,
+    SelectedOnly,
+}
+
+fn deserialize_image_preview<'de, D>(deserializer: D) -> Result<ImagePreviewSetting, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value.as_str() {
+        Some("small") => ImagePreviewSetting::Small,
+        Some("medium") => ImagePreviewSetting::Medium,
+        _ => ImagePreviewSetting::Large,
+    })
+}
+
+fn deserialize_item_actions<'de, D>(deserializer: D) -> Result<ItemActionsSetting, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value.as_str() {
+        Some("inline") => ItemActionsSetting::Inline,
+        Some("menuOnly") => ItemActionsSetting::MenuOnly,
+        _ => ItemActionsSetting::Auto,
+    })
+}
+
+fn deserialize_action_size<'de, D>(deserializer: D) -> Result<ActionSizeSetting, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value.as_str() {
+        Some("small") => ActionSizeSetting::Small,
+        Some("large") => ActionSizeSetting::Large,
+        _ => ActionSizeSetting::Auto,
+    })
+}
+
+fn default_text_preview_lines() -> u8 {
+    4
+}
+
+fn deserialize_text_preview_lines<'de, D>(deserializer: D) -> Result<u8, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value.as_u64() {
+        Some(2) => 2,
+        Some(6) => 6,
+        _ => 4,
+    })
+}
+
+fn deserialize_item_details<'de, D>(deserializer: D) -> Result<ItemDetailsSetting, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value.as_str() {
+        Some("selectedOnly") => ItemDetailsSetting::SelectedOnly,
+        _ => ItemDetailsSetting::Always,
+    })
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ThemeId {
@@ -1117,6 +1225,11 @@ impl Default for AppSettings {
                 theme: ThemeSetting::System,
                 theme_id: ThemeId::Default,
                 density: DensitySetting::Standard,
+                image_preview: ImagePreviewSetting::Large,
+                item_actions: ItemActionsSetting::Auto,
+                action_size: ActionSizeSetting::Auto,
+                text_preview_lines: default_text_preview_lines(),
+                item_details: ItemDetailsSetting::Always,
             },
             editor: EditorSettings::default(),
             tray: TraySettings::default(),
@@ -5080,7 +5193,6 @@ fn saved_history_view_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Save
         updated_at_unix_ms: row.get(9)?,
     })
 }
-
 fn scenario_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Scenario> {
     let tags_json = row.get::<_, String>(4)?;
     let tags = serde_json::from_str(&tags_json).map_err(|error| {
@@ -5201,6 +5313,9 @@ fn normalize_loaded_settings(settings: &mut AppSettings) {
     settings.picker.external_editor_shortcut =
         settings.picker.external_editor_shortcut.trim().to_string();
     settings.editor.external_editor_path = settings.editor.external_editor_path.trim().to_string();
+    if !matches!(settings.appearance.text_preview_lines, 2 | 4 | 6) {
+        settings.appearance.text_preview_lines = default_text_preview_lines();
+    }
     let endpoint = settings.ai.endpoint.trim().trim_end_matches('/');
     let model = settings.ai.model.trim();
     if endpoint.is_empty() {
@@ -6341,6 +6456,17 @@ mod tests {
         assert!(settings.general.capture_enabled);
         assert!(settings.picker.promote_active_on_copy);
         assert_eq!(
+            settings.appearance.image_preview,
+            ImagePreviewSetting::Large
+        );
+        assert_eq!(settings.appearance.item_actions, ItemActionsSetting::Auto);
+        assert_eq!(settings.appearance.action_size, ActionSizeSetting::Auto);
+        assert_eq!(
+            settings.appearance.text_preview_lines,
+            default_text_preview_lines()
+        );
+        assert_eq!(settings.appearance.item_details, ItemDetailsSetting::Always);
+        assert_eq!(
             settings.picker.search_trigger_mode,
             SearchTriggerMode::Realtime
         );
@@ -6348,6 +6474,35 @@ mod tests {
         assert_eq!(settings.picker.settings_shortcut, "Ctrl+,");
         assert_eq!(settings.picker.preview_shortcut, "Alt+Enter");
         validate_settings(&settings).expect("old settings with script defaults should validate");
+    }
+
+    #[test]
+    fn appearance_invalid_values_normalize_to_defaults_and_lines_serialize_as_number() {
+        let json = r#"{
+            "schemaVersion": 1,
+            "general": { "globalShortcut": "Ctrl+Shift+," },
+            "picker": { "hideOnFocusLost": true, "enterAction": "copy" },
+            "history": { "retentionCount": 0 },
+            "appearance": {
+                "theme": "system",
+                "imagePreview": "oversized",
+                "itemActions": "floating",
+                "actionSize": "tiny",
+                "textPreviewLines": "many",
+                "itemDetails": "never"
+            }
+        }"#;
+
+        let settings: AppSettings =
+            serde_json::from_str(json).expect("invalid appearance values should normalize");
+
+        assert_eq!(settings.appearance.image_preview, ImagePreviewSetting::Large);
+        assert_eq!(settings.appearance.item_actions, ItemActionsSetting::Auto);
+        assert_eq!(settings.appearance.action_size, ActionSizeSetting::Auto);
+        assert_eq!(settings.appearance.text_preview_lines, 4);
+        assert_eq!(settings.appearance.item_details, ItemDetailsSetting::Always);
+        let serialized = serde_json::to_value(settings).expect("settings should serialize");
+        assert_eq!(serialized["appearance"]["textPreviewLines"], 4);
     }
 
     #[test]

@@ -57,7 +57,7 @@ import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import ZoomIn from "lucide-react/dist/esm/icons/zoom-in.mjs";
 import { copicuMantineTheme } from "./mantineTheme";
-import { applyCopicuAppearance, getDensityMetrics } from "./themeCatalog";
+import { applyCopicuAppearance, getDensityMetrics, getImagePreviewHeight } from "./themeCatalog";
 import type {
   ActionContext,
   ActionDefinition,
@@ -555,9 +555,10 @@ const FEED_ITEM_TITLE_ESTIMATE = 21;
 const FEED_ITEM_METADATA_VERTICAL_CHROME = 13;
 const FEED_ITEM_METADATA_LINE_HEIGHT = 15;
 const FEED_ITEM_PREVIEW_LINE_HEIGHT = 17;
-const TEXT_PREVIEW_ESTIMATED_MAX_LINES = 4;
 const TEXT_PREVIEW_ESTIMATED_CHARS_PER_LINE = 72;
 const METADATA_ESTIMATED_CHARS_PER_LINE = 52;
+const NARROW_IMAGE_PREVIEW_MAX_HEIGHT = 148;
+const FEED_ITEM_ACTION_TOP_OFFSET = 8;
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
@@ -660,6 +661,17 @@ function activateHostItem(request: ActivateItemRequest) {
 
 function applyAppearance(appearance: AppSettings["appearance"]) {
   applyCopicuAppearance(document.documentElement, appearance);
+}
+
+function appearanceLayoutKey(appearance: AppSettings["appearance"]) {
+  return [
+    appearance.density,
+    appearance.imagePreview,
+    appearance.itemActions,
+    appearance.actionSize,
+    appearance.textPreviewLines,
+    appearance.itemDetails,
+  ].join(":");
 }
 
 function historySearch(request: HistorySearchRequest) {
@@ -1198,6 +1210,25 @@ function App() {
   const initialLockedFilterQueryRef = useRef(readLockedFilterQuery());
   const initialFilterQuery = initialLockedFilterQueryRef.current ?? "";
   const [filterLocked, setFilterLocked] = useState(initialLockedFilterQueryRef.current !== null);
+  const [appearanceViewport, setAppearanceViewport] = useState(() => ({
+    narrow: window.innerWidth <= 560,
+    coarsePointer: window.matchMedia?.("(pointer: coarse)").matches ?? false,
+  }));
+  useEffect(() => {
+    const coarsePointerQuery = window.matchMedia?.("(pointer: coarse)");
+    const syncAppearanceViewport = () => {
+      setAppearanceViewport({
+        narrow: window.innerWidth <= 560,
+        coarsePointer: coarsePointerQuery?.matches ?? false,
+      });
+    };
+    window.addEventListener("resize", syncAppearanceViewport);
+    coarsePointerQuery?.addEventListener("change", syncAppearanceViewport);
+    return () => {
+      window.removeEventListener("resize", syncAppearanceViewport);
+      coarsePointerQuery?.removeEventListener("change", syncAppearanceViewport);
+    };
+  }, []);
   const [stats, setStats] = useState<CaptureStats | null>(null);
   const [probe, setProbe] = useState<ClipboardProbe | null>(null);
   const [events, setEvents] = useState<CaptureEvent[]>([]);
@@ -1439,7 +1470,7 @@ function App() {
     estimateSize: (index) => {
       const item = displayedHistory[index];
       return item
-        ? estimateHistoryRowSize(item, settings.appearance.density)
+        ? estimateHistoryRowSize(item, settings.appearance, item.id === selectedItemId, appearanceViewport)
         : 38;
     },
     getItemKey: (index) => displayedHistory[index]?.id ?? `loader-${index}`,
@@ -1447,13 +1478,20 @@ function App() {
     overscan: 24,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
-  const previousDensityRef = useRef(settings.appearance.density);
-  const pendingDensityAnchorRef = useRef<{
+  const currentAppearanceLayoutKey = `${appearanceLayoutKey(settings.appearance)}:${appearanceViewport.narrow}:${appearanceViewport.coarsePointer}`;
+  const previousAppearanceLayoutKeyRef = useRef(currentAppearanceLayoutKey);
+  const pendingAppearanceAnchorRef = useRef<{
     id: number;
     index: number;
     offset: number;
   } | null>(null);
-  const captureDensityAnchor = useCallback(() => {
+  const pendingDetailsAnchorRef = useRef<{
+    id: number;
+    index: number;
+    offset: number;
+  } | null>(null);
+  const previousDetailsSelectedIdRef = useRef(selectedItemId);
+  const captureAppearanceAnchor = useCallback(() => {
     const scrollElement = historyScrollRef.current;
     if (!scrollElement) return null;
 
@@ -1478,21 +1516,34 @@ function App() {
       offset: anchorRow.getBoundingClientRect().top - viewportRect.top,
     };
   }, []);
+  const captureRowAnchor = useCallback((itemId: number, index: number) => {
+    const scrollElement = historyScrollRef.current;
+    const row = document.getElementById(`history-item-${itemId}`);
+    if (!scrollElement || !(row instanceof HTMLElement)) return null;
+    const viewportRect = scrollElement.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    if (rowRect.bottom <= viewportRect.top || rowRect.top >= viewportRect.bottom) return null;
+    return {
+      id: itemId,
+      index,
+      offset: rowRect.top - viewportRect.top,
+    };
+  }, []);
 
 
   useLayoutEffect(() => {
-    const previousDensity = previousDensityRef.current;
-    if (previousDensity === settings.appearance.density) {
+    const previousLayoutKey = previousAppearanceLayoutKeyRef.current;
+    if (previousLayoutKey === currentAppearanceLayoutKey) {
       return undefined;
     }
-    previousDensityRef.current = settings.appearance.density;
+    previousAppearanceLayoutKeyRef.current = currentAppearanceLayoutKey;
 
     const scrollElement = historyScrollRef.current;
     if (!scrollElement) {
       return undefined;
     }
 
-    const anchor = pendingDensityAnchorRef.current ?? captureDensityAnchor();
+    const anchor = pendingAppearanceAnchorRef.current ?? captureAppearanceAnchor();
 
     applyAppearance(settings.appearance);
     rowVirtualizer.measure();
@@ -1503,41 +1554,40 @@ function App() {
     if (!anchor) {
       return undefined;
     }
-    pendingDensityAnchorRef.current = anchor;
+    pendingAppearanceAnchorRef.current = anchor;
     rowVirtualizer.scrollToIndex(anchor.index, { align: "start" });
 
     let remainingSettleFrames = 2;
     let remainingAttempts = 12;
-    let remainingExactCorrections = 2;
-    let anchorMeasured = false;
-    const settleDensityAnchor = () => {
-      const pendingAnchor = pendingDensityAnchorRef.current;
+    let remainingExactCorrections = 32;
+    const settleAppearanceAnchor = () => {
+      const pendingAnchor = pendingAppearanceAnchorRef.current;
       const currentScrollElement = historyScrollRef.current;
       if (!pendingAnchor || !currentScrollElement) {
-        pendingDensityAnchorRef.current = null;
+        pendingAppearanceAnchorRef.current = null;
         return;
+      }
+      for (const visibleRow of currentScrollElement.querySelectorAll<HTMLElement>("li[data-index]")) {
+        rowVirtualizer.measureElement(visibleRow);
       }
       if (remainingSettleFrames > 0) {
         remainingSettleFrames -= 1;
-        window.requestAnimationFrame(settleDensityAnchor);
+        window.requestAnimationFrame(settleAppearanceAnchor);
         return;
       }
       const row = document.getElementById(`history-item-${pendingAnchor.id}`);
       if (!(row instanceof HTMLElement)) {
         if (remainingAttempts <= 0) {
-          pendingDensityAnchorRef.current = null;
+          pendingAppearanceAnchorRef.current = null;
           return;
         }
         remainingAttempts -= 1;
         rowVirtualizer.scrollToIndex(pendingAnchor.index, { align: "start" });
         remainingSettleFrames = 1;
-        window.requestAnimationFrame(settleDensityAnchor);
+        window.requestAnimationFrame(settleAppearanceAnchor);
         return;
       }
-      if (!anchorMeasured) {
-        rowVirtualizer.measureElement(row);
-        anchorMeasured = true;
-      }
+      rowVirtualizer.measureElement(row);
       const exactScrollTop = currentScrollElement.scrollTop
         + row.getBoundingClientRect().top
         - currentScrollElement.getBoundingClientRect().top
@@ -1545,14 +1595,66 @@ function App() {
       currentScrollElement.scrollTo({ top: Math.max(0, exactScrollTop) });
       if (remainingExactCorrections > 0) {
         remainingExactCorrections -= 1;
-        window.requestAnimationFrame(settleDensityAnchor);
+        window.requestAnimationFrame(settleAppearanceAnchor);
         return;
       }
-      pendingDensityAnchorRef.current = null;
+      pendingAppearanceAnchorRef.current = null;
     };
-    window.requestAnimationFrame(settleDensityAnchor);
+    window.requestAnimationFrame(settleAppearanceAnchor);
     return undefined;
-  }, [captureDensityAnchor, displayedHistory, rowVirtualizer, settings.appearance]);
+  }, [captureAppearanceAnchor, currentAppearanceLayoutKey, displayedHistory, rowVirtualizer, settings.appearance]);
+
+  useLayoutEffect(() => {
+    const previousSelectedId = previousDetailsSelectedIdRef.current;
+    previousDetailsSelectedIdRef.current = selectedItemId;
+    if (
+      settings.appearance.itemDetails !== "selectedOnly"
+      || previousSelectedId === selectedItemId
+    ) {
+      return undefined;
+    }
+    const anchor = pendingDetailsAnchorRef.current;
+    pendingDetailsAnchorRef.current = null;
+    for (const itemId of [previousSelectedId, selectedItemId]) {
+      if (itemId === null) continue;
+      const row = document.getElementById(`history-item-${itemId}`);
+      if (row instanceof HTMLElement) rowVirtualizer.measureElement(row);
+    }
+    const selectedIndex = displayedHistory.findIndex((item) => item.id === selectedItemId);
+    if (selectedIndex < 0) return undefined;
+    let remainingCorrections = 6;
+    let frame = 0;
+    const settleDetailsAnchor = () => {
+      const scrollElement = historyScrollRef.current;
+      const selectedRow = document.getElementById(`history-item-${selectedItemId}`);
+      if (selectedRow instanceof HTMLElement) rowVirtualizer.measureElement(selectedRow);
+      if (anchor && scrollElement) {
+        const anchorRow = document.getElementById(`history-item-${anchor.id}`);
+        if (anchorRow instanceof HTMLElement) {
+          rowVirtualizer.measureElement(anchorRow);
+          scrollElement.scrollTo({
+            top: Math.max(
+              0,
+              scrollElement.scrollTop
+                + anchorRow.getBoundingClientRect().top
+                - scrollElement.getBoundingClientRect().top
+                - anchor.offset,
+            ),
+          });
+        } else {
+          rowVirtualizer.scrollToIndex(anchor.index, { align: "start" });
+        }
+      } else {
+        rowVirtualizer.scrollToIndex(selectedIndex, { align: "auto" });
+      }
+      if (remainingCorrections > 0) {
+        remainingCorrections -= 1;
+        frame = window.requestAnimationFrame(settleDetailsAnchor);
+      }
+    };
+    frame = window.requestAnimationFrame(settleDetailsAnchor);
+    return () => window.cancelAnimationFrame(frame);
+  }, [displayedHistory, rowVirtualizer, selectedItemId, settings.appearance.itemDetails]);
 
   useLayoutEffect(() => {
     const anchor = retainedScrollAnchorRef.current;
@@ -4004,10 +4106,18 @@ function App() {
   const setCurrentItem = useCallback((index: number) => {
     selectionInteractionSeqRef.current += 1;
     const itemId = history[index]?.id ?? null;
+    if (
+      settings.appearance.itemDetails === "selectedOnly"
+      && itemId !== null
+      && itemId !== selectedItemIdRef.current
+    ) {
+      pendingDetailsAnchorRef.current =
+        captureRowAnchor(itemId, index) ?? captureAppearanceAnchor();
+    }
     selectedItemIdRef.current = itemId;
     setSelectedItemId(itemId);
     selectionAnchorItemIdRef.current = itemId;
-  }, [history]);
+  }, [captureAppearanceAnchor, captureRowAnchor, history, settings.appearance.itemDetails]);
 
   const setRangeSelection = useCallback((toIndex: number) => {
     selectionInteractionSeqRef.current += 1;
@@ -4029,11 +4139,18 @@ function App() {
     const start = Math.min(fromIndex, nextIndex);
     const end = Math.max(fromIndex, nextIndex);
     const nextSelection = new Set(history.slice(start, end + 1).map((item) => item.id));
+    if (
+      settings.appearance.itemDetails === "selectedOnly"
+      && history[nextIndex].id !== selectedItemIdRef.current
+    ) {
+      pendingDetailsAnchorRef.current =
+        captureRowAnchor(history[nextIndex].id, nextIndex) ?? captureAppearanceAnchor();
+    }
     selectedItemIdRef.current = history[nextIndex].id;
     selectedIdsRef.current = nextSelection;
     setSelectedItemId(history[nextIndex].id);
     setSelectedIds(nextSelection);
-  }, [history, selectedIndex]);
+  }, [captureAppearanceAnchor, captureRowAnchor, history, selectedIndex, settings.appearance.itemDetails]);
 
   const setVisibleSelection = useCallback((selected: boolean) => {
     selectionInteractionSeqRef.current += 1;
@@ -4992,8 +5109,8 @@ function App() {
         if (!active) return;
         settingsRevision += 1;
         const normalized = normalizeSettings(event.payload);
-        if (normalized.appearance.density !== previousDensityRef.current) {
-          pendingDensityAnchorRef.current = captureDensityAnchor();
+        if (!previousAppearanceLayoutKeyRef.current.startsWith(`${appearanceLayoutKey(normalized.appearance)}:`)) {
+          pendingAppearanceAnchorRef.current = captureAppearanceAnchor();
         }
         pickerSearchSettingsRef.current = normalized.picker;
         settingsHydratedRef.current = true;
@@ -5030,7 +5147,7 @@ function App() {
       active = false;
       unlisten?.();
     };
-  }, [captureDensityAnchor]);
+  }, [captureAppearanceAnchor]);
 
 
   useEffect(() => {
@@ -7257,7 +7374,8 @@ function App() {
                           fallback={<span className="item-title">{item.title}</span>}
                         />
                       ) : null}
-                      {item.tags || metadataNotesPreview(item.notes, item.tags) ? (
+                      {(settings.appearance.itemDetails === "always" || itemIsSelected)
+                        && (item.tags || metadataNotesPreview(item.notes, item.tags)) ? (
                         <span className="item-metadata">
                           {item.tags ? (
                             <FindHighlightedText
@@ -7375,6 +7493,7 @@ function App() {
                       <TextPreview
                         item={item}
                         expanded={expandedItemIds.has(item.id) || Boolean(itemIsFindTarget)}
+                        lines={settings.appearance.textPreviewLines}
                         findMatches={findFieldMatches(itemFindMatches?.fields, "content")}
                         currentOrdinal={findState?.currentOrdinal ?? null}
                         onToggle={() => void toggleTextPreview(item)}
@@ -7575,6 +7694,19 @@ function App() {
                               aria-hidden="true"
                             />
                             <span>{item.is_marked ? "Unmark" : "Mark"}</span>
+                          </UiUnstyledButton>
+                          <UiUnstyledButton
+                            type="button"
+                            role="menuitem"
+                            tabIndex={-1}
+                            className="item-menu-action is-danger"
+                            onClick={() => {
+                              setOpenItemMenu(null);
+                              void deleteItems(itemDeleteTargets);
+                            }}
+                          >
+                            <Trash2 size={14} strokeWidth={2.2} aria-hidden="true" />
+                            <span>{itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}</span>
                           </UiUnstyledButton>
                           {item.content_kind === "text" ? (
                             <>
@@ -8790,37 +8922,50 @@ function nullableTrim(value: string) {
 function metadataNotesPreview(notes: string | null, _tags: string | null) {
   return notes?.trim() ?? "";
 }
-
 function estimateHistoryRowSize(
   item: HistoryItem,
-  density: AppSettings["appearance"]["density"],
+  appearance: AppSettings["appearance"],
+  selected: boolean,
+  viewport: { narrow: boolean; coarsePointer: boolean },
 ) {
+  const configuredImagePreviewHeight = getImagePreviewHeight(appearance.imagePreview);
+  const imagePreviewHeight = viewport.narrow
+    ? Math.min(configuredImagePreviewHeight, NARROW_IMAGE_PREVIEW_MAX_HEIGHT)
+    : configuredImagePreviewHeight;
   const markdownImageCount = markdownImages(item.text).length;
   if (markdownImageCount > 0) {
-    return Math.min(900, 100 + markdownImageCount * 180);
+    return Math.min(900, 100 + markdownImageCount * imagePreviewHeight);
   }
   if (item.content_kind === "image") {
-    return 190;
+    return imagePreviewHeight + 10;
   }
-  return estimateTextRowSize(item, density);
+  return estimateTextRowSize(item, appearance, selected, viewport);
 }
-function estimateTextRowSize(item: HistoryItem, density: AppSettings["appearance"]["density"]) {
-  const densityMetrics = getDensityMetrics(density);
+function estimateTextRowSize(
+  item: HistoryItem,
+  appearance: AppSettings["appearance"],
+  selected: boolean,
+  viewport: { narrow: boolean; coarsePointer: boolean },
+) {
+  const densityMetrics = getDensityMetrics(appearance.density);
 
   const visiblePreview = item.text.trim();
   const previewLines = visiblePreview
     ? Math.min(
-        TEXT_PREVIEW_ESTIMATED_MAX_LINES,
+        appearance.textPreviewLines,
         Math.max(
           visiblePreview.split(/\r\n|\r|\n/).length,
           Math.ceil(visiblePreview.length / TEXT_PREVIEW_ESTIMATED_CHARS_PER_LINE),
         ),
       )
     : 0;
-  const metadataParts = [
-    item.tags?.trim() ?? "",
-    metadataNotesPreview(item.notes, item.tags),
-  ].filter(Boolean);
+  const showDetails = appearance.itemDetails === "always" || selected;
+  const metadataParts = showDetails
+    ? [
+        item.tags?.trim() ?? "",
+        metadataNotesPreview(item.notes, item.tags),
+      ].filter(Boolean)
+    : [];
   const metadataLength = metadataParts.reduce((total, part) => total + part.length, 0);
   const metadataExplicitLines = metadataParts.reduce(
     (maximum, part) => Math.max(maximum, part.split(/\r\n|\r|\n/).length),
@@ -8845,7 +8990,13 @@ function estimateTextRowSize(item: HistoryItem, density: AppSettings["appearance
         ? densityMetrics.gap + previewLines * FEED_ITEM_PREVIEW_LINE_HEIGHT
         : 0
     );
-  return Math.max(densityMetrics.minHeight, estimatedHeight);
+  const effectiveActionSize = appearance.actionSize === "large"
+    || (appearance.actionSize === "auto" && viewport.coarsePointer)
+    ? 44
+    : 32;
+  const actionMinimumHeight =
+    densityMetrics.paddingY + FEED_ITEM_ACTION_TOP_OFFSET + effectiveActionSize + 2;
+  return Math.max(densityMetrics.minHeight, actionMinimumHeight, estimatedHeight);
 }
 
 function markdownImages(text: string): MarkdownImage[] {
@@ -8865,10 +9016,10 @@ function normalizeMarkdownImageSrc(src: string) {
   }
   return trimmed;
 }
-
 function TextPreview({
   item,
   expanded,
+  lines,
   findMatches,
   currentOrdinal,
   onToggle,
@@ -8876,6 +9027,7 @@ function TextPreview({
 }: {
   item: HistoryItem;
   expanded: boolean;
+  lines: AppSettings["appearance"]["textPreviewLines"];
   findMatches?: FindFieldMatches | null;
   currentOrdinal?: number | null;
   onToggle: () => void;
@@ -8896,7 +9048,7 @@ function TextPreview({
     const observer = new ResizeObserver(measure);
     observer.observe(preview);
     return () => observer.disconnect();
-  }, [expanded, item.text]);
+  }, [expanded, item.text, lines]);
 
   useLayoutEffect(() => {
     onLayoutChange();
@@ -8954,7 +9106,7 @@ function TextPreview({
               onToggle();
             }}
           >
-            {expanded ? "Collapse" : "Expand"}
+            {expanded ? "Show less" : "Show more"}
           </button>
         </span>
       ) : null}

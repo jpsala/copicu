@@ -524,11 +524,25 @@ if (isTauriRuntime()) {
   }
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
 
 export function SettingsWindowApp() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const persistedSettingsRef = useRef(settings);
-  useEffect(() => { persistedSettingsRef.current = settings; }, [settings]);
+  const persistedSettingsRef = useRef(DEFAULT_SETTINGS);
+  const confirmedAppearanceRef = useRef(DEFAULT_SETTINGS.appearance);
+  const appearanceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const appearanceVersionRef = useRef(0);
+  const confirmedAppearanceVersionRef = useRef(0);
+  const settingsRevisionRef = useRef(0);
+  const settingsHydrationRef = useRef(createDeferred<void>());
+  const settingsHydrationErrorRef = useRef<unknown>(null);
   const [draft, setDraft] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -595,22 +609,95 @@ export function SettingsWindowApp() {
     [dismissToast],
   );
 
+  const saveAppearance = useCallback((appearance: AppSettings["appearance"]) => {
+    const version = ++appearanceVersionRef.current;
+    setError(null);
+    setSettings((current) => ({ ...current, appearance }));
+    setDraft((current) => ({ ...current, appearance }));
+
+    const writeAppearance = async () => {
+      try {
+        await settingsHydrationRef.current.promise;
+        if (settingsHydrationErrorRef.current) {
+          throw settingsHydrationErrorRef.current;
+        }
+        const nextSettings = normalizeSettings(await invoke<AppSettings>("update_settings", {
+          settings: {
+            ...persistedSettingsRef.current,
+            appearance,
+          },
+        }));
+        persistedSettingsRef.current = nextSettings;
+        confirmedAppearanceRef.current = nextSettings.appearance;
+        confirmedAppearanceVersionRef.current = version;
+        const isLatest = version === appearanceVersionRef.current;
+        setSettings((current) => ({
+          ...nextSettings,
+          appearance: isLatest ? nextSettings.appearance : current.appearance,
+        }));
+        setDraft((current) => ({
+          ...current,
+          appearance: isLatest ? nextSettings.appearance : current.appearance,
+        }));
+        if (isTauriRuntime()) {
+          await emit(SETTINGS_UPDATED_EVENT, nextSettings);
+        }
+      } catch (saveError) {
+        if (version !== appearanceVersionRef.current) return;
+        confirmedAppearanceVersionRef.current = version;
+        const message = `Appearance couldn't be saved. Try the change again. ${String(saveError)}`;
+        const confirmedAppearance = confirmedAppearanceRef.current;
+        setSettings((current) => ({ ...current, appearance: confirmedAppearance }));
+        setDraft((current) => ({ ...current, appearance: confirmedAppearance }));
+        setError(message);
+        pushToast({
+          title: "Appearance not saved",
+          message,
+          tone: "danger",
+          durationMs: STICKY_TOAST_DURATION_MS,
+        });
+      }
+    };
+
+    appearanceWriteQueueRef.current = appearanceWriteQueueRef.current.then(
+      writeAppearance,
+      writeAppearance,
+    );
+  }, [pushToast]);
+
+  const waitForAppearanceWrites = useCallback(async () => {
+    let pending = appearanceWriteQueueRef.current;
+    await pending;
+    while (pending !== appearanceWriteQueueRef.current) {
+      pending = appearanceWriteQueueRef.current;
+      await pending;
+    }
+  }, []);
+
   const closeWindow = useCallback(() => {
+    setDraft((current) => ({
+      ...persistedSettingsRef.current,
+      appearance: current.appearance,
+    }));
     if (isTauriRuntime()) {
       void closeSettingsWindow();
-      return;
     }
-    setDraft(settings);
-  }, [settings]);
+  }, []);
 
   const saveSettings = useCallback(async () => {
     try {
+      await waitForAppearanceWrites();
       setError(null);
       const nextSettings = normalizeSettings(await invoke<AppSettings>("update_settings", {
-        settings: draft,
+        settings: {
+          ...draft,
+          appearance: persistedSettingsRef.current.appearance,
+        },
       }));
       const nextAutostartStatus = await getAutostartStatus().catch(() => null);
       const effectiveSettings = settingsWithEffectiveAutostart(nextSettings, nextAutostartStatus);
+      persistedSettingsRef.current = effectiveSettings;
+      confirmedAppearanceRef.current = effectiveSettings.appearance;
       setAutostartStatus(nextAutostartStatus);
       setSettings(effectiveSettings);
       setDraft(effectiveSettings);
@@ -622,7 +709,7 @@ export function SettingsWindowApp() {
     } catch (saveError) {
       setError(String(saveError));
     }
-  }, [draft]);
+  }, [draft, waitForAppearanceWrites]);
 
   const applyExternalEditorShortcut = useCallback(async (shortcut: string) => {
     setDraft((current) => ({
@@ -638,6 +725,13 @@ export function SettingsWindowApp() {
         "set_external_editor_shortcut",
         { shortcut },
       ));
+      persistedSettingsRef.current = {
+        ...persistedSettingsRef.current,
+        picker: {
+          ...persistedSettingsRef.current.picker,
+          externalEditorShortcut: persisted.picker.externalEditorShortcut,
+        },
+      };
       setSettings((current) => ({
         ...current,
         picker: {
@@ -1234,13 +1328,12 @@ export function SettingsWindowApp() {
     let active = true;
     let unlisten: (() => void) | null = null;
     let unlistenScenario: (() => void) | null = null;
-    let settingsRevision = 0;
     let settingsHydrated = false;
     const unlistenSettings = listen<AppSettings>(
       SETTINGS_UPDATED_EVENT,
       (event: Event<AppSettings>) => {
         if (!active) return;
-        settingsRevision += 1;
+        settingsRevisionRef.current += 1;
         const nextSettings = normalizeSettings(event.payload);
         const currentSettings = persistedSettingsRef.current;
         const pickerChanged = {
@@ -1251,22 +1344,39 @@ export function SettingsWindowApp() {
             !== JSON.stringify(nextSettings.picker.defaultExcludedSearchScopes),
         };
         persistedSettingsRef.current = nextSettings;
-        setSettings(nextSettings);
+        confirmedAppearanceRef.current = nextSettings.appearance;
+        settingsHydrationRef.current.resolve();
+        const appearanceWritePending =
+          confirmedAppearanceVersionRef.current < appearanceVersionRef.current;
+        setSettings((current) => ({
+          ...nextSettings,
+          appearance: appearanceWritePending ? current.appearance : nextSettings.appearance,
+        }));
         setDraft((currentDraft) => {
-          const draftWasClean = JSON.stringify(currentDraft) === JSON.stringify(currentSettings);
-          if (!settingsHydrated || draftWasClean) {
-            return nextSettings;
-          }
-          return {
+          const draftWithoutAppearance = {
             ...currentDraft,
-            picker: {
-              ...currentDraft.picker,
-              ...(pickerChanged.searchTriggerMode ? { searchTriggerMode: nextSettings.picker.searchTriggerMode } : {}),
-              ...(pickerChanged.defaultSearchScopes ? { defaultSearchScopes: nextSettings.picker.defaultSearchScopes } : {}),
-              ...(pickerChanged.defaultExcludedSearchScopes
-                ? { defaultExcludedSearchScopes: nextSettings.picker.defaultExcludedSearchScopes }
-                : {}),
-            },
+            appearance: currentSettings.appearance,
+          };
+          const draftWasClean =
+            JSON.stringify(draftWithoutAppearance) === JSON.stringify(currentSettings);
+          const nextDraft = !settingsHydrated || draftWasClean
+            ? nextSettings
+            : {
+                ...currentDraft,
+                picker: {
+                  ...currentDraft.picker,
+                  ...(pickerChanged.searchTriggerMode ? { searchTriggerMode: nextSettings.picker.searchTriggerMode } : {}),
+                  ...(pickerChanged.defaultSearchScopes ? { defaultSearchScopes: nextSettings.picker.defaultSearchScopes } : {}),
+                  ...(pickerChanged.defaultExcludedSearchScopes
+                    ? { defaultExcludedSearchScopes: nextSettings.picker.defaultExcludedSearchScopes }
+                    : {}),
+                },
+              };
+          return {
+            ...nextDraft,
+            appearance: appearanceWritePending
+              ? currentDraft.appearance
+              : nextSettings.appearance,
           };
         });
         settingsHydrated = true;
@@ -1279,29 +1389,42 @@ export function SettingsWindowApp() {
           return;
         }
         unlisten = nextUnlisten;
-        const revisionAtRequest = settingsRevision;
+        const revisionAtRequest = settingsRevisionRef.current;
         void Promise.all([
           invoke<AppSettings>("get_settings"),
           getAutostartStatus().catch(() => null),
         ])
           .then(([nextSettings, nextAutostartStatus]) => {
-            if (!active || settingsRevision !== revisionAtRequest) return;
+            if (!active || settingsRevisionRef.current !== revisionAtRequest) return;
             const normalizedSettings = normalizeSettings(nextSettings);
             const effectiveSettings = settingsWithEffectiveAutostart(
               normalizedSettings,
               nextAutostartStatus,
             );
-            settingsHydrated = true;
+            settingsHydrationRef.current.resolve();
+            const appearanceWritePending =
+              confirmedAppearanceVersionRef.current < appearanceVersionRef.current;
             setAutostartStatus(nextAutostartStatus);
             persistedSettingsRef.current = effectiveSettings;
-            setSettings(effectiveSettings);
-            setDraft(effectiveSettings);
+            confirmedAppearanceRef.current = effectiveSettings.appearance;
+            setSettings((current) => ({
+              ...effectiveSettings,
+              appearance: appearanceWritePending ? current.appearance : effectiveSettings.appearance,
+            }));
+            setDraft((current) => ({
+              ...effectiveSettings,
+              appearance: appearanceWritePending ? current.appearance : effectiveSettings.appearance,
+            }));
           })
           .catch((loadError) => {
+            settingsHydrationErrorRef.current = loadError;
+            settingsHydrationRef.current.resolve();
             if (active) setError(String(loadError));
           });
       })
       .catch((loadError) => {
+        settingsHydrationErrorRef.current = loadError;
+        settingsHydrationRef.current.resolve();
         if (active) setError(String(loadError));
       });
     void listen<ActiveScenarioSession | null>(SCENARIO_SESSION_CHANGED_EVENT, (event) => {
@@ -1356,6 +1479,7 @@ export function SettingsWindowApp() {
           updateStatus={updateStatus}
           updaterAction={updaterAction}
           onDraftChange={setDraft}
+          onAppearanceChange={saveAppearance}
           onQueryChange={setQuery}
           onRunScript={runStandaloneScriptAction}
           onCreateTag={createSettingsTag}
@@ -1595,6 +1719,7 @@ type SettingsPanelProps = {
   updateStatus: AutoUpdateStatus | null;
   updaterAction: "idle" | "checking" | "updating";
   onDraftChange: (settings: AppSettings) => void;
+  onAppearanceChange: (appearance: AppSettings["appearance"]) => void;
   onQueryChange: (query: string) => void;
   onRunScript: (action: ActionDefinition) => void;
   onCreateTag: (label: string) => Promise<void>;
@@ -1688,6 +1813,7 @@ function SettingsPanel({
   updateStatus,
   updaterAction,
   onDraftChange,
+  onAppearanceChange,
   onQueryChange,
   onRunScript,
   onCreateTag,
@@ -1785,7 +1911,12 @@ function SettingsPanel({
     "color mode system light dark",
     "theme preset colors",
     "density standard compact row spacing",
-    "appearance preview",
+    "image preview small medium large markdown image height",
+    "item actions auto inline menu only mark delete more responsive",
+    "action size auto small large mouse touch",
+    "text preview lines 2 4 6 show more show less",
+    "item details always selected only title tags notes",
+    "appearance preview synthetic",
     THEME_PRESET_SEARCH_TEXT,
   ].join(" ");
   const aboutSearchText = [
@@ -2332,16 +2463,14 @@ function SettingsPanel({
             ) : null}
 
             {displayedSections.some((section) => section.id === "appearance") ? (
-              <SettingsSection title="Appearance" description="Color, theme and density across Copicu.">
-                {visible("appearance", "Color mode Theme Density Preview", appearanceSearchText) ? (
+              <SettingsSection
+                title="Appearance"
+                description="Changes here save automatically. Save and Cancel apply to all other preferences."
+              >
+                {visible("appearance", "Color mode Theme Density Image preview Item actions Action size Text preview Item details Preview", appearanceSearchText) ? (
                   <AppearanceSettingsControl
                     appearance={draft.appearance}
-                    onChange={(appearance) =>
-                      onDraftChange({
-                        ...draft,
-                        appearance,
-                      })
-                    }
+                    onChange={onAppearanceChange}
                   />
                 ) : null}
               </SettingsSection>
@@ -2932,11 +3061,16 @@ function SettingsPanel({
         </Tabs>
 
         {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
-        <div className="settings-buttons">
-          <UiButton type="button" variant="default" onClick={onCancel}>
-            Cancel
-          </UiButton>
-          <UiButton type="submit" variant="filled">Save</UiButton>
+        <div className="settings-footer">
+          <p className="settings-save-note">
+            Appearance saves automatically. Save and Cancel apply to all other preferences.
+          </p>
+          <div className="settings-buttons">
+            <UiButton type="button" variant="default" onClick={onCancel}>
+              Cancel
+            </UiButton>
+            <UiButton type="submit" variant="filled">Save</UiButton>
+          </div>
         </div>
     </form>
   );

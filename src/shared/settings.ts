@@ -1,5 +1,14 @@
 import type { EnrichmentSettings, EnterAction } from "./contracts";
-import type { DensitySetting, ThemeId, ThemeSetting } from "../themeCatalog";
+import type {
+  ActionSizeSetting,
+  DensitySetting,
+  ImagePreviewSetting,
+  ItemActionsSetting,
+  ItemDetailsSetting,
+  TextPreviewLinesSetting,
+  ThemeId,
+  ThemeSetting,
+} from "../themeCatalog";
 
 export type SearchTriggerMode = "realtime" | "enter";
 export type SearchScope = "all" | "content" | "metadata" | "title" | "notes" | "tags" | "context";
@@ -81,6 +90,11 @@ export type AppSettings = {
     theme: ThemeSetting;
     themeId: ThemeId;
     density: DensitySetting;
+    imagePreview: ImagePreviewSetting;
+    itemActions: ItemActionsSetting;
+    actionSize: ActionSizeSetting;
+    textPreviewLines: TextPreviewLinesSetting;
+    itemDetails: ItemDetailsSetting;
   };
   editor: EditorSettings;
   scripts: {
@@ -129,6 +143,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     theme: "system",
     themeId: "default",
     density: "standard",
+    imagePreview: "large",
+    itemActions: "auto",
+    actionSize: "auto",
+    textPreviewLines: 4,
+    itemDetails: "always",
   },
   editor: {
     fontFamily: "systemMono",
@@ -211,6 +230,25 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
       ...DEFAULT_SETTINGS.appearance,
       ...settings.appearance,
       density: settings.appearance?.density === "compact" ? "compact" : "standard",
+      imagePreview: settings.appearance?.imagePreview === "small"
+        || settings.appearance?.imagePreview === "medium"
+        ? settings.appearance.imagePreview
+        : "large",
+      itemActions: settings.appearance?.itemActions === "inline"
+        || settings.appearance?.itemActions === "menuOnly"
+        ? settings.appearance.itemActions
+        : "auto",
+      actionSize: settings.appearance?.actionSize === "small"
+        || settings.appearance?.actionSize === "large"
+        ? settings.appearance.actionSize
+        : "auto",
+      textPreviewLines: settings.appearance?.textPreviewLines === 2
+        || settings.appearance?.textPreviewLines === 6
+        ? settings.appearance.textPreviewLines
+        : 4,
+      itemDetails: settings.appearance?.itemDetails === "selectedOnly"
+        ? "selectedOnly"
+        : "always",
     },
     editor: {
       ...DEFAULT_SETTINGS.editor,

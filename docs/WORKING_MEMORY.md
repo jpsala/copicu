@@ -10,19 +10,20 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete/released`; Appearance 036 publicado e instalado.
-- **Referencia:** `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md`.
-- **Resultado:** `v0.4.19` publica Color mode segmentado, ocho temas,
-  `Density: Standard | Compact`, preview sintética y propagación global;
-  build y visual suite `328/328` pasan.
-- **Próximo paso:** dogfood de `v0.4.19`. `npm run release:install` queda como
-  cierre manual sólo cuando JP autoriza explícitamente publicar e instalar.
+- **Estado:** `complete/distributed`; Appearance 037 publicado e instalado como
+  `v0.4.20`.
+- **Referencia:** `docs/tracks/037-picker-appearance-adaptation.md`, `docs/topics/appearance-and-themes.md`.
+- **Resultado:** Appearance aplica autosave serializado y global; estimadores
+  responsive, acciones 44 px, details por selección y foco High Contrast quedaron
+  corregidos y distribuidos.
+- **Próximo paso:** dogfood de la instalada y observar el hang intermitente sin
+  atribuirle resolución a este corte.
 
 ## Lectura Rapida
 
 | Area | Estado | Abrir primero | Siguiente accion |
 | --- | --- | --- | --- |
-| Appearance | complete/released | `docs/tracks/036-appearance-settings.md`, `docs/topics/appearance-and-themes.md` | Dogfood de temas y Density en `v0.4.19`. |
+| Appearance | complete/distributed | `docs/tracks/037-picker-appearance-adaptation.md`, `docs/topics/appearance-and-themes.md` | Dogfood instalado de tamaños, acciones, texto y details. |
 | Confiabilidad picker / metadata | complete | `docs/tracks/035-picker-reliability.md` | Fixes y retencion verificados; historicos se limitan solo al recapturarse. Ver estado de distribucion debajo. |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Proxima extraccion mecanica chica sin tocar runner Node. |
 | RPC / automatizacion externa | planned | `docs/tracks/034-local-rpc-cli.md`, `docs/topics/actions-and-scripting-api.md` | Implementar V1 en una pasada; PowerShell y AutoHotkey usan CLI sobre Named Pipe, sin SQL/Tauri/Host passthrough. |
@@ -30,7 +31,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | complete/dogfood | `specs/011-selection-aware-metadata-inspector/spec.md`, `docs/topics/filtering-and-query-syntax.md` | `F2` unifica content + metadata con commit atómico; utility standalone conserva single/multi. Continuar dogfood del corte distribuido sin cambiar Search/Find. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.19` publicada e instalada; Appearance/picker y firma updater canónica incluidos. Continuar dogfood; el smoke no resuelve el hang intermitente. |
+| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.20` publicada e instalada; Appearance adaptativa y firma updater canónica incluidas. Continuar dogfood; el smoke no resuelve el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 

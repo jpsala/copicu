@@ -47,6 +47,11 @@ export function MetadataWindowApp() {
     theme: "system",
     themeId: "default",
     density: "standard",
+    imagePreview: "large",
+    itemActions: "auto",
+    actionSize: "auto",
+    textPreviewLines: 4,
+    itemDetails: "always",
   });
   const [closeRequestSignal, setCloseRequestSignal] = useState(0);
   const dirtyRef = useRef(false);

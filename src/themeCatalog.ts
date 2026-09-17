@@ -2,6 +2,11 @@ import type { MantineColorsTuple } from "@mantine/core";
 
 export type ThemeSetting = "system" | "light" | "dark";
 export type DensitySetting = "standard" | "compact";
+export type ImagePreviewSetting = "small" | "medium" | "large";
+export type ItemActionsSetting = "auto" | "inline" | "menuOnly";
+export type ActionSizeSetting = "auto" | "small" | "large";
+export type TextPreviewLinesSetting = 2 | 4 | 6;
+export type ItemDetailsSetting = "always" | "selectedOnly";
 export type ThemeId =
   | "default"
   | "graphite"
@@ -16,6 +21,11 @@ export type AppearanceSettings = {
   theme: ThemeSetting;
   themeId: ThemeId;
   density: DensitySetting;
+  imagePreview: ImagePreviewSetting;
+  itemActions: ItemActionsSetting;
+  actionSize: ActionSizeSetting;
+  textPreviewLines: TextPreviewLinesSetting;
+  itemDetails: ItemDetailsSetting;
 };
 
 type SchemeTokens = {
@@ -436,6 +446,26 @@ export const DENSITY_METRICS = {
   gap: number;
 }>;
 
+export const IMAGE_PREVIEW_HEIGHTS = {
+  small: 96,
+  medium: 140,
+  large: 180,
+} as const satisfies Record<ImagePreviewSetting, number>;
+
+export const ACTION_SIZES = {
+  auto: 32,
+  small: 32,
+  large: 44,
+} as const satisfies Record<ActionSizeSetting, number>;
+
+export function getImagePreviewHeight(imagePreview: ImagePreviewSetting) {
+  return IMAGE_PREVIEW_HEIGHTS[imagePreview];
+}
+
+export function getActionSize(actionSize: ActionSizeSetting) {
+  return ACTION_SIZES[actionSize];
+}
+
 export function getDensityMetrics(density: DensitySetting) {
   return DENSITY_METRICS[density];
 }
@@ -474,6 +504,8 @@ export function applyCopicuAppearance(root: HTMLElement, appearance: AppearanceS
   const preset = getThemePreset(appearance.themeId);
   const tokens = preset[effectiveScheme];
   const densityMetrics = getDensityMetrics(appearance.density);
+  const imagePreviewHeight = getImagePreviewHeight(appearance.imagePreview);
+  const actionSize = getActionSize(appearance.actionSize);
 
   if (appearance.theme === "system") {
     delete root.dataset.theme;
@@ -482,6 +514,11 @@ export function applyCopicuAppearance(root: HTMLElement, appearance: AppearanceS
   }
   root.dataset.themeId = preset.id;
   root.dataset.density = appearance.density;
+  root.dataset.imagePreview = appearance.imagePreview;
+  root.dataset.itemActions = appearance.itemActions;
+  root.dataset.actionSize = appearance.actionSize;
+  root.dataset.textPreviewLines = String(appearance.textPreviewLines);
+  root.dataset.itemDetails = appearance.itemDetails;
   root.setAttribute("data-mantine-color-scheme", effectiveScheme);
   root.style.colorScheme = effectiveScheme;
   root.style.color = tokens.color;
@@ -518,6 +555,9 @@ export function applyCopicuAppearance(root: HTMLElement, appearance: AppearanceS
   setToken(root.style, "--feed-item-min-height", `${densityMetrics.minHeight}px`);
   setToken(root.style, "--feed-item-padding-y", `${densityMetrics.paddingY}px`);
   setToken(root.style, "--feed-item-gap", `${densityMetrics.gap}px`);
+  setToken(root.style, "--image-preview-max-height", `${imagePreviewHeight}px`);
+  setToken(root.style, "--item-action-size", `${actionSize}px`);
+  setToken(root.style, "--text-preview-max-height", `${appearance.textPreviewLines * 1.38}em`);
 
   preset.mantineColor.forEach((color, index) => {
     setToken(root.style, `--mantine-color-${preset.primaryColor}-${index}`, color);
