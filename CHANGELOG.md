@@ -4,6 +4,28 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.21] - 2026-09-17
+
+### Added
+
+- Add an optional delayed image hover zoom with plain hover, Ctrl + hover, and
+  Alt + hover activation modes.
+
+### Changed
+
+- Add explicit Small, Medium, and Large picker action sizes, and apply the same
+  sizing to the image magnifier.
+- Clarify the marked and selected clip menus with counted actions that
+  distinguish loaded clips, all matching clips, and the current selection.
+
+### Fixed
+
+- Allow deleting every marked clip, including marks outside the current filter,
+  and refresh the global marked count after deletion.
+- Put mark or unmark all selected clips before the remaining batch actions so
+  the checked-clips workflow stays visible.
+
+
 ## [0.4.20] - 2026-09-16
 
 ### Added
@@ -200,6 +222,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.21]: https://github.com/jpsala/copicu/releases/tag/v0.4.21
 [0.4.20]: https://github.com/jpsala/copicu/releases/tag/v0.4.20
 [0.4.19]: https://github.com/jpsala/copicu/releases/tag/v0.4.19
 [0.4.14]: https://github.com/jpsala/copicu/releases/tag/v0.4.14

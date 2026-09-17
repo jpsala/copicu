@@ -1,4 +1,7 @@
 import { SegmentedControl, UnstyledButton } from "@mantine/core";
+import Flag from "lucide-react/dist/esm/icons/flag.mjs";
+import MoreVertical from "lucide-react/dist/esm/icons/more-vertical.mjs";
+import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import {
   type CSSProperties,
   type KeyboardEvent,
@@ -16,6 +19,7 @@ import {
   type ActionSizeSetting,
   type AppearanceSettings,
   type DensitySetting,
+  type ImageHoverPreviewSetting,
   type ImagePreviewSetting,
   type ItemActionsSetting,
   type ItemDetailsSetting,
@@ -43,6 +47,12 @@ const IMAGE_PREVIEW_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "large", label: "Large" },
 ];
+const IMAGE_HOVER_PREVIEW_OPTIONS = [
+  { value: "off", label: "Off" },
+  { value: "hover", label: "Hover" },
+  { value: "ctrlHover", label: "Ctrl + hover" },
+  { value: "altHover", label: "Alt + hover" },
+];
 const ITEM_ACTION_OPTIONS = [
   { value: "auto", label: "Auto" },
   { value: "inline", label: "Inline" },
@@ -51,6 +61,7 @@ const ITEM_ACTION_OPTIONS = [
 const ACTION_SIZE_OPTIONS = [
   { value: "auto", label: "Auto" },
   { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
   { value: "large", label: "Large" },
 ];
 const TEXT_PREVIEW_OPTIONS = [
@@ -231,11 +242,15 @@ export function AppearanceSettingsControl({
         {segmented("Image preview", appearance.imagePreview, IMAGE_PREVIEW_OPTIONS, (imagePreview) =>
           onChange({ ...appearance, imagePreview: imagePreview as ImagePreviewSetting }))}
       </AppearanceField>
+      <AppearanceField label="Image hover zoom" description="Show a larger floating image after hovering for 500 ms.">
+        {segmented("Image hover zoom", appearance.imageHoverPreview, IMAGE_HOVER_PREVIEW_OPTIONS, (imageHoverPreview) =>
+          onChange({ ...appearance, imageHoverPreview: imageHoverPreview as ImageHoverPreviewSetting }))}
+      </AppearanceField>
       <AppearanceField label="Item actions" description="Show Mark, Delete and More inline or keep them in one menu.">
         {segmented("Item actions", appearance.itemActions, ITEM_ACTION_OPTIONS, (itemActions) =>
           onChange({ ...appearance, itemActions: itemActions as ItemActionsSetting }))}
       </AppearanceField>
-      <AppearanceField label="Action size" description="Auto uses 32 px with a mouse and 44 px on touch.">
+      <AppearanceField label="Action size" description="Small is icon-only, Medium is 32 px and Large is 44 px. Auto uses Medium with a mouse and Large on touch.">
         {segmented("Action size", appearance.actionSize, ACTION_SIZE_OPTIONS, (actionSize) =>
           onChange({ ...appearance, actionSize: actionSize as ActionSizeSetting }))}
       </AppearanceField>
@@ -277,9 +292,9 @@ export function AppearanceSettingsControl({
               </span>
               <span className="appearance-preview-image" aria-label="Synthetic image preview" />
               <span className="appearance-preview-actions" aria-hidden="true">
-                <span className="is-mark" />
-                <span className="is-delete" />
-                <span className="is-menu" />
+                <span className="is-mark"><Flag size={16} strokeWidth={2.1} /></span>
+                <span className="is-delete"><Trash2 size={16} strokeWidth={2.2} /></span>
+                <span className="is-menu"><MoreVertical size={16} strokeWidth={2.3} /></span>
               </span>
             </div>
           </div>

@@ -4,7 +4,8 @@ export type ThemeSetting = "system" | "light" | "dark";
 export type DensitySetting = "standard" | "compact";
 export type ImagePreviewSetting = "small" | "medium" | "large";
 export type ItemActionsSetting = "auto" | "inline" | "menuOnly";
-export type ActionSizeSetting = "auto" | "small" | "large";
+export type ActionSizeSetting = "auto" | "small" | "medium" | "large";
+export type ImageHoverPreviewSetting = "off" | "hover" | "ctrlHover" | "altHover";
 export type TextPreviewLinesSetting = 2 | 4 | 6;
 export type ItemDetailsSetting = "always" | "selectedOnly";
 export type ThemeId =
@@ -22,6 +23,7 @@ export type AppearanceSettings = {
   themeId: ThemeId;
   density: DensitySetting;
   imagePreview: ImagePreviewSetting;
+  imageHoverPreview: ImageHoverPreviewSetting;
   itemActions: ItemActionsSetting;
   actionSize: ActionSizeSetting;
   textPreviewLines: TextPreviewLinesSetting;
@@ -447,14 +449,15 @@ export const DENSITY_METRICS = {
 }>;
 
 export const IMAGE_PREVIEW_HEIGHTS = {
-  small: 96,
-  medium: 140,
-  large: 180,
+  small: 64,
+  medium: 96,
+  large: 200,
 } as const satisfies Record<ImagePreviewSetting, number>;
 
 export const ACTION_SIZES = {
   auto: 32,
-  small: 32,
+  small: 24,
+  medium: 32,
   large: 44,
 } as const satisfies Record<ActionSizeSetting, number>;
 

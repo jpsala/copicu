@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.20](https://github.com/jpsala/copicu/releases/tag/v0.4.20)
-- Asset: `Copicu_0.4.20_x64-setup.exe`
+- [v0.4.21](https://github.com/jpsala/copicu/releases/tag/v0.4.21)
+- Asset: `Copicu_0.4.21_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `60F657105637CA798BF267C20F886A47273C72609DBA9469C04844285EA025DB`
+- SHA256: `936F34151769CD923081F0AE7D40616077CE8020307809CC6BD691C52AF3DC6A`
 
-Adds adaptive Appearance controls with immediate autosave, synchronized virtualized picker geometry, accessible action sizing, and selected-item details.
+Adds optional delayed image hover zoom and explicit picker action sizes. Clarifies marked and selected clip scopes, supports marking the full selection, and deletes all marked clips with refreshed counts.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

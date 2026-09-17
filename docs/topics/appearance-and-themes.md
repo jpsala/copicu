@@ -6,6 +6,8 @@ triggers:
   - appearance
   - density
   - theme settings
+  - image hover zoom
+  - action size
   - temas
   - dark mode
   - light mode
@@ -38,8 +40,10 @@ picker en Settings. La arquitectura de ventanas vive en
 - `appearance.density`: `standard | compact`; settings previos normalizan a
   `standard`.
 - `appearance.imagePreview`: `small | medium | large`; default `large`.
+- `appearance.imageHoverPreview`: `off | hover | ctrlHover | altHover`; default
+  `off`.
 - `appearance.itemActions`: `auto | inline | menuOnly`; default `auto`.
-- `appearance.actionSize`: `auto | small | large`; default `auto`.
+- `appearance.actionSize`: `auto | small | medium | large`; default `auto`.
 - `appearance.textPreviewLines`: `2 | 4 | 6`; default `4`.
 - `appearance.itemDetails`: `always | selectedOnly`; default `always`.
 - `src/themeCatalog.ts` es la fuente de tokens Copicu, paletas Mantine y presets.
@@ -53,20 +57,35 @@ La interfaz debe seguir siendo una utilidad local compacta, discreta y
 keyboard-first. Los temas son una feature de producto para legibilidad e
 identidad, no una superficie decorativa ni compatibilidad visual con CopyQ.
 
+## Taxonomía De Settings
+
+- Appearance agrupa presentación, geometría y visibilidad: cómo se ve el
+  contenido, incluso cuando el control usa hover o modificadores.
+- Picker agrupa selección, búsqueda, activación, shortcuts y comportamiento de
+  ventana. La ubicación no sigue el objeto técnico que persiste el valor.
+- En controles híbridos manda la intención dominante y el lugar donde el
+  usuario buscaría la opción. Por eso `Image hover zoom` vive junto a `Image
+  preview`, mientras `Preview shortcut` permanece en Picker.
+
 ## Implementación Vigente
 
 - `Color mode` usa un control segmentado `System | Light | Dark`.
 - `Theme` presenta los ocho presets built-in como radios visuales con nombre,
   muestra cromática, marca/borde y navegación por flechas, `Home` y `End`.
 - `Density` ofrece `Standard | Compact`. Standard conserva el layout previo.
-- `Image preview` comparte alturas de 96, 140 y 180 px entre imágenes normales,
-  Markdown, preview sintética y estimadores; ventanas de hasta 560 px limitan el
-  máximo a 148 px. La ventana de preview completa queda fuera.
+- `Image preview` comparte alturas de 64, 96 y 200 px entre imágenes normales,
+  Markdown, preview sintética y estimadores; ventanas de hasta 760 px limitan el
+  máximo a 164 px.
+- `Image hover zoom` ofrece Off, Hover, Ctrl + hover y Alt + hover. El preview
+  flotante se demora 500 ms y queda apagado por defecto.
 - `Item actions` ofrece Auto, Inline y Menu only. Auto colapsa a un único menú
   hasta 560 px; Inline conserva Mark, Delete y More mientras quepan y aplica el
-  límite responsive obligatorio hasta 380 px.
-- `Action size` usa 32 px en Small, 44 px en Large y 32/44 px en Auto según
-  mouse o pointer coarse.
+  límite responsive obligatorio hasta 380 px. Las acciones se revelan con
+  hover o foco, no por selección; en touch aparecen al enfocar la fila.
+- `Action size` usa iconos desnudos en Small (24 px), los controles anteriores
+  de Small en Medium (32 px), Large conserva 44 px y Auto usa Medium/Large
+  según mouse o pointer coarse. La lupa de imágenes comparte esos targets y
+  escala su glifo a 14, 16 o 20 px.
 - `Text preview` limita el estado colapsado a 2, 4 o 6 líneas. Show more/Show
   less depende de overflow medido; expandido conserva máximo y scroll interno.
 - `Item details` controla sólo tags y notes; el título siempre permanece.
@@ -142,12 +161,16 @@ accesibilidad o touch.
 
 - Los defaults preservan `v0.4.19`; settings legacy o inválidos normalizan en
   TypeScript y Rust.
-- Imágenes normales, Markdown y estimadores comparten altura, incluido el cap
-  responsive de 148 px; los cambios en caliente no generan huecos,
-  solapamientos ni saltos.
+- Imágenes normales, Markdown y estimadores comparten alturas de 64, 96 y 200
+  px, incluido el cap responsive de 164 px; los cambios en caliente no generan
+  huecos, solapamientos ni saltos.
+- El hover zoom permanece apagado por defecto; sus cuatro modos son buscables,
+  persisten por autosave y funcionan en Settings desktop y angosto. La lupa
+  mide 24, 32 o 44 px según `Action size`.
 - Auto, Inline y Menu only conservan operaciones, teclado, foco y destructive
-  styling; Auto con pointer coarse usa 44 px y la altura mínima efectiva evita
-  que acciones grandes desborden filas Compact.
+  styling; la selección sola no revela acciones, Small elimina caja y fondo,
+  Medium usa 32 px y Large 44 px. Hover, foco y tap mantienen las acciones
+  alcanzables, y la altura mínima efectiva evita que desborden filas Compact.
 - 2/4/6 son límites colapsados reales; Show more/Show less sólo aparece ante
   overflow medido y la expansión queda acotada.
 - Always/Selected item only afecta exclusivamente tags y notes; título,
@@ -160,16 +183,6 @@ accesibilidad o touch.
 - Persistencia y actualización alcanzan todas las ventanas consumidoras sin
   carreras de bootstrap.
 
-Resultado 2026-09-16 del corte base: `v0.4.19` se publicó e instaló localmente.
-
-Resultado 2026-09-16 de los cortes adaptativos: `npm run build` pasa con el
-warning conocido del chunk principal; `npm run visual:check` pasa `348/348` en
-desktop y narrow; `cargo check --manifest-path src-tauri/Cargo.toml --target-dir
-.codex-run/appearance-cargo-target` pasa. La suite cubre autosave inmediato,
-escrituras rápidas seriales, bootstrap, broadcasts sin loops, rollback,
-aislamiento de Save/Cancel, estimación responsive profunda, acciones Compact de
-44 px, ancla al mover details y outline High Contrast renderizado. El test Rust
-focal compila pero no puede iniciar por el `STATUS_ENTRYPOINT_NOT_FOUND`
-conocido de Windows. La instancia dev reiniciada confirmó la superficie real;
-feeds mixtos largos y pointer coarse usan fixtures sintéticos.
-Este corte adaptativo queda sólo en desarrollo: no se publicó ni instaló.
+El corte 037 se publicó e instaló como `v0.4.20`; su verificación histórica vive
+en `docs/tracks/037-picker-appearance-adaptation.md`. El estado del follow-on
+posterior al release vive sólo en `docs/WORKING_MEMORY.md`.

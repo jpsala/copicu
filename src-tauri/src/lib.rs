@@ -1900,7 +1900,7 @@ async fn load_item_preview_image(
 ) -> Result<String, String> {
     require_surface_window(
         &window,
-        &[ITEM_PREVIEW_WINDOW_LABEL],
+        &[ITEM_PREVIEW_WINDOW_LABEL, MAIN_WINDOW_LABEL],
         "load_item_preview_image",
     )?;
     let storage = storage.inner().clone();

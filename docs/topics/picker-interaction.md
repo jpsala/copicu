@@ -80,15 +80,17 @@ Implementacion actual 2026-06-05:
 El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 
 - search como cabecera, con accesos directos mediante iconos a New item, Search/AI, Realtime/Enter y ayuda; en ventana estrecha la busqueda ocupa una fila completa y los controles una segunda;
-- bandera y contador global siempre visibles junto al kebab abren directamente el menu de marcados; no representan la seleccion transitoria de checkboxes ni se reducen al filtro actual. Las acciones sobre marcados preceden las de resultados actuales y esperan la carga completa del conjunto global; Enter abre, Escape devuelve foco al boton y todas las acciones participan de la navegacion de teclado;
-- la seleccion explicita usa un boton con contador a la izquierda del buscador; en ventana estrecha inicia la fila de controles. Permanece visible incluso en cero; su menu reune seleccionar visibles, limpiar, acciones compartidas, metadata, marcar y borrar el grupo. Reemplaza el checkbox maestro y la barra adicional, sin cambiar la altura del feed al seleccionar;
+- bandera y contador global siempre visibles junto al kebab abren directamente el menu de marcados; no representan la seleccion transitoria de checkboxes ni se reducen al filtro actual. El menu separa `Filter history`, acciones globales para todos los clips marcados y `Change marks in current results`; los comandos distinguen por nombre y cantidad entre clips cargados y todos los clips que coinciden. Las acciones globales incluyen borrar todos los marcados, aun si quedan fuera del filtro actual, y esperan la carga completa del conjunto. Enter abre, Escape devuelve foco al boton y todas las acciones participan de la navegacion de teclado;
+- la seleccion explicita usa un boton con contador a la izquierda del buscador; en ventana estrecha inicia la fila de controles. Permanece visible incluso en cero; su menu muestra primero `Change marks for selection`, con una accion contada para marcar o desmarcar todos los clips seleccionados, y despues las demas acciones compartidas, metadata y borrado. `Select N loaded clips` explicita el alcance cargado. Reemplaza el checkbox maestro y la barra adicional, sin cambiar la altura del feed al seleccionar;
 - el alcance de busqueda permanece visible debajo del header, incluso con query vacia: un unico selector muestra los campos efectivos, mientras los filtros adicionales quedan separados; la indicacion de defaults vive dentro del selector;
 - un borrador pendiente distingue los campos de la proxima busqueda de los resultados aplicados; limpiar recupera los campos predeterminados sin ocultarlos. En modo AI no se anticipan campos que el planner aun no determino;
 - feed preview-first;
 - cada item muestra solo contenido por defecto;
 - no mostrar fecha/hora, tipo, cantidad de caracteres ni cantidad de lineas en items normales;
 - si hay metadata (`title`, `tags`, `notes`), mostrarla como franja visual separada arriba del contenido;
-- checkbox, marca persistente, Delete y menu kebab aparecen al pasar el mouse, enfocar la fila, navegar hasta ella o abrir su menu; Delete siempre queda disponible en hover;
+- checkbox, marca persistente, Delete y menu kebab aparecen al pasar el mouse,
+  enfocar la fila o abrir su menu; navegar o seleccionar por sí solo no revela
+  las acciones. Delete siempre queda disponible en hover;
 - bandera, Delete y kebab forman una unica fila de controles alineados a la derecha; la marca persistente sigue visible fuera de esos estados y no significa favorito ni pin; el gutter de acciones es estable, sin tapar ni desplazar el preview;
 - current, hover y seleccion multiple son estados distintos: clic simple y navegacion por teclado mueven current sin quitar checks. La seleccion sigue limitada a los resultados cargados y se limpia al aplicar otra busqueda u ocultar el picker; las marcas permanecen. El contextual de una fila fuera del grupo limpia la seleccion y opera solo esa fila;
 - acciones actuales: activate, paste, edit, edit metadata, delete;
@@ -97,6 +99,13 @@ El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 - imagenes Markdown se muestran en el punto donde aparecen, no reordenadas arriba;
 - items `image` usan el PNG principal como preview visible grande; el thumbnail chico queda solo como artefacto auxiliar, no como preview principal del picker.
 - tanto en clips de imagen como en imagenes Markdown locales, un clic selecciona y el doble clic activa el clip igual que el texto; la lupa en hover o foco de teclado abre el preview con zoom, sin activar ni copiar el clip;
+- El control `Image hover zoom` de Appearance arma el preview flotante sólo
+  cuando se cumple el modo configurado durante 500 ms. Se cancela al atravesar
+  la imagen, cambiar de fila, hacer scroll, perder foco o presionar Escape, y
+  nunca cambia la geometría del feed ni abre otra ventana. En clips de imagen
+  empieza con el thumbnail y solicita resolución completa sólo al abrirse;
+  Markdown local reutiliza su fuente. Una gracia de 120 ms permite mover el
+  puntero al preview sin cerrarlo;
 - cuando el backend entrega snippets de coincidencia, aparecen antes del titulo y la metadata, con el fragmento resaltado como evidencia principal; el preview original sigue disponible y expandible, sin cambiar la activacion;
 - `Inbox` es estado durable del item, no una view, tag ni seleccion `marked`: aparece como pill compacto `Inbox ×` sin aumentar la altura base de la fila. El pill es una accion directa `Remove from Inbox`; quita solo ese estado y nunca borra el item.
 - Los items Inbox se ordenan antes que el historial regular; dentro de cada grupo se conserva el orden mas reciente primero.

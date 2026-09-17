@@ -9,7 +9,7 @@ import type {
   MetadataSelectionSnapshot,
   TagSummary,
 } from "../shared/contracts";
-import type { AppSettings } from "../shared/settings";
+import { DEFAULT_SETTINGS, type AppSettings } from "../shared/settings";
 import { applyCopicuAppearance } from "../themeCatalog";
 import { UiAlert, UiLoader } from "../ui/controls";
 import { MetadataInspector } from "../ui/MetadataInspector";
@@ -43,16 +43,7 @@ export function MetadataWindowApp() {
   const [payload, setPayload] = useState<MetadataSelectionPayload | null>(null);
   const [availableTags, setAvailableTags] = useState<TagSummary[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [appearance, setAppearance] = useState<AppSettings["appearance"]>({
-    theme: "system",
-    themeId: "default",
-    density: "standard",
-    imagePreview: "large",
-    itemActions: "auto",
-    actionSize: "auto",
-    textPreviewLines: 4,
-    itemDetails: "always",
-  });
+  const [appearance, setAppearance] = useState<AppSettings["appearance"]>(DEFAULT_SETTINGS.appearance);
   const [closeRequestSignal, setCloseRequestSignal] = useState(0);
   const dirtyRef = useRef(false);
   const activeSelectionRef = useRef<number[]>([]);

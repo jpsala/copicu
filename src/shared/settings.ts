@@ -3,6 +3,7 @@ import type {
   ActionSizeSetting,
   DensitySetting,
   ImagePreviewSetting,
+  ImageHoverPreviewSetting,
   ItemActionsSetting,
   ItemDetailsSetting,
   TextPreviewLinesSetting,
@@ -91,6 +92,7 @@ export type AppSettings = {
     themeId: ThemeId;
     density: DensitySetting;
     imagePreview: ImagePreviewSetting;
+    imageHoverPreview: ImageHoverPreviewSetting;
     itemActions: ItemActionsSetting;
     actionSize: ActionSizeSetting;
     textPreviewLines: TextPreviewLinesSetting;
@@ -144,6 +146,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     themeId: "default",
     density: "standard",
     imagePreview: "large",
+    imageHoverPreview: "off",
     itemActions: "auto",
     actionSize: "auto",
     textPreviewLines: 4,
@@ -184,6 +187,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 function normalizeSearchTriggerMode(value: unknown): SearchTriggerMode {
   return value === "enter" || value === "manual" ? "enter" : "realtime";
+}
+
+function normalizeImageHoverPreview(value: unknown): ImageHoverPreviewSetting {
+  return value === "hover" || value === "ctrlHover" || value === "altHover"
+    ? value
+    : "off";
 }
 
 function normalizeSearchScopes(value: unknown): SearchScope[] {
@@ -234,11 +243,13 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
         || settings.appearance?.imagePreview === "medium"
         ? settings.appearance.imagePreview
         : "large",
+      imageHoverPreview: normalizeImageHoverPreview(settings.appearance?.imageHoverPreview),
       itemActions: settings.appearance?.itemActions === "inline"
         || settings.appearance?.itemActions === "menuOnly"
         ? settings.appearance.itemActions
         : "auto",
       actionSize: settings.appearance?.actionSize === "small"
+        || settings.appearance?.actionSize === "medium"
         || settings.appearance?.actionSize === "large"
         ? settings.appearance.actionSize
         : "auto",

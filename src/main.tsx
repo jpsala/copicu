@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   type SyntheticEvent,
   lazy,
   useCallback,
@@ -57,7 +58,7 @@ import Trash2 from "lucide-react/dist/esm/icons/trash-2.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import ZoomIn from "lucide-react/dist/esm/icons/zoom-in.mjs";
 import { copicuMantineTheme } from "./mantineTheme";
-import { applyCopicuAppearance, getDensityMetrics, getImagePreviewHeight } from "./themeCatalog";
+import { applyCopicuAppearance, getActionSize, getDensityMetrics, getImagePreviewHeight } from "./themeCatalog";
 import type {
   ActionContext,
   ActionDefinition,
@@ -133,6 +134,7 @@ import {
 } from "./shared/settings";
 import { queryHasExplicitSearchScope, queryHasValidSearchScope, replaceQueryScopes, resolveSearchScopeQuery, scopeQuery, scopeSelectionFromQuery, scopeSummary, type SearchScopeSelection } from "./shared/searchScopes";
 import { SearchScopePicker } from "./ui/SearchScopeEditor";
+import { useImageHoverPreview } from "./ui/ImageHoverPreview";
 import {
   UiBadge,
   UiButton,
@@ -557,7 +559,7 @@ const FEED_ITEM_METADATA_LINE_HEIGHT = 15;
 const FEED_ITEM_PREVIEW_LINE_HEIGHT = 17;
 const TEXT_PREVIEW_ESTIMATED_CHARS_PER_LINE = 72;
 const METADATA_ESTIMATED_CHARS_PER_LINE = 52;
-const NARROW_IMAGE_PREVIEW_MAX_HEIGHT = 148;
+const NARROW_IMAGE_PREVIEW_MAX_HEIGHT = 164;
 const FEED_ITEM_ACTION_TOP_OFFSET = 8;
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
@@ -1300,6 +1302,7 @@ function App() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const imageHoverPreview = useImageHoverPreview(settings.appearance.imageHoverPreview);
   const [scopeSaveState, setScopeSaveState] = useState<"idle" | "saving" | "error">("idle");
   const [scopeSaveError, setScopeSaveError] = useState<string | null>(null);
   const [actionDefinitions, setActionDefinitions] = useState<ActionDefinition[]>([]);
@@ -4660,12 +4663,14 @@ function App() {
       try {
         setActionError(null);
         setOpenItemMenu(null);
+        setMarkMenuOpen(false);
         setSelectionMenuOpen(false);
         for (const item of items) {
           await invoke("delete_history_item", { id: item.id });
         }
         clearExplicitSelection();
         await refreshAppliedHistory();
+        await refreshMarkedCount();
         rebaseFind();
         focusSearch();
       } catch (error) {
@@ -4673,7 +4678,7 @@ function App() {
         focusSearch();
       }
     },
-    [clearExplicitSelection, focusSearch, rebaseFind, refreshAppliedHistory],
+    [clearExplicitSelection, focusSearch, rebaseFind, refreshAppliedHistory, refreshMarkedCount],
   );
 
   const refreshAfterMarkedChange = useCallback(async () => {
@@ -4726,19 +4731,19 @@ function App() {
         setSelectionMenuOpen(false);
         setPickerMenuView("actions");
         if (!historyMatchesQuery) {
-          setActionError("Apply the current search before changing all results.");
+          setActionError("Apply the current search before changing marks for all matching clips.");
           focusSearch();
           return;
         }
         const markQuery = (appliedDescriptorRef.current?.effectiveQuery ?? historyQuery).trim();
         if (aiComposerMode && !markQuery) {
-          setActionError("Mark all results needs an applied structured filter outside AI mode.");
+          setActionError("Changing marks for all matching clips needs an applied structured filter outside AI mode.");
           focusSearch();
           return;
         }
         const appliedDescriptor = appliedDescriptorRef.current;
         if (!isAppliedSearchDescriptor(appliedDescriptor)) {
-          setActionError("Mark all results needs a valid applied search descriptor.");
+          setActionError("Changing marks for all matching clips needs a valid applied search.");
           focusSearch();
           return;
         }
@@ -5740,7 +5745,9 @@ function App() {
       )
     );
   const markMenuCountLabel = markedTotalCount === null ? "…" : formatCount(markedTotalCount);
-  const checkedActionCount = markedTotalCount ?? markedActionItems?.length ?? 0;
+  const markedActionCount = markedTotalCount ?? markedActionItems?.length ?? 0;
+  const loadedResultCount = history.length;
+  const allResultCount = historyFilteredCount ?? history.length;
   const runSearchNow = useCallback(() => {
     if (!aiComposerMode && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")) {
       const error = structuredSearchDraft.message ?? "Complete the structured filter before applying.";
@@ -6384,7 +6391,7 @@ function App() {
                 disabled={history.length === 0}
                 onClick={() => setVisibleSelection(true)}
               >
-                Select visible
+                Select {formatCount(history.length)} loaded {history.length === 1 ? "clip" : "clips"}
               </Menu.Item>
               <Menu.Item
                 leftSection={<X size={14} strokeWidth={2.2} />}
@@ -6396,6 +6403,16 @@ function App() {
               {selectedItems.length > 0 ? (
                 <>
                   <Menu.Divider />
+                  <Menu.Label>Change marks for selection</Menu.Label>
+                  <Menu.Item
+                    leftSection={<Flag size={14} strokeWidth={2.2} />}
+                    onClick={() => void setItemsMarked(selectedItems, !selectedItems.every((item) => item.is_marked))}
+                  >
+                    {selectedItems.every((item) => item.is_marked) ? "Unmark" : "Mark"} all{" "}
+                    {formatCount(selectedItems.length)} selected {selectedItems.length === 1 ? "clip" : "clips"}
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Label>Actions for selected clips</Menu.Label>
                   {renderBatchItemActions({
                     items: selectedItems,
                     noun: "selected",
@@ -6406,12 +6423,6 @@ function App() {
                     onClick={() => void openMetadataForItems(selectedItems, "overview")}
                   >
                     Edit metadata for selected
-                  </Menu.Item>
-                  <Menu.Item
-                    leftSection={<Flag size={14} strokeWidth={2.2} />}
-                    onClick={() => void setItemsMarked(selectedItems, !selectedItems.every((item) => item.is_marked))}
-                  >
-                    {selectedItems.every((item) => item.is_marked) ? "Unmark selected" : "Mark selected"}
                   </Menu.Item>
                   <Menu.Divider />
                   <Menu.Item
@@ -6637,41 +6648,51 @@ function App() {
               </UiTooltip>
             </Menu.Target>
             <Menu.Dropdown className="picker-menu-dropdown mark-menu-dropdown" aria-label="Marked clips">
-              <Menu.Label>Marked clips · {markMenuCountLabel}</Menu.Label>
+              <Menu.Label>Filter history</Menu.Label>
               <Menu.Item leftSection={<Flag size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("marked")}>
-                Marked
+                Show marked clips
               </Menu.Item>
               <Menu.Item leftSection={<Square size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("unmarked")}>
-                Unmarked
+                Show unmarked clips
               </Menu.Item>
               <Menu.Item leftSection={<ListRestart size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("all")}>
-                All history
+                Show all history
               </Menu.Item>
-              {checkedActionCount > 0 ? (
+              {markedActionCount > 0 ? (
                 <>
                   <Menu.Divider />
                   <div className="mark-menu-section-label">
-                    Marked items
-                    <span>{markedActionItemsLoading || markedActionItems === null ? "Loading…" : formatCount(checkedActionCount)}</span>
+                    Actions for marked clips
+                    <span>{markedActionItemsLoading || markedActionItems === null ? "Loading…" : formatCount(markedActionCount)}</span>
                   </div>
-                  {markedActionItems !== null && !markedActionItemsLoading
-                    ? renderBatchItemActions({ items: markedActionItems, noun: "marked", surface: "header" })
-                    : null}
+                  {markedActionItems !== null && !markedActionItemsLoading ? (
+                    <>
+                      {renderBatchItemActions({ items: markedActionItems, noun: "marked", surface: "header" })}
+                      <Menu.Divider />
+                      <Menu.Item
+                        color="red"
+                        leftSection={<Trash2 size={14} strokeWidth={2.2} />}
+                        onClick={() => void deleteItems(markedActionItems)}
+                      >
+                        Delete {formatCount(markedActionItems.length)} marked {markedActionItems.length === 1 ? "clip" : "clips"}
+                      </Menu.Item>
+                    </>
+                  ) : null}
                 </>
               ) : null}
               <Menu.Divider />
-              <Menu.Label>Current results</Menu.Label>
+              <Menu.Label>Change marks in current results</Menu.Label>
               <Menu.Item leftSection={<CheckCheck size={14} strokeWidth={2.2} />} onClick={() => void setItemsMarked(history, true)}>
-                Mark visible
+                Mark {formatCount(loadedResultCount)} loaded {loadedResultCount === 1 ? "clip" : "clips"}
               </Menu.Item>
               <Menu.Item leftSection={<Square size={14} strokeWidth={2.2} />} onClick={() => void setItemsMarked(history, false)}>
-                Unmark visible
+                Unmark {formatCount(loadedResultCount)} loaded {loadedResultCount === 1 ? "clip" : "clips"}
               </Menu.Item>
               <Menu.Item leftSection={<ListChecks size={14} strokeWidth={2.2} />} onClick={() => void setCurrentQueryMarked(true)}>
-                Mark all results
+                Mark all {formatCount(allResultCount)} matching {allResultCount === 1 ? "clip" : "clips"}
               </Menu.Item>
               <Menu.Item leftSection={<CircleSlash size={14} strokeWidth={2.2} />} onClick={() => void setCurrentQueryMarked(false)}>
-                Unmark all results
+                Unmark all {formatCount(allResultCount)} matching {allResultCount === 1 ? "clip" : "clips"}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -7443,9 +7464,17 @@ function App() {
                         </div>
                       </div>
                     ) : item.content_kind === "image" && item.thumbnail_data_url ? (
-                      <span className="image-preview">
+                      <span
+                        className="image-preview"
+                        onPointerEnter={(event) => imageHoverPreview.onImagePointerEnter(event, {
+                          source: localPreviewImageSource(item.thumbnail_data_url) ?? item.thumbnail_data_url!,
+                          alt: item.title || "Clipboard image",
+                          itemId: item.id,
+                        })}
+                        onPointerLeave={imageHoverPreview.onImagePointerLeave}
+                      >
                         <img
-                          src={localPreviewImageSource(item.thumbnail_data_url)}
+                          src={localPreviewImageSource(item.thumbnail_data_url) ?? item.thumbnail_data_url}
                           alt={item.title || "Clipboard image"}
                           width={imageWidth}
                           height={imageHeight}
@@ -7483,6 +7512,9 @@ function App() {
                         imageAltMatches={findFieldMatches(itemFindMatches?.fields, "imageAlt")}
                         currentOrdinal={findState?.currentOrdinal ?? null}
                         onImageLoad={measureImageRow}
+                        onImagePointerEnter={(event, source, alt) =>
+                          imageHoverPreview.onImagePointerEnter(event, { source, alt })}
+                        onImagePointerLeave={imageHoverPreview.onImagePointerLeave}
                         onZoom={() => {
                           void openItemPreview(item.id).catch((previewError) => {
                             setActionError(String(previewError));
@@ -7982,6 +8014,7 @@ function App() {
       </section>
       </CustomWindowFrame>
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      {imageHoverPreview.preview}
     </main>
   );
 }
@@ -8990,10 +9023,9 @@ function estimateTextRowSize(
         ? densityMetrics.gap + previewLines * FEED_ITEM_PREVIEW_LINE_HEIGHT
         : 0
     );
-  const effectiveActionSize = appearance.actionSize === "large"
-    || (appearance.actionSize === "auto" && viewport.coarsePointer)
+  const effectiveActionSize = appearance.actionSize === "auto" && viewport.coarsePointer
     ? 44
-    : 32;
+    : getActionSize(appearance.actionSize);
   const actionMinimumHeight =
     densityMetrics.paddingY + FEED_ITEM_ACTION_TOP_OFFSET + effectiveActionSize + 2;
   return Math.max(densityMetrics.minHeight, actionMinimumHeight, estimatedHeight);
@@ -9120,6 +9152,8 @@ function MarkdownPreview({
   imageAltMatches,
   currentOrdinal,
   onImageLoad,
+  onImagePointerEnter,
+  onImagePointerLeave,
   onZoom,
 }: {
   text: string;
@@ -9127,6 +9161,12 @@ function MarkdownPreview({
   imageAltMatches?: FindFieldMatches | null;
   currentOrdinal?: number | null;
   onImageLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
+  onImagePointerEnter?: (
+    event: ReactPointerEvent<HTMLElement>,
+    source: string,
+    alt: string,
+  ) => void;
+  onImagePointerLeave?: () => void;
   onZoom?: () => void;
 }) {
   const segments = markdownSegments(
@@ -9155,6 +9195,9 @@ function MarkdownPreview({
             <span
               className={`markdown-image-frame${altMatches?.ranges.length ? " has-find-alt" : ""}`}
               key={`${segment.image.src}-${index}`}
+              onPointerEnter={imageSource ? (event) =>
+                onImagePointerEnter?.(event, imageSource, segment.image.alt) : undefined}
+              onPointerLeave={imageSource ? onImagePointerLeave : undefined}
             >
               {imageSource ? (
                 <>

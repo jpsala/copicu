@@ -916,6 +916,16 @@ pub struct PickerSettings {
     pub external_editor_shortcut: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ImageHoverPreviewSetting {
+    #[default]
+    Off,
+    Hover,
+    CtrlHover,
+    AltHover,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum EnterAction {
@@ -961,11 +971,16 @@ pub struct AppearanceSettings {
     pub density: DensitySetting,
     #[serde(default, deserialize_with = "deserialize_image_preview")]
     pub image_preview: ImagePreviewSetting,
+    #[serde(default, deserialize_with = "deserialize_image_hover_preview")]
+    pub image_hover_preview: ImageHoverPreviewSetting,
     #[serde(default, deserialize_with = "deserialize_item_actions")]
     pub item_actions: ItemActionsSetting,
     #[serde(default, deserialize_with = "deserialize_action_size")]
     pub action_size: ActionSizeSetting,
-    #[serde(default = "default_text_preview_lines", deserialize_with = "deserialize_text_preview_lines")]
+    #[serde(
+        default = "default_text_preview_lines",
+        deserialize_with = "deserialize_text_preview_lines"
+    )]
     pub text_preview_lines: u8,
     #[serde(default, deserialize_with = "deserialize_item_details")]
     pub item_details: ItemDetailsSetting,
@@ -1105,6 +1120,7 @@ pub enum ActionSizeSetting {
     #[default]
     Auto,
     Small,
+    Medium,
     Large,
 }
 
@@ -1147,8 +1163,24 @@ where
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(match value.as_str() {
         Some("small") => ActionSizeSetting::Small,
+        Some("medium") => ActionSizeSetting::Medium,
         Some("large") => ActionSizeSetting::Large,
         _ => ActionSizeSetting::Auto,
+    })
+}
+
+fn deserialize_image_hover_preview<'de, D>(
+    deserializer: D,
+) -> Result<ImageHoverPreviewSetting, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value.as_str() {
+        Some("hover") => ImageHoverPreviewSetting::Hover,
+        Some("ctrlHover") => ImageHoverPreviewSetting::CtrlHover,
+        Some("altHover") => ImageHoverPreviewSetting::AltHover,
+        _ => ImageHoverPreviewSetting::Off,
     })
 }
 
@@ -1226,6 +1258,7 @@ impl Default for AppSettings {
                 theme_id: ThemeId::Default,
                 density: DensitySetting::Standard,
                 image_preview: ImagePreviewSetting::Large,
+                image_hover_preview: ImageHoverPreviewSetting::Off,
                 item_actions: ItemActionsSetting::Auto,
                 action_size: ActionSizeSetting::Auto,
                 text_preview_lines: default_text_preview_lines(),
@@ -6473,6 +6506,10 @@ mod tests {
         assert!(!settings.picker.defer_structured_search_until_enter);
         assert_eq!(settings.picker.settings_shortcut, "Ctrl+,");
         assert_eq!(settings.picker.preview_shortcut, "Alt+Enter");
+        assert_eq!(
+            settings.appearance.image_hover_preview,
+            ImageHoverPreviewSetting::Off
+        );
         validate_settings(&settings).expect("old settings with script defaults should validate");
     }
 
@@ -6496,12 +6533,41 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(json).expect("invalid appearance values should normalize");
 
-        assert_eq!(settings.appearance.image_preview, ImagePreviewSetting::Large);
+        assert_eq!(
+            settings.appearance.image_preview,
+            ImagePreviewSetting::Large
+        );
         assert_eq!(settings.appearance.item_actions, ItemActionsSetting::Auto);
         assert_eq!(settings.appearance.action_size, ActionSizeSetting::Auto);
         assert_eq!(settings.appearance.text_preview_lines, 4);
         assert_eq!(settings.appearance.item_details, ItemDetailsSetting::Always);
         let serialized = serde_json::to_value(settings).expect("settings should serialize");
+        let medium_json = json.replace("\"tiny\"", "\"medium\"");
+        let medium_settings: AppSettings =
+            serde_json::from_str(&medium_json).expect("medium action size should deserialize");
+        assert_eq!(
+            medium_settings.appearance.action_size,
+            ActionSizeSetting::Medium
+        );
+        let medium_serialized =
+            serde_json::to_value(medium_settings).expect("medium settings should serialize");
+        assert_eq!(medium_serialized["appearance"]["actionSize"], "medium");
+        let hover_json = json.replace(
+            "\"theme\": \"system\"",
+            "\"theme\": \"system\", \"imageHoverPreview\": \"ctrlHover\"",
+        );
+        let hover_settings: AppSettings =
+            serde_json::from_str(&hover_json).expect("hover preview trigger should deserialize");
+        assert_eq!(
+            hover_settings.appearance.image_hover_preview,
+            ImageHoverPreviewSetting::CtrlHover
+        );
+        let hover_serialized =
+            serde_json::to_value(hover_settings).expect("hover preview settings should serialize");
+        assert_eq!(
+            hover_serialized["appearance"]["imageHoverPreview"],
+            "ctrlHover"
+        );
         assert_eq!(serialized["appearance"]["textPreviewLines"], 4);
     }
 

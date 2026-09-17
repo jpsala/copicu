@@ -435,6 +435,7 @@ type MockTauriOptions = {
   defaultExcludedSearchScopes?: Exclude<SearchScope, "all">[];
   searchTriggerUpdateDelayMs?: number;
   previewShortcut?: string;
+  imageHoverPreview?: AppSettings["appearance"]["imageHoverPreview"];
   settingsLoadDelayMs?: number;
   settingsUpdateDelaySequenceMs?: number[];
   settingsUpdateFailureSequence?: Array<string | null>;
@@ -1138,6 +1139,7 @@ async function mockTauriInvoke(
         themeId: mockOptions.appearance?.themeId ?? "default",
         density: mockOptions.appearance?.density ?? "standard",
         imagePreview: mockOptions.appearance?.imagePreview ?? "large",
+        imageHoverPreview: mockOptions.imageHoverPreview ?? "off",
         itemActions: mockOptions.appearance?.itemActions ?? "auto",
         actionSize: mockOptions.appearance?.actionSize ?? "auto",
         textPreviewLines: mockOptions.appearance?.textPreviewLines ?? 4,
@@ -3029,6 +3031,7 @@ test("picker row kebab and grouped menu stay keyboard reachable at 420 px", asyn
 
   const row = page.locator(".history-feed.has-items > li").first();
   const kebab = row.getByRole("button", { name: "Open item actions" });
+  await row.hover();
   await expect(kebab).toHaveCSS("pointer-events", "auto");
   await kebab.click();
 
@@ -3148,7 +3151,7 @@ test("current navigation stays separate from explicit bulk selection", async ({ 
   await expect(second).toHaveAttribute("aria-current", "true");
 });
 
-test("row actions reveal for hover and current without covering or moving previews", async ({ page }) => {
+test("row actions reveal on hover without covering or moving previews", async ({ page }) => {
   const items = ["First text clip", "Second text clip", "Third text clip"].map((text, index) => ({
     ...syntheticLongHistory[1],
     id: 9100 + index,
@@ -3208,14 +3211,16 @@ test("row actions reveal for hover and current without covering or moving previe
   await search.press("ArrowDown");
   await expect(search).toBeFocused();
   await expect(second.locator(".feed-item")).toHaveAttribute("aria-current", "true");
-  await expect(deleteSecond).toHaveCSS("opacity", "1");
-  await expect(menuSecond).toHaveCSS("opacity", "1");
+  await expect(deleteSecond).toHaveCSS("opacity", "0");
+  await expect(menuSecond).toHaveCSS("opacity", "0");
   await expect(first.getByRole("button", { name: "Open item actions" })).toHaveCSS("opacity", "0");
 
-  await menuSecond.click();
+  await menuSecond.focus();
+  await expect(menuSecond).toHaveCSS("opacity", "1");
+  await menuSecond.press("Enter");
   const itemMenu = page.getByRole("menu", { name: "Item actions" });
   await expect(itemMenu).toBeVisible();
-  await search.hover();
+  await page.mouse.move(1, 1);
   await expect(menuSecond).toHaveCSS("opacity", "1");
   await page.keyboard.press("Escape");
   await expect(itemMenu).toBeHidden();
@@ -3322,6 +3327,7 @@ test("Inbox item stays pending on catalog cancel and leaves after catalog save",
   await gotoShell(page);
 
   const firstRow = page.locator(".history-feed > li").first();
+  await firstRow.hover();
   await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
@@ -3337,6 +3343,7 @@ test("Inbox item stays pending on catalog cancel and leaves after catalog save",
   }, inboxItem.id);
   await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
 
+  await firstRow.hover();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
   await page.evaluate(async (itemId) => {
@@ -3368,6 +3375,7 @@ test("Remove from Inbox preserves the history row", async ({ page }) => {
   await gotoShell(page);
 
   const row = page.locator(".history-feed > li").first();
+  await row.hover();
   await row.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Remove from Inbox" }).click();
 
@@ -4126,7 +4134,7 @@ test("selection menu stays transient and independent from persistent marks", asy
   await gotoShell(page);
 
   let menu = await openSelectionMenu(page);
-  const selectVisible = menu.getByRole("menuitem", { name: "Select visible", exact: true });
+  const selectVisible = menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true });
   const clearSelection = menu.getByRole("menuitem", { name: "Clear selection", exact: true });
   await expect(selectVisible).toBeEnabled();
   await expect(clearSelection).toBeDisabled();
@@ -4141,17 +4149,18 @@ test("selection menu stays transient and independent from persistent marks", asy
   await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit tags for selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit metadata for selected", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Mark selected", exact: true })).toBeVisible();
+  await expect(menu.getByText("Change marks for selection", { exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Mark all 4 selected clips", exact: true })).toBeEnabled();
   await expect(menu.getByRole("menuitem", { name: "Delete 4 selected", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Select visible", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Clear selection", exact: true })).toBeVisible();
 
-  await menu.getByRole("menuitem", { name: "Mark selected", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Mark all 4 selected clips", exact: true }).click();
   await expect(page.getByLabel("Unmark item")).toHaveCount(4);
   await expect(page.locator(".mark-menu-count")).toHaveText("4");
   menu = await openSelectionMenu(page);
-  await expect(menu.getByRole("menuitem", { name: "Unmark selected", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Mark selected", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Unmark all 4 selected clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Mark all 4 selected clips", exact: true })).toHaveCount(0);
 
   await menu.getByRole("menuitem", { name: "Clear selection", exact: true }).click();
   await expect(trigger).toHaveAccessibleName("Open selected clips menu, 0 selected");
@@ -4175,7 +4184,7 @@ test("selection menu disables visible selection when history is empty", async ({
 
   await expect(page.locator(".history-feed.has-items")).toHaveCount(0);
   const menu = await openSelectionMenu(page);
-  await expect(menu.getByRole("menuitem", { name: "Select visible", exact: true })).toBeDisabled();
+  await expect(menu.getByRole("menuitem", { name: "Select 0 loaded clips", exact: true })).toBeDisabled();
   await expect(menu.getByRole("menuitem", { name: "Clear selection", exact: true })).toBeDisabled();
 });
 
@@ -4186,7 +4195,7 @@ test("mark menu marks visible and individual items", async ({ page }) => {
   await gotoShell(page);
 
   const menu = await openMarksMenu(page);
-  await menu.getByRole("menuitem", { name: "Mark visible", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Mark 4 loaded clips", exact: true }).click();
   await expect(page.getByLabel("Unmark item")).toHaveCount(4);
   await expect(page.locator(".mark-menu-count")).toHaveText("4");
 
@@ -4205,13 +4214,13 @@ test("marked menu supports keyboard focus and filtering", async ({ page }) => {
   await page.keyboard.press("Enter");
   const menu = page.getByRole("menu", { name: "Marked clips", exact: true });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Mark visible", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Unmark visible", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Mark all results", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Unmark all results", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Marked", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Unmarked", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "All history" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Mark 4 loaded clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Unmark 4 loaded clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Mark all 4 matching clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Unmark all 4 matching clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Show marked clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Show unmarked clips", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Show all history", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).not.toBeVisible();
   await expect(trigger).toBeFocused();
@@ -4220,11 +4229,11 @@ test("marked menu supports keyboard focus and filtering", async ({ page }) => {
   await expect(page.getByRole("menu", { name: "Picker menu" })).not.toBeVisible();
   await expect(menu).toBeVisible();
 
-  await menu.getByRole("menuitem", { name: "All history" }).click();
+  await menu.getByRole("menuitem", { name: "Show all history", exact: true }).click();
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
 
   await openMarksMenu(page);
-  await menu.getByRole("menuitem", { name: "Marked", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Show marked clips", exact: true }).click();
   await expect(page.getByLabel("Search clipboard history")).toHaveText("is:marked");
   await expect(page.locator("[title='Result count']")).not.toHaveText("Filtering");
 });
@@ -4246,27 +4255,27 @@ test("marked header count and batch actions include clips outside the current fi
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
   await expect(counter).toHaveText("1");
   let marksMenu = await openMarksMenu(page);
-  await marksMenu.getByRole("menuitem", { name: "Mark visible", exact: true }).click();
+  await marksMenu.getByRole("menuitem", { name: "Mark 1 loaded clip", exact: true }).click();
   await expect(counter).toHaveText("2");
 
   await page.getByLabel("Search clipboard history").fill("");
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
   marksMenu = await openMarksMenu(page);
-  await marksMenu.getByRole("menuitem", { name: "Mark visible", exact: true }).click();
+  await marksMenu.getByRole("menuitem", { name: "Mark 4 loaded clips", exact: true }).click();
   await expect(counter).toHaveText("4");
 
   await page.getByLabel("Search clipboard history").fill("markdown");
   await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
   await expect(counter).toHaveText("4");
   marksMenu = await openMarksMenu(page);
-  await expect(marksMenu.getByText("Marked items")).toBeVisible();
+  await expect(marksMenu.getByText("Actions for marked clips")).toBeVisible();
   await expect(marksMenu.getByRole("menuitem", { name: "Join marked" })).toBeVisible();
   await expect(marksMenu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   const editTags = marksMenu.getByRole("menuitem", { name: "Edit tags for marked" });
   await expect(editTags).toBeEnabled();
-  await expect(marksMenu.getByRole("menuitem", { name: "Delete 4 marked" })).toHaveCount(0);
+  await expect(marksMenu.getByRole("menuitem", { name: "Delete 4 marked clips", exact: true })).toBeVisible();
 
-  await marksMenu.getByRole("menuitem", { name: "Marked", exact: true }).focus();
+  await marksMenu.getByRole("menuitem", { name: "Show marked clips", exact: true }).focus();
   await page.keyboard.press("e");
   await expect(editTags).toBeFocused();
   await page.keyboard.press("Enter");
@@ -4274,6 +4283,27 @@ test("marked header count and batch actions include clips outside the current fi
     const calls = (window as MetadataVisualRuntime).__copicuTestInvocations ?? [];
     return calls.filter(({ cmd }) => cmd === "open_metadata_window").at(-1)?.args.request?.itemIds;
   }))).toEqual(new Set(syntheticLongHistory.map(({ id }) => id)));
+});
+
+test("marked menu deletes every marked clip, including clips outside the current filter", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory);
+  await gotoShell(page);
+
+  let marksMenu = await openMarksMenu(page);
+  await marksMenu.getByRole("menuitem", { name: "Mark 4 loaded clips", exact: true }).click();
+  await page.getByLabel("Search clipboard history").fill("markdown");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+
+  marksMenu = await openMarksMenu(page);
+  await marksMenu.getByRole("menuitem", { name: "Delete 4 marked clips", exact: true }).click();
+
+  await expect.poll(async () => page.evaluate(() =>
+    (window as MetadataVisualRuntime).__copicuTestInvocations
+      ?.filter(({ cmd }) => cmd === "delete_history_item")
+      .map(({ args }) => args.id),
+  )).toEqual(syntheticLongHistory.map(({ id }) => id));
+  await expect(page.locator(".mark-menu-count")).toHaveText("0");
+  await expect(page.locator(".history-feed.has-items")).toHaveCount(0);
 });
 
 test("long synthetic history stays contained", async ({ page }) => {
@@ -4393,6 +4423,7 @@ test("compact previews expose only real overflow and keep inline editing stable"
   await overflow.getByRole("button", { name: "Show less" }).click();
   expect(await longRow.evaluate((row) => row.getBoundingClientRect().height)).toBeCloseTo(collapsedHeight, 0);
 
+  await longRow.hover();
   await longRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   const inlineEditor = longRow.getByRole("textbox", { name: "Quick edit item 1202" });
@@ -4402,6 +4433,7 @@ test("compact previews expose only real overflow and keep inline editing stable"
   await expect(inlineEditor).toBeHidden();
   await expect(longRow.locator(".feed-item")).toHaveAttribute("aria-current", "true");
   await expect(longRow).toContainText("COPICU_INLINE_SAVED");
+  await longRow.hover();
   await longRow.getByRole("button", { name: "Open item actions" }).click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   await inlineEditor.fill("COPICU_INLINE_CANCELLED");
@@ -4411,8 +4443,8 @@ test("compact previews expose only real overflow and keep inline editing stable"
   await expect(longRow).not.toContainText("COPICU_INLINE_CANCELLED");
 
   for (const viewport of [
-    { width: 900, height: 620, imageMaxHeight: 181 },
-    { width: 420, height: 620, imageMaxHeight: 149 },
+    { width: 900, height: 620, imageMaxHeight: 201 },
+    { width: 420, height: 620, imageMaxHeight: 165 },
   ]) {
     await page.setViewportSize(viewport);
     await page.waitForTimeout(100);
@@ -5506,9 +5538,9 @@ test("bulk mark refuses an unapplied Enter draft", async ({ page }) => {
   await expect(page.locator("[title='Result count']")).toHaveText("4 total");
   await page.getByLabel("Search clipboard history").fill("unbroken");
   const menu = await openMarksMenu(page);
-  await menu.getByRole("menuitem", { name: "Mark all results", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Mark all 4 matching clips", exact: true }).click();
 
-  await expect(page.getByText("Apply the current search before changing all results.")).toBeVisible();
+  await expect(page.getByText("Apply the current search before changing marks for all matching clips.")).toBeVisible();
   expect(await page.evaluate(() =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "set_history_query_marked").length,
   )).toBe(0);
@@ -6402,6 +6434,7 @@ for (const hideTrigger of ["Escape", "hide button"] as const) {
     });
     await gotoShell(page);
 
+    await page.locator(".history-feed.has-items > li").first().hover();
     await page.getByLabel("Mark item").first().click();
     const rows = page.locator(".history-feed.has-items > li");
     await rows.nth(1).hover();
@@ -6712,6 +6745,10 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   await previewShortcutInput.fill("F3");
   await previewShortcutInput.press("Enter");
   await expect(page.getByLabel("Preview shortcut", { exact: true })).toContainText("F3");
+  await page.getByLabel("Search settings").fill("zoom");
+  const imageHoverPreview = page.getByRole("radiogroup", { name: "Image hover zoom" });
+  await expect(imageHoverPreview.getByRole("radio", { name: "Off" })).toBeChecked();
+  await imageHoverPreview.getByText("Ctrl + hover", { exact: true }).click();
   await page.getByLabel("Search settings").fill("clipboard capture");
   const captureSwitch = page.getByRole("switch", { name: "Capture clipboard changes" });
   await expect(captureSwitch).toBeChecked();
@@ -6826,6 +6863,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
   });
   expect(savedSettings.general.captureEnabled).toBe(false);
   expect(savedSettings.picker.previewShortcut).toBe("F3");
+  expect(savedSettings.appearance.imageHoverPreview).toBe("ctrlHover");
   expect(savedSettings.picker.externalEditorShortcut).toBe("Ctrl+Alt+E");
 
   await page.getByLabel("Search settings").fill("ai");
@@ -7038,6 +7076,29 @@ test("Appearance controls keep keyboard focus and all themes usable", async ({ p
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await expect(imagePreview.getByRole("radio", { name: "Small" })).toBeChecked();
+  const syntheticImage = page.getByLabel("Synthetic image preview");
+  await expect.poll(() => syntheticImage.evaluate((element) =>
+    element.getBoundingClientRect().height)).toBe(64);
+  await imagePreview.getByText("Medium", { exact: true }).click();
+  await expect.poll(() => syntheticImage.evaluate((element) =>
+    element.getBoundingClientRect().height)).toBe(96);
+  await imagePreview.getByText("Large", { exact: true }).click();
+  await expect.poll(() => syntheticImage.evaluate((element) =>
+    element.getBoundingClientRect().height)).toBe(
+    page.viewportSize()!.width <= 760 ? 164 : 200,
+  );
+  const actionSize = page.getByRole("radiogroup", { name: "Action size" });
+  await expect(actionSize.getByRole("radio")).toHaveCount(4);
+  const syntheticActions = page.locator(".appearance-preview-actions");
+  await expect(syntheticActions).toHaveCSS("opacity", "0");
+  await page.locator(".appearance-preview").hover();
+  await expect(syntheticActions).toHaveCSS("opacity", "1");
+  await actionSize.getByText("Small", { exact: true }).click();
+  const syntheticAction = syntheticActions.locator("span").first();
+  await expect(syntheticAction).toHaveCSS("width", "24px");
+  await expect(syntheticAction).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  await actionSize.getByText("Medium", { exact: true }).click();
+  await expect(syntheticAction).toHaveCSS("width", "32px");
 
   const textPreview = page.getByRole("radiogroup", { name: "Text preview lines" });
   await textPreview.getByRole("radio", { name: "4 lines" }).focus();
@@ -7165,7 +7226,7 @@ test("image, text and detail geometry follows Appearance without false expansion
   }));
   expect(expanded.clientHeight).toBeLessThan(expanded.scrollHeight);
 
-  for (const [imagePreview, expected] of [["small", 96], ["medium", 140], ["large", 180]] as const) {
+  for (const [imagePreview, expected] of [["small", 64], ["medium", 96], ["large", 200]] as const) {
     await broadcastAppearance(page, { imagePreview });
     const regularHeight = await page.locator(".image-preview img").evaluate((element) => element.getBoundingClientRect().height);
     const markdownHeight = await page.locator(".markdown-image-frame img").first().evaluate((element) => element.getBoundingClientRect().height);
@@ -7179,7 +7240,7 @@ test("image, text and detail geometry follows Appearance without false expansion
     .evaluate((element) => element.getBoundingClientRect().height);
   const responsiveMarkdownHeight = await page.locator(".markdown-image-frame img").first()
     .evaluate((element) => element.getBoundingClientRect().height);
-  expect(Math.max(responsiveImageHeight, responsiveMarkdownHeight)).toBeLessThanOrEqual(148);
+  expect(Math.max(responsiveImageHeight, responsiveMarkdownHeight)).toBeLessThanOrEqual(164);
 
   await broadcastAppearance(page, { itemDetails: "selectedOnly" });
   await expect(multiline.locator(".item-title")).toBeVisible();
@@ -7250,28 +7311,64 @@ test("desktop and narrow item action modes keep the complete menu reachable", as
   await waitForDefaultHistoryReady(page);
   const currentRow = page.locator("#history-item-100");
 
-  await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeVisible();
-  await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeVisible();
-  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toBeVisible();
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("opacity", "0");
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toHaveCSS("opacity", "0");
+  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toHaveCSS("opacity", "0");
+  await currentRow.hover();
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("opacity", "1");
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toHaveCSS("opacity", "1");
+  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toHaveCSS("opacity", "1");
 
   await page.setViewportSize({ width: 420, height: 720 });
+  await page.mouse.move(0, 0);
   await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeHidden();
   await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeHidden();
+  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toHaveCSS("opacity", "0");
+  await currentRow.hover();
   await currentRow.getByRole("button", { name: "Open item actions" }).click();
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu.getByRole("menuitem", { name: "Mark" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete item" })).toBeVisible();
   await page.keyboard.press("Escape");
+  await page.getByLabel("Search clipboard history").focus();
 
   await broadcastAppearance(page, { itemActions: "inline", actionSize: "large" });
-  await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeVisible();
-  await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("opacity", "0");
+  await currentRow.hover();
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("opacity", "1");
+  await expect(currentRow.getByRole("button", { name: "Delete item" })).toHaveCSS("opacity", "1");
   await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("width", "44px");
+
+  await broadcastAppearance(page, { itemActions: "inline", actionSize: "medium" });
+  await expect(currentRow.getByRole("button", { name: "Mark item" })).toHaveCSS("width", "32px");
 
   await broadcastAppearance(page, { itemActions: "menuOnly", actionSize: "small" });
   await expect(currentRow.getByRole("button", { name: "Mark item" })).toBeHidden();
   await expect(currentRow.getByRole("button", { name: "Delete item" })).toBeHidden();
-  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toHaveCSS("width", "32px");
+  const smallMenuButton = currentRow.getByRole("button", { name: "Open item actions" });
+  await expect(smallMenuButton).toHaveCSS("width", "24px");
+  await expect(smallMenuButton).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+  await expect(smallMenuButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+});
+
+test("image zoom button follows the configured action size", async ({ page }) => {
+  await mockTauriInvoke(page, [syntheticCompactPreviewHistory[2]], null, {
+    appearance: { actionSize: "large" },
+  });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("1 total");
+
+  const image = page.locator(".image-preview");
+  const zoom = image.getByRole("button", { name: "Zoom image" });
+  await image.hover();
+  await expect(zoom).toHaveCSS("width", "44px");
+  await expect(zoom.locator("svg")).toHaveCSS("width", "20px");
+
+  await broadcastAppearance(page, { actionSize: "small" });
+  await expect(zoom).toHaveCSS("width", "24px");
+  await expect(zoom.locator("svg")).toHaveCSS("width", "14px");
+  await expect(zoom).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 });
 
 test("Auto action size keeps compact coarse-pointer rows separated", async ({ browser }) => {
@@ -7532,12 +7629,16 @@ test("Appearance geometry remeasures a mixed virtual feed without moving its vis
     );
   })).toBe(true);
 
-  const image = page.locator(".image-preview img").first();
-  await image.evaluate((element) => {
-    element.closest("li")?.scrollIntoView({ block: "start" });
+  const imageRowId = await page.locator(".image-preview img").first().evaluate((element) => {
+    const row = element.closest("li");
+    if (!row?.id) throw new Error("Expected a rendered image row");
+    row.scrollIntoView({ block: "start" });
+    return row.id;
   });
-  await page.waitForTimeout(100);
+  const image = page.locator(`#${imageRowId} .image-preview img`);
+  await expect(image).toBeVisible();
   const compactImageBox = await image.boundingBox();
+  expect(compactImageBox).not.toBeNull();
   await page.evaluate(async () => {
     const runtime = window as Window & {
       __copicuTestSettings: {
@@ -7609,6 +7710,7 @@ test("item actions stay behind the stable kebab and expose complete grouped labe
     ),
   );
 
+  await secondItem.hover();
   await menuButton.click();
   await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Quick edit" }).click();
   await expect(page.getByRole("textbox", { name: "Quick edit item 101" })).toBeVisible();
@@ -7624,6 +7726,7 @@ test("item preview does not open on hover and configurable hotkey toggles it", a
   await page.waitForTimeout(550);
   let calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
   expect(calls.some((entry: any) => entry.cmd === "open_item_preview" || entry.cmd === "toggle_item_preview")).toBe(false);
+  await expect(page.locator(".image-hover-preview")).toHaveCount(0);
 
   await page.keyboard.press("Alt+Enter");
   await page.waitForFunction(() =>
@@ -7633,6 +7736,83 @@ test("item preview does not open on hover and configurable hotkey toggles it", a
   );
   calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
   expect(calls.filter((entry: any) => entry.cmd === "toggle_item_preview")).toHaveLength(1);
+});
+
+test("delayed image hover preview cancels transit and loads full resolution", async ({ page }) => {
+  const thumbnail = pngDataUrl(120, 80, "#69747a");
+  const fullImage = pngDataUrl(1200, 800, "#245f53");
+  const imageItem = {
+    ...syntheticCompactPreviewHistory[2],
+    thumbnail_data_url: thumbnail,
+    full_image_data_url: fullImage,
+  };
+  await mockTauriInvoke(page, [imageItem], null, { imageHoverPreview: "hover" });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("1 total");
+
+  const image = page.locator(".image-preview");
+  const hoverPreview = page.locator(".image-hover-preview");
+  await image.hover();
+  await page.waitForTimeout(300);
+  await expect(hoverPreview).toHaveCount(0);
+  await page.getByLabel("Search clipboard history").hover();
+  await page.waitForTimeout(250);
+  await expect(hoverPreview).toHaveCount(0);
+
+  await image.hover();
+  await expect(hoverPreview).toBeVisible({ timeout: 1500 });
+  await expect(hoverPreview).toHaveAttribute("data-resolution", "full");
+  await expect(hoverPreview.locator("img")).toHaveAttribute("src", fullImage);
+  const bounds = await hoverPreview.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  expect(await page.evaluate(() =>
+    (window as MetadataVisualRuntime).__copicuTestInvocations?.filter(
+      (entry) => entry.cmd === "load_item_preview_image",
+    ).length ?? 0,
+  )).toBe(1);
+
+  await page.getByLabel("Search clipboard history").hover();
+  await expect(hoverPreview).toHaveCount(0, { timeout: 1000 });
+});
+
+test("modifier hover preview waits for Ctrl and closes when released", async ({ page }) => {
+  const imageItem = syntheticCompactPreviewHistory[2];
+  await mockTauriInvoke(page, [imageItem], null, { imageHoverPreview: "ctrlHover" });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("1 total");
+
+  const image = page.locator(".image-preview");
+  const hoverPreview = page.locator(".image-hover-preview");
+  await image.hover();
+  await page.waitForTimeout(550);
+  await expect(hoverPreview).toHaveCount(0);
+  await page.keyboard.down("Control");
+  await expect(hoverPreview).toBeVisible({ timeout: 1500 });
+  await page.keyboard.up("Control");
+  await expect(hoverPreview).toHaveCount(0);
+});
+
+test("Markdown images use the delayed hover preview without a full-image request", async ({ page }) => {
+  await mockTauriInvoke(page, [syntheticAppearanceMarkdownImage], null, {
+    imageHoverPreview: "hover",
+  });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("1 total");
+
+  const image = page.locator(".markdown-image-frame");
+  await image.hover();
+  const hoverPreview = page.locator(".image-hover-preview");
+  await expect(hoverPreview).toBeVisible({ timeout: 1500 });
+  await expect(hoverPreview).toHaveAttribute("data-resolution", "thumbnail");
+  expect(await page.evaluate(() =>
+    (window as MetadataVisualRuntime).__copicuTestInvocations?.some(
+      (entry) => entry.cmd === "load_item_preview_image",
+    ) ?? false,
+  )).toBe(false);
 });
 
 test("item preview renders complete Markdown without loading remote media", async ({ page }) => {

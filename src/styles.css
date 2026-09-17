@@ -3059,7 +3059,7 @@ button {
   display: flex;
   width: fit-content;
   max-width: 100%;
-  max-height: var(--image-preview-max-height, 180px);
+  max-height: var(--image-preview-max-height, 200px);
   align-items: center;
   justify-content: flex-start;
   overflow: hidden;
@@ -3079,7 +3079,7 @@ button {
   width: auto;
   max-width: 100%;
   height: auto;
-  max-height: var(--image-preview-max-height, 180px);
+  max-height: var(--image-preview-max-height, 200px);
   object-fit: contain;
 }
 
@@ -3104,7 +3104,7 @@ button {
   grid-column: 1 / -1;
   width: fit-content;
   max-width: 100%;
-  max-height: var(--image-preview-max-height, 180px);
+  max-height: var(--image-preview-max-height, 200px);
   align-items: flex-start;
   justify-content: flex-start;
   overflow: hidden;
@@ -3118,8 +3118,42 @@ button {
   width: auto;
   max-width: 100%;
   height: auto;
-  max-height: var(--image-preview-max-height, 180px);
+  max-height: var(--image-preview-max-height, 200px);
   object-fit: contain;
+}
+
+.image-hover-preview {
+  position: fixed;
+  z-index: 19;
+  display: grid;
+  max-height: min(360px, calc(100vh - 24px));
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--image-bg);
+  padding: 4px;
+}
+
+.image-hover-preview > img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: min(352px, calc(100vh - 32px));
+  object-fit: contain;
+}
+
+.image-hover-preview > span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  padding: 3px 6px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  line-height: 1.2;
 }
 
 .item-actions {
@@ -3181,23 +3215,14 @@ button {
   color: var(--danger);
 }
 
-.history-feed li[data-current="true"] .item-actions > .item-mark-button,
-.history-feed li[data-current="true"] .item-actions > .item-delete-button,
-.history-feed li[data-current="true"] .item-actions > .item-menu-button {
-  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
-  background: color-mix(in srgb, var(--accent) 9%, var(--surface-raised));
-}
 .item-actions {
   pointer-events: none;
 }
 
 .item-actions > .item-mark-button.is-marked,
-.history-feed li[data-current="true"] .item-actions > .item-mark-button,
 .history-feed li[data-menu-open="true"] .item-actions > .item-mark-button,
 .history-feed li:hover .item-actions > .item-mark-button,
 .history-feed li:focus-within .item-actions > .item-mark-button,
-.history-feed li[data-current="true"] .item-actions > .item-delete-button,
-.history-feed li[data-current="true"] .item-actions > .item-menu-button,
 .history-feed li[data-menu-open="true"] .item-actions > .item-delete-button,
 .history-feed li[data-menu-open="true"] .item-actions > .item-menu-button,
 .history-feed li:hover .item-actions > .item-delete-button,
@@ -3244,6 +3269,19 @@ button {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
+:root[data-action-size="small"] .item-actions > .item-mark-button,
+:root[data-action-size="small"] .item-actions > .item-delete-button,
+:root[data-action-size="small"] .item-actions > .item-menu-button,
+:root[data-action-size="small"] .item-actions > .item-mark-button:hover,
+:root[data-action-size="small"] .item-actions > .item-mark-button:focus-visible,
+:root[data-action-size="small"] .item-actions > .item-delete-button:hover,
+:root[data-action-size="small"] .item-actions > .item-delete-button:focus-visible,
+:root[data-action-size="small"] .item-actions > .item-menu-button:hover,
+:root[data-action-size="small"] .item-actions > .item-menu-button:focus-visible,
+:root[data-action-size="small"] .item-actions > .item-menu-button[aria-expanded="true"] {
+  border-color: transparent;
+  background: transparent;
+}
 
 .item-actions > .item-mark-button svg,
 .item-actions > .item-delete-button svg,
@@ -3258,10 +3296,10 @@ button {
   top: 6px;
   right: 6px;
   display: grid;
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: var(--item-action-size, 32px);
+  min-width: var(--item-action-size, 32px);
+  height: var(--item-action-size, 32px);
+  min-height: var(--item-action-size, 32px);
   place-items: center;
   border: 1px solid var(--line-strong);
   border-radius: 5px;
@@ -3303,6 +3341,22 @@ button {
   width: 16px;
   height: 16px;
 }
+
+:root[data-action-size="small"] .image-zoom-button {
+  border-color: transparent;
+  background: transparent;
+}
+
+:root[data-action-size="small"] .image-zoom-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+:root[data-action-size="large"] .image-zoom-button svg {
+  width: 20px;
+  height: 20px;
+}
+
 
 .item-menu {
   position: fixed;
@@ -5161,18 +5215,38 @@ kbd {
   right: 6px;
   display: flex;
   gap: 4px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.appearance-preview:hover .appearance-preview-actions {
+  opacity: 1;
 }
 
 .appearance-preview-actions > span {
+  display: grid;
   width: var(--item-action-size);
   height: var(--item-action-size);
+  place-items: center;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--surface-raised);
+  color: var(--ink-soft);
+}
+
+.appearance-preview-actions > span > svg {
+  width: 16px;
+  height: 16px;
 }
 
 .appearance-preview-actions > .is-delete {
   border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  color: var(--danger);
+}
+
+.appearance-preview[data-action-size="small"] .appearance-preview-actions > span {
+  border-color: transparent;
+  background: transparent;
 }
 
 .appearance-preview[data-item-actions="menuOnly"] .appearance-preview-actions > :not(.is-menu) {
@@ -6612,17 +6686,17 @@ kbd {
 
   .image-preview,
   .markdown-image-frame {
-    max-height: min(var(--image-preview-max-height, 180px), 148px);
+    max-height: min(var(--image-preview-max-height, 200px), 164px);
   }
 
   .image-preview img,
   .markdown-image-frame img {
-    max-height: min(var(--image-preview-max-height, 180px), 148px);
+    max-height: min(var(--image-preview-max-height, 200px), 164px);
   }
 
   .appearance-preview-image {
-    height: min(var(--image-preview-max-height, 180px), 148px);
-    max-height: min(var(--image-preview-max-height, 180px), 148px);
+    height: min(var(--image-preview-max-height, 200px), 164px);
+    max-height: min(var(--image-preview-max-height, 200px), 164px);
   }
 
   :root[data-item-actions="auto"] .feed-item {
@@ -6707,22 +6781,17 @@ kbd {
     --item-action-size: 44px !important;
   }
 
-  .item-actions > .item-mark-button,
-  .item-actions > .item-delete-button,
-  .item-actions > .item-menu-button {
-    opacity: 1;
-    pointer-events: auto;
-  }
 
   .appearance-preview[data-action-size="auto"] {
     --item-action-size: 44px !important;
   }
 
+  :root[data-action-size="auto"] .image-zoom-button svg {
+    width: 20px;
+    height: 20px;
+  }
+
   .image-zoom-button {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
     opacity: 1;
     pointer-events: auto;
   }

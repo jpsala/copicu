@@ -1911,9 +1911,10 @@ function SettingsPanel({
     "color mode system light dark",
     "theme preset colors",
     "density standard compact row spacing",
+    `image hover zoom preview off hover ctrl alt delayed 500 ms magnifier ${draft.appearance.imageHoverPreview}`,
     "image preview small medium large markdown image height",
     "item actions auto inline menu only mark delete more responsive",
-    "action size auto small large mouse touch",
+    "action size auto small medium large mouse touch",
     "text preview lines 2 4 6 show more show less",
     "item details always selected only title tags notes",
     "appearance preview synthetic",
@@ -2467,7 +2468,7 @@ function SettingsPanel({
                 title="Appearance"
                 description="Changes here save automatically. Save and Cancel apply to all other preferences."
               >
-                {visible("appearance", "Color mode Theme Density Image preview Item actions Action size Text preview Item details Preview", appearanceSearchText) ? (
+                {visible("appearance", "Color mode Theme Density Image preview Image hover zoom Item actions Action size Text preview Item details Preview", appearanceSearchText) ? (
                   <AppearanceSettingsControl
                     appearance={draft.appearance}
                     onChange={onAppearanceChange}
