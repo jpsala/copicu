@@ -59,6 +59,7 @@ pub struct SurfaceWindow {
 pub const MAIN: &str = "main";
 pub const SETTINGS: &str = "settings";
 pub const AI_OUTPUT: &str = "ai-output";
+pub const ASSISTANT: &str = "assistant";
 pub const METADATA: &str = "metadata";
 pub const ITEM_PREVIEW: &str = "item-preview";
 pub const UI_HOST: &str = "ui-host";
@@ -126,6 +127,30 @@ pub const SURFACES: &[SurfaceWindow] = &[
         width: 940,
         height: 680,
         min_width: 680,
+        min_height: 460,
+        max_width: None,
+        max_height: None,
+        decorations: false,
+        transparent: false,
+        resizable: true,
+        shadow: false,
+        skip_taskbar: false,
+        always_on_top: false,
+        persist_bounds: true,
+        persist_by_monitor: true,
+    },
+    SurfaceWindow {
+        label: ASSISTANT,
+        route: "index.html?window=assistant",
+        title: "Copicu Assistant",
+        kind: SurfaceKind::Document,
+        chrome: ChromeVariant::Document,
+        lifecycle: SurfaceLifecycle::CachedHidden,
+        bounds_policy: BoundsPolicy::CursorMonitor,
+        capability: "surface-assistant",
+        width: 940,
+        height: 720,
+        min_width: 420,
         min_height: 460,
         max_width: None,
         max_height: None,

@@ -52,6 +52,7 @@ Si el cambio toca scripts/prompts/toasts, abrir tambien `docs/tracks/009-ui-host
 | Command mode | Ejecutar acciones rapidas | Puede vivir como modo del picker, pero no como modal pesado ni ventana simulada dentro de otra. |
 | Item editor / metadata | Editar contenido/metadata | `F2` reemplaza el feed por un editor unificado full-panel: CodeMirror para content y `MetadataInspector` embebido para title, notes y tags, con un solo dirty state y commit SQLite atómico. `Shift+F2` y las entradas metadata-only conservan la utility standalone compacta. No montar paneles modales dentro del feed. |
 | Scripts workbench | Editar/revisar scripts y diagnostics | Futuro `scripts` standalone via surface registry. No alojar en `ui-host`. |
+| Assistant | Conversación, tools y aprobación de efectos | Document standalone `assistant`, lazy/cached-hidden, sin convertir el picker en chat. Contexto capturado por turno y catálogo en `docs/topics/ai-search-and-actions.md`. |
 | UI host | Toast, confirm, input chico de scripts | Ventana auxiliar `ui-host` con request/response IDs. No usar como superficie rica ni como host generico para ventanas de producto; `Assign metadata` usa la surface `metadata` via `copicu.metadata.editActive()`. |
 | Notifications | Toasts no bloqueantes | Ventana auxiliar liviana; no usar para prompts ricos. |
 | History manager futuro | Revision larga, colecciones, bulk | Ventana task-oriented separada del quick picker. |
@@ -135,6 +136,7 @@ Labels actuales:
 - `ui-host`: prompts de scripts.
 - `notifications`: toast stack auxiliar.
 - `ai-output`: ventana document para Markdown/output.
+- `assistant`: chat standalone, conversación durable y aprobación por operación.
 - `metadata`: inspector standalone selection-aware para metadata single/multi, reutilizado por create.
 - `whichkey`: utility temporal para atajos compuestos.
 

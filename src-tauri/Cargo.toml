@@ -1,6 +1,6 @@
 [package]
 name = "copicu"
-version = "0.4.21"
+version = "0.4.22"
 description = "A local keyboard-first clipboard manager inspired by CopyQ."
 authors = ["JP"]
 edition = "2021"
@@ -24,7 +24,7 @@ tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-global-shortcut = "2.3.2"
 base64 = "0.22"
 clipboard-rs = "0.3.4"
-rusqlite = { version = "0.39.0", features = ["bundled", "functions"] }
+rusqlite = { version = "0.39.0", features = ["bundled", "functions", "hooks", "limits"] }
 rusqlite_migration = "=2.5.0"
 regex = "1.12"
 serde = { version = "1", features = ["derive"] }

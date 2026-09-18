@@ -408,12 +408,19 @@ export type RunActionRequest = {
   context: ActionContext;
 };
 
+export type ActionVerification = {
+  checks: Record<string, boolean>;
+  counts: Record<string, number>;
+  itemIds: string[];
+};
+
 export type ActionRunResult = {
   actionId: string;
   status: "completed" | "failed";
   message: string;
   toasts?: ToastOptions[];
   effects?: ActionEffect[];
+  verification: ActionVerification | null;
 };
 
 export type ActionEffect = {

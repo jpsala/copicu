@@ -2,6 +2,11 @@
 
 mod actions;
 pub mod ai_planner;
+#[cfg(not(test))]
+mod assistant;
+mod assistant_database;
+#[cfg(not(test))]
+mod assistant_operations;
 mod clipboard;
 mod clipboard_probe;
 mod diagnostics;
@@ -62,6 +67,8 @@ const SETTINGS_WINDOW_LABEL: &str = surface_registry::SETTINGS;
 #[cfg(not(test))]
 const AI_OUTPUT_WINDOW_LABEL: &str = surface_registry::AI_OUTPUT;
 #[cfg(not(test))]
+const ASSISTANT_WINDOW_LABEL: &str = surface_registry::ASSISTANT;
+#[cfg(not(test))]
 const METADATA_WINDOW_LABEL: &str = surface_registry::METADATA;
 #[cfg(not(test))]
 const ITEM_PREVIEW_WINDOW_LABEL: &str = surface_registry::ITEM_PREVIEW;
@@ -104,6 +111,8 @@ const TRAY_SETTINGS_ID: &str = "settings";
 #[cfg(not(test))]
 const TRAY_EDIT_SCRIPTS_ID: &str = "edit-scripts";
 #[cfg(not(test))]
+const TRAY_ASSISTANT_ID: &str = "assistant";
+#[cfg(not(test))]
 const TRAY_PAUSE_CAPTURE_ID: &str = "pause-capture";
 #[cfg(not(test))]
 const TRAY_QUIT_ID: &str = "quit";
@@ -113,6 +122,8 @@ const PICKER_SHORTCUT_LABEL: &str = "Ctrl+Shift+,";
 const COMMAND_PALETTE_SHORTCUT_LABEL: &str = "Ctrl+Shift+Space";
 #[cfg(not(test))]
 const METADATA_SHORTCUT_LABEL: &str = "Ctrl+Shift+C";
+#[cfg(not(test))]
+const ASSISTANT_SHORTCUT_LABEL: &str = "Ctrl+Shift+J";
 #[cfg(not(test))]
 const ACTIVE_PREVIOUS_SHORTCUT_LABEL: &str = "Ctrl+Shift+ArrowUp";
 #[cfg(not(test))]
@@ -1586,6 +1597,26 @@ fn consume_picker_session_snapshot(
 }
 
 #[cfg(not(test))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickerFocusAckRequest {
+    request_id: String,
+    item_id: i64,
+    ok: bool,
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn picker_focus_ack(
+    window: tauri::WebviewWindow,
+    session: tauri::State<PickerSessionController>,
+    request: PickerFocusAckRequest,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "picker_focus_ack")?;
+    session.acknowledge_focus(&request.request_id, request.item_id, request.ok)
+}
+
+#[cfg(not(test))]
 #[tauri::command]
 fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     thread::spawn(move || {
@@ -1673,6 +1704,30 @@ impl AiOutputState {
             .map_err(|_| "ai-output state lock poisoned".to_string())
             .map(|latest| latest.clone())
     }
+}
+
+#[cfg(not(test))]
+#[derive(Default)]
+struct AssistantShortcutState(Mutex<Option<Shortcut>>);
+
+#[cfg(not(test))]
+#[tauri::command]
+fn open_assistant_window(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: State<'_, assistant::AssistantState>,
+    context: Option<assistant::AssistantContext>,
+) -> Result<(), String> {
+    require_surface_window(
+        &window,
+        &[MAIN_WINDOW_LABEL, ASSISTANT_WINDOW_LABEL],
+        "open_assistant_window",
+    )?;
+    if let Some(context) = context {
+        state.update_context(context)?;
+    }
+    spawn_open_assistant_window(app);
+    Ok(())
 }
 
 #[cfg(not(test))]
@@ -2674,6 +2729,7 @@ fn validate_paste_next_shortcut<R: tauri::Runtime>(
         settings.picker.external_editor_shortcut.as_str(),
         COMMAND_PALETTE_SHORTCUT_LABEL,
         METADATA_SHORTCUT_LABEL,
+        ASSISTANT_SHORTCUT_LABEL,
         ACTIVE_PREVIOUS_SHORTCUT_LABEL,
         ACTIVE_NEXT_SHORTCUT_LABEL,
     ];
@@ -2740,6 +2796,7 @@ fn validate_inbox_shortcut<R: tauri::Runtime>(
         settings.picker.external_editor_shortcut.as_str(),
         COMMAND_PALETTE_SHORTCUT_LABEL,
         METADATA_SHORTCUT_LABEL,
+        ASSISTANT_SHORTCUT_LABEL,
         ACTIVE_PREVIOUS_SHORTCUT_LABEL,
         ACTIVE_NEXT_SHORTCUT_LABEL,
     ];
@@ -2867,6 +2924,7 @@ fn normalize_saved_view_hotkey<R: tauri::Runtime>(
         || normalized == settings.picker.external_editor_shortcut
         || normalized == COMMAND_PALETTE_SHORTCUT_LABEL
         || normalized == METADATA_SHORTCUT_LABEL
+        || normalized == ASSISTANT_SHORTCUT_LABEL
         || normalized == ACTIVE_PREVIOUS_SHORTCUT_LABEL
         || normalized == ACTIVE_NEXT_SHORTCUT_LABEL
     {
@@ -3589,6 +3647,14 @@ pub fn run() {
                     }
                     _ => {}
                 },
+                ASSISTANT_WINDOW_LABEL => match event {
+                    WindowEvent::Moved(_)
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::Focused(false) => {
+                        save_window_bounds_from_event(window);
+                    }
+                    _ => {}
+                },
                 AI_OUTPUT_WINDOW_LABEL => match event {
                     WindowEvent::Moved(_)
                     | WindowEvent::Resized(_)
@@ -3659,6 +3725,9 @@ pub fn run() {
             TRAY_SETTINGS_ID => {
                 spawn_open_settings_window(app.clone());
             }
+            TRAY_ASSISTANT_ID => {
+                spawn_open_assistant_window(app.clone());
+            }
             TRAY_EDIT_SCRIPTS_ID => {
                 let result = app
                     .try_state::<storage::AppStorage>()
@@ -3709,6 +3778,16 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            open_assistant_window,
+            assistant::assistant_update_context,
+            assistant::assistant_snapshot,
+            assistant::assistant_list_models,
+            assistant::assistant_set_model,
+            assistant::assistant_set_execution_mode,
+            assistant::assistant_send,
+            assistant::assistant_cancel,
+            assistant::assistant_approve,
+            assistant::assistant_reset,
             get_capture_stats,
             get_capture_snapshot,
             get_clipboard_probe,
@@ -3734,6 +3813,7 @@ pub fn run() {
             hide_picker,
             quit_app,
             consume_picker_session_snapshot,
+            picker_focus_ack,
             open_settings_window,
             open_scenario_settings,
             open_saved_views_settings,
@@ -3862,6 +3942,11 @@ pub fn run() {
             app.manage(paste_queue::PasteQueue::default());
             app.manage(ui_host::UiHostState::default());
             app.manage(AiOutputState::default());
+            app.manage(
+                assistant::AssistantState::open(&app_data_dir)
+                    .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?,
+            );
+            app.manage(AssistantShortcutState::default());
             app.manage(MetadataEditorState::default());
             app.manage(ItemPreviewState::default());
             app.manage(window_registry.clone());
@@ -4437,6 +4522,13 @@ fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> ta
         true,
         None::<&str>,
     )?;
+    let assistant = MenuItem::with_id(
+        app,
+        TRAY_ASSISTANT_ID,
+        "Open assistant",
+        true,
+        Some(ASSISTANT_SHORTCUT_LABEL),
+    )?;
     let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
     let primary_separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
@@ -4444,6 +4536,7 @@ fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> ta
         &[
             &toggle,
             &settings,
+            &assistant,
             &pause_capture,
             &edit_scripts,
             &primary_separator,
@@ -4474,6 +4567,11 @@ fn show_main_window<R: tauri::Runtime>(
     remember_previous: bool,
 ) -> Result<(), String> {
     show_main_window_with_focus(app, remember_previous, true)
+}
+
+#[cfg(not(test))]
+pub(crate) fn show_picker_for_assistant_focus(app: &tauri::AppHandle) -> Result<(), String> {
+    show_main_window(app, false)
 }
 
 #[cfg(not(test))]
@@ -4915,6 +5013,58 @@ fn spawn_open_settings_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle
 }
 
 #[cfg(not(test))]
+fn spawn_open_assistant_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    thread::spawn(move || {
+        let target = app.clone();
+        if let Err(error) = app.run_on_main_thread(move || {
+            let result = (|| -> Result<(), String> {
+                let window = match target.get_webview_window(ASSISTANT_WINDOW_LABEL) {
+                    Some(window) => window,
+                    None => build_surface_window(&target, ASSISTANT_WINDOW_LABEL)?,
+                };
+                if let Some(registry) = target.try_state::<window_state::WindowStateRegistry>() {
+                    registry.restore(&window, window_state::RestoreTarget::CursorMonitor)?;
+                }
+                window.show().map_err(|error| error.to_string())?;
+                window.unminimize().map_err(|error| error.to_string())?;
+                window.set_focus().map_err(|error| error.to_string())?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                eprintln!("assistant window open failed: {error}");
+            }
+        }) {
+            eprintln!("assistant window dispatch failed: {error}");
+        }
+    });
+}
+
+#[cfg(not(test))]
+fn refresh_assistant_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(shortcut) = shortcut_from_label(ASSISTANT_SHORTCUT_LABEL) else {
+        return;
+    };
+    let state = app.state::<AssistantShortcutState>();
+    let Ok(mut registered) = state.0.lock() else {
+        return;
+    };
+    if registered.is_some() {
+        return;
+    }
+    if app.global_shortcut().is_registered(shortcut) {
+        eprintln!("assistant shortcut unavailable: {ASSISTANT_SHORTCUT_LABEL}; use tray or picker");
+        return;
+    }
+    match app.global_shortcut().register(shortcut) {
+        Ok(()) => {
+            *registered = Some(shortcut);
+            eprintln!("assistant shortcut registered: {ASSISTANT_SHORTCUT_LABEL}");
+        }
+        Err(error) => eprintln!("assistant shortcut registration failed: {error}"),
+    }
+}
+
+#[cfg(not(test))]
 fn spawn_toggle_main_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
     thread::spawn(move || {
         thread::sleep(NATIVE_WINDOW_TASK_DELAY);
@@ -5288,6 +5438,14 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
     {
         eprintln!("paste next shortcut released: {shortcut:?}");
         spawn_paste_next(app.clone());
+        return;
+    }
+    if app
+        .try_state::<AssistantShortcutState>()
+        .and_then(|state| state.0.lock().ok().and_then(|value| *value))
+        .is_some_and(|assistant_shortcut| *shortcut == assistant_shortcut)
+    {
+        spawn_open_assistant_window(app.clone());
         return;
     }
 
@@ -5770,6 +5928,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
             }
         }
     }
+    refresh_assistant_shortcut(app);
 
     let mut registered = HashMap::new();
     let mut compound_registry = hotkeys::ShortcutRegistry::default();

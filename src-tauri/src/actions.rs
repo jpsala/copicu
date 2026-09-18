@@ -58,6 +58,8 @@ use self::capabilities::{
 };
 use self::discovery::discover_script_actions;
 #[cfg(not(test))]
+pub(crate) use self::discovery::parse_script_action;
+#[cfg(not(test))]
 use self::host_api::dispatch_script_host_call;
 #[cfg(not(test))]
 use self::input::validate_action_input;
@@ -74,6 +76,7 @@ const PICKER_ACTIVE_ITEM_EVENT: &str = "copicu://picker/active-item";
 #[cfg(not(test))]
 const SCRIPT_RUNNER_TIMEOUT: Duration = Duration::from_secs(15);
 const SCRIPT_RUNNER_TIMEOUT_ERROR_PREFIX: &str = "script runner timed out after";
+pub(crate) const VERIFICATION_FAILURE_PREFIX: &str = "[LOCAL_VERIFICATION_FAILED]";
 
 #[cfg(not(test))]
 pub use self::model::ActionNotification;
@@ -81,8 +84,8 @@ pub use self::model::ActionNotification;
 pub use self::model::{
     ActionContext, ActionDefinition, ActionDiagnostic, ActionEffect, ActionInput,
     ActionInputSource, ActionLogging, ActionRunResult, ActionRunStatus, ActionSource, ActionToast,
-    ActionViewContext, ClipKind, DiagnosticSeverity, RunActionRequest, ScriptActionMetadata,
-    SelectionRequirement, ToastTone, Trigger,
+    ActionVerification, ActionViewContext, ClipKind, DiagnosticSeverity, RunActionRequest,
+    ScriptActionMetadata, SelectionRequirement, ToastTone, Trigger,
 };
 
 pub fn builtin_actions() -> Vec<ActionDefinition> {
@@ -212,6 +215,7 @@ pub fn run_action<R: Runtime + 'static>(
                     message,
                     toasts: Vec::new(),
                     effects: Vec::new(),
+                    verification: None,
                 },
             )
         }
@@ -221,6 +225,7 @@ pub fn run_action<R: Runtime + 'static>(
                     message,
                     toasts: Vec::new(),
                     effects: Vec::new(),
+                    verification: None,
                 }
             })
         }
@@ -229,6 +234,7 @@ pub fn run_action<R: Runtime + 'static>(
                 message,
                 toasts: Vec::new(),
                 effects: Vec::new(),
+                verification: None,
             })
         }
         QUEUE_SELECTED_BOTTOM_TO_TOP_ID => {
@@ -237,6 +243,7 @@ pub fn run_action<R: Runtime + 'static>(
                     message,
                     toasts: Vec::new(),
                     effects: Vec::new(),
+                    verification: None,
                 },
             )
         }
@@ -244,17 +251,20 @@ pub fn run_action<R: Runtime + 'static>(
             message,
             toasts: Vec::new(),
             effects: Vec::new(),
+            verification: None,
         }),
         _ => run_script_action(app, window, storage, suppression, previous_window, &request),
     };
     let finished_at = now_unix_ms();
 
-    let (status, message, toasts, effects, error_class, error_message) = match result {
+    let (status, message, toasts, effects, verification, error_class, error_message) = match result
+    {
         Ok(run) => (
             ActionRunStatus::Completed,
             run.message,
             run.toasts,
             run.effects,
+            run.verification,
             None,
             None,
         ),
@@ -263,6 +273,7 @@ pub fn run_action<R: Runtime + 'static>(
             error.clone(),
             Vec::new(),
             Vec::new(),
+            None,
             Some("ActionError".to_string()),
             Some(redact_error(&error)),
         ),
@@ -304,6 +315,7 @@ pub fn run_action<R: Runtime + 'static>(
         message,
         toasts,
         effects,
+        verification,
     }
 }
 
@@ -312,6 +324,7 @@ struct ScriptOrBuiltinRun {
     message: String,
     toasts: Vec<ActionToast>,
     effects: Vec<ActionEffect>,
+    verification: Option<ActionVerification>,
 }
 
 #[cfg(not(test))]
@@ -410,24 +423,27 @@ pub fn run_temporary_script_action<R: Runtime + 'static>(
     let _ = std::fs::remove_file(&temp_path);
     let finished_at = now_unix_ms();
 
-    let (status, message, toasts, effects, error_class, error_message) = match run_result {
-        Ok(run) => (
-            ActionRunStatus::Completed,
-            run.message,
-            run.toasts,
-            run.effects,
-            None,
-            None,
-        ),
-        Err(error) => (
-            ActionRunStatus::Failed,
-            error.clone(),
-            Vec::new(),
-            Vec::new(),
-            Some("AiScriptError".to_string()),
-            Some(redact_error(&error)),
-        ),
-    };
+    let (status, message, toasts, effects, verification, error_class, error_message) =
+        match run_result {
+            Ok(run) => (
+                ActionRunStatus::Completed,
+                run.message,
+                run.toasts,
+                run.effects,
+                run.verification,
+                None,
+                None,
+            ),
+            Err(error) => (
+                ActionRunStatus::Failed,
+                error.clone(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                Some("AiScriptError".to_string()),
+                Some(redact_error(&error)),
+            ),
+        };
 
     if let Err(error) = storage.insert_action_run(crate::storage::NewActionRun {
         action_id: action.id.clone(),
@@ -452,6 +468,7 @@ pub fn run_temporary_script_action<R: Runtime + 'static>(
         message,
         toasts,
         effects,
+        verification,
     }
 }
 
@@ -582,6 +599,15 @@ fn run_script_action_definition<R: Runtime + 'static>(
     if runner_result.status == "failed" {
         return Err(runner_result.message);
     }
+    if let Some((name, _)) = runner_result
+        .verification
+        .as_ref()
+        .and_then(|verification| verification.checks.iter().find(|(_, passed)| !**passed))
+    {
+        return Err(format!(
+            "{VERIFICATION_FAILURE_PREFIX} check {name} reported false"
+        ));
+    }
 
     let message = if runner_result.log_count > 0 {
         format!(
@@ -596,6 +622,7 @@ fn run_script_action_definition<R: Runtime + 'static>(
         message,
         toasts,
         effects,
+        verification: runner_result.verification,
     })
 }
 
@@ -987,6 +1014,7 @@ struct ScriptRunnerResult {
     message: String,
     raw_operations: Vec<ScriptOperation>,
     log_count: i64,
+    verification: Option<ActionVerification>,
 }
 
 #[cfg(not(test))]
@@ -1098,6 +1126,17 @@ struct HistorySearchPayload {
     limit: Option<i64>,
     content: Option<bool>,
 }
+#[cfg(not(test))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoryCreatePayload {
+    text: String,
+    title: Option<String>,
+    notes: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    mime_primary: Option<String>,
+}
 
 #[cfg(not(test))]
 #[derive(Deserialize)]
@@ -1184,10 +1223,22 @@ enum HistoryMovePositionPayload {
 #[serde(rename_all = "camelCase")]
 struct ScriptHistoryPatch {
     text: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_patch_field")]
     title: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_patch_field")]
     notes: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_patch_field")]
     tags: Option<Option<serde_json::Value>>,
     marked: Option<bool>,
+}
+
+#[cfg(not(test))]
+fn deserialize_patch_field<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 #[cfg(not(test))]
@@ -1429,6 +1480,25 @@ fn script_history_search(
     )
     .map_err(|error| format!("failed to encode history.search result: {error}"))
 }
+#[cfg(not(test))]
+pub(crate) fn script_history_create(
+    storage: &crate::storage::AppStorage,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let payload: HistoryCreatePayload = serde_json::from_value(payload)
+        .map_err(|error| format!("invalid history.create payload: {error}"))?;
+    let result = storage.create_text_item(crate::storage::CreateHistoryItemRequest {
+        text: payload.text,
+        title: payload.title,
+        notes: payload.notes,
+        tags: payload.tags,
+        mime_primary: payload.mime_primary,
+    })?;
+    Ok(serde_json::json!({
+        "id": result.id.to_string(),
+        "created": result.created,
+    }))
+}
 
 #[cfg(not(test))]
 fn script_history_get(
@@ -1505,57 +1575,25 @@ fn script_history_move(
 }
 
 #[cfg(not(test))]
-fn script_history_update(
+pub(crate) fn script_history_update(
     storage: &crate::storage::AppStorage,
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let payload: HistoryUpdatePayload = serde_json::from_value(payload)
         .map_err(|error| format!("invalid history.update payload: {error}"))?;
-    let item_id = parse_script_item_id(&payload.id)?;
-    if payload.patch.marked.is_some()
-        && payload.patch.text.is_none()
-        && payload.patch.title.is_none()
-        && payload.patch.notes.is_none()
-        && payload.patch.tags.is_none()
-    {
-        storage.set_items_marked(crate::storage::SetHistoryItemsMarkedRequest {
-            ids: vec![item_id],
-            marked: payload.patch.marked.unwrap_or(false),
-        })?;
-        return Ok(json!(null));
-    }
-    let existing = storage.get_item(item_id)?;
-    let existing_value = serde_json::to_value(&existing)
-        .map_err(|error| format!("failed to encode existing item: {error}"))?;
-    let request = crate::storage::UpdateHistoryItemRequest {
-        id: item_id,
-        text: payload
-            .patch
-            .text
-            .flatten()
-            .unwrap_or_else(|| existing_value["text"].as_str().unwrap_or("").to_string()),
-        title: payload
-            .patch
-            .title
-            .flatten()
-            .or_else(|| existing_value["title"].as_str().map(ToString::to_string)),
-        notes: payload
-            .patch
-            .notes
-            .flatten()
-            .or_else(|| existing_value["notes"].as_str().map(ToString::to_string)),
-        tags: payload
-            .patch
-            .tags
-            .flatten()
-            .map(script_tags_to_string)
-            .or_else(|| existing_value["tags"].as_str().map(ToString::to_string)),
-        mime_primary: existing_value["mime_primary"]
-            .as_str()
-            .map(ToString::to_string),
-        marked: payload.patch.marked,
-    };
-    storage.update_item(request)?;
+    storage.patch_item(
+        parse_script_item_id(&payload.id)?,
+        crate::storage::HistoryItemPatch {
+            text: payload.patch.text.flatten(),
+            title: payload.patch.title,
+            notes: payload.patch.notes,
+            tags: payload
+                .patch
+                .tags
+                .map(|value| value.map(script_tags_to_string)),
+            marked: payload.patch.marked,
+        },
+    )?;
     Ok(json!(null))
 }
 
@@ -2093,6 +2131,36 @@ mod tests {
     }
 
     #[test]
+    fn script_discovery_handles_regex_comments_and_division() {
+        let action = super::discovery::parse_script_action(
+            Path::new("local-extraction.ts"),
+            r#"
+            export default defineAction({
+              id: "local.extract",
+              async run() {
+                // An unmatched quote " or closing brace } is not manifest syntax.
+                /* Neither is an opening brace { or a backtick ` */
+                const pattern = /(?:^|[\{\[\(,\s])api_key\s*["']?[:=]\s*["']?([^\s"'`,;}\]\)]+)/gi;
+                const escapedSlash = /[\/}']+\/end/;
+                const ratio = 12 / 3 / 2;
+                const text = "plain / text";
+                if (ratio) /["}]/.test(text);
+                return /['{]/.test(text);
+              },
+              title: "Local extraction",
+              triggers: ["clipboardChange"],
+              input: { source: "none", selection: "none" },
+              capabilities: ["history:search", "history:create"]
+            });
+            "#,
+        );
+
+        assert_eq!(action.diagnostics, Vec::new());
+        assert_eq!(action.triggers, vec![Trigger::ClipboardChange]);
+        assert!(validate_script_host_capabilities(&action, "history.create").is_ok());
+    }
+
+    #[test]
     fn script_discovery_reports_invalid_log_name() {
         let path = write_temp_script(
             "bad-log.ts",
@@ -2275,6 +2343,15 @@ mod tests {
 
         validate_script_host_capabilities(&action, "history.search")
             .expect("history.search should allow history:search");
+    }
+
+    #[test]
+    fn creating_history_requires_its_own_capability() {
+        let mut action = test_script_action("examples.create", "", SelectionRequirement::None);
+        action.capabilities = vec!["history:write-metadata".to_string()];
+        assert!(validate_script_host_capabilities(&action, "history.create").is_err());
+        action.capabilities.push("history:create".to_string());
+        assert!(validate_script_host_capabilities(&action, "history.create").is_ok());
     }
 
     #[test]

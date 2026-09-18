@@ -2,6 +2,23 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-09-17 - Asistente general con SQL de lectura y efectos por API
+
+Estado: accepted por JP para un prototipo local, sin publicación ni instalación.
+
+Decisión: agregar un chat standalone que compone el catálogo completo de tools,
+con contexto del picker, lectura real de imágenes y scripts reutilizables.
+Permitir SELECT/CTE/joins en una conexión SQL restringida; las modificaciones
+siguen pasando por APIs del producto y aprobación de cada operación.
+
+Motivo: no limitar el agente a workflows predefinidos ni obligarlo a generar
+scripts para consultar. Separar lectura expresiva de efectos mantiene visibles
+el alcance y los límites de recuperación. Scripts Node siguen siendo código
+local de confianza, no un sandbox.
+
+Contrato y límites: `specs/013-conversational-assistant/spec.md` y
+`docs/topics/ai-search-and-actions.md`.
+
 ### 2026-09-11 - Editor de consultas CodeMirror residente
 
 Estado: accepted por JP; implementacion y smoke nativo verificados en `dev:built`, sin certificar rendimiento de release.

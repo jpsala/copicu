@@ -251,7 +251,7 @@ Mouse y acciones contextuales:
 - Right click o tres puntitos por item abre acciones.
 - El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Ctrl+D`, `Shift+Delete` o trash icon.
 - Las acciones hover por item aparecen al pasar por la fila; el trash icon borra sin confirmacion el item bajo hover o, si hay multiseleccion activa, los items seleccionados.
-- En un item Inbox, `Catalog Inbox item` abre metadata; guardar metadata lo quita de Inbox y cancelar lo conserva. `Remove from Inbox` solo limpia ese estado y nunca borra el historial.
+- En un item regular, `Add to Inbox` asigna el estado durable y lo promueve al grupo Inbox. En un item Inbox, `Catalog Inbox item` abre metadata; guardar metadata lo quita de Inbox y cancelar lo conserva. `Remove from Inbox` solo limpia ese estado y nunca borra el historial.
 - Acciones esperadas restantes: Copy, Paste, Paste as plain text, Pin/unpin, Open full preview/editor, Show details/formats, Move to tab.
 - Click fuera/focus lost debe respetar setting de ventana.
 

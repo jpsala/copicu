@@ -33,28 +33,30 @@ pub(super) fn discover_script_actions(folder_path: &str) -> Result<Vec<ActionDef
 }
 
 pub(super) fn discover_script_action(path: &Path) -> ActionDefinition {
+    match std::fs::read_to_string(path) {
+        Ok(source) => parse_script_action(path, &source),
+        Err(error) => script_action_with_diagnostics(
+            fallback_script_id(path),
+            path.file_name()
+                .map(|value| value.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "unknown".to_string()),
+            path,
+            "",
+            vec![ActionDiagnostic {
+                severity: DiagnosticSeverity::Error,
+                message: format!("failed to read script: {error}"),
+            }],
+        ),
+    }
+}
+
+pub(crate) fn parse_script_action(path: &Path, source: &str) -> ActionDefinition {
     let file_name = path
         .file_name()
         .map(|value| value.to_string_lossy().into_owned())
         .unwrap_or_else(|| "unknown".to_string());
     let fallback_id = fallback_script_id(path);
     let mut diagnostics = Vec::new();
-
-    let source = match std::fs::read_to_string(path) {
-        Ok(source) => source,
-        Err(error) => {
-            return script_action_with_diagnostics(
-                fallback_id,
-                file_name,
-                path,
-                "",
-                vec![ActionDiagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    message: format!("failed to read script: {error}"),
-                }],
-            );
-        }
-    };
 
     let action_block = match extract_define_action_block(&source) {
         Some(block) => block,
@@ -366,26 +368,120 @@ fn find_matching(source: &str, open_index: usize, open: char, close: char) -> Op
     let mut depth = 0usize;
     let mut in_string: Option<char> = None;
     let mut escaped = false;
+    let mut regex_allowed = true;
+    let mut control_paren_pending = false;
+    let mut control_parens = Vec::new();
+    let mut chars = source[open_index..].char_indices().peekable();
 
-    for (offset, character) in source[open_index..].char_indices() {
+    while let Some((offset, character)) = chars.next() {
         let index = open_index + offset;
         if let Some(quote) = in_string {
             if escaped {
                 escaped = false;
-                continue;
-            }
-            if character == '\\' {
+            } else if character == '\\' {
                 escaped = true;
-                continue;
-            }
-            if character == quote {
+            } else if character == quote {
                 in_string = None;
+                regex_allowed = false;
             }
             continue;
         }
-
+        if character.is_whitespace() {
+            continue;
+        }
+        if character == '/' {
+            match chars.peek().map(|(_, next)| *next) {
+                Some('/') => {
+                    chars.next();
+                    for (_, next) in chars.by_ref() {
+                        if matches!(next, '\n' | '\r') {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                Some('*') => {
+                    chars.next();
+                    let mut closed = false;
+                    while let Some((_, next)) = chars.next() {
+                        if next == '*' && chars.peek().is_some_and(|(_, next)| *next == '/') {
+                            chars.next();
+                            closed = true;
+                            break;
+                        }
+                    }
+                    if !closed {
+                        return None;
+                    }
+                    continue;
+                }
+                _ if regex_allowed => {
+                    let mut in_class = false;
+                    let mut regex_escaped = false;
+                    let mut closed = false;
+                    for (_, next) in chars.by_ref() {
+                        if matches!(next, '\n' | '\r') {
+                            return None;
+                        }
+                        if regex_escaped {
+                            regex_escaped = false;
+                        } else {
+                            match next {
+                                '\\' => regex_escaped = true,
+                                '[' => in_class = true,
+                                ']' => in_class = false,
+                                '/' if !in_class => {
+                                    closed = true;
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    if !closed {
+                        return None;
+                    }
+                    regex_allowed = false;
+                    continue;
+                }
+                _ => {
+                    regex_allowed = true;
+                    continue;
+                }
+            }
+        }
         if matches!(character, '"' | '\'' | '`') {
             in_string = Some(character);
+            continue;
+        }
+        if is_identifier_char(character) {
+            let start = index;
+            let mut end = index + character.len_utf8();
+            while let Some((offset, next)) = chars.peek() {
+                if !is_identifier_char(*next) {
+                    break;
+                }
+                end = open_index + offset + next.len_utf8();
+                chars.next();
+            }
+            let token = &source[start..end];
+            control_paren_pending =
+                matches!(token, "if" | "while" | "for" | "with" | "switch" | "catch");
+            regex_allowed = matches!(
+                token,
+                "return"
+                    | "throw"
+                    | "yield"
+                    | "await"
+                    | "case"
+                    | "delete"
+                    | "void"
+                    | "typeof"
+                    | "in"
+                    | "instanceof"
+                    | "else"
+                    | "do"
+            );
             continue;
         }
         if character == open {
@@ -396,6 +492,20 @@ fn find_matching(source: &str, open_index: usize, open: char, close: char) -> Op
                 return Some(index);
             }
         }
+        regex_allowed = match character {
+            '(' => {
+                control_parens.push(control_paren_pending);
+                true
+            }
+            ')' => control_parens.pop().unwrap_or(false),
+            ']' | '}' | '.' => false,
+            '+' | '-' if chars.peek().is_some_and(|(_, next)| *next == character) => {
+                chars.next();
+                regex_allowed
+            }
+            _ => true,
+        };
+        control_paren_pending = false;
     }
     None
 }

@@ -1,6 +1,6 @@
 ---
 id: ai-search-and-actions
-status: draft
+status: active
 kind: decision-map
 triggers:
   - AI
@@ -11,17 +11,23 @@ triggers:
   - commands
   - filters
   - actions
+  - assistant
+  - conversational agent
+  - vision
 primary_refs:
-  - ../tracks/006-ai-vague-search.md
-  - ../tracks/004-actions-scripting.md
+  - docs/tracks/006-ai-vague-search.md
+  - docs/tracks/004-actions-scripting.md
   - docs/topics/search-plan-engine.md
   - docs/topics/filtering-and-query-syntax.md
   - docs/topics/product-ambition.md
+  - specs/013-conversational-assistant/spec.md
+  - scripts/assistant-tools.json
+  - src-tauri/src/assistant.rs
 ---
 
 # AI Search And Actions
 
-AI es una capacidad transversal de Copicu. La primera utilidad concreta no debe ser "AI libre", sino usar lenguaje natural para buscar y filtrar historial mediante la API host existente.
+AI es una capacidad transversal de Copicu: búsqueda por lenguaje natural y un asistente conversacional opt-in que compone herramientas sobre el producto local.
 
 ## Direccion
 
@@ -32,7 +38,83 @@ El usuario debe poder pedir cosas como:
 - "imagenes con nota de error";
 - "los textos largos sin tag que copie esta semana".
 
-La app debe convertir eso en un plan estructurado y ejecutarlo con APIs normales de historial, metadata y busqueda. La AI no deberia tocar SQLite, filesystem, clipboard o input sintetico directamente.
+La búsqueda convierte la intención en un plan estructurado. El asistente también permite SQL de lectura mediante una conexión restringida; toda modificación usa operaciones de producto. No recibe acceso SQL de escritura ni una shell como herramienta.
+
+## Asistente Conversacional
+
+Contrato y aceptación: `specs/013-conversational-assistant/spec.md`.
+
+- Ventana `assistant` independiente, lazy y conservada al ocultarse. Abrir con
+  `Ctrl+Shift+J`, tray o menús del picker; los menús siguen disponibles si el
+  shortcut está ocupado. No dispara requests en idle.
+- Una conversación local durable, streaming, Markdown/tablas/código y actividad
+  de herramientas visible. Contexto por turno: activo, selección completa,
+  query aplicada e IDs cargados; cargados no significa todos los resultados.
+- Catálogo único en `scripts/assistant-tools.json`: lectura de items e imágenes
+  reales, búsquedas, schema/SELECT/CTE/joins, metadata, creación, exportación y
+  acciones/scripts. `api_describe` expone el contrato host vigente.
+- SQL usa conexión read-only y authorizer; no settings con credenciales,
+  writes, ATTACH ni PRAGMA. Límites explícitos: 500 filas, 512 KiB de salida y
+  2 segundos por consulta, con señal de truncación.
+- YOLO es el modo por defecto, también tras New conversation y reinicio.
+  Omite la aprobación por operación; Confirm permite recuperarla para los
+  argumentos exactos de cada write/export/ejecución. Ambos conservan las guardas
+  SQL, exportación, scripts automáticos y cancelación. No hay undo universal.
+  El host genera los IDs de aprobación; cancelar no reanuda pendientes.
+- Exportar no sobrescribe. Guardar scripts valida estáticamente el manifest
+  antes de escribir; activar `clipboardChange` exige
+  `activateClipboardChange: true` y advertencia de ejecución automática futura.
+  Scripts Node son código local de confianza, no un sandbox.
+- Endpoint y credenciales reutilizan la configuración AI existente. El selector
+  del asistente descubre modelos reales y sus esfuerzos de razonamiento; una
+  elección explícita prevalece sobre el modelo global sólo para el asistente.
+  `Set default` persiste modelo/esfuerzo entre conversaciones y reinicios.
+  Ambos quedan capturados por turno y bloqueados mientras corre.
+- Send envía al proveedor configurado sin una casilla adicional de transferencia.
+  No se envía contenido en idle. Imágenes viajan como contenido visual real;
+  sus bytes no se conservan en la conversación. Un proveedor sin visión puede
+  rechazar el turno.
+- El prompt conserva foco al enviar con Enter o botón. Durante el despacho es
+  readonly, no disabled; durante streaming permite preparar el siguiente
+  borrador sin enviarlo todavía. Un error conserva el texto para corregirlo.
+- Consolidar clips propios con credenciales usa `api_describe` → `script_save`
+  → `action_run`: lectura, extracción y escritura completas dentro del host
+  local. No sustituir el resultado pedido por máscaras ni contar fragmentos
+  truncados de ítems anteriores como credenciales completas.
+  No devolver valores sensibles al modelo, previews remotos ni logs;
+  las credenciales internas de Copicu/proveedor siguen fuera de las tools.
+  El script relee el destino persistido y devuelve `ActionVerification` con
+  checks de conservación/formato, conteos e IDs, sin valores sensibles.
+  No guardar conteos en notes como sustituto de verificación. Un check falso
+  o reporte inválido falla la acción y termina el turno sin nuevas tools ni
+  requests al proveedor; los efectos previos no se revierten.
+- Extractores/formateadores prueban la función completa con casos sintéticos
+  positivos y negativos antes de leer historial; contar LF reales por separado
+  de `\n` literales. Aclarar proveedores ambiguos antes de buscar. Ante un
+  resultado sin cambios, inspeccionar lo persistido: no inventar causas de
+  preview/refresh/seguridad ni pedir credenciales al usuario como evidencia.
+- `history.search` del SDK devuelve una página acotada. Un recorrido completo
+  usa `history.neighbor` en ambas direcciones desde un seed, sin wrap:
+  sus vecinos siguen IDs de inserción, no el orden promovido del picker.
+  El SDK enumera capacidades válidas; leerlas antes de generar el manifest.
+- La conversación puede contener texto de clips y resultados: es información
+  local sensible, no un log redacted. No publicar el perfil de desarrollo.
+- El modelo puede equivocarse aun con tools correctas. Revisar el contenido y
+  el alcance de efectos antes de aprobar; no confundir un resumen del modelo
+  con evidencia del resultado de una herramienta.
+- Para búsquedas ordinarias usar `history_search`, no recrear su normalización
+  mediante SQL. `in:metadata <término>` o `in:title,notes,tags <término>` excluye
+  matches sólo en contenido. Agotar cursores; resumir clips exige leer su
+  contenido completo, no sólo previews o metadata.
+- `history_promote` ordena; `picker_focus` abre sin filtro y activa la fila tras
+  confirmación real del renderer. No copia ni pega. Vacía la multiselección
+  anterior y espera el commit de la página cargada antes de confirmar.
+- `copicu://history/changed` también admite una invalidación genérica con payload
+  null, usada por el asistente y borrado de tags. El picker refresca sin exigir
+  un item ni cambiar el foco; `activate` sólo aplica si viene con `itemId`.
+- El runner conserva `reasoning_details` opacos y ordenados entre herramientas,
+  sin mostrarlos como respuesta. Los catálogos deben llegar completos o fallar,
+  nunca ofrecer silenciosamente una lista parcial.
 
 ## Provider Actual
 
@@ -217,7 +299,7 @@ Actualizacion 2026-06-07, summary AI:
 ## Privacidad
 
 - AI externa queda deshabilitada por defecto hasta tener setting claro.
-- Ignored/private/secret items nunca se envian a AI salvo override explicito.
+- No enviar clips con secretos a un proveedor externo. El prototipo no detecta ni redacta automáticamente esos contenidos; Send inicia el turno y permite las lecturas solicitadas posteriores.
 - Primer uso recomendado: comando manual "AI search" o "AI this item", no jobs automaticos.
 - Logs de AI deben guardar metadata redacted: modelo/provider, tokens/costo si aplica, estado, error class y resumen sin payload real.
 
@@ -227,4 +309,4 @@ Actualizacion 2026-06-07, summary AI:
 - Si se guardan prompts/responses redacted para debug o solo action run metadata.
 - Si el planner debe quedarse como runner Node dedicado o migrar a un worker/runner compartido con Actions.
 - Como mostrar "por que encontro esto" sin exponer demasiado contenido.
-- Que permisos necesita una futura AI command chain antes de ejecutar cambios destructivos.
+- Qué garantías de batches y recuperación agregar después del dogfood del asistente; hoy la aprobación es por operación y no hay undo universal.

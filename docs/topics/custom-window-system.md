@@ -44,6 +44,7 @@ Router compacto para ventanas custom Tauri/WebView2. La version larga previa que
 | `metadata` | editor metadata standalone | prewarm + hide salvo coste extremo |
 | `item-preview` | preview explícito del item activo | cache/hide, apertura sin activar |
 | `ai-output` | salida markdown/reportes | cache/hide; revisar coste si crece |
+| `assistant` | chat, herramientas y aprobaciones | lazy + cache/hide; conversación durable bajo perfil |
 | `ui-host` | prompts/inputs de scripts | bajo demanda |
 | `notifications` | toasts custom | posicionada por backend |
 | `whichkey` | menu de hotkeys | temporal |
@@ -92,7 +93,7 @@ Track: `docs/tracks/009-ui-host-custom-surface.md`.
 ## Estado Implementado / Aprendizajes
 
 - Hay registry de surfaces en Rust.
-- `SettingsWindowApp`, `MetadataWindowApp`, `WhichKeyWindowApp`, `NotificationsApp`, `AiOutputWindowApp` estan separados del picker principal.
+- `SettingsWindowApp`, `MetadataWindowApp`, `WhichKeyWindowApp`, `NotificationsApp`, `AiOutputWindowApp` y `AssistantWindowApp` están separados del picker principal.
 - Ventanas secundarias pueden agregar un proceso WebView2 y decenas de MB.
 - Settings cacheada reduce reapertura pero mantiene memoria.
 - AI Output tuvo hallazgos previos de reopen/lifecycle; revisar track de performance antes de cambiar.

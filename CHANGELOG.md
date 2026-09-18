@@ -4,6 +4,51 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.22] - 2026-09-18
+
+
+### Added
+
+- Add an opt-in standalone conversational assistant with picker context,
+  persistent chat, real image input, read-only SQL and composable product tools.
+  Open it with Ctrl+Shift+J, the tray or picker menus.
+- Add default-on YOLO and optional Confirm execution modes; YOLO skips
+  per-operation approval without bypassing SQL, export or automatic-script protections.
+  Reject stale approvals and preserve completed effects after cancellation.
+- Add `history.create` to the script host API, and let the assistant save and
+  execute reusable actions through the existing runner.
+- Add a compact provider model/reasoning selector with a persistent assistant
+  default, direct sending without a transfer checkbox, and acknowledged picker
+  focus for composed results.
+- Add `assistant:smoke` for headless verification and `dev:background` for hidden
+  native surfaces with clipboard capture disabled.
+- Add `Add to Inbox` to each regular item's right-click and overflow menus.
+
+
+### Fixed
+
+- Apply script content and metadata patches atomically, preserving omitted
+  fields and supporting explicit title/notes clearing.
+- Preserve ordered provider reasoning state across tool calls and complete
+  catalog delivery without forced-exit pipe truncation on Windows.
+- Use native metadata search semantics and wait for the new history render
+  before acknowledging an assistant-requested active row.
+- Refresh the picker after generic assistant history changes instead of
+  throwing on an empty event payload.
+- Preserve assistant prompt focus after Enter or Send, including send failures,
+  without discarding the next draft during streaming.
+- Route sensitive clipboard consolidation through local scripts, preserving
+  complete values instead of masked substitutes and verifying final counts
+  without returning the values to the model.
+- Handle regex literals and comments when discovering script manifests, and
+  expose supported capability names and traversal ordering in the script SDK.
+- Validate script-returned verification reports and stop the assistant turn on
+  false checks or malformed reports, without rolling back completed effects.
+  Require local read-back checks and whole-pipeline synthetic examples instead
+  of treating successful execution as proof of correct content or formatting.
+  Clarify ambiguous providers and investigate stored data rather than guessing
+  preview behavior or requesting sensitive contents in chat.
+
 ## [0.4.21] - 2026-09-17
 
 ### Added
@@ -222,6 +267,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.22]: https://github.com/jpsala/copicu/releases/tag/v0.4.22
 [0.4.21]: https://github.com/jpsala/copicu/releases/tag/v0.4.21
 [0.4.20]: https://github.com/jpsala/copicu/releases/tag/v0.4.20
 [0.4.19]: https://github.com/jpsala/copicu/releases/tag/v0.4.19

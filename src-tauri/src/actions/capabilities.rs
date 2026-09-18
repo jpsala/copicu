@@ -14,6 +14,7 @@ fn supported_script_capability(capability: &str) -> bool {
         capability,
         "history:read-content"
             | "history:search"
+            | "history:create"
             | "history:write-metadata"
             | "history:promote"
             | "metadata:read-tags"
@@ -47,6 +48,7 @@ fn required_script_host_capabilities(method: &str) -> Option<&'static [&'static 
     match method {
         "history.search" => Some(&["history:search"]),
         "history.get" => Some(&["history:read-content"]),
+        "history.create" => Some(&["history:create"]),
         "history.neighbor" => Some(&["history:search"]),
         "history.update" => Some(&["history:write-metadata"]),
         "history.move" => Some(&["history:promote"]),

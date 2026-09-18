@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-09-17. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-09-18. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -10,14 +10,11 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete/distributed`; `v0.4.21` publicado e instalado localmente.
-- **Referencia:** `docs/topics/appearance-and-themes.md`, `docs/topics/picker-interaction.md`.
-- **Resultado:** `Image hover zoom` queda opcional y apagado por default; `Action
-  size` dimensiona también la lupa. Los menús de marcados y selección explicitan
-  alcance y cantidad, permiten marcar toda la selección y borrar todos los
-  marcados aunque queden fuera del filtro.
-- **Próximo paso:** dogfood del corte instalado. Mantener aparte el diagnóstico
-  del hang intermitente.
+- **Estado:** `prototype/dogfood`; iteración de UI en Dev.
+- **Referencia:** `specs/013-conversational-assistant/spec.md`.
+- **Resultado:** foco/refresh corregidos; transformaciones locales con read-back seguro. Check falso/reporte inválido detiene el turno; no implica rollback.
+- **Operación:** `npm run assistant:smoke`; checks nativos ocultos con `npm run dev:background`. Conservar el mismo perfil al reiniciar Dev para dogfood.
+- **Siguiente acción:** dogfood del corte instalado `v0.4.22`. Foco nativo de la extensión y clipboard no se dan por verificados.
 
 ## Lectura Rapida
 
@@ -31,17 +28,17 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | complete/dogfood | `specs/011-selection-aware-metadata-inspector/spec.md`, `docs/topics/filtering-and-query-syntax.md` | `F2` unifica content + metadata con commit atómico; utility standalone conserva single/multi. Continuar dogfood del corte distribuido sin cambiar Search/Find. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.21` publicada e instalada con updater firmado; continuar dogfood sin atribuirle el hang intermitente. |
+| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.22` publicada e instalada con updater firmado; continuar dogfood sin atribuirle el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 
 ## Specs Activas
 
-`004-actions-scripting-api`, `005-search-plan-engine`, `006-tags-and-hotkeys`, draft `008-clipboard-enrichment`, implementadas `011-selection-aware-metadata-inspector` y `012-codemirror-query-editor`. Abrir el directorio `specs/<id>/` solo si el pedido lo requiere.
+`004-actions-scripting-api`, `005-search-plan-engine`, `006-tags-and-hotkeys`, draft `008-clipboard-enrichment`, implementadas `011-selection-aware-metadata-inspector` y `012-codemirror-query-editor`, prototipo `013-conversational-assistant`. Abrir el directorio `specs/<id>/` solo si el pedido lo requiere.
 
 ## Decisiones Vigentes
 
-Copicu es CopyQ-inspired, no compatible; stack Tauri 2 + React/Vite/TS + Rust y SQLite; UI keyboard-first. `F2` guarda content + metadata atómicamente y `Shift+F2` conserva la utility standalone. Title y notes son escalares; tags es el único conjunto editable con provenance y suppression. Scripts/AI usan host APIs, no acceso crudo. Rutas y gates operativos viven en sus topics; razones en `docs/DECISIONS.md`.
+CopyQ-inspired, no compatible; Tauri 2 + React/Vite/TS + Rust/SQLite; keyboard-first. `F2` guarda content + metadata atómicamente; `Shift+F2` conserva la utility standalone. Title/notes escalares; tags es el único conjunto editable con provenance/suppression. Escrituras AI por APIs, SQL readonly; Node no es sandbox. Contratos en topics; razones en `docs/DECISIONS.md`.
 
 ## Riesgos / Pendientes Tecnicos
 

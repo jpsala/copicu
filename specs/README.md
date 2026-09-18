@@ -10,6 +10,7 @@ Spec inicial creada:
 - [Rich Image Capture](002-rich-image-capture/spec.md)
 - [Settings Foundation](003-settings-foundation/spec.md)
 - [Actions Scripting API](004-actions-scripting-api/spec.md)
+- [Conversational Assistant Prototype](013-conversational-assistant/spec.md)
 
 El prototipo Tauri valida:
 

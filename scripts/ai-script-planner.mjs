@@ -5,6 +5,7 @@ import { z } from "zod";
 const allowedCapabilities = [
   "history:read-content",
   "history:search",
+  "history:create",
   "history:write-metadata",
   "history:promote",
   "metadata:read-tags",

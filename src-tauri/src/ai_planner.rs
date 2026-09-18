@@ -377,6 +377,7 @@ fn validate_ai_script_plan(plan: &AiScriptPlan) -> Result<(), String> {
             capability.as_str(),
             "history:read-content"
                 | "history:search"
+                | "history:create"
                 | "history:write-metadata"
                 | "metadata:read-tags"
                 | "metadata:edit-active"
@@ -585,13 +586,13 @@ fn classify_script_planner_failure(stderr: String) -> String {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct AiRuntimeSettings {
-    endpoint: String,
-    model: String,
-    api_key: String,
+pub(crate) struct AiRuntimeSettings {
+    pub(crate) endpoint: String,
+    pub(crate) model: String,
+    pub(crate) api_key: String,
 }
 
-fn resolve_ai_runtime_settings(
+pub(crate) fn resolve_ai_runtime_settings(
     settings: &crate::storage::AiSettings,
     project_root: &std::path::Path,
 ) -> Result<AiRuntimeSettings, String> {

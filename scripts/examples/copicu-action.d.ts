@@ -19,6 +19,34 @@ type ActionInput = {
   query?: string;
 };
 
+type ActionCapability =
+  | "history:read-content" | "history:search" | "history:create"
+  | "history:write-metadata" | "history:promote" | "history:delete"
+  | "metadata:read-tags" | "metadata:edit-active"
+  | "clipboard:read" | "clipboard:write"
+  | "ui:toast" | "ui:notify" | "ui:alert" | "ui:confirm" | "ui:input" | "ui:markdown-output"
+  | "ai:summarize" | "log:write" | "enrichment:run" | "enrichment:read"
+  | "commands:run" | "picker:open" | "picker:filter" | "picker:activate"
+  | "picker:show" | "picker:hide"
+  | "window:remember-previous" | "window:focus-previous" | "input:paste";
+
+/**
+ * Optional return from run(): local, script-reported evidence, never clipboard contents.
+ * Compute checks from a fresh history.get(..., { content: true }) after writing.
+ * A false check or invalid report fails the action and stops the current assistant turn.
+ * Returning void reports execution only, not verification.
+ * For diagnostics, assert successful inspection; describe invalid input with counts.
+ * Field names must be static non-sensitive ASCII identifiers, max 48 characters.
+ * At most 32 nonempty checks, 32 counts, and 100 item IDs; no extra fields or string values.
+ */
+type ActionVerification = {
+  checks: Record<string, boolean>;
+  /** Nonnegative safe integers only. */
+  counts?: Record<string, number>;
+  /** Canonical positive decimal IDs without leading zeroes, 1–19 digits. */
+  itemIds?: string[];
+};
+
 type ActionDefinition = {
   id: string;
   title: string;
@@ -26,7 +54,7 @@ type ActionDefinition = {
   shortcut?: string;
   triggers: Trigger[];
   input: ActionInput;
-  capabilities: string[];
+  capabilities: ActionCapability[];
   logging?: {
     /**
      * Defaults to "<action-id>.jsonl" inside Scripts/.logs/.
@@ -39,7 +67,7 @@ type ActionDefinition = {
      */
     redact?: boolean;
   };
-  run(ctx: ActionContext): Promise<void> | void;
+  run(ctx: ActionContext): Promise<void | ActionVerification> | void | ActionVerification;
 };
 
 type ActionContext = {
@@ -205,8 +233,22 @@ declare const copicu: {
     set(ids: string[]): Promise<void>;
   };
   history: {
+    /** Requires history:search. Returns a bounded first page, not the complete history. */
     search(query: string, options?: { limit?: number; content?: boolean }): Promise<HistoryItem[]>;
+    /** Requires history:create. Values are written locally; only the new ID/status is returned. */
+    create(options: {
+      text: string;
+      title?: string | null;
+      notes?: string | null;
+      tags?: string[];
+      mimePrimary?: string | null;
+    }): Promise<{ id: string; created: boolean }>;
+    /** Requires history:read-content. */
     get(id: string, options?: { content?: boolean }): Promise<HistoryItem>;
+    /**
+     * Requires history:search. Neighbors follow insertion IDs, not picker/promoted order.
+     * For a full traversal, walk both directions from a seed with wrap=false until null.
+     */
     neighbor(
       id: string,
       options: { direction: "older" | "newer"; wrap?: boolean; content?: boolean },

@@ -109,6 +109,7 @@ import type {
   WhichKeyEntry,
   WhichKeyState,
 } from "./shared/contracts";
+import type { AssistantContext } from "./shared/assistant";
 import { setupAutomaticUpdates, type AutoUpdateStatus } from "./autoUpdate";
 import { localPreviewImageSource } from "./shared/previewMedia";
 import {
@@ -473,7 +474,7 @@ type CommandPaletteEntry =
   | {
       id: string;
       kind: "navigation";
-      group: "History" | "Saved searches" | "Tags";
+      group: "History" | "Saved searches" | "Tags" | "Assistant";
       title: string;
       description: string;
       query: string;
@@ -533,6 +534,7 @@ const SETTINGS_WINDOW_LABEL = "settings";
 const AI_OUTPUT_WINDOW_LABEL = "ai-output";
 const METADATA_WINDOW_LABEL = "metadata";
 const ITEM_PREVIEW_WINDOW_LABEL = "item-preview";
+const ASSISTANT_WINDOW_LABEL = "assistant";
 const WHICHKEY_WINDOW_LABEL = "whichkey";
 const NOTIFICATION_TOAST_EVENT = "copicu://toast";
 const UI_HOST_REQUEST_EVENT = "copicu://ui-host/request";
@@ -542,6 +544,7 @@ const COMMAND_PALETTE_OPEN_EVENT = "copicu://command-palette/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
+const PICKER_FOCUS_EVENT = "copicu://picker/focus";
 const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
 const EXTERNAL_EDITOR_EDIT_ACTIVE_EVENT = "copicu://external-editor/edit-active";
 const METADATA_SELECTION_SAVED_EVENT = "copicu://metadata/selection-saved";
@@ -564,6 +567,7 @@ const FEED_ITEM_ACTION_TOP_OFFSET = 8;
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
+  "history:create",
   "history:write-metadata",
   "history:promote",
   "metadata:read-tags",
@@ -931,6 +935,13 @@ function openMetadataWindow(itemIds: number[], focusTarget: MetadataFocusTarget)
     request: { itemIds: frozenItemIds, focusTarget },
   });
 }
+function openAssistantWindow(context?: AssistantContext) {
+  return invoke<boolean>("open_assistant_window", context ? { context } : undefined);
+}
+
+function updateAssistantContext(context: AssistantContext) {
+  return invoke<void>("assistant_update_context", { context });
+}
 
 function getMetadataSelectionSnapshot(itemIds: number[]) {
   return invoke<MetadataSelectionPayload["snapshot"]>("get_metadata_selection_snapshot", {
@@ -1096,6 +1107,7 @@ const IS_METADATA_WINDOW = currentWindowLabel() === METADATA_WINDOW_LABEL;
 const IS_ITEM_PREVIEW_WINDOW = currentWindowLabel() === ITEM_PREVIEW_WINDOW_LABEL;
 const IS_WHICHKEY_WINDOW = currentWindowLabel() === WHICHKEY_WINDOW_LABEL;
 
+const IS_ASSISTANT_WINDOW = currentWindowLabel() === ASSISTANT_WINDOW_LABEL;
 const LazyUiHostApp = lazy(() =>
   import("./windows/secondaryWindows").then((module) => ({ default: module.UiHostApp })),
 );
@@ -1110,6 +1122,9 @@ const LazyWhichKeyWindowApp = lazy(() =>
 );
 const LazyAiOutputWindowApp = lazy(() =>
   import("./windows/AiOutputWindowApp").then((module) => ({ default: module.AiOutputWindowApp })),
+);
+const LazyAssistantWindowApp = lazy(() =>
+  import("./windows/AssistantWindowApp").then((module) => ({ default: module.AssistantWindowApp })),
 );
 const LazyMetadataWindowApp = lazy(() =>
   import("./windows/MetadataWindowApp").then((module) => ({ default: module.MetadataWindowApp })),
@@ -1341,6 +1356,8 @@ function App() {
   const [deferredAppliedRefresh, setDeferredAppliedRefresh] = useState<SearchReplayToken | null>(null);
   const deferredAppliedRefreshRef = useRef<SearchReplayToken | null>(null);
   const lastSearchFailureRef = useRef<SearchFailureReplay | null>(null);
+  const suppressedAssistantContextFingerprintRef = useRef<string | null>(null);
+  const assistantContextFingerprintRef = useRef("");
   const pendingFilterLockRef = useRef<PendingFilterLock | null>(null);
   const clearSearchPendingRef = useRef(false);
   const selectedIdsRef = useRef<Set<number>>(new Set());
@@ -1404,6 +1421,32 @@ function App() {
     },
     [],
   );
+  const assistantContext = useMemo<AssistantContext>(() => ({
+    activeItemId: selectedItemId === null ? null : String(selectedItemId),
+    selectedItemIds: Array.from(selectedIds, (id) => String(id)),
+    query: searchState.applied?.descriptor.effectiveQuery ?? historyQuery,
+    visibleItemIds: history.map((item) => String(item.id)),
+  }), [history, historyQuery, searchState.applied, selectedIds, selectedItemId]);
+  const assistantContextRef = useRef(assistantContext);
+  assistantContextRef.current = assistantContext;
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    const fingerprint = JSON.stringify(assistantContext);
+    if (fingerprint === suppressedAssistantContextFingerprintRef.current) {
+      return;
+    }
+    suppressedAssistantContextFingerprintRef.current = null;
+    if (fingerprint === assistantContextFingerprintRef.current) {
+      return;
+    }
+    assistantContextFingerprintRef.current = fingerprint;
+    void updateAssistantContext(assistantContext).catch((error) => {
+      console.warn("assistant context update failed", error);
+    });
+  }, [assistantContext]);
 
   const selectedIndex = useMemo(
     () => history.findIndex((item) => item.id === selectedItemId),
@@ -2580,6 +2623,11 @@ function App() {
   }, []);
 
   const resetPickerSession = useCallback(() => {
+    suppressedAssistantContextFingerprintRef.current = JSON.stringify({
+      ...assistantContextRef.current,
+      activeItemId: null,
+      selectedItemIds: [],
+    });
     void closeFind({ restoreFocus: false });
     closeTransientEditors();
     setCommandPalette(null);
@@ -2699,13 +2747,32 @@ function App() {
       setActiveScenarioBusy(false);
     }
   }, [activeScenarioBusy, pushToast]);
+  const openAssistantForItems = useCallback(async (items?: HistoryItem[]) => {
+    const intendedContext: AssistantContext = {
+      ...assistantContext,
+      activeItemId: items?.[0] ? String(items[0].id) : assistantContext.activeItemId,
+      selectedItemIds: items ? items.map((item) => String(item.id)) : assistantContext.selectedItemIds,
+      visibleItemIds: history.map((item) => String(item.id)),
+    };
+    try {
+      await updateAssistantContext(intendedContext);
+      assistantContextFingerprintRef.current = JSON.stringify(intendedContext);
+      await openAssistantWindow(intendedContext);
+    } catch (error) {
+      pushToast({
+        title: "Could not open assistant",
+        message: String(error),
+        tone: "danger",
+        durationMs: STICKY_TOAST_DURATION_MS,
+      });
+    }
+  }, [assistantContext, history, pushToast]);
 
   useEffect(() => {
     if (scenarioCommandQuery !== null && !scenariosLoaded && !scenarioSwitcherLoading) {
       void reloadScenarios();
     }
   }, [reloadScenarios, scenarioCommandQuery, scenarioSwitcherLoading, scenariosLoaded]);
-
   const openCommandPalette = useCallback(() => {
     closeTransientEditors();
     setCommandPalette({ query: "", activeIndex: 0 });
@@ -3068,6 +3135,7 @@ function App() {
   );
   const commandPaletteEntries = useMemo((): CommandPaletteEntry[] => {
     const navigation: CommandPaletteEntry[] = [
+      { id: "assistant.open", kind: "navigation", group: "Assistant", title: "Open assistant", description: "Open the conversational assistant with current picker context.", query: "", savedView: null },
       { id: "history.all", kind: "navigation", group: "History", title: "All history", description: "Browse every clipboard item.", query: "", savedView: null },
       { id: "history.text", kind: "navigation", group: "History", title: "Text", description: "Browse text clips.", query: "kind:text", savedView: null },
       { id: "history.images", kind: "navigation", group: "History", title: "Images", description: "Browse image clips.", query: "kind:image", savedView: null },
@@ -3732,6 +3800,37 @@ function App() {
       updateClearSearchPending,
     ],
   );
+  const openPaletteNavigation = useCallback((entry: Extract<CommandPaletteEntry, { kind: "navigation" }>) => {
+    if (entry.id === "assistant.open") {
+      setCommandPalette(null);
+      void openAssistantForItems();
+      return;
+    }
+    const nextQuery = entry.query;
+    setCommandPalette(null);
+    setAiComposerMode(false);
+    setOpenedSavedView(entry.savedView ? {
+      id: entry.savedView.id,
+      title: entry.savedView.title,
+      query: entry.savedView.query,
+    } : null);
+    queryRef.current = nextQuery;
+    setQuery(nextQuery);
+    setSearchInterpretation(null);
+    setSelectedIds(new Set());
+    selectedIdsRef.current = new Set();
+    selectedItemIdRef.current = null;
+    selectionInteractionSeqRef.current += 1;
+    setSelectionMenuOpen(false);
+    setSelectedItemId(null);
+    selectionAnchorItemIdRef.current = null;
+    void refreshHistory({
+      resetScroll: true,
+      queryOverride: nextQuery,
+      allowAi: false,
+      applyDefaultScope: !entry.savedView,
+    }).then(focusSearch);
+  }, [focusSearch, openAssistantForItems, refreshHistory]);
 
   useEffect(() => {
     if (
@@ -3764,32 +3863,6 @@ function App() {
     settings.picker.defaultExcludedSearchScopes,
     settings.picker.defaultSearchScopes,
   ]);
-  const openPaletteNavigation = useCallback((entry: Extract<CommandPaletteEntry, { kind: "navigation" }>) => {
-    const nextQuery = entry.query;
-    setCommandPalette(null);
-    setAiComposerMode(false);
-    setOpenedSavedView(entry.savedView ? {
-      id: entry.savedView.id,
-      title: entry.savedView.title,
-      query: entry.savedView.query,
-    } : null);
-    queryRef.current = nextQuery;
-    setQuery(nextQuery);
-    setSearchInterpretation(null);
-    setSelectedIds(new Set());
-    selectedIdsRef.current = new Set();
-    selectedItemIdRef.current = null;
-    selectionInteractionSeqRef.current += 1;
-    setSelectionMenuOpen(false);
-    setSelectedItemId(null);
-    selectionAnchorItemIdRef.current = null;
-    void refreshHistory({
-      resetScroll: true,
-      queryOverride: nextQuery,
-      allowAi: false,
-      applyDefaultScope: !entry.savedView,
-    }).then(focusSearch);
-  }, [focusSearch, refreshHistory]);
 
   const refreshAppliedHistory = useCallback(
     async (options: {
@@ -4101,6 +4174,11 @@ function App() {
     }
   }, [historyLoadingMore, historyNextCursor, historyQuery, searchState]);
 
+  const loadNextHistoryPageRef = useRef<(() => Promise<void>) | null>(null);
+  useEffect(() => {
+    loadNextHistoryPageRef.current = loadNextHistoryPage;
+  }, [loadNextHistoryPage]);
+
   const historyMatchesQuery = historyInputQuery === query.trim() && !historyPending;
   const aiDraftActive = historySearchInput(query.trim(), aiComposerMode).mode === "ai" && !historyMatchesQuery;
   const visibleSearchInterpretation = historyMatchesQuery ? searchInterpretation : null;
@@ -4121,6 +4199,24 @@ function App() {
     setSelectedItemId(itemId);
     selectionAnchorItemIdRef.current = itemId;
   }, [captureAppearanceAnchor, captureRowAnchor, history, settings.appearance.itemDetails]);
+
+  const focusLoadedPickerItem = useCallback((index: number) => {
+    // Native refresh can update the ref before React commits the new row callbacks.
+    const item = history[index];
+    if (!item || item.id !== historyRef.current[index]?.id) return false;
+    const emptySelection = new Set<number>();
+    selectedIdsRef.current = emptySelection;
+    setSelectedIds(emptySelection);
+    pendingHistoryActivationItemIdRef.current = null;
+    lastActivatedItemIdRef.current = historyRef.current[index]?.id ?? null;
+    setCurrentItem(index);
+    rowVirtualizer.scrollToIndex(index, { align: "auto" });
+    return true;
+  }, [history, rowVirtualizer, setCurrentItem]);
+  const focusLoadedPickerItemRef = useRef(focusLoadedPickerItem);
+  useEffect(() => {
+    focusLoadedPickerItemRef.current = focusLoadedPickerItem;
+  }, [focusLoadedPickerItem]);
 
   const setRangeSelection = useCallback((toIndex: number) => {
     selectionInteractionSeqRef.current += 1;
@@ -4889,6 +4985,23 @@ function App() {
               <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
             </span>
           </ActionButton>
+          <ActionButton
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            className="item-menu-action batch-item-menu-action"
+            disabled={!hasItems}
+            onClick={() => {
+              if (hasItems) {
+                void openAssistantForItems(items);
+              }
+            }}
+          >
+            <span className="batch-item-menu-content">
+              <Sparkles size={14} strokeWidth={2.2} aria-hidden="true" />
+              <span>Open assistant</span>
+            </span>
+          </ActionButton>
           {contextualActions.map((action) => (
             <ActionButton
               key={action.id}
@@ -4928,6 +5041,7 @@ function App() {
       actionById,
       actionDefinitions,
       openMetadataForItems,
+      openAssistantForItems,
       runActionDefinition,
       runBuiltinAction,
       selectedItem,
@@ -4982,6 +5096,17 @@ function App() {
   const catalogItem = useCallback((item: HistoryItem) => {
     void openMetadataForItems([item], "overview", item.id);
   }, [openMetadataForItems]);
+
+  const addToInbox = useCallback(async (item: HistoryItem) => {
+    try {
+      setOpenItemMenu(null);
+      await setHistoryItemInbox(item.id, true);
+      await refreshAppliedHistory();
+      focusSearch();
+    } catch (error) {
+      setActionError(String(error));
+    }
+  }, [focusSearch, refreshAppliedHistory]);
 
   const removeFromInbox = useCallback(async (item: HistoryItem) => {
     try {
@@ -5366,6 +5491,9 @@ function App() {
 
     let active = true;
     let unlisten: (() => void) | null = null;
+    let unlistenFocus: (() => void) | null = null;
+    let focusGeneration = 0;
+    let focusTimer: number | null = null;
     void listen<{ itemId: number }>(PICKER_ACTIVE_ITEM_EVENT, (event) => {
       if (!active) {
         return;
@@ -5414,10 +5542,74 @@ function App() {
         void nextUnlisten();
       }
     });
+    void listen<{ requestId: string; itemId: number }>(PICKER_FOCUS_EVENT, async (event) => {
+      if (!active) return;
+      const { requestId, itemId } = event.payload;
+      const generation = ++focusGeneration;
+      if (focusTimer !== null) window.clearTimeout(focusTimer);
+      const deadline = performance.now() + 14_000;
+      const acknowledge = (ok: boolean) => invoke("picker_focus_ack", {
+        request: { requestId, itemId, ok },
+      }).catch(() => undefined);
+      pickerEventHandlersRef.current.resetPickerSession();
+      setOpenedSavedView(null);
+      queryRef.current = "";
+      setQuery("");
+      let interaction = selectionInteractionSeqRef.current;
+      let selectionApplied = false;
+      const current = () => active && generation === focusGeneration
+        && interaction === selectionInteractionSeqRef.current && queryRef.current === "";
+      const schedule = () => {
+        focusTimer = window.setTimeout(() => {
+          void poll().catch(() => acknowledge(false));
+        }, 32);
+      };
+      const poll = async (): Promise<void> => {
+        if (!current() || performance.now() >= deadline) { await acknowledge(false); return; }
+        if (historyInputQueryRef.current !== "" || appliedDescriptorRef.current?.effectiveQuery !== "") {
+          schedule();
+          return;
+        }
+        const index = historyRef.current.findIndex((item) => item.id === itemId);
+        if (index < 0) {
+          await loadNextHistoryPageRef.current?.();
+        } else if (!selectionApplied) {
+          selectionApplied = focusLoadedPickerItemRef.current(index);
+          if (selectionApplied) interaction = selectionInteractionSeqRef.current;
+        }
+        if (!current()) { await acknowledge(false); return; }
+        const row = document.getElementById(`history-item-${itemId}`);
+        const viewport = historyScrollRef.current;
+        if (selectionApplied && selectedItemIdRef.current === itemId && row?.dataset.current === "true" && viewport) {
+          const bounds = row.getBoundingClientRect();
+          const view = viewport.getBoundingClientRect();
+          if (bounds.bottom > view.top && bounds.top < view.bottom) {
+            await acknowledge(true);
+            return;
+          }
+        }
+        schedule();
+      };
+      try {
+        await pickerEventHandlersRef.current.refreshHistory({
+          resetScroll: true, queryOverride: "", allowAi: false, applyDefaultScope: false,
+        });
+        await poll();
+      } catch {
+        await acknowledge(false);
+      }
+    }).then((nextUnlisten) => {
+      if (active) unlistenFocus = nextUnlisten;
+      else void nextUnlisten();
+    });
+
 
     return () => {
       active = false;
+      focusGeneration += 1;
+      if (focusTimer !== null) window.clearTimeout(focusTimer);
       unlisten?.();
+      unlistenFocus?.();
     };
   }, []);
 
@@ -5448,13 +5640,13 @@ function App() {
         historyScrollRef.current?.scrollTo({ top: 0 });
       }
     };
-    void listen<{ itemId: number; contentKind: "text" | "image"; activate?: boolean }>(
+    void listen<{ itemId?: number; activate?: boolean } | null>(
       HISTORY_CHANGED_EVENT,
       (event) => {
         if (!active) {
           return;
         }
-        if (event.payload.activate) {
+        if (event.payload?.activate && event.payload.itemId !== undefined) {
           pendingHistoryActivationItemIdRef.current = event.payload.itemId;
         }
         void getCurrentWindow().isVisible().then((visible) => {
@@ -6742,6 +6934,15 @@ function App() {
                 New item
               </Menu.Item>
               <Menu.Item
+                leftSection={<Sparkles size={14} strokeWidth={2.2} />}
+                onClick={() => {
+                  setPickerMenuOpen(false);
+                  void openAssistantForItems();
+                }}
+              >
+                Open assistant
+              </Menu.Item>
+              <Menu.Item
                 leftSection={<Command size={14} strokeWidth={2.2} />}
                 rightSection={<ShortcutBadge shortcut="F6" className="menu-shortcut-badge" />}
                 onClick={() => {
@@ -7662,6 +7863,19 @@ function App() {
                             role="menuitem"
                             tabIndex={-1}
                             className="item-menu-action"
+                            onClick={() => {
+                              setOpenItemMenu(null);
+                              void openAssistantForItems([item]);
+                            }}
+                          >
+                            <Sparkles size={14} strokeWidth={2.2} aria-hidden="true" />
+                            <span>Open assistant</span>
+                          </UiUnstyledButton>
+                          <UiUnstyledButton
+                            type="button"
+                            role="menuitem"
+                            tabIndex={-1}
+                            className="item-menu-action"
                             onClick={() => void activateItem(item, COPY_AND_HIDE_ACTIVATION)}
                           >
                             <ClipboardCheck size={14} strokeWidth={2.2} aria-hidden="true" />
@@ -7799,7 +8013,18 @@ function App() {
                                 <span>Remove from Inbox</span>
                               </UiUnstyledButton>
                             </>
-                          ) : null}
+                          ) : (
+                            <UiUnstyledButton
+                              type="button"
+                              role="menuitem"
+                              tabIndex={-1}
+                              className="item-menu-action"
+                              onClick={() => void addToInbox(item)}
+                            >
+                              <Bookmark size={14} strokeWidth={2.2} aria-hidden="true" />
+                              <span>Add to Inbox</span>
+                            </UiUnstyledButton>
+                          )}
                           <UiUnstyledButton
                             type="button"
                             role="menuitem"
@@ -9690,7 +9915,7 @@ root.render(
       deduplicateInlineStyles
     >
       <RenderCrashBoundary>
-        {IS_UI_HOST_WINDOW || IS_NOTIFICATIONS_WINDOW || IS_SETTINGS_WINDOW || IS_AI_OUTPUT_WINDOW || IS_METADATA_WINDOW || IS_ITEM_PREVIEW_WINDOW || IS_WHICHKEY_WINDOW ? (
+        {IS_UI_HOST_WINDOW || IS_NOTIFICATIONS_WINDOW || IS_SETTINGS_WINDOW || IS_AI_OUTPUT_WINDOW || IS_ASSISTANT_WINDOW || IS_METADATA_WINDOW || IS_ITEM_PREVIEW_WINDOW || IS_WHICHKEY_WINDOW ? (
           <Suspense fallback={<LoadingSpinner />}>
             {IS_UI_HOST_WINDOW ? (
               <LazyUiHostApp />
@@ -9700,6 +9925,8 @@ root.render(
               <LazySettingsWindowApp />
             ) : IS_AI_OUTPUT_WINDOW ? (
               <LazyAiOutputWindowApp />
+            ) : IS_ASSISTANT_WINDOW ? (
+              <LazyAssistantWindowApp />
             ) : IS_METADATA_WINDOW ? (
               <LazyMetadataWindowApp />
             ) : IS_ITEM_PREVIEW_WINDOW ? (

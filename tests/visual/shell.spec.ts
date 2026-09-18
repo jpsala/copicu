@@ -1239,6 +1239,12 @@ async function mockTauriInvoke(
       };
     };
     (window as MetadataVisualRuntime).__copicuTestMetadataSnapshot = metadataSnapshot;
+    (window as any).__copicuTestAssistantSnapshot = {
+      messages: [], running: false, approval: null, error: null, configured: true,
+      context: { activeItemId: null, selectedItemIds: [], query: "", visibleItemIds: [] },
+      model: "openai/gpt-5.6-luna", endpoint: "https://example.invalid/v1",
+      reasoningEffort: "high", defaultModel: null, executionMode: "yolo",
+    };
     (window as any).__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args?: any) => {
         (window as any).__copicuTestInvocations.push({ cmd, args });
@@ -1265,6 +1271,22 @@ async function mockTauriInvoke(
             return null;
           case "record_renderer_diagnostic":
             return null;
+          case "assistant_snapshot":
+            return structuredClone((window as any).__copicuTestAssistantSnapshot);
+          case "assistant_list_models":
+            return {
+              endpoint: "https://example.invalid/v1",
+              models: [{ id: "openai/gpt-5.6-luna", name: "OpenAI: GPT-5.6 Luna", reasoningEfforts: ["high"] }],
+            };
+          case "assistant_send": {
+            const runtime = window as any;
+            const { promise, resolve, reject } = Promise.withResolvers<void>();
+            runtime.__copicuTestResolveAssistantSend = resolve;
+            runtime.__copicuTestRejectAssistantSend = reject;
+            runtime.__copicuTestAssistantSnapshot.running = true;
+            await runtime.__copicuTestEmitEvent("copicu://assistant/updated", structuredClone(runtime.__copicuTestAssistantSnapshot));
+            return promise;
+          }
           case "get_compound_hotkey_pending":
             return (window as any).__copicuTestCompoundPending;
           case "get_app_about_info":
@@ -2306,6 +2328,8 @@ async function mockTauriInvoke(
               marked_at_unix_ms: null,
             }));
             return null;
+          case "picker_focus_ack":
+            return null;
           case "consume_picker_session_snapshot": {
             const delayMs = (window as any).__copicuTestMockOptions?.pickerSessionDelayMs ?? 0;
             if (delayMs > 0) {
@@ -3312,6 +3336,31 @@ test("picker overlays mount from an inactive shell without a context strip", asy
   await page.getByRole("menuitem", { name: "Create capture mode" }).click();
   await expect(page.getByRole("dialog", { name: "Create capture mode" })).toBeVisible();
 });
+test("context menu adds a history item to Inbox", async ({ page }) => {
+  const regularItem = {
+    ...syntheticLongHistory[0],
+    is_inbox: false,
+    inbox_at_unix_ms: null,
+  };
+  await mockTauriInvoke(page, [regularItem]);
+  await gotoShell(page);
+
+  const row = page.locator(".history-feed > li").first();
+  await row.getByRole("group").click({ button: "right" });
+  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Add to Inbox" }).click();
+
+  await expect(row.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
+  const inboxTransitions = await page.evaluate(() => {
+    const testWindow = window as Window & {
+      __copicuTestInvocations?: Array<{ cmd: string; args: { itemId?: number; inbox?: boolean } }>;
+    };
+    return (testWindow.__copicuTestInvocations ?? [])
+      .filter((call) => call.cmd === "set_history_item_inbox")
+      .map((call) => call.args);
+  });
+  expect(inboxTransitions).toEqual([{ itemId: regularItem.id, inbox: true }]);
+});
+
 test("Inbox item stays pending on catalog cancel and leaves after catalog save", async ({ page }) => {
   const inboxItem = {
     ...syntheticLongHistory[0],
@@ -4589,8 +4638,6 @@ test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused ro
   await page.keyboard.press("Escape");
   await expect(metadataMenuItem).toBeHidden();
   const firstItem = page.locator(".feed-item").first();
-  await firstItem.click();
-  await firstItem.focus();
   await expect(firstItem).toBeFocused();
 
   await page.keyboard.press("F2");
@@ -4719,6 +4766,135 @@ test("native global activation updates the active item while the picker is hidde
   expect(handlerCount).toBeGreaterThan(0);
 
   await expect(page.locator("#history-item-101 .feed-item")).toHaveClass(/is-selected/);
+});
+
+test("assistant composer retains keyboard focus and the next draft through sending and errors", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=assistant");
+  const prompt = page.getByRole("textbox", { name: "Message assistant" });
+  await prompt.fill("First request");
+  await prompt.press("Enter");
+  await expect(prompt).toBeFocused();
+
+  await page.evaluate(() => (window as any).__copicuTestResolveAssistantSend());
+  await expect(prompt).toHaveValue("");
+  await page.keyboard.type("Next draft");
+  await expect(prompt).toHaveValue("Next draft");
+  await expect(page.getByRole("button", { name: "Streaming…" })).toBeDisabled();
+
+  await page.evaluate(async () => {
+    const runtime = window as any;
+    runtime.__copicuTestAssistantSnapshot.running = false;
+    await runtime.__copicuTestEmitEvent("copicu://assistant/updated", structuredClone(runtime.__copicuTestAssistantSnapshot));
+  });
+  await expect(prompt).toBeFocused();
+  await expect(prompt).toHaveValue("Next draft");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(prompt).toBeFocused();
+  await page.evaluate(async () => {
+    const runtime = window as any;
+    runtime.__copicuTestAssistantSnapshot.running = false;
+    runtime.__copicuTestRejectAssistantSend(new Error("Synthetic send failed"));
+    await runtime.__copicuTestEmitEvent("copicu://assistant/updated", structuredClone(runtime.__copicuTestAssistantSnapshot));
+  });
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(prompt).toBeFocused();
+  await expect(prompt).toHaveValue("Next draft");
+  await page.keyboard.type(" corrected");
+  await expect(prompt).toHaveValue("Next draft corrected");
+});
+
+test("assistant history invalidation reveals a created item without changing picker focus", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  const search = page.getByLabel("Search clipboard history");
+  await search.focus();
+  const createdItem = {
+    ...syntheticLongHistory[1],
+    id: 9400,
+    text: "ASSISTANT_CREATED_CLIP",
+    title: "Assistant created clip",
+    notes: "Created without clipboard capture",
+    normalized_hash: "assistant-created-clip",
+  };
+
+  await page.evaluate(async (item) => {
+    const runtime = window as any;
+    runtime.__copicuTestHistoryItems.unshift(item);
+    await runtime.__copicuTestEmitEvent("copicu://history/changed", null);
+  }, createdItem);
+
+  const row = page.locator("#history-item-9400");
+  await expect(row).toContainText("ASSISTANT_CREATED_CLIP");
+  await expect(row).toBeInViewport();
+  await expect(row).toHaveAttribute("aria-posinset", "1");
+  await expect(search).toBeFocused();
+});
+
+test("assistant focus clears a filtered multiselection and activates the new first item", async ({ page }) => {
+  const items = Array.from({ length: 4 }, (_, index) => ({
+    ...syntheticLongHistory[1],
+    id: 9100 + index,
+    text: index < 3 ? `COMPOSE_DEMO clip ${index + 1}` : "Unselected control",
+    title: null,
+    notes: null,
+    tags: null,
+    normalized_hash: `assistant-focus-source-${index}`,
+  }));
+  await mockTauriInvoke(page, items);
+  await gotoShell(page);
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("COMPOSE_DEMO");
+  await search.press("Enter");
+  await expect(page.locator(".feed-item")).toHaveCount(3);
+  await page.locator(".feed-item").first().click();
+  const menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Select 3 loaded clips", exact: true }).click();
+  await expect(page.locator(".selection-menu-button")).toHaveAccessibleName("Open selected clips menu, 3 selected");
+
+  await page.evaluate(async (item) => {
+    const runtime = window as any;
+    runtime.__copicuTestHistoryItems.unshift(item);
+    await runtime.__copicuTestEmitEvent("copicu://picker/focus", {
+      requestId: "assistant-derived-item",
+      itemId: item.id,
+    });
+  }, {
+    ...items[0],
+    id: 9200,
+    text: items.slice(0, 3).map((item) => item.text).join("\n"),
+    normalized_hash: "assistant-derived-item",
+  });
+
+  await expect(search.locator(".cm-placeholder")).toBeVisible();
+  await expect(page.locator("#history-item-9200")).toHaveAttribute("data-current", "true");
+  await expect(page.locator("#history-item-9200")).toBeInViewport();
+  await expect(page.locator("#history-item-9200")).toHaveAttribute("aria-posinset", "1");
+  await expect(page.locator(".selection-menu-button")).toHaveAccessibleName("Open selected clips menu, 0 selected");
+  await expect(page.getByLabel("Deselect item")).toHaveCount(0);
+});
+
+test("assistant focus loads an unrendered history page before activating its item", async ({ page }) => {
+  const items = Array.from({ length: 80 }, (_, index) => ({
+    ...syntheticLongHistory[1],
+    id: 9300 + index,
+    text: `Distant clip ${index}`,
+    title: null,
+    normalized_hash: `assistant-distant-${index}`,
+    created_at_unix_ms: 1_800_000_000_000 - index,
+    last_used_at_unix_ms: 1_800_000_000_000 - index,
+  }));
+  await mockTauriInvoke(page, items, null, { historyPageSizeOverride: 5 });
+  await gotoShell(page);
+  await expect(page.locator("#history-item-9300")).toBeVisible();
+  await expect(page.locator("#history-item-9379")).toHaveCount(0);
+  await page.evaluate(() => (window as any).__copicuTestEmitEvent(
+    "copicu://picker/focus",
+    { requestId: "assistant-distant-item", itemId: 9379 },
+  ));
+  await expect(page.locator("#history-item-9379")).toHaveAttribute("data-current", "true");
+  await expect(page.locator("#history-item-9379")).toBeInViewport();
 });
 
 test("manual scroll is not reset by history refresh", async ({ page }) => {
@@ -7330,6 +7506,8 @@ test("desktop and narrow item action modes keep the complete menu reachable", as
   await expect(menu.getByRole("menuitem", { name: "Mark" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete item" })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(currentRow.getByRole("button", { name: "Open item actions" })).toBeFocused();
   await page.getByLabel("Search clipboard history").focus();
 
   await broadcastAppearance(page, { itemActions: "inline", actionSize: "large" });

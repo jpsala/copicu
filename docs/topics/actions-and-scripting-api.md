@@ -29,7 +29,7 @@ Router compacto para acciones scriptables. La version larga previa quedo archiva
 - Copicu soporta acciones built-in y scripts locales TypeScript/JavaScript.
 - Scripts viven como archivos del usuario; no se guarda codigo crudo en SQLite.
 - La app descubre manifests, cachea definiciones/diagnosticos y ejecuta scripts por runner Node confiable.
-- Scripts usan host APIs/capabilities; no SQL/shell/fs/network crudo por defecto.
+- El contrato público usa host APIs/capabilities. Los checks protegen esas APIs; el runner Node ejecuta código local de confianza y no es un sandbox que impida fs/network/shell.
 - CopyQ es baseline de inspiracion, no contrato de compatibilidad total.
 
 ## Contrato De Accion
@@ -44,6 +44,18 @@ Manifest esperado, resumido:
 - `logging` opcional y redacted por defecto.
 
 Referencia versionable de tipos: `scripts/examples/copicu-action.d.ts`.
+
+`run()` puede devolver `ActionVerification`: checks booleanos calculados,
+conteos enteros e IDs; nunca contenido del historial. El gateway valida el
+esquema y rechaza campos extra, strings arbitrarios y checks falsos. El SDK
+define los límites. `void` mantiene ejecución sin verificación (`verification: null`).
+Tras escribir, los checks deben usar una nueva lectura local de `history.get`
+y comprobar conservación y formato pedidos, no sólo igualdad con el string
+generado. Son evidencia declarada por el script, no una certificación independiente.
+Un reporte inválido o check falso falla la acción y detiene el turno del
+asistente antes de otra tool/request; no revierte efectos ya realizados.
+En diagnósticos, afirmar que la inspección se ejecutó y describir datos
+inválidos con conteos, sin exigir que la entrada ya cumpla el formato final.
 
 ## Contexto De Ejecucion
 
@@ -61,14 +73,22 @@ No pasar payloads grandes si no se pidieron. Para contenido completo usar APIs e
 
 Familias utiles:
 
-- `history.search`, `history.get`, `history.neighbor`, metadata/tags;
+- `history.search`, `history.get`, `history.neighbor`, `history.create`, metadata/tags;
 - `clipboard.read/write` segun capability;
 - `picker.filter`, `picker.activate`;
 - `ui.toast`, `ui.alert`, `ui.confirm`, `ui.input`, `ui.markdownOutput`;
 - `enrichment.read/run`;
 - `log.*`.
 
-Si se agrega una API, actualizar `scripts/examples/copicu-action.d.ts`, ejemplos, docs de usuario y tests de drift.
+`history.create({ text, title?, notes?, tags?, mimePrimary? })` exige
+`history:create` y devuelve `{ id, created }`; no escribe al clipboard.
+`history.update(id, patch)` aplica contenido/metadata atómicamente: campos
+omitidos conservan su valor, `title`/`notes: null` limpian esos campos y tags
+omitidos no se reconstruyen desde una lectura obsoleta.
+
+Si se agrega una API, actualizar `scripts/examples/copicu-action.d.ts`, el
+gateway y sus capability checks, catálogos consumidores, docs y pruebas
+observables de permisos/comportamiento. No pinnear listas de source como tests.
 
 ## Shortcuts
 
@@ -88,6 +108,9 @@ Guardrails:
 - Evitar trabajo pesado, prompts bloqueantes o lectura de contenido completo salvo necesidad.
 - Considerar debounce/queue/backoff si aparecen varios cambios seguidos.
 - Si un script falla repetidamente, la UX debe hacerlo visible y/o permitir deshabilitarlo.
+- Guardar un script desde el asistente no puede habilitar este trigger de manera
+  implícita: requiere `activateClipboardChange: true` en la operación aprobada.
+  El manifest se descubre estáticamente antes de crear el archivo.
 
 ## UI Feedback
 
@@ -101,7 +124,7 @@ Guardrails:
 - Diagnosticos de discovery se cachean en SQLite para Settings/debug.
 - Logs de scripts deben ser redacted y por archivo seguro.
 - Errores de capability o manifest deben aparecer antes de ejecutar.
-- Tests importantes: drift de capabilities, ejemplos unitarios y dogfood manual cuando toca UI/native.
+- Tests importantes: límites reales de capabilities, contratos del runner, ejemplos unitarios y dogfood manual cuando toca UI/native.
 
 ## Estado / Proximos Pasos
 

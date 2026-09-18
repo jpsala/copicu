@@ -156,6 +156,8 @@ npm install
 npm run dev
 npm run dev:restart
 npm run dev:built:fresh
+npm run assistant:smoke
+npm run dev:background
 npm run build
 npm run visual:check
 npm run rust:test
@@ -227,6 +229,23 @@ cargo check
 En esta maquina, `cargo test` crudo puede fallar con `STATUS_ENTRYPOINT_NOT_FOUND` si el loader toma DLLs API-set desde Miniconda. Usar `npm run rust:test`, que ejecuta `cargo test` con entradas `miniconda3` removidas de `PATH` para ese proceso.
 
 Todavia no hay comando de lint dedicado.
+
+### Smoke Sin Robar Foco
+
+- `npm run assistant:smoke` ejecuta protocolo del runner y regresiones del picker
+  en Playwright headless, con dos workers. No usa proveedor externo ni abre
+  ventanas de escritorio.
+- Para checks nativos, compilar frontend y usar `npm run dev:background`.
+  Reutiliza built-dev y `.codex-run/dev-isolated`; crea main y assistant ocultos,
+  con `focus: false`, WebView2 propio y debugging local en
+  `http://127.0.0.1:9336`. El launcher genera su overlay bajo ese perfil.
+- Background fuerza el watcher deshabilitado y rechaza una solicitud de
+  habilitarlo. No es aislamiento del sistema: el portapapeles y las operaciones
+  de foco siguen siendo los del escritorio. No ejecutar `picker_focus`, hotkeys,
+  copy/paste ni comandos que muestren ventanas en esta pasada.
+- El oracle de foreground/hotkey/paste requiere una pasada explícita separada.
+  No confundir la selección del renderer o una captura de ventana oculta con
+  evidencia de C0. Cerrar la instancia de prueba al terminar.
 
 Validacion manual de paste-to-previous-window en Windows, con `npm run tauri:dev` ya corriendo y `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`:
 

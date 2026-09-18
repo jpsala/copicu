@@ -4,6 +4,8 @@ import path from "node:path";
 import readline from "node:readline";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+const verificationNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,47}$/;
+const VERIFICATION_FAILURE_PREFIX = "[LOCAL_VERIFICATION_FAILED]";
 
 const inputLines = readline.createInterface({
   input: process.stdin,
@@ -27,6 +29,7 @@ const selectedIds = input.context.selectedItemIds.map(String);
 let actionDefinition = null;
 let logCount = 0;
 let nextHostCallId = 1;
+let verification = null;
 
 globalThis.defineAction = (definition) => {
   actionDefinition = definition;
@@ -123,6 +126,15 @@ globalThis.copicu = {
         query: String(query ?? ""),
         limit: normalizeLimit(limit),
         content: Boolean(content),
+      });
+    },
+    async create({ text, title = undefined, notes = undefined, tags = [], mimePrimary = undefined } = {}) {
+      return hostCall("history.create", {
+        text: String(text ?? ""),
+        title: title == null ? undefined : String(title),
+        notes: notes == null ? undefined : String(notes),
+        tags: Array.isArray(tags) ? tags.map(String) : [],
+        mimePrimary: mimePrimary == null ? undefined : String(mimePrimary),
       });
     },
     async get(id, { content = false } = {}) {
@@ -376,7 +388,7 @@ try {
     actionDefinition = action;
     validateLogName(logFileName(action));
 
-    await action.run({
+    verification = normalizeActionVerification(await action.run({
       ...input.context,
       activeItemId: input.context.activeItemId?.toString(),
       currentItemId: input.context.currentItemId?.toString(),
@@ -387,12 +399,14 @@ try {
             visibleItemIds: input.context.view.visibleItemIds.map(String),
           }
         : undefined,
-    });
+    }));
+    assertVerificationChecks(verification);
   } finally {
     await fs.rm(tempFile, { force: true });
   }
 
   await writeResult({
+    verification,
     status: "completed",
     message: `${actionDefinition?.title ?? actionDefinition?.id ?? "Script"} completed`,
     operations: operations.map(redactOperationForOutput),
@@ -401,6 +415,7 @@ try {
   });
 } catch (error) {
   await writeResult({
+    verification,
     status: "failed",
     message: redactString(error instanceof Error ? error.message : String(error)),
     operations: operations.map(redactOperationForOutput),
@@ -416,6 +431,109 @@ async function readProtocolLine() {
     throw new Error("script runner protocol closed");
   }
   return next.value;
+}
+
+
+function normalizeActionVerification(report) {
+  if (report === undefined) {
+    return null;
+  }
+  try {
+    if (!isPlainRecord(report)) {
+      throw new Error();
+    }
+    const topLevelKeys = Reflect.ownKeys(report);
+    if (
+      topLevelKeys.some(
+        (key) => typeof key !== "string" || !["checks", "counts", "itemIds"].includes(key),
+      )
+    ) {
+      throw new Error();
+    }
+    const checks = readVerificationRecord(report, "checks", true, "boolean");
+    const counts = readVerificationRecord(report, "counts", false, "count");
+    const itemIds = readVerificationItemIds(report);
+    return { checks, counts, itemIds };
+  } catch {
+    throw new Error(`${VERIFICATION_FAILURE_PREFIX} invalid verification report`);
+  }
+}
+
+function isPlainRecord(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function readVerificationRecord(container, property, required, valueKind) {
+  const descriptor = Object.getOwnPropertyDescriptor(container, property);
+  if (!descriptor) {
+    if (required) {
+      throw new Error();
+    }
+    return {};
+  }
+  if (!("value" in descriptor) || !isPlainRecord(descriptor.value)) {
+    throw new Error();
+  }
+  const record = descriptor.value;
+  const keys = Reflect.ownKeys(record);
+  if (keys.length > 32 || (required && keys.length === 0)) {
+    throw new Error();
+  }
+  const normalized = {};
+  for (const key of keys) {
+    if (typeof key !== "string" || !verificationNamePattern.test(key)) {
+      throw new Error();
+    }
+    const entry = Object.getOwnPropertyDescriptor(record, key);
+    if (!entry || !("value" in entry)) {
+      throw new Error();
+    }
+    if (valueKind === "boolean") {
+      if (typeof entry.value !== "boolean") {
+        throw new Error();
+      }
+    } else if (
+      typeof entry.value !== "number" ||
+      !Number.isSafeInteger(entry.value) ||
+      entry.value < 0
+    ) {
+      throw new Error();
+    }
+    normalized[key] = entry.value;
+  }
+  return normalized;
+}
+
+function readVerificationItemIds(container) {
+  const descriptor = Object.getOwnPropertyDescriptor(container, "itemIds");
+  if (!descriptor) {
+    return [];
+  }
+  if (!("value" in descriptor) || !Array.isArray(descriptor.value) || descriptor.value.length > 100) {
+    throw new Error();
+  }
+  const normalized = [];
+  for (const itemId of descriptor.value) {
+    if (typeof itemId !== "string" || !/^[1-9][0-9]{0,18}$/.test(itemId)) {
+      throw new Error();
+    }
+    normalized.push(itemId);
+  }
+  return normalized;
+}
+
+function assertVerificationChecks(report) {
+  if (!report) {
+    return;
+  }
+  const failedCheck = Object.keys(report.checks).find((name) => report.checks[name] === false);
+  if (failedCheck) {
+    throw new Error(`${VERIFICATION_FAILURE_PREFIX} check failed: ${failedCheck}`);
+  }
 }
 
 async function writeResult(result) {

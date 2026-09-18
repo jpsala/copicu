@@ -219,7 +219,7 @@ First prove `browse` with a saved `Work clips` view and its configured hotkey: E
 
 - `npm run build`
 - `npm run rust:test`
-- `npm run capabilities:drift:test`
+- pruebas de permisos y contratos del runner; no comparar catálogos como texto fuente
 - frontend tests: autofocus, keyboard navigation, click, filter refinement, Escape/click-outside cancellation, no overflow, state restoration;
 - Rust tests: denied capability, exact-once resolution, `busy`, stale session/event rejection, timeout, item deletion and post-filter revalidation;
 - script tests: result contains only an ID/status, not item content;

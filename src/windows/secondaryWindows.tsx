@@ -165,6 +165,7 @@ const SCENARIO_SESSION_CHANGED_EVENT = "copicu://scenario/session-changed";
 const SUPPORTED_SCRIPT_CAPABILITIES = new Set([
   "history:read-content",
   "history:search",
+  "history:create",
   "history:write-metadata",
   "history:promote",
   "metadata:read-tags",

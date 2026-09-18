@@ -226,6 +226,15 @@ pub struct UpdateHistoryItemRequest {
     pub marked: Option<bool>,
 }
 
+#[derive(Default)]
+pub struct HistoryItemPatch {
+    pub text: Option<String>,
+    pub title: Option<Option<String>>,
+    pub notes: Option<Option<String>>,
+    pub tags: Option<Option<String>>,
+    pub marked: Option<bool>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateItemMetadataRequest {
@@ -2635,6 +2644,45 @@ impl AppStorage {
         sync_item_tags_from_legacy_string(&tx, request.id, request.tags.as_deref())?;
         tx.commit()
             .map_err(|error| format!("failed to commit item update: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(())
+    }
+    pub fn patch_item(&self, id: i64, patch: HistoryItemPatch) -> Result<(), String> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("failed to begin item patch: {error}"))?;
+        ensure_item_exists(&tx, id)?;
+        if let Some(text) = patch.text {
+            update_item_text_from_conn(&tx, id, &text)?;
+        }
+        tx.execute(
+            "UPDATE clipboard_items SET
+                title = CASE WHEN ?1 THEN ?2 ELSE title END,
+                notes = CASE WHEN ?3 THEN ?4 ELSE notes END,
+                is_marked = COALESCE(?5, is_marked),
+                marked_at_unix_ms = CASE WHEN ?5 IS NULL THEN marked_at_unix_ms
+                    WHEN ?5 != 0 THEN ?6 ELSE NULL END
+             WHERE id = ?7",
+            params![
+                patch.title.is_some(),
+                normalize_optional_text(patch.title.flatten()),
+                patch.notes.is_some(),
+                normalize_optional_text(patch.notes.flatten()),
+                patch.marked.map(i64::from),
+                now_unix_ms(),
+                id,
+            ],
+        )
+        .map_err(|error| format!("failed to patch item metadata: {error}"))?;
+        if let Some(tags) = patch.tags {
+            sync_item_tags_from_legacy_string(&tx, id, tags.as_deref())?;
+        }
+        tx.commit()
+            .map_err(|error| format!("failed to commit item patch: {error}"))?;
         self.bump_mutation_epoch();
         Ok(())
     }
@@ -7992,6 +8040,80 @@ mod tests {
         assert!(tags
             .iter()
             .any(|tag| tag.slug == "backend" && tag.item_count == 1));
+    }
+
+    #[test]
+    fn patch_item_clears_explicit_fields_and_preserves_unspecified_metadata() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "original text");
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: 1,
+                title: Some("Reference".into()),
+                notes: Some("Keep this note".into()),
+                tags: vec!["Very Important".into()],
+            })
+            .unwrap();
+        storage
+            .patch_item(
+                1,
+                HistoryItemPatch {
+                    text: Some("edited text".into()),
+                    title: Some(None),
+                    marked: Some(true),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let item = storage.get_item(1).unwrap();
+        assert_eq!(item.text, "edited text");
+        assert_eq!(item.title, None);
+        assert_eq!(item.notes.as_deref(), Some("Keep this note"));
+        assert!(item.is_marked);
+        assert_eq!(
+            storage.get_item_tags(1).unwrap(),
+            vec!["Very Important".to_string()]
+        );
+        storage
+            .patch_item(
+                1,
+                HistoryItemPatch {
+                    tags: Some(None),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(storage.get_item_tags(1).unwrap().is_empty());
+        assert_eq!(storage.get_item(1).unwrap().text, "edited text");
+    }
+
+    #[test]
+    fn rejected_content_patch_does_not_partially_apply_metadata() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 40_001, "original text");
+        storage
+            .update_item_metadata(UpdateItemMetadataRequest {
+                id: 1,
+                title: Some("Keep title".into()),
+                notes: None,
+                tags: vec!["Keep".into()],
+            })
+            .unwrap();
+        assert!(storage
+            .patch_item(
+                1,
+                HistoryItemPatch {
+                    text: Some("   ".into()),
+                    title: Some(None),
+                    tags: Some(None),
+                    ..Default::default()
+                }
+            )
+            .is_err());
+        let item = storage.get_item(1).unwrap();
+        assert_eq!(item.text, "original text");
+        assert_eq!(item.title.as_deref(), Some("Keep title"));
+        assert_eq!(storage.get_item_tags(1).unwrap(), vec!["Keep".to_string()]);
     }
 
     #[test]
