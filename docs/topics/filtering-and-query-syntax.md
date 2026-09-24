@@ -376,40 +376,30 @@ Las operaciones `All results` / `None results` llaman `set_history_query_marked`
 
 ## Relacion Con AI
 
-Invariante dogfood 2026-07-09: una query normal siempre ejecuta busqueda local deterministica, incluso si el composer visual esta en modo AI. El planner AI solo corre con prefijo explicito `ai:`; Enter/lupa sobre texto plain debe devolver `filtered / total matches`, no quedar en `AI planning`.
+La búsqueda plain sigue siendo local y determinística. Enter o la lupa ejecutan
+la query visible mediante `history_search`; nunca disparan requests al modelo
+por el estado visual del composer.
 
-AI search debe ser capa superior:
+Un prefijo inicial `ai:` o `Ctrl+I` envía un turno al asistente general:
 
 ```text
-"todos los clips de ypf sobre sqlite desde ayer"
-  -> AI query planner
-  -> { queryText: "sqlite", filters: { tags: ["ypf"], dateRange: { relative: "yesterday" } } }
-  -> query syntax o plan validado
-  -> ejecucion local
+"ai: todos los clips de ypf sobre sqlite desde ayer"
+  -> assistant_quick_prompt + contexto actual del picker
+  -> respuesta o tools del asistente
+  -> picker_filter({ query }) cuando el resultado debe mostrarse en el picker
+  -> parseo y ejecución local mediante history_search
 ```
 
-Primer objetivo AI:
+`picker_filter` acepta una única query local, rechaza otro prefijo `ai:` y vuelve
+a mostrar el picker. No reemplaza el parser ni habilita SQL o comandos
+arbitrarios en la superficie de búsqueda. El draft permanece editable si el
+despacho inicial falla.
 
-- explicar como formular una busqueda;
-- traducir lenguaje natural a filtros soportados;
-- pedir aclaracion si el pedido usa un campo inexistente;
-- mostrar "interpretado como ..." antes o despues de ejecutar.
-
-Estado vigente:
-
-- UI manual con prefijo `ai:`;
-- runner Node `scripts/ai-query-planner.mjs`;
-- salida validada como `AiHistorySearchPlan`;
-- ejecucion final sigue siendo SQLite local via query syntax;
-- no se envia contenido de clips al modelo;
-- el prompt/planner conoce `meta:/metadata:`, `title:`, `notes:/note:` y `ctx:/context:` para que AI traduzca lenguaje natural a los campos soportados sin inventar SQL.
-
-No objetivo inicial:
-
-- semantic search real;
-- embeddings;
-- mutar metadata;
-- ejecutar comandos arbitrarios.
+El runner histórico `scripts/ai-query-planner.mjs` y `mode: "ai"` permanecen
+como implementación previa, no como entrada visible del picker. El contrato
+vigente del asistente y sus límites de envío de contenido viven en
+[ai-search-and-actions](ai-search-and-actions.md) y
+`specs/013-conversational-assistant/spec.md`.
 
 ## Evolucion Recomendada
 

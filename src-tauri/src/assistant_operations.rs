@@ -328,6 +328,41 @@ pub fn execute(
                 json!({"itemId": item_id.to_string(), "promoted": true, "historyChanged": emit_history_changed(app)}),
             )
         }
+        "picker_filter" => {
+            let query = arguments
+                .get("query")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "query is required".to_string())?
+                .trim()
+                .to_string();
+            if query.len() > 500 {
+                return Err("picker filter query is too long".to_string());
+            }
+            if query.to_ascii_lowercase().starts_with("ai:") {
+                return Err(
+                    "picker_filter requires a deterministic local query, not an ai: prompt"
+                        .to_string(),
+                );
+            }
+            let session = app.state::<crate::picker_session::PickerSessionController>();
+            let request_id = session.begin_filter(query.clone());
+            if let Err(error) = crate::show_picker_for_assistant_focus(app) {
+                session.fail_filter(&request_id, error.clone());
+                return Err(error);
+            }
+            app.emit_to(
+                "main",
+                "copicu://picker/filter",
+                json!({"requestId": request_id, "query": query}),
+            )
+            .map_err(|error| {
+                let message = format!("failed to request picker filter: {error}");
+                session.fail_filter(&request_id, message.clone());
+                message
+            })?;
+            session.wait_for_filter(&request_id)?;
+            Ok(json!({"query": query, "applied": true}))
+        }
         "picker_focus" => {
             let item_id = id(arguments.get("itemId"), "itemId")?;
             storage.get_item(item_id)?;

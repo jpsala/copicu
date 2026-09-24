@@ -18,9 +18,11 @@ The picker remains unchanged in normal use: no background model requests, no eag
 - New history items are created by storage API, not clipboard recapture. Agent supports reusable scripts through existing action manifests/runner, not a second scripting language.
 - YOLO is the default execution mode. In optional Confirm mode, mutation/export/script execution requests have an operation card with exact arguments and approval. Read operations require no per-tool approvals. Host-generated approval IDs authorize exactly one pending operation; provider IDs cannot be replayed as approvals. Closing/cancelling never approves. Saving a `clipboardChange` script requires explicit `activateClipboardChange: true`, since saving also enables future automatic execution.
 - SQL opens a separate read-only connection, refuses non-read statements, attached DBs, dangerous pragmas/extensions, and credential-bearing settings. A safe settings summary comes via product API. Bounded rows/bytes/time with explicit pagination/truncation metadata; no silent subset described as complete.
-- Existing configured provider is the destination. Send initiates transfer of the requested content without a separate session acknowledgement or transfer flag. No requests in idle and no new external destinations in tools.
+- The configured endpoint is the destination. Send transfers only the requested content without a separate per-turn acknowledgement; switching endpoints requires Reset before any previous conversation is sent to the new destination. No requests in idle and no new external destinations in tools.
 - Authorized local operations on user-owned sensitive clips use item IDs and local actions/scripts; preserve complete values in the local destination, not masks or truncated fragments. Read the persisted destination locally and return `ActionVerification` with computed boolean checks, counts and IDs, never content or count notes as a substitute for verification. A false check or invalid report fails the action and terminates the assistant turn before another tool/provider request; completed effects are not rolled back. Provider/application credentials remain inaccessible. Do not mistake this for a blanket ban on local clipboard manipulation.
 - No claim of universal undo/atomic batches. Reuse existing transactional operations, report boundaries honestly. The prototype is tested in an isolated profile; installed personal data is not a test target.
+- The picker AI composer and an explicit leading `ai:` are one-turn entry points to this same assistant, not a second planner. Enter captures the current picker context, starts the turn and opens the assistant. The prompt remains editable if dispatch fails.
+- The assistant may keep ordinary analysis/actions in the conversation or call `picker_filter` with one deterministic local query. That tool waits for the real picker to accept and apply it through `history_search`, reports errors and supersession rather than false success, and returns the exact applied query. It does not accept `ai:` or trigger another model request.
 
 ## Architecture and integration contract
 
@@ -43,6 +45,7 @@ Tauri commands:
 - `assistant_send({ text: string }) -> void`, assistant only, returns promptly after spawn.
 - `assistant_cancel() -> void`.
 - `assistant_approve({ id: string, approved: boolean }) -> void`.
+- `assistant_quick_prompt({ text: string, context: AssistantContext }) -> void`, main only; atomically captures context, starts one assistant turn and opens the assistant window.
 - `assistant_reset() -> void`, reject while running.
 - Event `copicu://assistant/updated` carries a fresh `AssistantSnapshot` (coalesced streaming updates).
 - `assistant_list_models() -> { endpoint: string, models: AssistantModelOption[] }`, assistant only; real provider catalog, no credentials in the response.
@@ -62,6 +65,7 @@ Rust writes initial NDJSON line `{kind:'start', endpoint, model, apiKey, message
 Node emits `{kind:'delta',text}`, `{kind:'toolCall',id,name,arguments}`, `{kind:'done',messages}`, or `{kind:'error',message}`. Rust replies `{kind:'toolResult',id,result,fatal:false}` or `{kind:'toolResult',id,error,fatal}`. Verification failures from `action_run` set `fatal:true`; Node emits an error and exits before queued tools or another provider request. Stdout is protocol only. Cancellation kills and reaps the child, including while waiting for approval. Preserve completed effects and terminal status on cancellation; no blind automatic retry of mutations.
 
 Catalog entries: `{name,description,parameters,effect:'read'|'write'|'external'}` using JSON Schema parameters. Name uses provider-safe underscores (e.g. `history_get`, `database_query`). Runtime uses effect to request approval. Catalog describes known limitations and schema explicitly.
+- `picker_filter({ query: string })`: write-class UI effect that applies one deterministic local query to the picker. Empty query is allowed to show all history; recursive `ai:` input is rejected.
 
 `assistant_operations::catalog() -> serde_json::Value` returns included catalog.
 `assistant_operations::execute(app: &tauri::AppHandle, storage: &AppStorage, context: &AssistantContext, name: &str, arguments: serde_json::Value) -> Result<serde_json::Value,String>` executes one tool. New module can be cfg(not(test)) with testable storage query helpers in a separate always-built module.
@@ -77,7 +81,7 @@ Runtime settings reuse `ai_planner::resolve_ai_runtime_settings`; expose narrowl
 - UI: `AssistantWindowApp.tsx`, shared assistant DTOs, picker context/menu integration.
 - Native integration: `lib.rs`, surface registry, assistant capability and packaged runner/catalog.
 
-No dependency installation, release, local installation or publication is part of this prototype.
+The initial prototype did not include installation or publication; distribution follows `docs/topics/windows-installer.md` when explicitly authorized.
 
 ## Acceptance
 
@@ -88,7 +92,8 @@ No dependency installation, release, local installation or publication is part o
 5. Approve one mutation/export, observe exact effects, deny another, observe no effect. Export preserves originals and refuses overwrite. Save a valid named script and execute through existing actions.
 6. Cancel during response/approval and continue; errors visible without fictitious success. Completed tools remain visible.
 7. Native picker open/search/navigation/copy path still works while assistant is open. No model requests in idle.
-8. Build frontend/Rust, run targeted protocol/database regression tests and required visual checks; prove provider path against a real configured model with synthetic data if credentials are available. Local fixture server proves protocol only, not model quality; report distinction.
+8. From the picker AI composer and from a leading `ai:` query, Enter starts exactly one assistant turn with the current active/selected/visible/query context. Dispatch failure preserves the draft. A `picker_filter` call updates the real picker through its normal search path; non-filter answers and actions continue in the assistant.
+9. Build frontend/Rust, run targeted protocol/database regression tests and required visual checks; prove provider path against a real configured model with synthetic data if credentials are available. Local fixture server proves protocol only, not model quality; report distinction.
 
 ### Verified behavior
 
@@ -195,6 +200,15 @@ No dependency installation, release, local installation or publication is part o
   Node regressions prove fatal replies stop queued tools and the next provider
   request, and distinguish actual newlines from intentional literal backslashes.
   `assistant:smoke`: 21 Node and 8 renderer cases passed.
+- Provider recovery 2026-09-18: Dev estaba configurado en Groq, no
+  OpenRouter. JP autorizo cambiar el perfil sintetico a OpenRouter/Luna y
+  comenzar una conversacion nueva para no transferir el historial previo entre
+  proveedores. El catalogo real devolvio 446 modelos, 377 compatibles con
+  tools e incluyo `openai/gpt-5.6-luna`; un turno sintetico real respondio por
+  OpenRouter. Las claves legacy ahora se eligen por endpoint y GPT-OSS/Groq u
+  OpenRouter reciben `reasoning_details: []` solo en mensajes assistant que no
+  traian el campo. Rust: 248 passed, 1 ignored; `assistant:smoke`: 22 Node y 8
+  renderer.
 
 ## Iteration
 

@@ -295,6 +295,9 @@ button {
   box-shadow: none;
   animation: panel-enter 180ms ease-out both;
 }
+.custom-window-frame.is-floatingPicker {
+  animation: none;
+}
 
 .custom-window-frame.is-document {
   background: var(--surface-raised);

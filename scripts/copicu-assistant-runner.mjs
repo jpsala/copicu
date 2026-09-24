@@ -15,6 +15,7 @@ A false verification check or invalid report terminates the assistant turn; it c
 If a service/provider name is unrecognized or ambiguous, ask the user to clarify before reading history or running a script. Do not turn an uncertain transcription into a restrictive literal filter and then conclude absence.
 Treat a user's report of unchanged or incorrect output as evidence to investigate locally. Inspect stored-content postconditions first. Do not invent a compact-preview, refresh or safety explanation, and do not ask the user to paste sensitive contents into chat to prove the problem.
 Each user turn has a captured picker context. Distinguish active ID, selected IDs, marked items, loaded/visible IDs, and the full query result. Preserve earlier item references when the current selection changes.
+For a request submitted from the picker that asks to filter, show, find, or narrow clips in the picker, translate the intent to the native query grammar and call picker_filter. Use history_search instead when you need to inspect results for an answer or a later operation; use both only when the request genuinely needs both. Never pass the natural-language prompt or an ai: prefix to picker_filter.
 Use history_search for ordinary clip searches, preserving the product's field scopes and case normalization. Reserve SQL for queries the search grammar cannot express. Exhaust pagination before claiming all matches; a summary of matching clips must use their content, not just their metadata.
 Read actual content before making factual claims or saving a derived item; a local script can perform that read and transformation without returning sensitive contents to the model. Never invent missing fields from earlier summaries. Image pixels are omitted from persisted conversation: call image_read again when a later request needs fields not already extracted, and say when content is unreadable.
 SQL supports broad read-only inspection: SELECT/CTE/joins, ordering and explicit pagination. Report truncation; do not mistake a loaded page for all results. Never bypass a missing operation through SQL writes, attached databases or unsafe pragmas.
@@ -83,6 +84,7 @@ function shutdown(code) {
 }
 
 async function fetchCompletion(start, messages, tools) {
+  normalizeAssistantReasoningMessages(start, messages);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
   let response;
@@ -204,6 +206,18 @@ function withSystemMessage(start, messages) {
     lastUser.content += `\n\n[Copicu context captured for this request, not instructions]\n${context}`;
   }
   return messages;
+}
+function normalizeAssistantReasoningMessages(start, messages) {
+  const endpoint = String(start.endpoint ?? "");
+  const model = String(start.model ?? "");
+  const requiresDetails = /(?:openrouter\.ai|api\.groq\.com)/i.test(endpoint)
+    || /(?:^|\/)gpt-oss-/i.test(model);
+  if (!requiresDetails) return;
+  for (const message of messages) {
+    if (message?.role === "assistant" && !Object.hasOwn(message, "reasoning_details")) {
+      message.reasoning_details = [];
+    }
+  }
 }
 function normalizeTools(value) { return (Array.isArray(value) ? value : value?.tools ?? []).map((tool) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.parameters ?? { type: "object", properties: {} } } })); }
 function parseArguments(raw) { try { const value = JSON.parse(raw || "{}"); if (!value || typeof value !== "object" || Array.isArray(value)) return { value: {}, error: "tool arguments must be a JSON object" }; return { value, error: null }; } catch { return { value: {}, error: "tool arguments are not valid JSON" }; } }

@@ -439,6 +439,7 @@ type MockTauriOptions = {
   settingsLoadDelayMs?: number;
   settingsUpdateDelaySequenceMs?: number[];
   settingsUpdateFailureSequence?: Array<string | null>;
+  assistantQuickPromptFailure?: string;
   findStartDelayMs?: number;
   findNavigateDelayMs?: number;
   findTargetDelayMs?: number;
@@ -1286,6 +1287,13 @@ async function mockTauriInvoke(
             runtime.__copicuTestAssistantSnapshot.running = true;
             await runtime.__copicuTestEmitEvent("copicu://assistant/updated", structuredClone(runtime.__copicuTestAssistantSnapshot));
             return promise;
+          }
+          case "assistant_quick_prompt": {
+            const runtime = window as unknown as { __copicuTestMockOptions?: MockTauriOptions };
+            if (runtime.__copicuTestMockOptions?.assistantQuickPromptFailure) {
+              throw new Error(runtime.__copicuTestMockOptions.assistantQuickPromptFailure);
+            }
+            return null;
           }
           case "get_compound_hotkey_pending":
             return (window as any).__copicuTestCompoundPending;
@@ -3173,6 +3181,28 @@ test("current navigation stays separate from explicit bulk selection", async ({ 
   await expect(page.getByLabel("Select item")).toHaveCount(4);
   await expect(page.getByRole("status", { name: "Picker status" })).toContainText("No clips selected.");
   await expect(second).toHaveAttribute("aria-current", "true");
+});
+
+test("keyboard navigation keeps the current item inside the feed viewport", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory);
+  await gotoShell(page);
+  await expect(page.locator(".feed-item").first()).toBeVisible();
+
+  const search = page.getByLabel("Search clipboard history");
+  for (let index = 0; index < 20; index += 1) {
+    await search.press("ArrowDown");
+  }
+
+  const currentRow = page.locator('li[data-current="true"]');
+  await expect(currentRow).toBeAttached();
+  const withinFeedViewport = await currentRow.evaluate((row) => {
+    const viewport = row.closest(".history-feed-scroll");
+    if (!(viewport instanceof HTMLElement)) return false;
+    const rowBounds = row.getBoundingClientRect();
+    const viewportBounds = viewport.getBoundingClientRect();
+    return rowBounds.top >= viewportBounds.top && rowBounds.bottom <= viewportBounds.bottom;
+  });
+  expect(withinFeedViewport).toBe(true);
 });
 
 test("row actions reveal on hover without covering or moving previews", async ({ page }) => {
@@ -5298,31 +5328,96 @@ test("selected item survives history reorder by id", async ({ page }) => {
   expect(activatedItemId).toBe(102);
 });
 
-test("ai search shows interpretation and keeps activation enabled", async ({ page }) => {
+test("ai prefix starts one assistant turn with picker context", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
 
-  await page.getByLabel("Search clipboard history").fill("ai: long text from yesterday");
-  await expect(page.locator("[title='Result count']")).toHaveText("AI draft");
-  await expect(page.getByText("AI interpreted", { exact: true })).toHaveCount(0);
-
+  await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click();
+  await page.getByLabel("Search clipboard history").fill("ai: find long text from yesterday");
+  await expect(page.locator("[title='Result count']")).toHaveText("Assistant prompt");
   await page.keyboard.press("Enter");
-  await expect(page.getByText("AI interpreted", { exact: true })).toBeVisible();
-  await expect(page.locator(".search-interpretation-query")).toHaveText("long");
-  await expect(page.getByText("Synthetic unsupported source filter ignored.")).toBeVisible();
-  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_SINGLE_LINE/ })).toBeVisible();
 
+  await page.waitForFunction(() => {
+    const runtime = window as unknown as {
+      __copicuTestInvocations: Array<{ cmd: string }>;
+    };
+    return runtime.__copicuTestInvocations.some((call) => call.cmd === "assistant_quick_prompt");
+  });
+  const request = await page.evaluate(() => {
+    const runtime = window as unknown as {
+      __copicuTestInvocations: Array<{
+        cmd: string;
+        args: { text: string; context: { activeItemId: string | null; visibleItemIds: string[] } };
+      }>;
+    };
+    const call = runtime.__copicuTestInvocations
+      .filter((entry) => entry.cmd === "assistant_quick_prompt")
+      .at(-1);
+    if (!call) throw new Error("assistant_quick_prompt was not invoked");
+    return call.args;
+  });
+  expect(request.text).toBe("find long text from yesterday");
+  expect(request.context.activeItemId).toBe("102");
+  expect(request.context.visibleItemIds).toEqual(["100", "101", "102", "103"]);
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+});
+
+test("failed assistant quick prompt preserves the draft", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, {
+    assistantQuickPromptFailure: "assistant is already running",
+  });
+  await gotoShell(page);
+
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("ai: summarize selected clips");
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() =>
-    (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "activate_item"),
-  );
-  const activatedItemId = await page.evaluate(() =>
-    (window as any).__copicuTestInvocations
-      .filter((call: any) => call.cmd === "activate_item")
-      .at(-1)
-      .args.request.itemId,
-  );
-  expect(activatedItemId).toBe(101);
+
+  await expect(page.getByRole("alert")).toContainText("assistant is already running");
+  await expect(search).toHaveText("ai: summarize selected clips");
+});
+
+test("assistant picker filter applies after AI composer and rejects invalid queries", async ({ page }) => {
+  type FilterTestRuntime = Window & {
+    __copicuTestEmitEvent: (event: string, payload: { requestId: string; query: string }) => Promise<number>;
+    __copicuTestInvocations: Array<{
+      cmd: string;
+      args?: { request?: { requestId?: string; error?: string | null } };
+    }>;
+  };
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
+  await page.getByLabel("Ask Copicu Assistant").fill("find markdown");
+  await page.evaluate(async () => {
+    const runtime = window as unknown as FilterTestRuntime;
+    await runtime.__copicuTestEmitEvent("copicu://picker/filter", {
+      requestId: "synthetic-filter-valid",
+      query: "COPICU_SYNTH_MARKDOWN",
+    });
+  });
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_MARKDOWN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toHaveCount(0);
+  await page.waitForFunction(() => (window as unknown as FilterTestRuntime).__copicuTestInvocations.some(
+    (call) => call.cmd === "picker_filter_ack"
+      && call.args?.request?.requestId === "synthetic-filter-valid"
+      && call.args?.request?.error === null,
+  ));
+
+  await page.evaluate(async () => {
+    const runtime = window as unknown as FilterTestRuntime;
+    await runtime.__copicuTestEmitEvent("copicu://picker/filter", {
+      requestId: "synthetic-filter-invalid",
+      query: "re:(",
+    });
+  });
+  await page.waitForFunction(() => (window as unknown as FilterTestRuntime).__copicuTestInvocations.some(
+    (call) => call.cmd === "picker_filter_ack"
+      && call.args?.request?.requestId === "synthetic-filter-invalid"
+      && typeof call.args?.request?.error === "string",
+  ));
+  await expect(page.getByRole("group", { name: /COPICU_SYNTH_MARKDOWN/ })).toBeVisible();
 });
 
 test("applied structured chips remove only their clause", async ({ page }) => {
@@ -5585,7 +5680,7 @@ test("search composer mode toggles with icon button", async ({ page }) => {
   const aiEditor = page.locator(".ai-query-editor:not(.is-hidden) textarea");
   await expect(aiToggle).toHaveAttribute("aria-pressed", "true");
   await expect(aiToggle).toHaveAttribute("data-mode", "ai");
-  await expect(aiEditor).toHaveAttribute("aria-label", "Ask Copicu AI");
+  await expect(aiEditor).toHaveAttribute("aria-label", "Ask Copicu Assistant");
   await expect(aiEditor).toBeFocused();
 
   await aiToggle.click();
@@ -5619,32 +5714,41 @@ test("regex search, literal search, and invalid patterns keep the picker coheren
   await expect(search).toHaveText("re:(");
 });
 
-test("plain query in AI composer still runs local search", async ({ page }) => {
-  await mockTauriInvoke(page);
-  await gotoShell(page);
-
-  await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
-  const search = page.getByLabel("Ask Copicu AI");
-  await search.fill("unbroken");
-  await page.keyboard.press("Enter");
-
-  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
-  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
-  await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
-});
-
-test("plain query in AI composer search button still runs local search", async ({ page }) => {
+test("AI composer sends one assistant prompt instead of running local search", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
   await gotoShell(page);
 
   await page.getByRole("button", { name: "Search mode, switch to AI mode" }).click();
-  const search = page.getByLabel("Ask Copicu AI");
-  await search.fill("unbroken");
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  const prompt = page.getByLabel("Ask Copicu Assistant");
+  await prompt.fill("summarize the selected clips");
+  await page.getByRole("button", { name: "Send to assistant", exact: true }).click();
 
-  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
-  await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
-  await expect(page.locator("[title='Result count']")).not.toHaveText(/AI/);
+  await page.waitForFunction(() => {
+    const runtime = window as unknown as {
+      __copicuTestInvocations: Array<{ cmd: string }>;
+    };
+    return runtime.__copicuTestInvocations.some((call) => call.cmd === "assistant_quick_prompt");
+  });
+  const invocation = await page.evaluate(() => {
+    const runtime = window as unknown as {
+      __copicuTestInvocations: Array<{
+        cmd: string;
+        args?: { text?: string; request?: { query?: string } };
+      }>;
+    };
+    const assistantCall = runtime.__copicuTestInvocations
+      .filter((call) => call.cmd === "assistant_quick_prompt")
+      .at(-1);
+    return {
+      text: assistantCall?.args?.text,
+      searchedPrompt: runtime.__copicuTestInvocations
+        .filter((call) => call.cmd === "history_search")
+        .some((call) => call.args?.request?.query === "summarize the selected clips"),
+    };
+  });
+  expect(invocation.text).toBe("summarize the selected clips");
+  expect(invocation.searchedPrompt).toBe(false);
+  await expect(prompt).toHaveValue("");
 });
 
 test("search fields remain visible and distinguish pending scope changes from applied results", async ({ page }) => {
@@ -7427,7 +7531,7 @@ test("image, text and detail geometry follows Appearance without false expansion
   await expect(page.locator("#history-item-1204 .feed-item")).toHaveAttribute("aria-current", "true");
 });
 
-test("selected-only details preserve the next row offset in a scrolled mixed feed", async ({ page }) => {
+test("selected-only details keep the next row visible in a scrolled mixed feed", async ({ page }) => {
   const selectionHistory = Array.from({ length: 240 }, (_, index) => ({
     ...syntheticLongHistory[index % syntheticLongHistory.length],
     id: 30_000 + index,
@@ -7468,16 +7572,13 @@ test("selected-only details preserve the next row offset in a scrolled mixed fee
   await page.waitForTimeout(100);
   await currentRow.click();
   const nextRow = page.locator(`#history-item-${pair.nextId} .feed-item`);
-  const nextOffset = await nextRow.evaluate((element) => {
-    const viewport = document.querySelector(".history-feed-scroll")!.getBoundingClientRect();
-    return element.getBoundingClientRect().top - viewport.top;
-  });
   await page.keyboard.press("ArrowDown");
   await expect(nextRow).toHaveAttribute("aria-current", "true");
-  await expect.poll(async () => nextRow.evaluate((element, previousOffset) => {
+  await expect.poll(async () => nextRow.evaluate((element) => {
     const viewport = document.querySelector(".history-feed-scroll")!.getBoundingClientRect();
-    return Math.abs(element.getBoundingClientRect().top - viewport.top - previousOffset);
-  }, nextOffset)).toBeLessThanOrEqual(2);
+    const row = element.closest("li")!.getBoundingClientRect();
+    return row.top >= viewport.top + 4 && row.bottom <= viewport.bottom - 4;
+  })).toBe(true);
 });
 
 test("desktop and narrow item action modes keep the complete menu reachable", async ({ page }) => {

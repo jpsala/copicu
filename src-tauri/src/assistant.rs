@@ -91,11 +91,14 @@ pub struct AssistantSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct AssistantSendRequest {
     pub text: String,
+    #[serde(default)]
+    pub picker_quick_prompt: bool,
 }
 #[derive(Clone)]
 struct AssistantTurnConfig {
     model_choice: Option<AssistantModelChoice>,
     execution_mode: String,
+    runtime: crate::ai_planner::AiRuntimeSettings,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -107,6 +110,8 @@ struct PersistedConversation {
     configured: bool,
     model: String,
     endpoint: String,
+    #[serde(default)]
+    conversation_endpoint: Option<String>,
     #[serde(default)]
     model_choice: Option<AssistantModelChoice>,
     #[serde(default)]
@@ -124,6 +129,7 @@ struct AssistantInner {
     configured: bool,
     model: String,
     endpoint: String,
+    conversation_endpoint: Option<String>,
     model_choice: Option<AssistantModelChoice>,
     default_model: Option<AssistantModelChoice>,
     execution_mode: String,
@@ -161,22 +167,28 @@ impl AssistantState {
             None
         };
         let mut inner = persisted
-            .map(|p| AssistantInner {
-                messages: p.messages,
-                provider_messages: p.provider_messages,
-                context: p.context,
-                running: false,
-                approval: None,
-                approval_decision: None,
-                error: None,
-                configured: p.configured,
-                model: p.model,
-                endpoint: p.endpoint,
-                model_choice: p.model_choice,
-                default_model: p.default_model,
-                execution_mode: "yolo".to_string(),
-                active_assistant_id: None,
-                recovery_required: false,
+            .map(|p| {
+                let conversation_endpoint = p
+                    .conversation_endpoint
+                    .or_else(|| (!p.provider_messages.is_empty()).then_some(p.endpoint.clone()));
+                AssistantInner {
+                    messages: p.messages,
+                    provider_messages: p.provider_messages,
+                    context: p.context,
+                    running: false,
+                    approval: None,
+                    approval_decision: None,
+                    error: None,
+                    configured: p.configured,
+                    model: p.model,
+                    endpoint: p.endpoint,
+                    conversation_endpoint,
+                    model_choice: p.model_choice,
+                    default_model: p.default_model,
+                    execution_mode: "yolo".to_string(),
+                    active_assistant_id: None,
+                    recovery_required: false,
+                }
             })
             .unwrap_or_else(|| AssistantInner {
                 messages: Vec::new(),
@@ -191,6 +203,7 @@ impl AssistantState {
                 model: String::new(),
                 endpoint: String::new(),
                 model_choice: None,
+                conversation_endpoint: None,
                 default_model: None,
                 execution_mode: "yolo".to_string(),
                 active_assistant_id: None,
@@ -317,6 +330,15 @@ impl AssistantState {
         if text.is_empty() {
             return Err("assistant message cannot be empty".to_string());
         }
+        let settings = storage
+            .get_settings()
+            .map_err(|error| format!("failed to read AI settings: {error}"))?;
+        if !settings.ai.enabled {
+            return Err("AI assistant is disabled in settings.".to_string());
+        }
+        let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let runtime = crate::ai_planner::resolve_ai_runtime_settings(&settings.ai, &project_root)
+            .map_err(|error| redact_error(&error))?;
         let turn_config;
         {
             let (lock, _) = &*self.gate;
@@ -332,6 +354,11 @@ impl AssistantState {
             if inner.running {
                 return Err("assistant is already running".to_string());
             }
+            check_conversation_endpoint(inner.conversation_endpoint.as_deref(), &runtime.endpoint)?;
+            let first_turn = inner.conversation_endpoint.is_none();
+            if first_turn {
+                inner.conversation_endpoint = Some(runtime.endpoint.clone());
+            }
             let now = now_ms();
             inner.messages.push(AssistantMessage {
                 id: format!("user-{now}"),
@@ -342,9 +369,16 @@ impl AssistantState {
                 status: Some("completed".to_string()),
                 created_at: now,
             });
+            let provider_text = if request.picker_quick_prompt {
+                format!(
+                    "{text}\n\n[Copicu request source, not user content]\nThis turn was submitted from the picker quick prompt. Apply a picker filter when that is the requested outcome."
+                )
+            } else {
+                text.clone()
+            };
             inner
                 .provider_messages
-                .push(json!({"role":"user","content":text}));
+                .push(json!({"role":"user","content":provider_text}));
             inner.running = true;
             inner.error = None;
             inner.approval = None;
@@ -358,12 +392,16 @@ impl AssistantState {
                     .clone()
                     .or_else(|| inner.default_model.clone()),
                 execution_mode: inner.execution_mode.clone(),
+                runtime,
             };
             if let Err(error) = persist_locked(&self.profile_dir, &inner) {
                 inner.running = false;
                 inner.active_assistant_id = None;
                 inner.messages.pop();
                 inner.provider_messages.pop();
+                if first_turn {
+                    inner.conversation_endpoint = None;
+                }
                 return Err(error);
             }
         }
@@ -412,6 +450,7 @@ impl AssistantState {
         }
         inner.messages.clear();
         inner.provider_messages.clear();
+        inner.conversation_endpoint = None;
         inner.approval = None;
         inner.error = None;
         inner.active_assistant_id = None;
@@ -454,6 +493,7 @@ fn persist_locked(profile_dir: &Path, inner: &AssistantInner) -> Result<(), Stri
         context: inner.context.clone(),
         configured: inner.configured,
         model: inner.model.clone(),
+        conversation_endpoint: inner.conversation_endpoint.clone(),
         endpoint: inner.endpoint.clone(),
         model_choice: inner.model_choice.clone(),
         default_model: inner.default_model.clone(),
@@ -485,6 +525,16 @@ fn sanitize_persisted(value: &Value) -> Value {
         Value::Array(values) => Value::Array(values.iter().map(sanitize_persisted).collect()),
         other => other.clone(),
     }
+}
+
+fn check_conversation_endpoint(bound: Option<&str>, current: &str) -> Result<(), String> {
+    if bound.is_some_and(|endpoint| endpoint != current) {
+        return Err(
+            "AI endpoint changed. Reset the assistant conversation before sending previous messages to another provider."
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn tool_display(value: &Value) -> String {
@@ -531,30 +581,8 @@ fn run_turn(
     storage: crate::storage::AppStorage,
     turn_config: AssistantTurnConfig,
 ) {
-    let settings = match storage.get_settings() {
-        Ok(settings) => settings,
-        Err(error) => {
-            return_finish(&state, &app, format!("failed to read AI settings: {error}"));
-            return;
-        }
-    };
     let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let runtime = match crate::ai_planner::resolve_ai_runtime_settings(&settings.ai, &project_root)
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            return_finish(&state, &app, redact_error(&error));
-            return;
-        }
-    };
-    if !settings.ai.enabled {
-        return_finish(
-            &state,
-            &app,
-            "AI assistant is disabled in settings.".to_string(),
-        );
-        return;
-    }
+    let runtime = turn_config.runtime;
     let model = turn_config
         .model_choice
         .as_ref()
@@ -1252,7 +1280,14 @@ pub async fn assistant_send(
     text: String,
 ) -> Result<(), String> {
     require_window(&window, &[ASSISTANT_WINDOW_LABEL], "assistant_send")?;
-    state.send(app, storage.inner().clone(), AssistantSendRequest { text })
+    state.send(
+        app,
+        storage.inner().clone(),
+        AssistantSendRequest {
+            text,
+            picker_quick_prompt: false,
+        },
+    )
 }
 
 #[tauri::command]
@@ -1282,4 +1317,20 @@ pub fn assistant_reset(
 ) -> Result<(), String> {
     require_window(&window, &[ASSISTANT_WINDOW_LABEL], "assistant_reset")?;
     state.reset()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_conversation_endpoint;
+
+    #[test]
+    fn changing_provider_rejects_history_transfer_until_reset() {
+        let original = "https://api.groq.com/openai/v1";
+        let changed = "https://openrouter.ai/api/v1";
+        assert!(check_conversation_endpoint(Some(original), changed)
+            .unwrap_err()
+            .contains("Reset the assistant conversation"));
+        assert!(check_conversation_endpoint(Some(original), original).is_ok());
+        assert!(check_conversation_endpoint(None, changed).is_ok());
+    }
 }

@@ -2,6 +2,26 @@
 
 ## Decisiones De Producto/Arquitectura
 
+### 2026-09-18 - `ai:` y el composer del picker usan el asistente general
+
+Estado: accepted por JP; implementación integrada para el release `v0.4.23`.
+
+Decisión: retirar el planner de búsqueda anterior como entrada visible del
+picker. Un prefijo inicial `ai:` o `Ctrl+I` captura el contexto vigente y envía
+un turno al asistente general. Para pedidos cuyo resultado es mostrar un filtro,
+el asistente usa `picker_filter` con una query local determinística; respuestas,
+aclaraciones y efectos continúan en la ventana del asistente.
+
+Motivo: mantener dos cerebros con prompts, capacidades y semántica distintas
+hacía que "AI search" y el asistente divergieran. El picker sigue siendo una
+entrada rápida y no una segunda UI de chat; Rust conserva autoridad sobre el
+parseo y la ejecución local. Cambiar de endpoint requiere una conversación
+nueva: el host bloquea el envío del historial anterior hasta hacer Reset.
+
+Contrato: `specs/013-conversational-assistant/spec.md`,
+`docs/topics/ai-search-and-actions.md` y
+`docs/topics/filtering-and-query-syntax.md`.
+
 ### 2026-09-17 - Asistente general con SQL de lectura y efectos por API
 
 Estado: accepted por JP para un prototipo local, sin publicación ni instalación.
@@ -230,9 +250,9 @@ Proximo paso: mantener `docs/ASSISTANT_RULES.md`, `docs/topics/docs-knowledge-sy
 | Ventana picker always-on-top con hide-on-focus-lost diferido | accepted | El picker debe comportarse como palette flotante. Hide inmediato en `Focused(false)` rompe mover/redimensionar; usar hide diferido/cancelable por foco/move/resize. | Investigacion Tauri/winit + implementacion 2026-06-05 |
 | Tema light/dark inicial por sistema | accepted | Hasta tener settings de temas, respetar `prefers-color-scheme` para evitar fondo claro en sistemas dark. | Ajuste UI 2026-06-05 |
 | Settings core en SQLite con schema typed | accepted | Evita constantes sueltas y un archivo paralelo prematuro; Rust valida defaults/version y el formato JSON queda exportable. Primer slice usa tabla `app_settings` con `AppSettings` schema v1. | `specs/003-settings-foundation/spec.md` + implementacion 2026-06-05 |
-| Query syntax local antes de AI search | accepted | La busqueda poderosa empieza con contrato deterministico ejecutado por el host: texto/frases/negacion, filtros `tag`, `kind`, `mime`, `has` y fechas. AI futura debe traducir lenguaje natural a este contrato/plan validado antes de ejecutar. | Implementacion 2026-06-05 + `docs/topics/filtering-and-query-syntax.md` |
-| AI search primero como query planner sobre API host | accepted | El primer uso de AI debe convertir lenguaje natural en planes estructurados de busqueda/filtro, no ejecutar comandos arbitrarios. Provider OpenAI-compatible configurable via Settings y `.env`; la key puede guardarse localmente en Settings o venir por `COPICU_AI_API_KEY`, con OpenRouter/OpenAI/Groq documentados en `.env.example`. No persistir la key en docs/logs/tests; tratar DB/settings como almacenamiento local sensible. La ejecucion de series de comandos queda para Actions Foundation con capabilities explicitas. | Conversacion 2026-06-05 + ajuste Settings 2026-06-18 + `docs/topics/ai-search-and-actions.md` |
-| `history_search` como API reusable de busqueda | accepted | La busqueda del picker, scripts y futuro AI planner deben compartir un contrato host unico. `list_history_page` queda como wrapper compatible; `history_search(HistorySearchRequest)` es la API conceptual nueva con `mode`, `includeContent`, `explain`, `interpretedQuery`, `explanation` y `warnings`. | Implementacion 2026-06-06 + `docs/topics/filtering-and-query-syntax.md` |
+| Query syntax local antes de AI search | accepted | La busqueda poderosa empieza con contrato deterministico ejecutado por el host: texto/frases/negacion, filtros `tag`, `kind`, `mime`, `has` y fechas. El asistente puede traducir lenguaje natural a este contrato mediante `picker_filter`, pero Rust conserva parseo y ejecución. | Implementacion 2026-06-05 + decisión 2026-09-18 + `docs/topics/filtering-and-query-syntax.md` |
+| AI search primero como query planner sobre API host | superseded 2026-09-18 | Fue el primer slice: convirtió lenguaje natural en filtros sin ejecutar comandos arbitrarios. La entrada visible `ai:` ahora usa el asistente general y vuelve al picker mediante `picker_filter`; el motor local determinístico sigue siendo autoridad. | Conversacion 2026-06-05, reemplazada por decisión 2026-09-18 + `docs/topics/ai-search-and-actions.md` |
+| `history_search` como API reusable de busqueda | accepted | Picker, scripts y tools del asistente comparten un contrato host único. `list_history_page` queda como wrapper compatible; `history_search(HistorySearchRequest)` conserva `mode`, `includeContent`, `explain`, `interpretedQuery`, `explanation` y `warnings`. | Implementacion 2026-06-06 + `docs/topics/filtering-and-query-syntax.md` |
 | AI con OpenRouter configurable y Vercel AI SDK + Zod como primer runtime | accepted | OpenRouter queda como provider inicial, pero endpoint, modelo y API key se configuran en Settings con overrides `.env`/entorno. `ai` + `zod` quedan instalados para el primer planner estructurado; se puede cambiar de libreria si el problema crece. | Conversacion/implementacion 2026-06-06 + ajuste Settings 2026-06-18 + `docs/topics/ai-search-and-actions.md` |
 | Scripts como archivos editables y Actions TS/JS | accepted | Para scripting local, el source debe vivir en archivos editables desde VS Code/Git, con default `Documents/Copicu/Scripts` configurable en Settings. SQLite guarda settings, indices, diagnostics y run metadata, no el codigo fuente. CopyQ se usa como baseline de contexto, pero Copicu usa IDs estables y contrato typed. | Conversacion 2026-06-05 + `docs/topics/actions-and-scripting-api.md` |
 | Window bounds por monitor | accepted | Las ventanas persistentes no guardan solo coordenadas globales: mantienen bounds por monitor y validan contra `workArea` al restaurar. `main`, `settings` y `ai-output` son resizable/persistentes; superficies fijas opt-out. | `docs/topics/window-state-and-monitor-policy.md` + implementacion 2026-06-09 |

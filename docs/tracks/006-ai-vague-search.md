@@ -1,11 +1,17 @@
 ---
 id: ai-vague-search
-status: first-planner-slice-implemented
+status: superseded-by-conversational-assistant
 priority: 6
-updated: 2026-06-07
+updated: 2026-09-18
 ---
 
 # AI Search, Metadata And Command Planning
+
+El corte retomable de esta track fue reemplazado por
+`specs/013-conversational-assistant/spec.md`: `ai:` y `Ctrl+I` ya entran al
+asistente general, que puede volver al picker mediante `picker_filter`. El
+contenido siguiente conserva el diseño y la evidencia del planner inicial; no
+describe la entrada visible vigente.
 
 AI metadata, busqueda vaga/semantica y comandos asistidos son objetivos definitivos. El primer corte util debe ser busqueda y filtros en lenguaje natural, antes de permitir ejecucion amplia de comandos.
 

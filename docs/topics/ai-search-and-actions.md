@@ -115,6 +115,15 @@ Contrato y aceptación: `specs/013-conversational-assistant/spec.md`.
 - El runner conserva `reasoning_details` opacos y ordenados entre herramientas,
   sin mostrarlos como respuesta. Los catálogos deben llegar completos o fallar,
   nunca ofrecer silenciosamente una lista parcial.
+- El composer AI del picker y el prefijo inicial `ai:` envian un turno al mismo
+  asistente conversacional mediante `assistant_quick_prompt`; ya no constituyen
+  otro planner visible. El host captura activo, seleccion, query aplicada e IDs
+  visibles antes de iniciar el turno y conserva el draft si el despacho falla.
+- `picker_filter` permite al asistente traducir un pedido de mostrar o filtrar a
+  una query local deterministica. El picker conserva autoridad sobre parseo,
+  defaults, errores y resultados; la tool espera su confirmación y no informa
+  éxito ante queries inválidas o supersedidas. Rechaza otro prefijo `ai:` para
+  evitar recursión y vuelve a mostrar el picker al aplicar el filtro.
 
 ## Provider Actual
 
@@ -126,8 +135,9 @@ Contrato y aceptación: `specs/013-conversational-assistant/spec.md`.
   - `ai.apiKey` vacio por defecto, editable como password field local en Settings.
 - La API key local puede vivir en Settings o en una variable de entorno / `.env` local ignorado bajo el nombre fijo `COPICU_AI_API_KEY`.
 - `COPICU_AI_ENDPOINT` y `COPICU_AI_MODEL` son overrides opcionales desde entorno o `.env`; si no existen, se usan los valores de Settings.
-- El host Rust lee primero `COPICU_AI_API_KEY` desde variables de entorno reales y luego `.env` local del project root; si falta, usa `ai.apiKey` guardado localmente; como compatibilidad final intenta claves legacy `GROQ_API_KEY`, `OPENROUTER_API_KEY` y `OPENAI_API_KEY`.
-- No guardar el valor de esa key en docs, logs ni tests. Tratar Settings/DB como almacenamiento local sensible.
+- El host Rust lee primero `COPICU_AI_API_KEY` desde variables de entorno reales y luego `.env` local del project root; si falta, usa `ai.apiKey` guardado localmente. La compatibilidad legacy requiere HTTPS y host exacto: OpenRouter usa solo `OPENROUTER_API_KEY`, Groq solo `GROQ_API_KEY` y OpenAI solo `OPENAI_API_KEY`. Un endpoint desconocido nunca hereda por orden una credencial de otro proveedor. Tras cambiar el endpoint, Reset inicia una conversación nueva; el host rechaza enviar historial previo a otro destino.
+- OpenRouter y GPT-OSS/Groq pueden exigir `reasoning_details` en cada mensaje assistant, incluso al continuar conversaciones creadas antes de ese contrato. El runner conserva bloques opacos existentes y agrega `[]` únicamente cuando el campo falta; no reemplaza ni reordena reasoning real.
+- No guardar el valor de una key en docs, logs ni tests. Tratar Settings/DB como almacenamiento local sensible.
 - OpenAI-compatible API sigue siendo la abstraccion del cliente; OpenRouter, OpenAI y Groq quedan representados en `.env.example`.
 
 ## Libreria Inicial
@@ -139,7 +149,7 @@ Decision tentativa 2026-06-06:
 - Mantener OpenAI Agents SDK como alternativa si mas adelante necesitamos loops agenticos/tracing/MCP mas completos.
 - No empezar con LangChain/Mastra salvo que el problema crezca hacia workflows/agents complejos.
 
-## Primer Slice: AI Query Planner
+## Primer Slice Histórico: AI Query Planner
 
 Entrada:
 
@@ -182,11 +192,11 @@ Estado 2026-06-05: primer corte implementado en `src-tauri/src/storage.rs`.
 
 Soporta texto plain, frases con comillas, negacion con `-`, `tag:`/`#tag`, `kind:`, `mime:`, `has:`, `after:`, `before:`, `on:` y relativos simples como `7d`. Sigue usando `LIKE` paginado, no FTS5. `app:` queda bloqueado hasta capturar source process/window.
 
-Estado 2026-06-06: agregado `history_search(HistorySearchRequest)` como contrato reusable. `mode: "ai"` ya tiene primer planner manual desde el comando Tauri: usa Settings AI, OpenRouter/OpenAI-compatible endpoint, Vercel AI SDK + Zod en `scripts/ai-query-planner.mjs`, valida `AiHistorySearchPlan` y ejecuta la query resultante con la busqueda estructurada local. El picker lo activa con prefijo `ai:`. Si AI esta apagada o falla, vuelve a structured local con warning.
-
-Direccion 2026-06-07: el siguiente contrato no debe ser `AI -> query string`; debe ser `AI -> SearchPlanV1`. Ver `search-plan-engine.md` y `specs/005-search-plan-engine/spec.md`.
-
-Hardening 2026-06-06: el runner Node tiene timeout de 30s desde Rust y la UI muestra una linea discreta con query interpretada, explicacion y warnings. Tests visuales mock cubren que `ai:` muestre interpretacion y que Enter siga activando el item seleccionado despues de ejecutar la busqueda AI.
+Estado historico 2026-06-06: `history_search(mode: "ai")` implemento el primer
+planner manual con Vercel AI SDK + Zod. Desde 2026-09-18 el picker no lo usa como
+entrada visible: `ai:` y `Ctrl+I` despachan al asistente general, que puede llamar
+`picker_filter` con una query deterministica. El planner anterior permanece por
+compatibilidad interna mientras se completa el cutover de contratos no UI.
 
 Hardening adicional 2026-06-06: errores del runner quedan normalizados como una linea `[AI_PLANNER_ERROR] ...` redacted. Rust clasifica esos errores antes de agregarlos a `HistoryPage.warnings`, asi la UI no muestra stacks, `ZodError`, code frames ni payload/input. Para tests sin red, el runner acepta `COPICU_AI_PLANNER_MOCK_PLAN` y `npm run ai:planner:test` valida happy path + fallo de schema redacted.
 

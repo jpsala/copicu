@@ -2,7 +2,7 @@
 
 Estado vivo del proyecto. Mantener corto; no usar como transcript.
 
-Ultima actualizacion manual: 2026-09-18. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
+Ultima actualizacion manual: 2026-09-24. Archivo largo previo: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`.
 
 ## Regla
 
@@ -12,9 +12,9 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 
 - **Estado:** `prototype/dogfood`; iteración de UI en Dev.
 - **Referencia:** `specs/013-conversational-assistant/spec.md`.
-- **Resultado:** foco/refresh corregidos; transformaciones locales con read-back seguro. Check falso/reporte inválido detiene el turno; no implica rollback.
+- **Resultado:** foco/refresh corregidos; transformaciones locales con read-back seguro. El picker despacha `ai:` y `Ctrl+I` al asistente general con contexto preservado; `picker_filter` confirma la búsqueda aplicada o devuelve error. Claves legacy ligadas al host HTTPS exacto, transferencia entre endpoints bloqueada hasta Reset y compatibilidad `reasoning_details` reparada.
 - **Operación:** `npm run assistant:smoke`; checks nativos ocultos con `npm run dev:background`. Conservar el mismo perfil al reiniciar Dev para dogfood.
-- **Siguiente acción:** dogfood del corte instalado `v0.4.22`. Foco nativo de la extensión y clipboard no se dan por verificados.
+- **Siguiente acción:** dogfood del quick prompt y la búsqueda filtrada en el corte instalado indicado por `README.md`. Foco nativo de la extensión y clipboard no se dan por verificados.
 
 ## Lectura Rapida
 
@@ -28,7 +28,7 @@ Router operativo corto. Si un detalle crece, moverlo a topic, track, spec o refe
 | Future workflows | parked | `docs/tracks/019-paste-queue.md`, `docs/tracks/020-secure-clips-password.md` | Discutir antes de implementar: Paste Queue y secure clips con metadata `@pass`. |
 | Search / AI / metadata | complete/dogfood | `specs/011-selection-aware-metadata-inspector/spec.md`, `docs/topics/filtering-and-query-syntax.md` | `F2` unifica content + metadata con commit atómico; utility standalone conserva single/multi. Continuar dogfood del corte distribuido sin cambiar Search/Find. |
 | Performance/UI windows | active | `docs/tracks/014-performance-memory.md`, `docs/topics/custom-window-system.md`, `docs/topics/ui-surface-architecture.md`, `docs/topics/window-state-and-monitor-policy.md` | UI modularizada; proximo split seguro: `UiHostApp`; revisar `LastMonitor` si importa. |
-| Open source/release | active | `docs/topics/windows-installer.md` | `v0.4.22` publicada e instalada con updater firmado; continuar dogfood sin atribuirle el hang intermitente. |
+| Open source/release | active | `docs/topics/windows-installer.md` | Consultar el release instalado en `README.md`; continuar dogfood sin atribuirle el hang intermitente. |
 | Picker dogfood / Computer Use | active | `tests/manual/dogfood/README.md`, `docs/topics/picker-interaction.md`, `docs/topics/omp-agentic-os.md` | Mantener oracle C0: app externa -> hotkey foreground -> type foreground sin focus manual escribe en search; AX no basta para WebView2. |
 | OS / sistema agentic | active | `docs/topics/docs-knowledge-system.md`, `docs/topics/agentic-os-operations.md`, `docs/topics/omp-agentic-os.md` | AOS conserva contexto durable y gates locales; OMP gobierna la ejecución; `computer` se conserva como binding local de dogfood. |
 

@@ -1615,6 +1615,25 @@ fn picker_focus_ack(
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "picker_focus_ack")?;
     session.acknowledge_focus(&request.request_id, request.item_id, request.ok)
 }
+#[cfg(not(test))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PickerFilterAckRequest {
+    request_id: String,
+    query: String,
+    error: Option<String>,
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn picker_filter_ack(
+    window: tauri::WebviewWindow,
+    session: tauri::State<PickerSessionController>,
+    request: PickerFilterAckRequest,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "picker_filter_ack")?;
+    session.acknowledge_filter(&request.request_id, &request.query, request.error)
+}
 
 #[cfg(not(test))]
 #[tauri::command]
@@ -1726,6 +1745,30 @@ fn open_assistant_window(
     if let Some(context) = context {
         state.update_context(context)?;
     }
+    spawn_open_assistant_window(app);
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn assistant_quick_prompt(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: State<'_, assistant::AssistantState>,
+    storage: State<'_, storage::AppStorage>,
+    text: String,
+    context: assistant::AssistantContext,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "assistant_quick_prompt")?;
+    state.update_context(context)?;
+    state.send(
+        app.clone(),
+        storage.inner().clone(),
+        assistant::AssistantSendRequest {
+            text,
+            picker_quick_prompt: true,
+        },
+    )?;
     spawn_open_assistant_window(app);
     Ok(())
 }
@@ -3779,6 +3822,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_assistant_window,
+            assistant_quick_prompt,
             assistant::assistant_update_context,
             assistant::assistant_snapshot,
             assistant::assistant_list_models,
@@ -3814,6 +3858,7 @@ pub fn run() {
             quit_app,
             consume_picker_session_snapshot,
             picker_focus_ack,
+            picker_filter_ack,
             open_settings_window,
             open_scenario_settings,
             open_saved_views_settings,

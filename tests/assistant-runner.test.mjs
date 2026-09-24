@@ -184,6 +184,27 @@ test("continues tool use with ordered opaque reasoning state without displaying 
   assert.equal(result.lines.filter((line) => line.kind === "delta").map((line) => line.text).join(""), "Continuation accepted");
 });
 
+test("adds empty reasoning details to persisted GPT-OSS assistant messages", async () => {
+  const messages = [
+    { role: "user", content: "Earlier request" },
+    { role: "assistant", content: "Earlier answer" },
+    { role: "user", content: "Continue" },
+  ];
+  const result = await scenario((request) => {
+    const priorAssistant = request.messages.find((message) => message.content === "Earlier answer");
+    return Object.hasOwn(priorAssistant, "reasoning_details")
+      && Array.isArray(priorAssistant.reasoning_details)
+      ? [delta("Continuation accepted"), finish()]
+      : [event({ error: { message: "reasoning_details is required" } })];
+  }, {
+    messages,
+    start: { model: "openai/gpt-oss-120b" },
+  });
+
+  assert.equal(result.code, 0);
+  assert.equal(result.lines.filter((line) => line.kind === "delta").map((line) => line.text).join(""), "Continuation accepted");
+});
+
 test("keeps all parallel tool replies before actual image input and omits image bytes from saved history", async () => {
   const image = "data:image/png;base64,iVBORw0KGgo=";
   const result = await scenario([

@@ -214,7 +214,7 @@ Nota 2026-06-07: `npm run rust:test` compila pero falla al arrancar el binario c
 
 ## Decision De Producto
 
-La busqueda poderosa arranca deterministica. AI debe ser un traductor/ayudante arriba de este contrato, no el motor primario.
+La búsqueda poderosa arranca determinística. El asistente puede traducir o explicar intención, pero el picker aplica filtros mediante `picker_filter` y el contrato local; el modelo no es el motor primario.
 
 Razon:
 
@@ -222,7 +222,7 @@ Razon:
 - menor costo;
 - funciona offline;
 - facilita debug;
-- el futuro AI planner puede emitir un plan validado en vez de tocar SQL o ejecutar comandos.
+- el asistente puede emitir una query validada mediante `picker_filter` sin tocar SQL ni ejecutar comandos desde la superficie de búsqueda.
 
 ## Proximo Corte Recomendado
 

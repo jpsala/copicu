@@ -434,6 +434,7 @@ type OpenedSavedView = {
 
 type PickerFilterEvent = {
   query: string;
+  requestId?: string;
   view?: Omit<OpenedSavedView, "query">;
 };
 
@@ -734,10 +735,9 @@ function historySearchInput(
       mode: "ai",
     };
   }
-  void forceAi;
   return {
     query: trimmed,
-    mode: "structured",
+    mode: forceAi && trimmed ? "ai" : "structured",
   };
 }
 
@@ -938,6 +938,7 @@ function openMetadataWindow(itemIds: number[], focusTarget: MetadataFocusTarget)
 function openAssistantWindow(context?: AssistantContext) {
   return invoke<boolean>("open_assistant_window", context ? { context } : undefined);
 }
+
 
 function updateAssistantContext(context: AssistantContext) {
   return invoke<void>("assistant_update_context", { context });
@@ -1536,6 +1537,7 @@ function App() {
     index: number;
     offset: number;
   } | null>(null);
+  const pendingSelectionRevealItemIdRef = useRef<number | null>(null);
   const previousDetailsSelectedIdRef = useRef(selectedItemId);
   const captureAppearanceAnchor = useCallback(() => {
     const scrollElement = historyScrollRef.current;
@@ -1568,12 +1570,20 @@ function App() {
     if (!scrollElement || !(row instanceof HTMLElement)) return null;
     const viewportRect = scrollElement.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
-    if (rowRect.bottom <= viewportRect.top || rowRect.top >= viewportRect.bottom) return null;
+    if (rowRect.top < viewportRect.top || rowRect.bottom > viewportRect.bottom) return null;
     return {
       id: itemId,
       index,
       offset: rowRect.top - viewportRect.top,
     };
+  }, []);
+  const historyRowIsFullyVisible = useCallback((itemId: number) => {
+    const scrollElement = historyScrollRef.current;
+    const row = document.getElementById(`history-item-${itemId}`);
+    if (!scrollElement || !(row instanceof HTMLElement)) return false;
+    const viewportRect = scrollElement.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    return rowRect.top >= viewportRect.top + 4 && rowRect.bottom <= viewportRect.bottom - 4;
   }, []);
 
 
@@ -1701,6 +1711,44 @@ function App() {
     frame = window.requestAnimationFrame(settleDetailsAnchor);
     return () => window.cancelAnimationFrame(frame);
   }, [displayedHistory, rowVirtualizer, selectedItemId, settings.appearance.itemDetails]);
+
+  useLayoutEffect(() => {
+    if (
+      selectedItemId === null
+      || pendingSelectionRevealItemIdRef.current !== selectedItemId
+    ) return undefined;
+    const selectedIndex = displayedHistory.findIndex((item) => item.id === selectedItemId);
+    if (selectedIndex < 0) return undefined;
+    pendingSelectionRevealItemIdRef.current = null;
+
+    let frame = 0;
+    let remainingCorrections = 6;
+    const revealSelectedRow = () => {
+      const scrollElement = historyScrollRef.current;
+      if (!scrollElement) return;
+      const selectedRow = document.getElementById(`history-item-${selectedItemId}`);
+      if (!(selectedRow instanceof HTMLElement)) {
+        rowVirtualizer.scrollToIndex(selectedIndex, { align: "auto" });
+      } else {
+        rowVirtualizer.measureElement(selectedRow);
+        const viewportRect = scrollElement.getBoundingClientRect();
+        const rowRect = selectedRow.getBoundingClientRect();
+        const viewportTop = viewportRect.top + 4;
+        const viewportBottom = viewportRect.bottom - 4;
+        if (rowRect.height > viewportBottom - viewportTop || rowRect.top < viewportTop) {
+          scrollElement.scrollTop -= viewportTop - rowRect.top;
+        } else if (rowRect.bottom > viewportBottom) {
+          scrollElement.scrollTop += rowRect.bottom - viewportBottom;
+        }
+      }
+      if (remainingCorrections > 0) {
+        remainingCorrections -= 1;
+        frame = window.requestAnimationFrame(revealSelectedRow);
+      }
+    };
+    frame = window.requestAnimationFrame(revealSelectedRow);
+    return () => window.cancelAnimationFrame(frame);
+  }, [displayedHistory, rowVirtualizer, selectedItemId]);
 
   useLayoutEffect(() => {
     const anchor = retainedScrollAnchorRef.current;
@@ -3293,6 +3341,7 @@ function App() {
       queryOverride = null,
       allowAi = true,
       applyDefaultScope = true,
+      forceStructured = false,
       source = "foreground",
       descriptorOverride = null,
     }: {
@@ -3302,13 +3351,14 @@ function App() {
       queryOverride?: string | null;
       allowAi?: boolean;
       applyDefaultScope?: boolean;
+      forceStructured?: boolean;
       source?: "foreground" | "background";
       descriptorOverride?: AppliedSearchDescriptor | null;
     } = {}) => {
       const trimmed = (queryOverride ?? query).trim();
       if (
         source === "foreground"
-        && !aiComposerMode
+        && (!aiComposerMode || forceStructured)
         && (() => {
           const classification = classifyStructuredSearchDraft(trimmed);
           return classification.kind === "incomplete" || classification.kind === "invalid";
@@ -3316,7 +3366,7 @@ function App() {
       ) {
         return;
       }
-      const originalSearchInput = historySearchInput(trimmed, aiComposerMode);
+      const originalSearchInput = historySearchInput(trimmed, aiComposerMode && !forceStructured);
       let searchInput = originalSearchInput;
       const appliedDescriptorForRequest = descriptorOverride
         ?? (source === "background" ? appliedDescriptorRef.current : null);
@@ -3785,6 +3835,7 @@ function App() {
         historyScrollRef.current?.scrollTo({ top: 0 });
       }
       void refreshMarkedCount().catch(() => undefined);
+      return true;
     },
     [
       aiComposerMode,
@@ -4033,12 +4084,29 @@ function App() {
       setSelectionMenuOpen(false);
       setSelectedItemId(null);
       selectionAnchorItemIdRef.current = null;
+      const acknowledge = (error: string | null) => event.payload.requestId
+        ? invoke<void>("picker_filter_ack", {
+            request: { requestId: event.payload.requestId, query: nextQuery, error },
+          }).catch(() => undefined)
+        : Promise.resolve();
       void pickerEventHandlersRef.current.refreshHistory({
         resetScroll: true,
         queryOverride: nextQuery,
         allowAi: false,
         applyDefaultScope: !nextView,
-      }).then(() => pickerEventHandlersRef.current.focusSearch());
+        forceStructured: true,
+      }).then(async (applied) => {
+        if (!active || queryRef.current !== nextQuery) {
+          await acknowledge("picker filter was superseded by newer interaction");
+        } else if (applied !== true) {
+          await acknowledge("picker filter query was invalid or could not be applied");
+        } else {
+          await acknowledge(null);
+          pickerEventHandlersRef.current.focusSearch();
+        }
+      }).catch((error) => {
+        void acknowledge(String(error));
+      });
     }).then((nextUnlisten) => {
       if (active) unlisten = nextUnlisten;
       else nextUnlisten();
@@ -4192,13 +4260,14 @@ function App() {
       && itemId !== null
       && itemId !== selectedItemIdRef.current
     ) {
-      pendingDetailsAnchorRef.current =
-        captureRowAnchor(itemId, index) ?? captureAppearanceAnchor();
+      pendingDetailsAnchorRef.current = captureRowAnchor(itemId, index);
     }
+    pendingSelectionRevealItemIdRef.current =
+      itemId !== null && !historyRowIsFullyVisible(itemId) ? itemId : null;
     selectedItemIdRef.current = itemId;
     setSelectedItemId(itemId);
     selectionAnchorItemIdRef.current = itemId;
-  }, [captureAppearanceAnchor, captureRowAnchor, history, settings.appearance.itemDetails]);
+  }, [captureRowAnchor, history, historyRowIsFullyVisible, settings.appearance.itemDetails]);
 
   const focusLoadedPickerItem = useCallback((index: number) => {
     // Native refresh can update the ref before React commits the new row callbacks.
@@ -4242,14 +4311,15 @@ function App() {
       settings.appearance.itemDetails === "selectedOnly"
       && history[nextIndex].id !== selectedItemIdRef.current
     ) {
-      pendingDetailsAnchorRef.current =
-        captureRowAnchor(history[nextIndex].id, nextIndex) ?? captureAppearanceAnchor();
+      pendingDetailsAnchorRef.current = captureRowAnchor(history[nextIndex].id, nextIndex);
     }
+    pendingSelectionRevealItemIdRef.current =
+      historyRowIsFullyVisible(history[nextIndex].id) ? null : history[nextIndex].id;
     selectedItemIdRef.current = history[nextIndex].id;
     selectedIdsRef.current = nextSelection;
     setSelectedItemId(history[nextIndex].id);
     setSelectedIds(nextSelection);
-  }, [captureAppearanceAnchor, captureRowAnchor, history, selectedIndex, settings.appearance.itemDetails]);
+  }, [captureRowAnchor, history, historyRowIsFullyVisible, selectedIndex, settings.appearance.itemDetails]);
 
   const setVisibleSelection = useCallback((selected: boolean) => {
     selectionInteractionSeqRef.current += 1;
@@ -5782,7 +5852,7 @@ function App() {
   ]);
 
   const isFilteringHistory = effectiveSearchTriggerMode === "realtime" && !historyMatchesQuery && !aiDraftActive;
-  const feedLoading = isFilteringHistory || historyPending || historyLoadingMore || aiPlanning;
+  const feedLoading = searchState.applied === null || isFilteringHistory || historyPending || historyLoadingMore || aiPlanning;
 
   useEffect(() => {
     if (!feedLoading) {
@@ -5844,13 +5914,13 @@ function App() {
       return "Clearing filter";
     }
     if (aiPlanning) {
-      return "AI planning";
+      return "Opening assistant";
     }
     if (scenarioCommandQuery !== null) {
       return scenarioCommandOptions.length > 0 ? "Choose capture mode" : "No matching capture mode";
     }
     if (aiDraftActive) {
-      return "AI draft";
+      return "Assistant prompt";
     }
     if (!historyMatchesQuery) {
       if (structuredSearchFeedback) {
@@ -5940,7 +6010,32 @@ function App() {
   const markedActionCount = markedTotalCount ?? markedActionItems?.length ?? 0;
   const loadedResultCount = history.length;
   const allResultCount = historyFilteredCount ?? history.length;
+  const submitAssistantQuickPrompt = useCallback(async () => {
+    const prompt = historySearchInput(query, aiComposerMode);
+    if (prompt.mode !== "ai" || !prompt.query) return;
+    setAiPlanning(true);
+    setActionError(null);
+    try {
+      await invoke<void>("assistant_quick_prompt", {
+        text: prompt.query,
+        context: assistantContextRef.current,
+      });
+      queryRef.current = "";
+      setQuery("");
+      supersedeSearchIntent("", "idle");
+    } catch (error) {
+      setActionError(String(error));
+      focusSearch();
+    } finally {
+      setAiPlanning(false);
+    }
+  }, [aiComposerMode, focusSearch, query, supersedeSearchIntent]);
   const runSearchNow = useCallback(() => {
+    const searchInput = historySearchInput(query, aiComposerMode);
+    if (searchInput.mode === "ai") {
+      void submitAssistantQuickPrompt();
+      return;
+    }
     if (!aiComposerMode && (structuredSearchDraft.kind === "incomplete" || structuredSearchDraft.kind === "invalid")) {
       const error = structuredSearchDraft.message ?? "Complete the structured filter before applying.";
       setHistoryPending(false);
@@ -5969,7 +6064,7 @@ function App() {
       searchDebounceTimerRef.current = null;
     }
     void refreshHistory({ resetScroll: true, allowAi: true });
-  }, [aiComposerMode, closeFind, query, refreshHistory, searchTriggerMode, structuredSearchDraft]);
+  }, [aiComposerMode, closeFind, query, refreshHistory, searchTriggerMode, structuredSearchDraft, submitAssistantQuickPrompt]);
   const toggleFilterLock = useCallback(() => {
     const nextLocked = !filterLockedRef.current;
     if (nextLocked) {
@@ -6112,14 +6207,21 @@ function App() {
     setAiPlanning(false);
     setActionError(null);
     setSearchInterpretation(null);
-    setSelectedItemId(null);
-    selectedItemIdRef.current = null;
-    setSelectionMenuOpen(false);
-    setSelectedIds(new Set());
-    selectedIdsRef.current = new Set();
-    selectionInteractionSeqRef.current += 1;
-    selectionAnchorItemIdRef.current = null;
+    const normalizedDraft = nextQuery.trimStart().toLocaleLowerCase();
+    const preservesAssistantContext = aiComposerMode
+      || "ai:".startsWith(normalizedDraft)
+      || normalizedDraft.startsWith("ai:");
+    if (!preservesAssistantContext) {
+      setSelectedItemId(null);
+      selectedItemIdRef.current = null;
+      setSelectionMenuOpen(false);
+      setSelectedIds(new Set());
+      selectedIdsRef.current = new Set();
+      selectionInteractionSeqRef.current += 1;
+      selectionAnchorItemIdRef.current = null;
+    }
   }, [
+    aiComposerMode,
     historyInputQuery,
     leaveOpenedSavedView,
     openedSavedView,
@@ -6386,18 +6488,17 @@ function App() {
     className: "search-input",
     variant: "unstyled" as const,
     role: "textbox" as const,
-    "aria-label": "Ask Copicu AI",
+    "aria-label": "Ask Copicu Assistant",
     "aria-autocomplete": "none" as const,
     value: query,
-    placeholder: "Ask Copicu AI",
-    title:
-      'Ask Copicu AI to search: plain language is converted to a structured query before filtering.',
+    placeholder: "Search, ask, or act on your clips…",
+    title: "Send one prompt to Copicu Assistant with the current picker context.",
     onChange: (event: ChangeEvent<HTMLTextAreaElement>) => handleQueryChange(event.currentTarget.value),
     onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
         return;
       }
-      if (event.key === "Enter") {
+      if (event.key === "Enter" && !event.shiftKey) {
         handleSearchSubmit(event.nativeEvent);
         return;
       }
@@ -6790,12 +6891,12 @@ function App() {
               type="button"
               className="composer-run-button"
               variant="filled"
-              aria-label={aiComposerMode ? "Search" : "Apply search"}
+              aria-label={aiComposerMode ? "Send to assistant" : "Apply search"}
               disabled={scenarioCommandQuery !== null || historyPending || aiPlanning || (historyMatchesQuery && !aiDraftActive)}
               onMouseDown={(event) => event.preventDefault()}
               onClick={runSearchNow}
             >
-              {aiComposerMode ? "Search" : "Apply"}
+              {aiComposerMode ? "Ask" : "Apply"}
             </UiButton>
           ) : null}
           <UiBadge
@@ -8331,10 +8432,10 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
           </section>
 
           <section>
-            <h3>AI search</h3>
+            <h3>Assistant quick prompt</h3>
             <dl>
-              <div><dt><code>ai:find invoices from last week</code></dt><dd>Ask AI to translate intent into local search/actions.</dd></div>
-              <div><dt><code>Ctrl+I</code></dt><dd>Toggle AI composer mode.</dd></div>
+              <div><dt><code>ai:find invoices from last week</code></dt><dd>Send one contextual turn to the assistant. It can filter the picker, answer, or use product tools.</dd></div>
+              <div><dt><code>Ctrl+I</code></dt><dd>Open the multiline assistant prompt. Enter sends; Shift+Enter adds a line.</dd></div>
             </dl>
           </section>
 

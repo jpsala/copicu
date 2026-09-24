@@ -13,7 +13,9 @@ const AI_MARKDOWN_SUMMARY_SCRIPT: &str = "ai-markdown-summary.mjs";
 const COPICU_AI_API_KEY_ENV: &str = "COPICU_AI_API_KEY";
 const COPICU_AI_ENDPOINT_ENV: &str = "COPICU_AI_ENDPOINT";
 const COPICU_AI_MODEL_ENV: &str = "COPICU_AI_MODEL";
-const LEGACY_AI_KEY_ENV_VARS: &[&str] = &["GROQ_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY"];
+const GROQ_API_KEY_ENV: &str = "GROQ_API_KEY";
+const OPENROUTER_API_KEY_ENV: &str = "OPENROUTER_API_KEY";
+const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 const AI_QUERY_PLANNER_TIMEOUT: Duration = Duration::from_secs(8);
 const AI_SCRIPT_PLANNER_TIMEOUT: Duration = Duration::from_secs(12);
 const AI_MARKDOWN_SUMMARY_TIMEOUT: Duration = Duration::from_secs(20);
@@ -604,7 +606,7 @@ pub(crate) fn resolve_ai_runtime_settings(
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| settings.model.trim().to_string());
-    let api_key = read_configured_ai_key(settings, project_root)?;
+    let api_key = read_configured_ai_key(settings, &endpoint, project_root)?;
 
     Ok(AiRuntimeSettings {
         endpoint,
@@ -615,11 +617,12 @@ pub(crate) fn resolve_ai_runtime_settings(
 
 fn read_configured_ai_key(
     settings: &crate::storage::AiSettings,
+    endpoint: &str,
     project_root: &std::path::Path,
 ) -> Result<String, String> {
     api_key_from_sources(
         read_env_var_or_project_dotenv(COPICU_AI_API_KEY_ENV, project_root).ok(),
-        read_legacy_ai_key(project_root).ok(),
+        read_legacy_ai_key(endpoint, project_root).ok(),
         &settings.api_key,
     )
 }
@@ -651,13 +654,23 @@ fn api_key_from_sources(
     Err(format!("AI API key is not set: {COPICU_AI_API_KEY_ENV}"))
 }
 
-fn read_legacy_ai_key(project_root: &std::path::Path) -> Result<String, String> {
-    for env_var in LEGACY_AI_KEY_ENV_VARS {
-        if let Ok(value) = read_env_var_or_project_dotenv(env_var, project_root) {
-            return Ok(value);
-        }
+fn legacy_key_env_for_endpoint(endpoint: &str) -> Option<&'static str> {
+    let url = tauri::Url::parse(endpoint).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return None;
     }
-    Err(format!("AI API key is not set: {COPICU_AI_API_KEY_ENV}"))
+    match url.host_str()? {
+        "openrouter.ai" => Some(OPENROUTER_API_KEY_ENV),
+        "api.groq.com" => Some(GROQ_API_KEY_ENV),
+        "api.openai.com" => Some(OPENAI_API_KEY_ENV),
+        _ => None,
+    }
+}
+
+fn read_legacy_ai_key(endpoint: &str, project_root: &std::path::Path) -> Result<String, String> {
+    let env_var = legacy_key_env_for_endpoint(endpoint)
+        .ok_or_else(|| format!("AI API key is not set: {COPICU_AI_API_KEY_ENV}"))?;
+    read_env_var_or_project_dotenv(env_var, project_root)
 }
 
 fn read_env_var_or_project_dotenv(
@@ -800,6 +813,35 @@ COPICU_AI_API_KEY=synthetic-active
             api_key_from_sources(None, Some(" synthetic-legacy-key ".to_string()), " ").as_deref(),
             Ok("synthetic-legacy-key")
         );
+    }
+
+    #[test]
+    fn legacy_ai_keys_are_bound_to_the_configured_provider() {
+        assert_eq!(
+            legacy_key_env_for_endpoint("https://openrouter.ai/api/v1"),
+            Some("OPENROUTER_API_KEY")
+        );
+        assert_eq!(
+            legacy_key_env_for_endpoint("https://api.groq.com/openai/v1"),
+            Some("GROQ_API_KEY")
+        );
+        assert_eq!(
+            legacy_key_env_for_endpoint("https://api.openai.com/v1"),
+            Some("OPENAI_API_KEY")
+        );
+        assert_eq!(
+            legacy_key_env_for_endpoint("https://example.invalid/v1"),
+            None
+        );
+        for endpoint in [
+            "https://openrouter.ai.example.invalid/v1",
+            "https://example.invalid/openrouter.ai/api/v1",
+            "https://openrouter.ai@evil.invalid/v1",
+            "http://openrouter.ai/api/v1",
+            "https://api.groq.com.evil.invalid/v1",
+        ] {
+            assert_eq!(legacy_key_env_for_endpoint(endpoint), None, "{endpoint}");
+        }
     }
 
     #[test]

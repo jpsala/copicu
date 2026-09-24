@@ -5,6 +5,7 @@ use std::sync::{
 use std::time::Duration;
 
 static NEXT_FOCUS_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_FILTER_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Default)]
 struct PickerSessionState {
@@ -12,11 +13,17 @@ struct PickerSessionState {
     generation: u64,
     pending_activation_item_id: Option<i64>,
     focus: Option<PickerFocusRequest>,
+    filter: Option<PickerFilterRequest>,
 }
 
 struct PickerFocusRequest {
     id: String,
     item_id: i64,
+    result: Option<Result<(), String>>,
+}
+struct PickerFilterRequest {
+    id: String,
+    query: String,
     result: Option<Result<(), String>>,
 }
 
@@ -152,6 +159,83 @@ impl PickerSessionController {
         state.focus = None;
         result
     }
+    pub(crate) fn begin_filter(&self, query: String) -> String {
+        let id = format!(
+            "picker-filter-{}",
+            NEXT_FILTER_REQUEST_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let mut state = self.state.0.lock().expect("picker session mutex poisoned");
+        state.filter = Some(PickerFilterRequest {
+            id: id.clone(),
+            query,
+            result: None,
+        });
+        self.state.1.notify_all();
+        id
+    }
+
+    pub(crate) fn fail_filter(&self, request_id: &str, error: String) {
+        if let Ok(mut state) = self.state.0.lock() {
+            if let Some(request) = state
+                .filter
+                .as_mut()
+                .filter(|request| request.id == request_id)
+            {
+                request.result = Some(Err(error));
+                self.state.1.notify_all();
+            }
+        }
+    }
+
+    pub(crate) fn acknowledge_filter(
+        &self,
+        request_id: &str,
+        query: &str,
+        error: Option<String>,
+    ) -> Result<(), String> {
+        let mut state = self
+            .state
+            .0
+            .lock()
+            .map_err(|_| "picker session mutex poisoned".to_string())?;
+        let request = state
+            .filter
+            .as_mut()
+            .filter(|request| request.id == request_id && request.query == query)
+            .ok_or_else(|| "picker filter request is stale".to_string())?;
+        request.result = Some(error.map_or(Ok(()), Err));
+        self.state.1.notify_all();
+        Ok(())
+    }
+
+    pub(crate) fn wait_for_filter(&self, request_id: &str) -> Result<(), String> {
+        let state = self
+            .state
+            .0
+            .lock()
+            .map_err(|_| "picker session mutex poisoned".to_string())?;
+        let (mut state, _) = self
+            .state
+            .1
+            .wait_timeout_while(state, Duration::from_secs(15), |state| {
+                state
+                    .filter
+                    .as_ref()
+                    .is_some_and(|request| request.id == request_id && request.result.is_none())
+            })
+            .map_err(|_| "picker filter wait failed".to_string())?;
+        let request = state
+            .filter
+            .as_mut()
+            .filter(|request| request.id == request_id)
+            .ok_or_else(|| "picker filter request was superseded".to_string())?;
+        let result = request
+            .result
+            .take()
+            .unwrap_or_else(|| Err("picker filter renderer acknowledgement timed out".to_string()));
+        state.filter = None;
+        result
+    }
 }
 
 #[cfg(test)]
@@ -198,5 +282,26 @@ mod tests {
         let request = session.begin_focus(41);
         session.acknowledge_focus(&request, 41, false).unwrap();
         assert!(session.wait_for_focus(&request).is_err());
+    }
+    #[test]
+    fn filter_ack_requires_matching_request_and_applied_result() {
+        let session = PickerSessionController::default();
+        let stale = session.begin_filter("type:text".to_string());
+        let current = session.begin_filter("re:(".to_string());
+        assert!(session
+            .acknowledge_filter(&stale, "type:text", None)
+            .is_err());
+        assert!(session.wait_for_filter(&stale).is_err());
+        assert!(session
+            .acknowledge_filter(&current, "type:text", None)
+            .is_err());
+        session
+            .acknowledge_filter(&current, "re:(", Some("invalid query".to_string()))
+            .unwrap();
+        assert_eq!(
+            session.wait_for_filter(&current).unwrap_err(),
+            "invalid query"
+        );
+        assert!(session.acknowledge_filter(&current, "re:(", None).is_err());
     }
 }

@@ -4,6 +4,28 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.4.23] - 2026-09-24
+
+### Added
+
+- Send `ai:` queries or a `Ctrl+I` multiline prompt from the picker to the
+  conversational assistant with the current selection and visible context.
+- Let the assistant apply deterministic local picker filters, with renderer
+  acknowledgement before reporting success and explicit rejection of invalid
+  or superseded queries.
+
+### Fixed
+
+- Keep the initial picker feed in a loading state until its first history
+  response, and remove the floating frame entrance animation.
+- Reveal the selected history row after keyboard navigation without jumping
+  the scroll anchor.
+- Match legacy provider keys only to their exact HTTPS host and require a new
+  conversation before a changed endpoint can receive previous messages.
+- Preserve GPT-OSS/OpenRouter/Groq conversation compatibility by supplying
+  missing `reasoning_details` without replacing existing reasoning.
+
+
 ## [0.4.22] - 2026-09-18
 
 
@@ -267,6 +289,7 @@ All notable changes to Copicu are documented here.
 - Made metadata editing target the last item activated with `Enter` after the picker hides and resets.
 - Restored reliable initial focus for the metadata input.
 
+[0.4.23]: https://github.com/jpsala/copicu/releases/tag/v0.4.23
 [0.4.22]: https://github.com/jpsala/copicu/releases/tag/v0.4.22
 [0.4.21]: https://github.com/jpsala/copicu/releases/tag/v0.4.21
 [0.4.20]: https://github.com/jpsala/copicu/releases/tag/v0.4.20

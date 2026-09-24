@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.22](https://github.com/jpsala/copicu/releases/tag/v0.4.22)
-- Asset: `Copicu_0.4.22_x64-setup.exe`
+- [v0.4.23](https://github.com/jpsala/copicu/releases/tag/v0.4.23)
+- Asset: `Copicu_0.4.23_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `8BAAE916ADE2E2339C6E933AA38B5A5CFDAED96BF2B85816BD1A2A043E46815E`
+- SHA256: `A1410D6FA8D942DA46BD1C29793BF693A97695E2748E56FB20BAB2930ED7B7C2`
 
-Adds the standalone conversational assistant with picker context, persistent chat, model and reasoning controls, read-only SQL, and verified local action reports. Adds Add to Inbox to item context menus. API credentials are not bundled; configure them locally in Settings > AI or through COPICU_AI_API_KEY.
+Copicu v0.4.23 adds contextual picker assistant prompts, acknowledged local filters, and endpoint-isolated credentials and conversations.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
