@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.23](https://github.com/jpsala/copicu/releases/tag/v0.4.23)
-- Asset: `Copicu_0.4.23_x64-setup.exe`
+- [v0.4.24](https://github.com/jpsala/copicu/releases/tag/v0.4.24)
+- Asset: `Copicu_0.4.24_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `A1410D6FA8D942DA46BD1C29793BF693A97695E2748E56FB20BAB2930ED7B7C2`
+- SHA256: `129456E941D05F79CC79CC032E0CDA533776399F3607FFF07F5B003893C3B393`
 
-Copicu v0.4.23 adds contextual picker assistant prompts, acknowledged local filters, and endpoint-isolated credentials and conversations.
+Picker reopening conceals cached history until the current clipboard snapshot loads.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
