@@ -544,6 +544,7 @@ const COMPOUND_HOTKEY_PENDING_EVENT = "copicu://hotkeys/compound-pending";
 const COMMAND_PALETTE_OPEN_EVENT = "copicu://command-palette/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
+const PICKER_HIDDEN_EVENT = "copicu://picker/hidden";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
 const PICKER_FOCUS_EVENT = "copicu://picker/focus";
 const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
@@ -1373,6 +1374,19 @@ function App() {
   const compoundHotkeyArmedAtRef = useRef(0);
   const whichKeyRevealTimerRef = useRef<number | null>(null);
   const pickerWasHiddenRef = useRef(false);
+  const reopenGenerationRef = useRef(0);
+  const [reopenReadyGeneration, setReopenReadyGeneration] = useState(0);
+  const markPickerHidden = useCallback(() => {
+    if (pickerWasHiddenRef.current && document.documentElement.dataset.pickerHistoryStale === "true") return;
+    pickerWasHiddenRef.current = true;
+    reopenGenerationRef.current += 1;
+    document.documentElement.dataset.pickerHistoryStale = "true";
+  }, []);
+  useLayoutEffect(() => {
+    if (reopenReadyGeneration === reopenGenerationRef.current) {
+      delete document.documentElement.dataset.pickerHistoryStale;
+    }
+  }, [reopenReadyGeneration, history]);
   const filterLockedRef = useRef(filterLocked);
   const activeScenarioSessionRef = useRef<ActiveScenarioSession | null>(activeScenarioSession);
   const fullContentFetchIdsRef = useRef<Set<number>>(new Set());
@@ -2841,7 +2855,7 @@ function App() {
   }, [closeTransientEditors]);
 
   const hidePickerWindow = useCallback(() => {
-    pickerWasHiddenRef.current = true;
+    markPickerHidden();
     resetPickerSession();
     void recordWindowChromeEvent("hide-picker-command-start");
     void invoke("hide_picker")
@@ -2850,7 +2864,7 @@ function App() {
         void recordWindowChromeEvent("hide-picker-command-error", String(error));
         console.warn("hide picker failed", error);
       });
-  }, [resetPickerSession]);
+  }, [markPickerHidden, resetPickerSession]);
 
   const quitCopicu = useCallback(() => {
     void recordWindowChromeEvent("quit-app-command-start");
@@ -3432,6 +3446,7 @@ function App() {
       }
       lastSearchFailureRef.current = null;
       const requestSeq = ++historyRequestSeqRef.current;
+      const reopenGeneration = reopenGenerationRef.current;
       if (foreground) {
         foregroundSearchOwnerSeqRef.current = requestSeq;
         foregroundSearchInFlightRef.current = true;
@@ -3654,6 +3669,10 @@ function App() {
         }
         historyRef.current = retainedItems;
         setHistory(retainedItems);
+        if (reopenGeneration === reopenGenerationRef.current && !pickerWasHiddenRef.current
+          && document.documentElement.dataset.pickerHistoryStale === "true") {
+          setReopenReadyGeneration(reopenGeneration);
+        }
         const retainedSelection = new Set([...selectedIdsRef.current].filter((id) => refreshedById.has(id)));
         selectedIdsRef.current = retainedSelection;
         setSelectedIds(retainedSelection);
@@ -3708,6 +3727,10 @@ function App() {
 
       historyRef.current = page.items;
       setHistory(page.items);
+      if (reopenGeneration === reopenGenerationRef.current && !pickerWasHiddenRef.current
+        && document.documentElement.dataset.pickerHistoryStale === "true") {
+        setReopenReadyGeneration(reopenGeneration);
+      }
       setHistoryNextCursor(page.nextCursor);
       historyPaginationBlockedRef.current = null;
       setHistoryPaginationBlocked(null);
@@ -3985,6 +4008,7 @@ function App() {
     refreshHistory,
     refreshAppliedHistory,
     resetPickerSession,
+    markPickerHidden,
   });
 
   useEffect(() => {
@@ -3993,8 +4017,9 @@ function App() {
       refreshHistory,
       refreshAppliedHistory,
       resetPickerSession,
+      markPickerHidden,
     };
-  }, [focusSearch, refreshAppliedHistory, refreshHistory, resetPickerSession]);
+  }, [focusSearch, markPickerHidden, refreshAppliedHistory, refreshHistory, resetPickerSession]);
 
 
   useEffect(() => {
@@ -4392,7 +4417,7 @@ function App() {
         });
         lastActivatedItemIdRef.current = item.id;
         if (effectiveActivation.hidePicker) {
-          pickerWasHiddenRef.current = true;
+          markPickerHidden();
           resetPickerSession();
         }
       } catch (error) {
@@ -4400,7 +4425,7 @@ function App() {
         focusSearch();
       }
     },
-    [focusSearch, pickerPinned, resetPickerSession, settings.picker.hideOnFocusLost],
+    [focusSearch, markPickerHidden, pickerPinned, resetPickerSession, settings.picker.hideOnFocusLost],
   );
 
   const runActionDefinition = useCallback(
@@ -5724,7 +5749,7 @@ function App() {
             return;
           }
           if (!visible) {
-            pickerWasHiddenRef.current = true;
+            pickerEventHandlersRef.current.markPickerHidden();
             return;
           }
           return pickerEventHandlersRef.current.refreshAppliedHistory({
@@ -5743,6 +5768,7 @@ function App() {
       else nextUnlisten();
     });
 
+
     const refreshOnFocus = () => {
       if (!active) {
         return;
@@ -5759,18 +5785,15 @@ function App() {
         let resetFromHost = false;
         try {
           if (!(await getCurrentWindow().isVisible())) {
-            pickerWasHiddenRef.current = true;
+            pickerEventHandlersRef.current.markPickerHidden();
             return;
           }
-          try {
-            const tags = await listTags();
+          void listTags().then((tags) => {
             if (active) {
               setKnownTagSlugs(tags.map((tag) => tag.slug));
               setPaletteTags(tags);
             }
-          } catch {
-            // History refresh remains usable when tag suggestions cannot be refreshed.
-          }
+          }).catch(() => undefined);
           const session = await consumePickerSessionSnapshot();
           resetFromHost = session.reset;
           if (session.pendingActivationItemId !== null) {
@@ -5783,7 +5806,7 @@ function App() {
           return;
         }
         if (resetFromHost) {
-          pickerWasHiddenRef.current = true;
+          pickerEventHandlersRef.current.markPickerHidden();
         }
         const pendingHiddenReset = pickerWasHiddenRef.current;
         const resetAfterHidden =
@@ -5822,6 +5845,24 @@ function App() {
       unlisten?.();
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
+    };
+  }, []);
+  useEffect(() => {
+    if (!isTauriRuntime()) return undefined;
+    let active = true;
+    let unlisten: (() => void) | null = null;
+    void listen(PICKER_HIDDEN_EVENT, () => {
+      if (!active) return;
+      const alreadyHidden = pickerWasHiddenRef.current;
+      pickerEventHandlersRef.current.markPickerHidden();
+      if (!alreadyHidden) pickerEventHandlersRef.current.resetPickerSession();
+    }).then((nextUnlisten) => {
+      if (active) unlisten = nextUnlisten;
+      else nextUnlisten();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
     };
   }, []);
 
@@ -7474,6 +7515,10 @@ function App() {
         </PickerHeader>
 
         <PickerFeed>
+          <div className="history-reopen-loading" role="status"
+            aria-label={historyError ? "Could not update clipboard history." : "Updating clipboard history"}>
+            {historyError ? "Could not update clipboard history." : "Updating clipboard history"}
+          </div>
           <div ref={historyScrollRef} className="history-feed-scroll">
             <ol
               id="clipboard-feed"

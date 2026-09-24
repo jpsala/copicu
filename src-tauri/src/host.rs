@@ -121,12 +121,7 @@ pub fn mark_used(storage: &crate::storage::AppStorage, item_id: i64) -> Result<(
 
 #[cfg(not(test))]
 pub fn hide_picker<R: Runtime>(window: &WebviewWindow<R>) -> Result<(), String> {
-    if let Some(session) = window
-        .app_handle()
-        .try_state::<crate::PickerSessionController>()
-    {
-        session.mark_transient_hidden();
-    }
+    crate::mark_picker_transient_hidden(window.app_handle());
     window
         .hide()
         .map_err(|error| format!("failed to hide picker window: {error}"))?;

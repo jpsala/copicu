@@ -1794,9 +1794,30 @@ button {
 
 
 .feed-panel {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+
+.history-reopen-loading {
+  display: none;
+}
+
+html[data-picker-history-stale="true"] .history-feed-scroll {
+  visibility: hidden;
+}
+
+html[data-picker-history-stale="true"] .history-reopen-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  background: var(--surface);
+  padding: 22px 18px;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .history-feed-scroll {

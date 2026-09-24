@@ -4578,6 +4578,10 @@ test("image double click activates the clip while the magnifier only opens previ
     await image.dblclick();
     expectedEffects.push({ cmd: "activate_item", itemId: id });
     await expect.poll(effects).toEqual(expectedEffects);
+    // A real activation hides the picker. Reopen it before checking the zoom control.
+    await page.waitForFunction(() => document.documentElement.dataset.pickerHistoryStale === "true");
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(row.locator(".feed-item")).toBeVisible();
 
     await page.getByLabel("Search clipboard history").hover();
     await expect(zoom).toHaveCSS("opacity", "0");
@@ -4876,7 +4880,6 @@ test("assistant focus clears a filtered multiselection and activates the new fir
   await gotoShell(page);
   const search = page.getByLabel("Search clipboard history");
   await search.fill("COMPOSE_DEMO");
-  await search.press("Enter");
   await expect(page.locator(".feed-item")).toHaveCount(3);
   await page.locator(".feed-item").first().click();
   const menu = await openSelectionMenu(page);
@@ -6737,6 +6740,96 @@ for (const hideTrigger of ["Escape", "hide button"] as const) {
   });
 }
 
+test("reopening after hidden capture never exposes the previous feed while refresh is delayed", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  const previousRow = page.locator(".history-feed .feed-item").first();
+  await expect(previousRow).toBeVisible();
+  await page.getByLabel("Hide Copicu").click();
+
+  const newItemText = "COPICU_SYNTH_REOPEN_FRESH";
+  await page.evaluate((text) => {
+    const runtime = window as Window & {
+      __copicuTestWindowVisible: boolean;
+      __copicuTestHistoryItems: Array<{ id: number; text: string; preview_text?: string; normalized_hash: string }>;
+      __copicuTestPickerSessionSnapshots: Array<{ reset: boolean; generation: number; pendingActivationItemId: number }>;
+      __copicuTestMockOptions: MockTauriOptions;
+    };
+    runtime.__copicuTestWindowVisible = false;
+    runtime.__copicuTestHistoryItems.unshift({
+      ...runtime.__copicuTestHistoryItems[0],
+      id: 9902,
+      text,
+      preview_text: text,
+      normalized_hash: "reopen-fresh-9902",
+    });
+    runtime.__copicuTestPickerSessionSnapshots.push({
+      reset: true,
+      generation: 1,
+      pendingActivationItemId: 9902,
+    });
+    runtime.__copicuTestMockOptions.historySearchDelayMs = 1000;
+    runtime.__copicuTestWindowVisible = true;
+    window.dispatchEvent(new Event("focus"));
+  }, newItemText);
+
+  const reopeningFrame = await page.evaluate(() => ({
+    previousRowVisible: Array.from(document.querySelectorAll<HTMLElement>(".history-feed .feed-item"))
+      .some((row) => getComputedStyle(row).visibility === "visible"),
+    loadingVisible: (() => {
+      const status = document.querySelector<HTMLElement>(".history-reopen-loading");
+      return status !== null && getComputedStyle(status).display !== "none";
+    })(),
+  }));
+  expect(reopeningFrame).toEqual({ previousRowVisible: false, loadingVisible: true });
+  await expect(page.locator("#history-item-9902")).toBeVisible();
+  await expect(page.locator(".history-feed .feed-item").first()).toContainText(newItemText);
+});
+
+test("native hide keeps stale clips concealed through a failed refresh and Retry", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+
+  const hiddenListeners = await page.evaluate(async () => {
+    const runtime = window as Window & {
+      __copicuTestWindowVisible: boolean;
+      __copicuTestHistoryItems: Array<{ id: number; text: string; preview_text?: string; normalized_hash: string }>;
+      __copicuTestPickerSessionSnapshots: Array<{ reset: boolean; generation: number; pendingActivationItemId: number }>;
+      __copicuTestMockOptions: MockTauriOptions;
+      __copicuTestEmitEvent: (name: string, payload: null) => Promise<number>;
+    };
+    runtime.__copicuTestWindowVisible = false;
+    const listeners = await runtime.__copicuTestEmitEvent("copicu://picker/hidden", null);
+    runtime.__copicuTestHistoryItems.unshift({
+      ...runtime.__copicuTestHistoryItems[0],
+      id: 9903,
+      text: "COPICU_SYNTH_NATIVE_REOPEN",
+      preview_text: "COPICU_SYNTH_NATIVE_REOPEN",
+      normalized_hash: "native-reopen-9903",
+    });
+    runtime.__copicuTestPickerSessionSnapshots.push({
+      reset: true,
+      generation: 1,
+      pendingActivationItemId: 9903,
+    });
+    runtime.__copicuTestMockOptions.historySearchFailNext = true;
+    runtime.__copicuTestWindowVisible = true;
+    window.dispatchEvent(new Event("focus"));
+    return listeners;
+  });
+  expect(hiddenListeners).toBeGreaterThan(0);
+  await expect(page.getByRole("alert")).toContainText("Synthetic history failure");
+  await expect(page.locator(".history-feed .feed-item").first()).toBeHidden();
+  await expect(page.getByRole("status", { name: "Could not update clipboard history." })).toBeVisible();
+
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.locator(".history-feed .feed-item").first()).toContainText("COPICU_SYNTH_NATIVE_REOPEN");
+  await expect(page.locator(".history-feed .feed-item").first()).toBeVisible();
+});
+
 test("capture while picker is hidden becomes the active first item on reopen", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -7249,7 +7342,7 @@ test("rapid Appearance writes stay serialized and last-write-wins", async ({ pag
 test("current Appearance failure rolls back to confirmed value with actionable error", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, {
     appearance: { density: "standard" },
-    settingsUpdateDelaySequenceMs: [80],
+    settingsUpdateDelaySequenceMs: [500],
     settingsUpdateFailureSequence: ["synthetic Appearance write failed"],
   });
   await gotoShell(page, "/?window=settings");

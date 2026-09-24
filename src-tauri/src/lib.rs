@@ -84,6 +84,8 @@ const COMMAND_PALETTE_OPEN_EVENT: &str = "copicu://command-palette/open";
 #[cfg(not(test))]
 const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
+const PICKER_HIDDEN_EVENT: &str = "copicu://picker/hidden";
+#[cfg(not(test))]
 const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
 #[cfg(not(test))]
 const SETTINGS_UPDATED_EVENT: &str = "copicu://settings/updated";
@@ -550,9 +552,7 @@ impl PickerFocusPolicy {
                     return;
                 }
 
-                if let Some(session) = reset_app.try_state::<PickerSessionController>() {
-                    session.mark_transient_hidden();
-                }
+                mark_picker_transient_hidden(&reset_app);
                 cancel_find_owner(&reset_app, MAIN_WINDOW_LABEL);
                 if let Err(error) = window.hide() {
                     eprintln!("window delayed hide on focus lost failed: {error}");
@@ -4607,6 +4607,16 @@ fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> ta
 }
 
 #[cfg(not(test))]
+pub(crate) fn mark_picker_transient_hidden<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(session) = app.try_state::<PickerSessionController>() {
+        session.mark_transient_hidden();
+    }
+    if let Err(error) = app.emit_to(MAIN_WINDOW_LABEL, PICKER_HIDDEN_EVENT, ()) {
+        eprintln!("picker hidden event failed: {error}");
+    }
+}
+
+#[cfg(not(test))]
 fn show_main_window<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     remember_previous: bool,
@@ -4776,9 +4786,7 @@ fn hide_cached_surface_on_close<R: tauri::Runtime>(window: &tauri::Window<R>) {
     }
 
     if window.label() == MAIN_WINDOW_LABEL {
-        if let Some(session) = window.app_handle().try_state::<PickerSessionController>() {
-            session.mark_transient_hidden();
-        }
+        mark_picker_transient_hidden(window.app_handle());
         cancel_find_owner(window.app_handle(), MAIN_WINDOW_LABEL);
     }
     if let Err(error) = window_focus::hide_tauri_window(window) {
