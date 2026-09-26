@@ -86,6 +86,8 @@ const PICKER_FILTER_EVENT: &str = "copicu://picker/filter";
 #[cfg(not(test))]
 const PICKER_HIDDEN_EVENT: &str = "copicu://picker/hidden";
 #[cfg(not(test))]
+const PICKER_SHOWN_EVENT: &str = "copicu://picker/shown";
+#[cfg(not(test))]
 const SETTINGS_FOCUS_SECTION_EVENT: &str = "copicu://settings/focus-section";
 #[cfg(not(test))]
 const SETTINGS_UPDATED_EVENT: &str = "copicu://settings/updated";
@@ -4643,6 +4645,7 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
         return Err("main window not found".to_string());
     };
+    let was_visible = window.is_visible().unwrap_or(false);
 
     if remember_previous {
         let previous_window = app.state::<window_focus::PreviousWindow>();
@@ -4707,6 +4710,10 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
             started.elapsed().as_millis()
         ),
     );
+    if !was_visible {
+        app.emit_to(MAIN_WINDOW_LABEL, PICKER_SHOWN_EVENT, ())
+            .map_err(|error| format!("picker shown event failed: {error}"))?;
+    }
 
     Ok(())
 }

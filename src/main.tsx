@@ -545,6 +545,7 @@ const COMMAND_PALETTE_OPEN_EVENT = "copicu://command-palette/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
 const PICKER_FILTER_EVENT = "copicu://picker/filter";
 const PICKER_HIDDEN_EVENT = "copicu://picker/hidden";
+const PICKER_SHOWN_EVENT = "copicu://picker/shown";
 const PICKER_ACTIVE_ITEM_EVENT = "copicu://picker/active-item";
 const PICKER_FOCUS_EVENT = "copicu://picker/focus";
 const METADATA_EDIT_ACTIVE_EVENT = "copicu://metadata/edit-active";
@@ -5715,6 +5716,7 @@ function App() {
 
     let active = true;
     let unlisten: (() => void) | null = null;
+    let unlistenShow: (() => void) | null = null;
     const activatePendingHistoryItem = () => {
       const itemId = pendingHistoryActivationItemIdRef.current;
       if (itemId === null) {
@@ -5769,11 +5771,11 @@ function App() {
     });
 
 
-    const refreshOnFocus = () => {
+    const refreshOnFocus = (fromNativeShow = false) => {
       if (!active) {
         return;
       }
-      if (document.visibilityState === "hidden") {
+      if (!fromNativeShow && document.visibilityState === "hidden") {
         pickerWasHiddenRef.current = true;
         return;
       }
@@ -5837,14 +5839,20 @@ function App() {
         });
       })();
     };
-    window.addEventListener("focus", refreshOnFocus);
-    document.addEventListener("visibilitychange", refreshOnFocus);
+    const refreshOnFocusEvent = () => refreshOnFocus();
+    window.addEventListener("focus", refreshOnFocusEvent);
+    document.addEventListener("visibilitychange", refreshOnFocusEvent);
+    void listen(PICKER_SHOWN_EVENT, () => refreshOnFocus(true)).then((nextUnlisten) => {
+      if (active) unlistenShow = nextUnlisten;
+      else void nextUnlisten();
+    });
 
     return () => {
       active = false;
       unlisten?.();
-      window.removeEventListener("focus", refreshOnFocus);
-      document.removeEventListener("visibilitychange", refreshOnFocus);
+      unlistenShow?.();
+      window.removeEventListener("focus", refreshOnFocusEvent);
+      document.removeEventListener("visibilitychange", refreshOnFocusEvent);
     };
   }, []);
   useEffect(() => {
