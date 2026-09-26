@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.24](https://github.com/jpsala/copicu/releases/tag/v0.4.24)
-- Asset: `Copicu_0.4.24_x64-setup.exe`
+- [v0.4.25](https://github.com/jpsala/copicu/releases/tag/v0.4.25)
+- Asset: `Copicu_0.4.25_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `129456E941D05F79CC79CC032E0CDA533776399F3607FFF07F5B003893C3B393`
+- SHA256: `1BA4D23871CA7B3C6C30037DE2232A909250B9540ADA9B4C6893D10D1AEEDBDF`
 
-Picker reopening conceals cached history until the current clipboard snapshot loads.
+Picker now refreshes history on native show without waiting for WebView focus.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
