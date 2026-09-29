@@ -22,6 +22,8 @@ mod blobs;
 mod schema;
 #[path = "storage/search.rs"]
 mod search;
+#[path = "storage/folders.rs"]
+mod folders;
 
 use self::blobs::{
     blob_path_is_referenced, path_to_db_string, relative_blob_path, write_blob, IMAGE_BLOB_DIR,
@@ -43,6 +45,15 @@ pub use self::search::{
     SearchPlanRelativeUnitV1, SearchPlanSortDirectionV1, SearchPlanSortFieldV1, SearchPlanSortV1,
     SearchPlanTextScopeV1, SearchPlanTextV1, SearchPlanV1,
 };
+pub use self::folders::{CaptureFolderDestinationState, FolderDeletePreview, FolderSummary};
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureFolderFeedback {
+    pub item_id: i64,
+    pub target_folder_id: Option<i64>,
+    pub existing_folder_id: Option<i64>,
+}
+
 #[cfg(test)]
 use rusqlite_migration::Migrations;
 
@@ -119,6 +130,8 @@ pub struct AppStorage {
     db_path: PathBuf,
     app_data_dir: PathBuf,
     mutation_epoch: Arc<AtomicU64>,
+    capture_folder_destination: Arc<Mutex<Option<Option<i64>>>>,
+    capture_folder_feedback: Arc<Mutex<Vec<CaptureFolderFeedback>>>,
     #[cfg(test)]
     find_scan_gate: Arc<Mutex<Option<Arc<FindScanGate>>>>,
 }
@@ -164,6 +177,8 @@ pub struct HistoryItem {
     marked_at_unix_ms: Option<i64>,
     is_inbox: bool,
     inbox_at_unix_ms: Option<i64>,
+    #[serde(rename = "folderId")]
+    folder_id: Option<i64>,
     #[serde(default)]
     search_matches: Vec<SearchMatch>,
 }
@@ -967,6 +982,10 @@ pub enum SearchDefaultScope {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HistorySettings {
+    #[serde(default)]
+    pub delete_folder_clips_default: bool,
+    #[serde(default)]
+    pub delete_folder_descendants_default: bool,
     pub retention_count: i64,
 }
 
@@ -1261,6 +1280,8 @@ impl Default for AppSettings {
             },
             history: HistorySettings {
                 retention_count: UNLIMITED_HISTORY_LIMIT,
+                delete_folder_clips_default: false,
+                delete_folder_descendants_default: false,
             },
             appearance: AppearanceSettings {
                 theme: ThemeSetting::System,
@@ -1350,6 +1371,8 @@ impl AppStorage {
         MIGRATIONS
             .to_latest(&mut conn)
             .map_err(|error| format!("failed to migrate sqlite database: {error}"))?;
+        conn.pragma_update(None, "foreign_keys", "ON")
+            .map_err(|error| format!("failed to enable sqlite foreign keys: {error}"))?;
         add_regexp_function(&conn)?;
 
         Ok(Self {
@@ -1357,6 +1380,8 @@ impl AppStorage {
             db_path,
             app_data_dir: app_data_dir.to_path_buf(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            capture_folder_destination: Arc::new(Mutex::new(None)),
+            capture_folder_feedback: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             find_scan_gate: Arc::new(Mutex::new(None)),
         })
@@ -1651,7 +1676,7 @@ impl AppStorage {
         let text_char_count = text.chars().count() as i64;
         let line_count = text.lines().count().max(1) as i64;
         let domain = first_url_domain(text);
-        let (item_id, prune_outcome, projection_changed) = {
+        let (item_id, prune_outcome, projection_changed, feedback) = {
             let mut conn = self
                 .conn
                 .lock()
@@ -1659,6 +1684,7 @@ impl AppStorage {
             let tx = conn
                 .transaction()
                 .map_err(|error| format!("failed to start clipboard text capture: {error}"))?;
+            let destination = self.capture_folder_destination()?;
 
             let existing_id = bump_existing_capture(&tx, normalized_hash, now)?;
             let before_projection = existing_id
@@ -1675,9 +1701,10 @@ impl AppStorage {
                         created_at_unix_ms,
                         last_used_at_unix_ms,
                         last_copied_at_unix_ms,
-                        copy_count
-                    ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1)",
-                    params![text, normalized_hash, now],
+                        copy_count,
+                        folder_id
+                    ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1, ?4)",
+                    params![text, normalized_hash, now, destination],
                 )
                 .map_err(|error| format!("failed to insert clipboard text item: {error}"))?;
 
@@ -1708,15 +1735,17 @@ impl AppStorage {
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
             let projection_changed = context_pruned || before_projection != after_projection;
+            let feedback = folders::folder_dedupe_mismatch(&tx, existing_id, destination)?;
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard text capture: {error}"))?;
-            (item_id, prune_outcome, projection_changed)
+            (item_id, prune_outcome, projection_changed, feedback)
         };
 
         if projection_changed || prune_outcome.removed_items > 0 {
             self.bump_mutation_epoch();
         }
+        self.record_capture_folder_feedback(feedback);
         self.remove_blob_paths(prune_outcome.blob_paths);
         Ok(item_id)
     }
@@ -1823,7 +1852,7 @@ impl AppStorage {
             ..CaptureContext::default()
         };
         let now = now_unix_ms();
-        let (result, prune_outcome, projection_changed) = {
+        let (result, prune_outcome, projection_changed, feedback) = {
             let conn = self
                 .conn
                 .lock()
@@ -1831,6 +1860,7 @@ impl AppStorage {
             let conn = conn
                 .unchecked_transaction()
                 .map_err(|error| format!("failed to begin manual item creation: {error}"))?;
+            let destination = self.capture_folder_destination()?;
 
             let existing = conn
                 .query_row(
@@ -1888,6 +1918,7 @@ impl AppStorage {
                     None,
                 )?;
                 let projection_changed = projection_changed || context_pruned;
+                let feedback = folders::folder_dedupe_mismatch(&conn, Some(existing_id), destination)?;
                 let prune_outcome = prune_history_from_conn(&conn)?;
                 conn.commit()
                     .map_err(|error| format!("failed to commit manual item creation: {error}"))?;
@@ -1898,6 +1929,7 @@ impl AppStorage {
                     },
                     prune_outcome,
                     projection_changed,
+                    feedback,
                 )
             } else {
                 conn.execute(
@@ -1912,9 +1944,10 @@ impl AppStorage {
                         mime_primary,
                         title,
                         notes,
-                        tags
-                    ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1, ?4, ?5, ?6, ?7)",
-                    params![text, normalized_hash, now, mime_primary, title, notes, tags],
+                        tags,
+                        folder_id
+                    ) VALUES ('text', ?1, ?2, ?3, ?3, ?3, 1, ?4, ?5, ?6, ?7, ?8)",
+                    params![text, normalized_hash, now, mime_primary, title, notes, tags, destination],
                 )
                 .map_err(|error| format!("failed to create manual text item: {error}"))?;
 
@@ -1946,6 +1979,7 @@ impl AppStorage {
                     },
                     prune_outcome,
                     false,
+                    None,
                 )
             }
         };
@@ -1953,6 +1987,7 @@ impl AppStorage {
         if projection_changed || prune_outcome.removed_items > 0 {
             self.bump_mutation_epoch();
         }
+        self.record_capture_folder_feedback(feedback);
         self.remove_blob_paths(prune_outcome.blob_paths);
         Ok(result)
     }
@@ -1998,6 +2033,7 @@ impl AppStorage {
             let tx = conn
                 .transaction()
                 .map_err(|error| format!("failed to start clipboard image capture: {error}"))?;
+            let destination = self.capture_folder_destination()?;
 
             let existing_id = bump_existing_capture(&tx, &image.normalized_hash, now)?;
             let before_projection = existing_id
@@ -2032,8 +2068,9 @@ impl AppStorage {
                         thumbnail_path,
                         byte_size,
                         width,
-                        height
-                    ) VALUES ('image', ?1, ?2, ?3, ?3, ?3, 1, 'image/png', ?4, ?5, ?6, ?7, ?8)",
+                        height,
+                        folder_id
+                    ) VALUES ('image', ?1, ?2, ?3, ?3, ?3, 1, 'image/png', ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
                         text,
                         image.normalized_hash,
@@ -2042,7 +2079,8 @@ impl AppStorage {
                         path_to_db_string(&thumbnail_relative_path),
                         image.png_bytes.len() as i64,
                         image.width as i64,
-                        image.height as i64
+                        image.height as i64,
+                        destination
                     ],
                 )
                 .map_err(|error| format!("failed to insert clipboard image item: {error}"))?;
@@ -2074,12 +2112,13 @@ impl AppStorage {
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
             let projection_changed = context_pruned || before_projection != after_projection;
+            let feedback = folders::folder_dedupe_mismatch(&tx, existing_id, destination)?;
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard image capture: {error}"))?;
-            Ok((item_id, prune_outcome, projection_changed))
+            Ok((item_id, prune_outcome, projection_changed, feedback))
         })();
-        let (item_id, prune_outcome, projection_changed) = match capture_result {
+        let (item_id, prune_outcome, projection_changed, feedback) = match capture_result {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.remove_blob_paths([ItemBlobPaths {
@@ -2093,6 +2132,7 @@ impl AppStorage {
         if projection_changed || prune_outcome.removed_items > 0 {
             self.bump_mutation_epoch();
         }
+        self.record_capture_folder_feedback(feedback);
         self.remove_blob_paths(prune_outcome.blob_paths);
         Ok(item_id)
     }
@@ -2214,7 +2254,14 @@ impl AppStorage {
             .clamp(MIN_HISTORY_PAGE_LIMIT, MAX_HISTORY_PAGE_LIMIT);
         let query_limit = effective_limit + 1;
         let (total_count, filtered_count) = if request.include_counts {
-            let total_count = count_history_items(&conn, "", &[])?;
+            let filters = plan.filters.as_ref().map(|filters| SearchPlanFiltersV1 {
+                folders: filters.folders.clone(),
+                folder_ids: filters.folder_ids.clone(),
+                ..SearchPlanFiltersV1::default()
+            });
+            let scope_plan = SearchPlanV1 { schema_version: 1, filters, ..SearchPlanV1::default() };
+            let scope = compile_search_plan(&scope_plan)?;
+            let total_count = count_history_items(&conn, &scope.where_sql, &scope.params)?;
             let filtered_count = if where_sql.is_empty() {
                 total_count
             } else {
@@ -2322,6 +2369,17 @@ impl AppStorage {
             descriptor.validate()?;
         }
         let placeholders = vec!["?"; ids.len()].join(",");
+        // Retained rows must still match the applied plan, not merely exist.
+        // Constrain by requested IDs as well; never reload the full result set.
+        let compiled = applied_descriptor.as_ref()
+            .map(|descriptor| compile_search_plan(&descriptor.plan))
+            .transpose()?;
+        let membership_where = compiled.as_ref()
+            .filter(|compiled| !compiled.where_sql.is_empty())
+            .map(|compiled| format!("{} AND", compiled.where_sql))
+            .unwrap_or_else(|| "WHERE".to_string());
+        let mut query_params = compiled.map(|compiled| compiled.params).unwrap_or_default();
+        query_params.extend(ids.iter().copied().map(Value::Integer));
         let mut items = {
             let conn = self
                 .conn
@@ -2330,10 +2388,10 @@ impl AppStorage {
             let mut items = self.query_items(
                 &conn,
                 &format!(
-                    "SELECT {} FROM clipboard_items WHERE id IN ({placeholders}) ORDER BY id",
+                    "SELECT {} FROM clipboard_items {membership_where} id IN ({placeholders}) ORDER BY id",
                     history_item_select_columns(false),
                 ),
-                params_from_iter(ids.iter()),
+                params_from_iter(query_params.iter()),
             )?;
             if let Some(descriptor) = applied_descriptor.as_ref() {
                 attach_search_matches(&conn, &mut items, &descriptor.plan, false)?;
@@ -4363,6 +4421,7 @@ where
                 marked_at_unix_ms: row.get(21)?,
                 is_inbox: row.get::<_, i64>(22)? != 0,
                 inbox_at_unix_ms: row.get(23)?,
+                folder_id: row.get(24)?,
                 search_matches: Vec::new(),
             })
         })
@@ -5451,11 +5510,11 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
         .query_row(
             "SELECT COUNT(*) FROM clipboard_items
              WHERE id NOT IN (
-                SELECT id FROM clipboard_items WHERE is_inbox != 0
+                SELECT id FROM clipboard_items WHERE is_marked != 0 OR is_inbox != 0 OR folder_id IS NOT NULL
                 UNION ALL
                 SELECT id FROM (
                     SELECT id FROM clipboard_items
-                    WHERE is_inbox = 0
+                    WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
                     ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
                     LIMIT ?1
                 )
@@ -5470,11 +5529,11 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
     conn.execute(
         "DELETE FROM clipboard_item_tags
          WHERE item_id NOT IN (
-            SELECT id FROM clipboard_items WHERE is_inbox != 0
+            SELECT id FROM clipboard_items WHERE is_marked != 0 OR is_inbox != 0 OR folder_id IS NOT NULL
             UNION ALL
             SELECT id FROM (
                 SELECT id FROM clipboard_items
-                WHERE is_inbox = 0
+                WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
                 ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
                 LIMIT ?1
             )
@@ -5486,11 +5545,11 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
     conn.execute(
         "DELETE FROM clipboard_items
          WHERE id NOT IN (
-            SELECT id FROM clipboard_items WHERE is_inbox != 0
+            SELECT id FROM clipboard_items WHERE is_marked != 0 OR is_inbox != 0 OR folder_id IS NOT NULL
             UNION ALL
             SELECT id FROM (
                 SELECT id FROM clipboard_items
-                WHERE is_inbox = 0
+                WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
                 ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
                 LIMIT ?1
             )
@@ -5514,11 +5573,11 @@ fn pruned_blob_paths_from_conn(
             "SELECT blob_path, thumbnail_path
              FROM clipboard_items
              WHERE id NOT IN (
-                SELECT id FROM clipboard_items WHERE is_inbox != 0
+                SELECT id FROM clipboard_items WHERE is_marked != 0 OR is_inbox != 0 OR folder_id IS NOT NULL
                 UNION ALL
                 SELECT id FROM (
                     SELECT id FROM clipboard_items
-                    WHERE is_inbox = 0
+                    WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
                     ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
                     LIMIT ?1
                 )
@@ -6264,13 +6323,39 @@ mod tests {
         let refreshed = storage
             .get_items_preview(vec![id], Some(descriptor))
             .unwrap();
-        assert!(refreshed[0].search_matches.is_empty());
+        assert!(refreshed.is_empty(), "existing rows that leave the applied query are omitted");
         assert!(storage.get_items_preview(vec![], None).unwrap().is_empty());
         assert_eq!(
             ids(&storage.get_items_preview(vec![id; 100], None).unwrap()),
             vec![id]
         );
         assert!(storage.get_items_preview(vec![id; 101], None).is_err());
+    }
+
+    #[test]
+    fn preview_refresh_enforces_applied_membership_for_text_marks_tags_and_folders() {
+        let storage = test_storage_with_migrations();
+        let folder = storage.create_folder(None, "Preview membership").unwrap();
+        let id = storage.insert_text("membership needle", "preview-membership").unwrap();
+        storage.set_items_marked(SetHistoryItemsMarkedRequest { ids: vec![id], marked: true }).unwrap();
+        storage.set_item_tags(SetItemTagsRequest { item_id: id, tags: vec!["working".into()] }).unwrap();
+        storage.conn.lock().unwrap().execute(
+            "UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2", params![folder.id, id],
+        ).unwrap();
+        for query in ["needle".to_string(), "is:marked".into(), "tag:working".into(), format!("folder-id:{}", folder.id)] {
+            let descriptor = AppliedSearchDescriptor::for_query(&query, &query, AppliedSearchMode::Structured).unwrap();
+            assert_eq!(ids(&storage.get_items_preview(vec![id], Some(descriptor.clone())).unwrap()), vec![id]);
+            storage.conn.lock().unwrap().execute(
+                "UPDATE clipboard_items SET text = 'replacement', is_marked = 0, tags = NULL, folder_id = NULL WHERE id = ?1", [id],
+            ).unwrap();
+            storage.conn.lock().unwrap().execute("DELETE FROM clipboard_item_tags WHERE item_id = ?1", [id]).unwrap();
+            assert!(storage.get_items_preview(vec![id], Some(descriptor)).unwrap().is_empty(), "membership lost for {query}");
+            assert!(storage.get_item(id).is_ok(), "membership eviction must not delete the clip");
+            storage.conn.lock().unwrap().execute(
+                "UPDATE clipboard_items SET text = 'membership needle', is_marked = 1, folder_id = ?1 WHERE id = ?2", params![folder.id, id],
+            ).unwrap();
+            storage.set_item_tags(SetItemTagsRequest { item_id: id, tags: vec!["working".into()] }).unwrap();
+        }
     }
 
     #[test]
@@ -7874,6 +7959,127 @@ mod tests {
     }
 
     #[test]
+    fn marked_working_set_survives_count_retention_without_consuming_budget() {
+        let storage = test_storage_with_migrations();
+        let folder = storage.create_folder(None, "Retention protection").unwrap();
+        insert_test_text_item(&storage, 1, 1, "old marked text payload");
+        insert_test_text_item(&storage, 3, 3, "old Inbox payload");
+        insert_test_text_item(&storage, 4, 4, "old folder payload");
+
+        let marked_main = Path::new(IMAGE_BLOB_DIR).join("marked-retention-main.png");
+        let marked_thumb = Path::new(THUMBNAIL_BLOB_DIR).join("marked-retention-thumb.png");
+        let ordinary_main = Path::new(IMAGE_BLOB_DIR).join("ordinary-retention-main.png");
+        let ordinary_thumb = Path::new(THUMBNAIL_BLOB_DIR).join("ordinary-retention-thumb.png");
+        for path in [&marked_main, &marked_thumb, &ordinary_main, &ordinary_thumb] {
+            write_blob(&storage.app_data_dir.join(path), b"synthetic retention payload").unwrap();
+        }
+        insert_test_image_item(&storage, 2, 2, &path_to_db_string(&marked_main), &path_to_db_string(&marked_thumb));
+        insert_test_image_item(&storage, 5, 5, &path_to_db_string(&ordinary_main), &path_to_db_string(&ordinary_thumb));
+        let newest_marked_id = 10 + MIN_RETENTION_COUNT;
+        for id in 10..=newest_marked_id {
+            insert_test_text_item(&storage, id, 1_000 + id, &format!("ordinary budget filler {id}"));
+        }
+        storage.set_items_marked(SetHistoryItemsMarkedRequest {
+            ids: vec![1, 2, 3, 4, newest_marked_id],
+            marked: true,
+        }).unwrap();
+        for id in [1, 2, 3, 4, 5, 10, newest_marked_id] {
+            storage.set_item_tags(SetItemTagsRequest {
+                item_id: id,
+                tags: vec!["retention-proof".to_string()],
+            }).unwrap();
+        }
+        let settings = AppSettings {
+            history: HistorySettings {
+                retention_count: MIN_RETENTION_COUNT,
+                ..AppSettings::default().history
+            },
+            ..AppSettings::default()
+        };
+        let outcome = {
+            let conn = storage.conn.lock().unwrap();
+            conn.execute("UPDATE clipboard_items SET is_inbox = 1 WHERE id = 3", []).unwrap();
+            conn.execute("UPDATE clipboard_items SET folder_id = ?1 WHERE id = 4", [folder.id]).unwrap();
+            // Protection is nonzero, not specifically the value 1.
+            conn.execute("UPDATE clipboard_items SET is_marked = 2 WHERE id = 2", []).unwrap();
+            conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at_unix_ms) VALUES (?1, ?2, 1)",
+                params![APP_SETTINGS_KEY, serde_json::to_string(&settings).unwrap()],
+            ).unwrap();
+            prune_history_from_conn(&conn).unwrap()
+        };
+        assert_eq!(outcome.removed_items, 1, "only the old ordinary image exceeds the budget");
+        assert_eq!(outcome.blob_paths.len(), 1);
+        assert_eq!(outcome.blob_paths[0].blob_path.as_deref(), Some(path_to_db_string(&ordinary_main).as_str()));
+        assert_eq!(outcome.blob_paths[0].thumbnail_path.as_deref(), Some(path_to_db_string(&ordinary_thumb).as_str()));
+        storage.remove_blob_paths(outcome.blob_paths);
+        assert!(storage.get_item(5).is_err());
+        assert!(!storage.app_data_dir.join(&ordinary_main).exists());
+        assert!(!storage.app_data_dir.join(&ordinary_thumb).exists());
+        assert!(storage.app_data_dir.join(&marked_main).exists());
+        assert!(storage.app_data_dir.join(&marked_thumb).exists());
+        assert_eq!(storage.get_item(1).unwrap().text, "old marked text payload");
+        for id in [1, 2, 3, 4, newest_marked_id] {
+            assert_eq!(storage.get_item(id).unwrap().tags.as_deref(), Some("#retention-proof"));
+        }
+        let ordinary_count = || storage.conn.lock().unwrap().query_row(
+            "SELECT COUNT(*) FROM clipboard_items WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL",
+            [], |row| row.get::<_, i64>(0),
+        ).unwrap();
+        assert_eq!(ordinary_count(), MIN_RETENTION_COUNT);
+        assert!(storage.get_item(10).is_ok(), "newest marked clip must not displace an ordinary clip");
+
+        storage.insert_text("capture with marked working set", "marked-retention-protected-pass").unwrap();
+        assert_eq!(ordinary_count(), MIN_RETENTION_COUNT);
+        assert!(storage.get_item(10).is_err());
+        for id in [1, 2, 3, 4, newest_marked_id] {
+            assert!(storage.get_item(id).is_ok(), "automatic capture pruning must preserve protected clips");
+        }
+        assert!(storage.app_data_dir.join(&marked_main).exists());
+        assert!(storage.app_data_dir.join(&marked_thumb).exists());
+
+        storage.clear_marked().unwrap();
+        for id in [1, 2, 3, 4, newest_marked_id] {
+            assert!(storage.get_item(id).is_ok(), "clearing marks must not delete clips immediately");
+        }
+        storage.insert_text("next pruning pass", "marked-retention-next-pass").unwrap();
+        assert!(storage.get_item(1).is_err());
+        assert!(storage.get_item(2).is_err());
+        assert!(!storage.app_data_dir.join(&marked_main).exists());
+        assert!(!storage.app_data_dir.join(&marked_thumb).exists());
+        assert_eq!(ordinary_count(), MIN_RETENTION_COUNT);
+        assert!(storage.get_item(10).is_err(), "ordinary history must still be bounded");
+        assert!(storage.get_item(3).unwrap().is_inbox, "Inbox still protects an unmarked clip");
+        assert_eq!(storage.get_item(4).unwrap().folder_id, Some(folder.id));
+        for id in [3, 4] {
+            assert_eq!(storage.get_item(id).unwrap().tags.as_deref(), Some("#retention-proof"));
+        }
+        storage.set_items_marked(SetHistoryItemsMarkedRequest {
+            ids: vec![newest_marked_id], marked: true,
+        }).unwrap();
+        for id in [3, 4, newest_marked_id] {
+            storage.delete_item(id).unwrap();
+            assert!(storage.get_item(id).is_err(), "explicit deletion bypasses all retention protection");
+        }
+    }
+
+    #[test]
+    fn explicitly_deleting_marked_image_removes_both_payload_paths() {
+        let storage = test_storage_with_migrations();
+        let main = Path::new(IMAGE_BLOB_DIR).join("explicit-marked-main.png");
+        let thumbnail = Path::new(THUMBNAIL_BLOB_DIR).join("explicit-marked-thumb.png");
+        for path in [&main, &thumbnail] {
+            write_blob(&storage.app_data_dir.join(path), b"synthetic marked image").unwrap();
+        }
+        insert_test_image_item(&storage, 1, 1, &path_to_db_string(&main), &path_to_db_string(&thumbnail));
+        storage.set_items_marked(SetHistoryItemsMarkedRequest { ids: vec![1], marked: true }).unwrap();
+        storage.delete_item(1).unwrap();
+        assert!(storage.get_item(1).is_err());
+        assert!(!storage.app_data_dir.join(&main).exists());
+        assert!(!storage.app_data_dir.join(&thumbnail).exists());
+    }
+
+    #[test]
     fn history_search_can_skip_counts_for_interactive_pages() {
         let storage = test_storage_with_migrations();
         for id in 1..=4 {
@@ -7961,6 +8167,8 @@ mod tests {
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            capture_folder_destination: Arc::new(Mutex::new(None)),
+            capture_folder_feedback: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             find_scan_gate: Arc::new(Mutex::new(None)),
         };
@@ -8028,6 +8236,8 @@ mod tests {
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            capture_folder_destination: Arc::new(Mutex::new(None)),
+            capture_folder_feedback: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             find_scan_gate: Arc::new(Mutex::new(None)),
         };
@@ -9580,7 +9790,7 @@ mod tests {
     fn scenario_query_migration_preserves_existing_scenarios_and_saved_views() {
         let mut conn = Connection::open_in_memory().expect("in-memory sqlite should open");
         let migrations_before_independent_scenarios =
-            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 3]);
+            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 4]);
         migrations_before_independent_scenarios
             .to_latest(&mut conn)
             .expect("legacy scenario migrations should run");
@@ -9608,6 +9818,8 @@ mod tests {
             db_path: PathBuf::from("test.sqlite3"),
             app_data_dir: std::env::temp_dir(),
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            capture_folder_destination: Arc::new(Mutex::new(None)),
+            capture_folder_feedback: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             find_scan_gate: Arc::new(Mutex::new(None)),
         };
@@ -10397,6 +10609,8 @@ mod tests {
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            capture_folder_destination: Arc::new(Mutex::new(None)),
+            capture_folder_feedback: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             find_scan_gate: Arc::new(Mutex::new(None)),
         }
@@ -10415,6 +10629,8 @@ mod tests {
             db_path: app_data_dir.join(DATABASE_FILE_NAME),
             app_data_dir,
             mutation_epoch: Arc::new(AtomicU64::new(0)),
+            capture_folder_destination: Arc::new(Mutex::new(None)),
+            capture_folder_feedback: Arc::new(Mutex::new(Vec::new())),
             #[cfg(test)]
             find_scan_gate: Arc::new(Mutex::new(None)),
         }

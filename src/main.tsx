@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { FolderWorkspace, folderScopeLabel, folderScopeQuery } from "./ui/FolderWorkspace";
 import { createPortal } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -40,6 +41,7 @@ import Command from "lucide-react/dist/esm/icons/command.mjs";
 import Copy from "lucide-react/dist/esm/icons/copy.mjs";
 import CornerDownLeft from "lucide-react/dist/esm/icons/corner-down-left.mjs";
 import FileCode2 from "lucide-react/dist/esm/icons/file-code-2.mjs";
+import Folder from "lucide-react/dist/esm/icons/folder.mjs";
 import Flag from "lucide-react/dist/esm/icons/flag.mjs";
 import ListChecks from "lucide-react/dist/esm/icons/list-checks.mjs";
 import ListRestart from "lucide-react/dist/esm/icons/list-restart.mjs";
@@ -47,6 +49,7 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.mjs";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.mjs";
 import MoreVertical from "lucide-react/dist/esm/icons/more-vertical.mjs";
 import Pencil from "lucide-react/dist/esm/icons/pencil.mjs";
+import PanelLeftOpen from "lucide-react/dist/esm/icons/panel-left-open.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import Radio from "lucide-react/dist/esm/icons/radio.mjs";
 import Search from "lucide-react/dist/esm/icons/search.mjs";
@@ -75,6 +78,8 @@ import type {
   CreateSavedHistoryViewRequest,
   CreateScenarioFromQueryRequest,
   CreateTagRequest,
+  FolderScope,
+  FolderSummary,
   EnterAction,
   FindCloseRequest,
   FindCloseResponse,
@@ -266,6 +271,7 @@ type HistorySearchMatch = {
 
 type HistoryItem = {
   id: number;
+  folderId: number | null;
   content_kind: "text" | string;
   text: string;
   preview_text: string;
@@ -1279,6 +1285,23 @@ function App() {
   const [queryComposing, setQueryComposing] = useState(false);
   const [queryEditorReadyPhase, setQueryEditorReadyPhase] = useState<QueryEditorReadyPhase>("module");
   const [knownTagSlugs, setKnownTagSlugs] = useState<string[]>([]);
+  const [folders, setFolders] = useState<FolderSummary[]>([]);
+  const [rootItemCount, setRootItemCount] = useState<number | null>(null);
+  const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" });
+  const folderScopeRef = useRef<FolderScope>(folderScope);
+  const [captureDestination, setCaptureDestination] = useState<number | null>(null);
+  const [captureDestinationArmed, setCaptureDestinationArmed] = useState(false);
+  const folderPaths = useMemo(() => folders.map((folder) => folder.path), [folders]);
+  const [folderTreeOpen, setFolderTreeOpen] = useState(() => !appearanceViewport.narrow);
+  useEffect(() => {
+    if (appearanceViewport.narrow) setFolderTreeOpen(false);
+  }, [appearanceViewport.narrow]);
+  const [folderSwitcherOpen, setFolderSwitcherOpen] = useState(false);
+  const [folderMoveRequest, setFolderMoveRequest] = useState<{ itemIds: number[]; trigger: HTMLElement | null } | null>(null);
+  const folderTreeRef = useRef<HTMLDivElement>(null);
+  const draggedItemIdsRef = useRef<number[] | null>(null);
+  const [draggingItemId, setDraggingItemId] = useState<number | null>(null);
+  const suppressClickAfterDragRef = useRef<number | null>(null);
   const [paletteTags, setPaletteTags] = useState<TagSummary[]>([]);
   const [savedHistoryViews, setSavedHistoryViews] = useState<SavedHistoryView[]>([]);
   const [openedSavedView, setOpenedSavedView] = useState<OpenedSavedView | null>(null);
@@ -1906,6 +1929,7 @@ function App() {
       const text = item.text ?? "";
       return {
         id: item.id,
+        folderId: null,
         content_kind: item.contentKind,
         text,
         preview_text: text.slice(0, 2400),
@@ -2060,6 +2084,7 @@ function App() {
               const nextItem = {
                 ...existing,
                 ...materialized,
+                folderId: existing.folderId,
                 normalized_hash: existing.normalized_hash,
                 created_at_unix_ms: existing.created_at_unix_ms,
                 last_used_at_unix_ms: existing.last_used_at_unix_ms,
@@ -3445,6 +3470,10 @@ function App() {
           }),
         };
       }
+      if (!isAppliedSearchDescriptor(appliedDescriptorForRequest)) {
+        const scopeQuery = folderScopeQuery(folderScopeRef.current);
+        if (scopeQuery) searchInput = { ...searchInput, query: `${searchInput.query} ${scopeQuery}`.trim() };
+      }
       lastSearchFailureRef.current = null;
       const requestSeq = ++historyRequestSeqRef.current;
       const reopenGeneration = reopenGenerationRef.current;
@@ -3623,7 +3652,9 @@ function App() {
       const currentFirstId = historyRef.current[0]?.id ?? null;
       const canRetainAppliedSnapshot =
         appliedDescriptorRef.current?.fingerprint === committedDescriptor.fingerprint;
-      if (respectManualScroll && scrollTop > 24 && canRetainAppliedSnapshot) {
+      const selectionBeyondFirstPage = [...selectedIdsRef.current]
+        .some((id) => !page.items.some((item) => item.id === id));
+      if (respectManualScroll && (scrollTop > 24 || selectionBeyondFirstPage) && canRetainAppliedSnapshot) {
         const retainedIds = historyRef.current.map((item) => item.id);
         const refreshedById = new Map<number, HistoryItem>();
         try {
@@ -3875,6 +3906,62 @@ function App() {
       updateClearSearchPending,
     ],
   );
+  const reloadFolders = useCallback(async () => {
+    const [nextFolders, nextRootCount] = await Promise.all([
+      invoke<FolderSummary[]>("list_folders"),
+      invoke<number>("root_item_count"),
+    ]);
+    setFolders(nextFolders);
+    setRootItemCount(nextRootCount);
+  }, []);
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    void reloadFolders().catch((error) => setActionError(String(error)));
+    void invoke<{ folderId: number | null; armed: boolean }>("get_capture_folder_destination_state")
+      .then((state) => {
+        setCaptureDestination(state.folderId);
+        setCaptureDestinationArmed(state.armed);
+      })
+      .catch((error) => setActionError(String(error)));
+  }, [reloadFolders]);
+  const changeFolderScope = useCallback((next: FolderScope) => {
+    if (folderScopeQuery(next) === folderScopeQuery(folderScopeRef.current)) return;
+    folderScopeRef.current = next;
+    setFolderScope(next);
+    setFolderSwitcherOpen(false);
+    void invoke<number | null>("set_capture_folder_destination", { folderId: null, armed: false })
+      .then(() => {
+        setCaptureDestination(null);
+        setCaptureDestinationArmed(false);
+      })
+      .catch((error) => setActionError(String(error)));
+    const draft = aiComposerMode ? "" : queryRef.current;
+    // Navigation changes scope, not the filter or its Enter/Realtime policy.
+    const appliedQuery = aiComposerMode ? "" : historyInputQueryRef.current;
+    queryRef.current = draft;
+    setQuery(draft);
+    setAiComposerMode(false);
+    setSearchInterpretation(null);
+    supersedeSearchIntent(draft, "applying");
+    historyLoadMoreSeqRef.current += 1;
+    setHistoryNextCursor(null);
+    historyPaginationBlockedRef.current = null;
+    setHistoryPaginationBlocked(null);
+    historyRef.current = [];
+    setHistory([]);
+    setHistoryPending(true);
+    setSelectedIds(new Set());
+    selectedIdsRef.current = new Set();
+    selectedItemIdRef.current = null;
+    setSelectedItemId(null);
+    selectionInteractionSeqRef.current += 1;
+    void closeFind({ restoreFocus: false });
+    void refreshHistory({ resetScroll: true, queryOverride: appliedQuery, allowAi: false });
+  }, [aiComposerMode, closeFind, refreshHistory, supersedeSearchIntent]);
+  const setFolderDestination = useCallback(async (folderId: number | null, armed = true) => {
+    setCaptureDestination(await invoke<number | null>("set_capture_folder_destination", { folderId, armed }));
+    setCaptureDestinationArmed(armed);
+  }, []);
   const openPaletteNavigation = useCallback((entry: Extract<CommandPaletteEntry, { kind: "navigation" }>) => {
     if (entry.id === "assistant.open") {
       setCommandPalette(null);
@@ -4874,7 +4961,7 @@ function App() {
   );
 
   const refreshAfterMarkedChange = useCallback(async () => {
-    await refreshAppliedHistory({ showPending: false });
+    await refreshAppliedHistory({ respectManualScroll: true, showPending: false });
     await refreshMarkedCount();
     focusSearch();
   }, [focusSearch, refreshAppliedHistory, refreshMarkedCount]);
@@ -5253,11 +5340,18 @@ function App() {
       selectedIdsRef.current = new Set();
       selectionInteractionSeqRef.current += 1;
       await refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
+      await reloadFolders();
+      const existingLocation = result.created ? null : (await getHistoryItem(result.id)).folderId;
+      const destinationLabel = existingLocation === null
+        ? "/"
+        : folders.find((folder) => folder.id === existingLocation)?.path ?? "another folder";
       setSelectedItemId(result.id);
       selectionAnchorItemIdRef.current = result.id;
       pushToast({
         title: result.created ? "Item created" : "Item already existed",
-        message: result.created ? "Added to clipboard history." : "Moved existing item to the top and merged metadata.",
+        message: result.created
+          ? `Added to ${captureDestinationArmed ? captureDestination === null ? "/" : folders.find((folder) => folder.id === captureDestination)?.path ?? "the capture folder" : "/"}.`
+          : `Existing clip stays in ${destinationLabel}; metadata merged. Capture destination did not move it.`,
         tone: result.created ? "success" : "info",
       });
       focusSearch();
@@ -5265,7 +5359,7 @@ function App() {
       setEditError(String(error));
       window.setTimeout(() => editTextRef.current?.focus(), 0);
     }
-  }, [createItemDraft, focusSearch, leaveOpenedSavedView, pushToast, refreshHistory]);
+  }, [captureDestination, captureDestinationArmed, createItemDraft, focusSearch, folders, leaveOpenedSavedView, pushToast, refreshHistory, reloadFolders]);
   useEffect(() => {
     let active = true;
 
@@ -5743,6 +5837,7 @@ function App() {
         if (!active) {
           return;
         }
+        void reloadFolders().catch((error) => setActionError(String(error)));
         if (event.payload?.activate && event.payload.itemId !== undefined) {
           pendingHistoryActivationItemIdRef.current = event.payload.itemId;
         }
@@ -5796,10 +5891,23 @@ function App() {
               setPaletteTags(tags);
             }
           }).catch(() => undefined);
+          void reloadFolders().catch((error) => setActionError(String(error)));
           const session = await consumePickerSessionSnapshot();
           resetFromHost = session.reset;
           if (session.pendingActivationItemId !== null) {
             pendingHistoryActivationItemIdRef.current = session.pendingActivationItemId;
+          }
+          const feedback = await invoke<Array<{ itemId: number; targetFolderId: number | null; existingFolderId: number | null }>>("consume_capture_folder_feedback");
+          if (active && feedback.length > 0) {
+            const knownFolders = await invoke<FolderSummary[]>("list_folders");
+            const latest = feedback[feedback.length - 1];
+            const target = latest.targetFolderId === null ? "/" : knownFolders.find((folder) => folder.id === latest.targetFolderId)?.path ?? "the selected folder";
+            const existing = latest.existingFolderId === null ? "/" : knownFolders.find((folder) => folder.id === latest.existingFolderId)?.path ?? "another folder";
+            pushToast({
+              title: "Capture already exists",
+              message: `${feedback.length > 1 ? `${feedback.length} captures deduplicated. Latest: ` : ""}Targeted ${target}; existing clip remains in ${existing}.`,
+              tone: "info",
+            });
           }
         } catch (error) {
           console.warn("consume picker session failed", error);
@@ -5945,7 +6053,7 @@ function App() {
       excluded: settings.picker.defaultExcludedSearchScopes,
     });
   const appliedResultsDiffer = Boolean(appliedDescriptor)
-    && appliedResultsQuery.trim() !== draftEffectiveQuery;
+    && appliedResultsQuery.replace(/(?:^|\s)folder(?:-id:\d+|:\/)$/, "").trim() !== draftEffectiveQuery;
   const canClearSearch = queryHasSearchTerms || Boolean(appliedResultsQuery.trim());
   const historyErrorCopy = hasPreviousHistorySnapshot
     ? "Could not update results. Previous results remain visible."
@@ -6056,7 +6164,14 @@ function App() {
       )
     );
   const markMenuCountLabel = markedTotalCount === null ? "…" : formatCount(markedTotalCount);
-  const markedActionCount = markedTotalCount ?? markedActionItems?.length ?? 0;
+  const markedActionCount = markedActionItems?.length ?? markedTotalCount ?? 0;
+  const selectedUnmarkedItems = selectedItems.filter((item) => !item.is_marked);
+  const selectedMarkedItems = selectedItems.filter((item) => item.is_marked);
+  const markedOutsideLoadedCount = useMemo(() => {
+    if (markedActionItems === null) return null;
+    const loadedIds = new Set(history.map((item) => item.id));
+    return markedActionItems.filter((item) => !loadedIds.has(item.id)).length;
+  }, [markedActionItems, history]);
   const loadedResultCount = history.length;
   const allResultCount = historyFilteredCount ?? history.length;
   const submitAssistantQuickPrompt = useCallback(async () => {
@@ -6310,6 +6425,11 @@ function App() {
       openCommandPalette();
       return true;
     }
+    if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && event.key.toLocaleLowerCase() === "p") {
+      event.preventDefault();
+      setFolderSwitcherOpen(true);
+      return true;
+    }
     if (
       event.ctrlKey
       && event.shiftKey
@@ -6462,6 +6582,7 @@ function App() {
     selectedItem,
     settings.picker.previewShortcut,
     settings.picker.settingsShortcut,
+    setFolderSwitcherOpen,
     toggleFilterLock,
     toggleComposerMode,
     toggleItemPreview,
@@ -6650,9 +6771,29 @@ function App() {
       >
       <section
         className="picker-panel"
+        onClick={(event) => {
+          if (selectedIdsRef.current.size === 0 || !(event.target instanceof Element)) return;
+          if (event.target.closest(".feed-item, .item-selection-button, button, [role='menu'], [role='dialog']")) return;
+          clearExplicitSelection();
+        }}
         aria-label="Copicu"
         onKeyDown={(event) => {
-          if (event.defaultPrevented || event.key !== "F2") {
+          if (!event.defaultPrevented && event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey
+            && event.key.toLocaleLowerCase() === "p"
+            && !(event.target instanceof HTMLElement && event.target.closest('[role="dialog"]'))) {
+            event.preventDefault();
+            setFolderSwitcherOpen(true);
+            return;
+          }
+          if (!event.defaultPrevented && event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey
+            && event.key.toLocaleLowerCase() === "b"
+            && !(event.target instanceof HTMLElement && event.target.closest('[role="dialog"], .item-content-editor'))) {
+            event.preventDefault();
+            setFolderTreeOpen((open) => !open);
+            return;
+          }
+          if (event.defaultPrevented || event.key !== "F2"
+            || (event.target instanceof HTMLElement && event.target.closest('[role="dialog"]'))) {
             return;
           }
           event.preventDefault();
@@ -6748,10 +6889,17 @@ function App() {
                   <Menu.Label>Change marks for selection</Menu.Label>
                   <Menu.Item
                     leftSection={<Flag size={14} strokeWidth={2.2} />}
-                    onClick={() => void setItemsMarked(selectedItems, !selectedItems.every((item) => item.is_marked))}
+                    disabled={selectedUnmarkedItems.length === 0}
+                    onClick={() => void setItemsMarked(selectedUnmarkedItems, true)}
                   >
-                    {selectedItems.every((item) => item.is_marked) ? "Unmark" : "Mark"} all{" "}
-                    {formatCount(selectedItems.length)} selected {selectedItems.length === 1 ? "clip" : "clips"}
+                    Add {formatCount(selectedUnmarkedItems.length)} selected {selectedUnmarkedItems.length === 1 ? "clip" : "clips"} to marks
+                  </Menu.Item>
+                  <Menu.Item
+                    leftSection={<CircleSlash size={14} strokeWidth={2.2} />}
+                    disabled={selectedMarkedItems.length === 0}
+                    onClick={() => void setItemsMarked(selectedMarkedItems, false)}
+                  >
+                    Remove {formatCount(selectedMarkedItems.length)} selected {selectedMarkedItems.length === 1 ? "clip" : "clips"} from marks
                   </Menu.Item>
                   <Menu.Divider />
                   <Menu.Label>Actions for selected clips</Menu.Label>
@@ -6786,6 +6934,7 @@ function App() {
               ref={queryEditorRef}
               value={query}
               knownTagSlugs={knownTagSlugs}
+              folderPaths={folderPaths}
               scopeSelection={editorScopeSelection}
               scenarioOptions={scenarioCommandOptions}
               placeholder="Search clipboard history"
@@ -6974,7 +7123,7 @@ function App() {
             }}
           >
             <Menu.Target>
-              <UiTooltip label="Marked clips, kept between searches" disabled={markMenuOpen}>
+              <UiTooltip label={`Marked clips: ${markMenuCountLabel} total, ${formatCount(visibleMarkedItems.length)} in loaded results. Kept across searches, hide and restart.`} disabled={markMenuOpen}>
                 <UiButton
                   type="button"
                   className="mark-menu-button"
@@ -6990,6 +7139,10 @@ function App() {
               </UiTooltip>
             </Menu.Target>
             <Menu.Dropdown className="picker-menu-dropdown mark-menu-dropdown" aria-label="Marked clips">
+              <div className="mark-menu-scope-note">
+                <strong>{markMenuCountLabel} marked total · {formatCount(visibleMarkedItems.length)} in loaded results</strong>
+                <span>Marks persist across searches, hide and restart. Removing marks never deletes clips.</span>
+              </div>
               <Menu.Label>Filter history</Menu.Label>
               <Menu.Item leftSection={<Flag size={14} strokeWidth={2.2} />} onClick={() => showMarkedFilter("marked")}>
                 Show marked clips
@@ -7007,9 +7160,20 @@ function App() {
                     Actions for marked clips
                     <span>{markedActionItemsLoading || markedActionItems === null ? "Loading…" : formatCount(markedActionCount)}</span>
                   </div>
+                  <div className="mark-menu-scope-note" role="note">
+                    {markedActionItemsLoading || markedOutsideLoadedCount === null
+                      ? "Loading all marked clips before enabling actions…"
+                      : `All ${formatCount(markedActionCount)} marked clips, including ${formatCount(markedOutsideLoadedCount)} outside loaded results. Applies to metadata, actions and delete.`}
+                  </div>
                   {markedActionItems !== null && !markedActionItemsLoading ? (
                     <>
                       {renderBatchItemActions({ items: markedActionItems, noun: "marked", surface: "header" })}
+                      <Menu.Item
+                        leftSection={<Pencil size={14} strokeWidth={2.2} />}
+                        onClick={() => void openMetadataForItems(markedActionItems, "overview")}
+                      >
+                        Edit metadata for marked
+                      </Menu.Item>
                       <Menu.Divider />
                       <Menu.Item
                         color="red"
@@ -7284,6 +7448,11 @@ function App() {
         </div>
 
         <div className="search-filter-strip" aria-label="Search fields and filters">
+          {!folderTreeOpen ? (
+            <UiTooltip label={<span className="tooltip-shortcut-label"><span>Show folders</span><ShortcutBadge shortcut="Ctrl+B" /></span>}>
+              <button type="button" className="folder-tree-reopen" aria-label="Show folders" aria-expanded={false} aria-controls="folder-tree" onClick={() => setFolderTreeOpen(true)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
+            </UiTooltip>
+          ) : null}
           <div className="search-scope-control">
             <span className="search-filter-label">{scopeChangePending ? "Next search in:" : "Search in:"}</span>
             {scopePlannedByAi ? <span className="search-scope-empty">Determined by AI</span>
@@ -7304,6 +7473,16 @@ function App() {
                   || /^re:/iu.test(query.trim())}
               />}
           </div>
+          <UiTooltip label={<span className="tooltip-shortcut-label"><span>Switch folder</span><ShortcutBadge shortcut="Ctrl+P" /></span>}>
+            <button type="button" className="folder-scope-chip" aria-label={`Switch folder, browsing ${folderScopeLabel(folderScope, folders)}`} aria-live="polite" onMouseDown={(event) => event.preventDefault()} onClick={() => setFolderSwitcherOpen(true)}>
+              <Folder size={14} aria-hidden="true" />
+              {folderScope.kind !== "all" && <span>{folderScopeLabel(folderScope, folders)}</span>}
+            </button>
+          </UiTooltip>
+          {captureDestinationArmed ? <span className="folder-capture-status" role="status" title={`Capture destination: ${captureDestination === null ? "/" : folders.find((folder) => folder.id === captureDestination)?.path ?? "/"}`}>
+            <Radio size={13} aria-hidden="true" />
+            <span>Capturing → {captureDestination === null ? "/" : folders.find((folder) => folder.id === captureDestination)?.path ?? "/"}</span>
+          </span> : null}
           {scopeChangePending ? (
             <span className="search-scope-pending" role="status"
               title={historyQuery.trim()
@@ -7521,13 +7700,65 @@ function App() {
               : ""}
         </PickerStatusAnnouncer>
         </PickerHeader>
+        <div className="folder-workspace-body">
+        <FolderWorkspace
+          folders={folders}
+          reload={reloadFolders}
+          scope={folderScope}
+          onScopeChange={changeFolderScope}
+          destination={captureDestination}
+          destinationArmed={captureDestinationArmed}
+          onDestinationChange={setFolderDestination}
+          selectedItemIds={selectedIds.size > 0 ? Array.from(selectedIds) : selectedItemId !== null ? [selectedItemId] : []}
+          draggedItemIdsRef={draggedItemIdsRef}
+          moveRequest={folderMoveRequest}
+          onMoveRequestDone={() => setFolderMoveRequest(null)}
+          onMoved={async () => {
+            setSelectedIds(new Set());
+            selectedIdsRef.current = new Set();
+            await refreshAppliedHistory();
+            await reloadFolders();
+          }}
+          onError={(error) => setActionError(error)}
+          deleteDefaults={{
+            clips: settings.history.deleteFolderClipsDefault,
+            descendants: settings.history.deleteFolderDescendantsDefault,
+          }}
+          narrow={appearanceViewport.narrow}
+          treeOpen={folderTreeOpen}
+          onTreeOpenChange={setFolderTreeOpen}
+          treeRef={folderTreeRef}
+          switcher={folderSwitcherOpen}
+          onSwitcherChange={setFolderSwitcherOpen}
+          rootItemCount={rootItemCount}
+        />
 
         <PickerFeed>
           <div className="history-reopen-loading" role="status"
             aria-label={historyError ? "Could not update clipboard history." : "Updating clipboard history"}>
             {historyError ? "Could not update clipboard history." : "Updating clipboard history"}
           </div>
-          <div ref={historyScrollRef} className="history-feed-scroll">
+          <div ref={historyScrollRef} className="history-feed-scroll" tabIndex={0} onKeyDown={(event) => {
+            if (event.defaultPrevented || (event.target !== event.currentTarget && !(event.target instanceof HTMLElement && event.target.matches(".feed-item")))) return;
+            if (event.key === "ArrowLeft" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+              event.preventDefault();
+              setFolderTreeOpen(true);
+              requestAnimationFrame(() => folderTreeRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              handleSearchKeyDown(event.nativeEvent);
+            } else if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+              const view = queryEditorRef.current?.getView();
+              if (view) {
+                event.preventDefault();
+                view.focus();
+                view.dispatch({
+                  changes: { from: view.state.selection.main.from, to: view.state.selection.main.to, insert: event.key },
+                  selection: { anchor: view.state.selection.main.from + 1 },
+                  userEvent: "input.type",
+                });
+              }
+            }
+          }}>
             <ol
               id="clipboard-feed"
               className={`history-feed${displayedHistory.length > 0 ? " has-items" : ""}`}
@@ -7633,7 +7864,7 @@ function App() {
                   }}
                 >
                   <UiCheckbox
-                    className={`item-selection-button${hasExplicitSelection || itemIsMultiSelected || itemIsSelected ? " is-visible" : ""}`}
+                    className="item-selection-button"
                     checked={itemIsMultiSelected}
                     aria-label={itemIsMultiSelected ? "Deselect item" : "Select item"}
                     onMouseDown={(event) => event.stopPropagation()}
@@ -7679,11 +7910,50 @@ function App() {
                       itemIsMultiSelected ? " is-multi-selected" : ""
                     }${item.is_marked ? " is-marked" : ""}${
                       item.content_kind === "image" ? " is-image" : ""
-                    }${item.is_inbox ? " is-inbox" : ""}${itemIsFindTarget ? " has-find-target" : ""}`}
+                    }${item.is_inbox ? " is-inbox" : ""}${itemIsFindTarget ? " has-find-target" : ""}${draggingItemId === item.id ? " is-dragging" : ""}`}
                     role="group"
                     tabIndex={itemIsSelected ? 0 : -1}
                     aria-current={itemIsSelected ? "true" : undefined}
                     aria-label={[item.title, item.text.slice(0, 160)].filter(Boolean).join(" ") || "Clipboard image"}
+                    onPointerDown={(event) => {
+                      if (event.pointerType !== "mouse" || event.button !== 0
+                        || inlineEditDraft?.id === item.id
+                        || (event.target instanceof Element && event.target.closest("button, input, textarea, select, .inline-item-editor"))) return;
+                      const { clientX, clientY, pointerId } = event;
+                      let started = false;
+                      const finish = () => {
+                        if (started) {
+                          suppressClickAfterDragRef.current = item.id;
+                          window.setTimeout(() => { suppressClickAfterDragRef.current = null; }, 0);
+                        }
+                        draggedItemIdsRef.current = null;
+                        setDraggingItemId(null);
+                        document.documentElement.classList.remove("clip-pointer-dragging");
+                        window.removeEventListener("pointermove", move);
+                        window.removeEventListener("pointerup", finish);
+                        window.removeEventListener("pointercancel", finish);
+                        window.removeEventListener("blur", finish);
+                      };
+                      const move = (pointer: PointerEvent) => {
+                        if (pointer.pointerId !== pointerId) return;
+                        if (!started && Math.hypot(pointer.clientX - clientX, pointer.clientY - clientY) >= 5) {
+                          started = true;
+                          const itemIds = selectedIdsRef.current.has(item.id) ? Array.from(selectedIdsRef.current) : [item.id];
+                          if (!selectedIdsRef.current.has(item.id)) {
+                            if (selectedIdsRef.current.size > 0) clearExplicitSelection();
+                            setCurrentItem(index);
+                          }
+                          draggedItemIdsRef.current = itemIds;
+                          setDraggingItemId(item.id);
+                          document.documentElement.classList.add("clip-pointer-dragging");
+                        }
+                        if (started) pointer.preventDefault();
+                      };
+                      window.addEventListener("pointermove", move);
+                      window.addEventListener("pointerup", finish);
+                      window.addEventListener("pointercancel", finish);
+                      window.addEventListener("blur", finish);
+                    }}
                     onKeyDown={(event) => {
                       if (event.target !== event.currentTarget) return;
                       if (event.key === "Enter") {
@@ -7700,8 +7970,13 @@ function App() {
                         window.requestAnimationFrame(() => document.querySelector<HTMLElement>(`#history-item-${history[nextIndex]?.id} .feed-item`)?.focus());
                       }
                     }}
-                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseDown={(event) => { if (event.button !== 0) event.preventDefault(); }}
                     onClick={(event) => {
+                      if (suppressClickAfterDragRef.current === item.id) {
+                        event.preventDefault();
+                        suppressClickAfterDragRef.current = null;
+                        return;
+                      }
                       if (event.shiftKey) {
                         setRangeSelection(index);
                       } else if (event.ctrlKey || event.metaKey) {
@@ -7725,6 +8000,7 @@ function App() {
                         setSelectedIds(nextSelectedIds);
                         selectionAnchorItemIdRef.current = item.id;
                       } else {
+                        if (selectedIdsRef.current.size > 0) clearExplicitSelection();
                         setCurrentItem(index);
                       }
                       setActionError(null);
@@ -7829,6 +8105,7 @@ function App() {
                         onPointerLeave={imageHoverPreview.onImagePointerLeave}
                       >
                         <img
+                          draggable={false}
                           src={localPreviewImageSource(item.thumbnail_data_url) ?? item.thumbnail_data_url}
                           alt={item.title || "Clipboard image"}
                           width={imageWidth}
@@ -7995,6 +8272,15 @@ function App() {
                         menuItems[nextIndex]?.focus();
                       }}
                     >
+                      <UiUnstyledButton type="button" role="menuitem" tabIndex={-1} className="item-menu-action" onClick={() => {
+                        setFolderMoveRequest({
+                          itemIds: hasExplicitSelection ? effectiveSelection.map((selected) => selected.id) : [item.id],
+                          trigger: itemMenuReturnFocusRef.current,
+                        });
+                        setOpenItemMenu(null);
+                      }}>
+                        Move {hasExplicitSelection ? `${effectiveSelection.length} selected clips` : "clip"} to folder…
+                      </UiUnstyledButton>
                       {hasExplicitSelection ? (
                         <div className="item-menu-group" role="group" aria-label="Principal">
                           <span className="item-menu-group-label">Principal</span>
@@ -8250,6 +8536,7 @@ function App() {
             </ol>
           </div>
         </PickerFeed>
+        </div>
         {commandPalette ? (
           <CommandPalette
             query={commandPalette.query}
@@ -8459,7 +8746,7 @@ function SearchHelpDialog({ onClose }: { onClose: () => void }) {
               <div><dt><code>kind:image</code></dt><dd>Text/image/html/file kind.</dd></div>
               <div><dt><code>mime:image/*</code></dt><dd>Primary MIME type.</dd></div>
               <div><dt><code>has:notes</code></dt><dd>Also: title, tags, metadata, mime, blob, image.</dd></div>
-              <div><dt><code>is:marked</code></dt><dd>Also: checked, unmarked, unchecked, inbox, not-inbox.</dd></div>
+              <div><dt><code>is:marked</code></dt><dd>Also: unmarked, inbox, not-inbox.</dd></div>
             </dl>
           </section>
 
@@ -9581,6 +9868,7 @@ function MarkdownPreview({
               {imageSource ? (
                 <>
                   <img
+                    draggable={false}
                     src={imageSource}
                     alt={segment.image.alt}
                     onLoad={onImageLoad}

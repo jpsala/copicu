@@ -2441,8 +2441,8 @@ function SettingsPanel({
 
             {displayedSections.some((section) => section.id === "history") ? (
               <SettingsSection title="History" description="Retention, dedupe and blob storage.">
-                {visible("history", "Retention count", "Maximum number of history items") ? (
-                  <SettingRow label="Retention count" description="Maximum items kept before pruning. Use 0 for unlimited.">
+                {visible("history", "Retention count", "Maximum number of ordinary Root history items") ? (
+                  <SettingRow label="Retention count" description="Maximum ordinary Root clips kept before pruning. Marked, Inbox and foldered clips are protected; use 0 for unlimited.">
                     <UiNumberInput
                       aria-label="Retention count"
                       min={0}
@@ -2458,6 +2458,30 @@ function SettingsPanel({
                           },
                         })
                       }
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("history", "Delete folder clips by default", "Retain direct clips in Root or delete them when deleting a folder") ? (
+                  <SettingRow label="Delete folder clips by default" description="Off keeps direct clips in Root. If subfolders are also deleted, all subtree clips go to Root. You can change this in every confirmation.">
+                    <UiSwitch
+                      label="Delete clips"
+                      checked={draft.history.deleteFolderClipsDefault}
+                      onChange={(checked) => onDraftChange({
+                        ...draft,
+                        history: { ...draft.history, deleteFolderClipsDefault: checked },
+                      })}
+                    />
+                  </SettingRow>
+                ) : null}
+                {visible("history", "Delete subfolders by default", "Retain child folders at the parent or delete the subtree") ? (
+                  <SettingRow label="Delete subfolders by default" description="Off moves child folders to the deleted folder's parent. You can change this in every confirmation.">
+                    <UiSwitch
+                      label="Delete subfolders"
+                      checked={draft.history.deleteFolderDescendantsDefault}
+                      onChange={(checked) => onDraftChange({
+                        ...draft,
+                        history: { ...draft.history, deleteFolderDescendantsDefault: checked },
+                      })}
                     />
                   </SettingRow>
                 ) : null}

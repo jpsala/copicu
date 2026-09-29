@@ -24,7 +24,7 @@ The long-term direction is a personal clipboard workbench:
 - tags, notes, titles, and other structured metadata;
 - actions that can transform or route clipboard items;
 - scriptable personal automations;
-- eventually, AI-assisted search and command planning.
+- optional AI-assisted search and a conversational assistant prototype, with further automation still under development.
 
 ## Current Core Features
 
@@ -36,7 +36,11 @@ Copicu currently supports:
 - blob storage for large/image payloads;
 - hash-based deduplication;
 - move-to-top semantics when old content is copied again;
-- searchable history picker;
+- searchable, virtualized preview-first history picker;
+- hierarchical folders with direct-clip feeds, scoped search and an explicit capture destination;
+- persistent marks independent of temporary selection;
+- Saved searches and Capture modes;
+- local deterministic field queries and optional AI-assisted search;
 - keyboard navigation;
 - copy selected item;
 - paste selected item into the previous window on Windows;
@@ -46,6 +50,41 @@ Copicu currently supports:
 - built-in actions;
 - local trusted TypeScript/JavaScript scripts;
 - a Markdown output window for generated summaries, reports, translations, and compiled notes.
+
+## Search, Select And Reuse
+
+Open the picker with your configured shortcut. Type a local query, use arrows to choose a clip, then `Enter` to copy and hide or `Shift+Enter` to paste into the previous Windows app (subject to your activation settings). Search can run in realtime, on Enter or by button; `Ctrl+Enter` applies the query in any mode.
+
+Examples: `title:invoice`, `notes:followup`, `tag:work`, `ctx:browser`, `window:review`, `kind:image`, `is:marked`. `title:` searches your editable title; `window:` searches captured source window context. Search and Find operate on the applied folder/filter snapshot, not an unrelated global list.
+
+Ctrl-click, Shift-click and row checkboxes create the same temporary selection. A plain click clears the group; keyboard navigation moves the active clip without removing checks. Applying another search or hiding the transient picker clears selection. Automatic refresh preserves selected clips that still match.
+
+Flags create persistent marks that survive searches, hide/show and restarts. The selection menu has separate **Add** and **Remove** operations for mixed selections. The flag menu shows the global marked total, marks in loaded results and how many are outside those results. Global marked actions can affect clips outside the current filter; **loaded results** means fetched pages, not all matches or just the viewport. Removing marks never deletes clips. Marked clips are protected from automatic retention, not explicit deletion.
+
+## Folders And Capture Destination
+
+- **All history** includes every location. **/** is Root, containing unfiled clips. A folder feed contains only its direct clips, not its descendants. Tree counts describe direct clips independently of the current search.
+- `Ctrl+B` toggles the tree; `Ctrl+P` switches by full path. Tree arrows navigate and expand/collapse; `Shift+F10` opens folder actions.
+- Changing folders keeps your applied filter and any pending query draft, but clears temporary selection. From All history, `folder:"Projects/Notes"` filters an exact path and `folder:/` filters Root. Explicit folder clauses intersect the browsing scope.
+- Browsing is not capture routing. Click **Arm folder** to send new captures and manual items to that destination. Changing folders disarms it; hide/show retains it in the running session; restarting returns to Root. Recapturing a duplicate retains its existing folder.
+- Move a clip or selection through its menu, or drag to a folder/Root. Dragging a selected row moves the group; dragging another row moves only that clip. Drops move immediately with no confirmation; All history cannot receive drops.
+- Create, rename and reparent folders from the tree. Folder deletion always asks separately whether to delete or retain direct clips and descendant folders, with exact counts. Retained direct clips move to Root; retained child folders move to the deleted folder's parent, keeping their contents. If deleting descendants while retaining clips, all subtree clips move to Root. Cancel changes nothing.
+
+Foldered, Inbox and marked clips are protected from automatic retention. Moving an otherwise unprotected clip to Root makes it eligible at the next pruning pass; the menu move dialog warns, but drag/drop is immediate. Individual clip deletion, including `Ctrl+D` or `Shift+Delete`, is explicit and can delete protected clips without confirmation. Do not treat it as reversible.
+
+The folder tree is implemented in the picker. An Explorer-style history table/long-session history manager is only proposed.
+
+## Edit Metadata And Save Workflows
+
+`F2` opens content plus title, notes and tags in one editor; `Ctrl+S` or `Ctrl+Enter` saves them atomically. `Shift+F2` opens metadata-only editing. Batch metadata editing stages explicit changes for mixed selections rather than guessing from placeholders. Capture context is separate, read-only provenance.
+
+Open **picker menu → Organize** for **Saved searches**, **Capture modes**, Inbox and Tags. A Saved search (formerly Saved View) is a passive query. A Capture mode (formerly Scenario) owns its query and can add configured metadata to new captures until stopped. Neither is a folder, and capture modes do not choose the destination folder.
+
+## Optional Assistant
+
+With AI configured, `Ctrl+I` or an `ai:` request opens the standalone conversational assistant with picker context. It is a prototype supporting conversation, history/image reads, read-only SQL and product operations for metadata, creation, export and trusted actions/scripts. **YOLO is the default and skips per-operation approval. Choose Confirm to review exact write/export/execution arguments.** It sends no requests in idle and provides no universal undo. Plain search stays local and deterministic; `re:` starts local case-insensitive regex search, separately from other filters. Further assistant refinement, plugins and an external RPC/CLI are future work.
+
+AI is disabled by default. Sending a turn contacts your provider; tool results may include clipboard text and images. Conversation history persists locally and can contain sensitive content. Review what is being sent and keep sensitive clips out of these requests.
 
 ## Privacy Model
 

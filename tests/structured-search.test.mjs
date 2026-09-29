@@ -52,6 +52,17 @@ test("closed structured values fail closed while date and free values remain app
   assert.equal(classifyStructuredSearchDraft("mime:text/plain").kind, "complete");
 });
 
+test("mark completions teach canonical names while checked aliases remain valid", () => {
+  const replacements = searchSuggestions("is:", []).map(({ replacement }) => replacement);
+  assert.ok(replacements.includes("is:marked"));
+  assert.ok(replacements.includes("is:unmarked"));
+  assert.ok(!replacements.includes("is:checked"));
+  assert.ok(!replacements.includes("is:unchecked"));
+  for (const query of ["is:checked", "is:unchecked", "-is:checked", "-is:unchecked"]) {
+    assert.equal(classifyStructuredSearchDraft(query).kind, "complete");
+  }
+});
+
 test("structured classifier matches Rust date and negation invalid-value rules", () => {
   const invalid = [
     "after:not-a-date",

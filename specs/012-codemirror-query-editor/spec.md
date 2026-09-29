@@ -120,8 +120,9 @@ rangos a partir de una clasificación frontend.
   permanecen como edición de texto; `Ctrl+Alt+ArrowUp/Down` sigue disponible
   como alternativa de navegación.
 - Con completion visible, ArrowUp/Down y PageUp/PageDown navegan sus opciones;
-  Enter acepta sólo si la composición IME está inactiva. Tab conserva el
-  recorrido de foco y nunca acepta completion.
+  Enter y Tab aceptan sólo si la composición IME está inactiva; Tab conserva foco
+  en el editor. Sin completion, Tab recorre foco. Shift+Tab cierra sin aceptar
+  y recorre foco hacia atrás.
 - Enter sin completion ejecuta la política de aplicación/activación de App.
 - Escape cierra primero completion/ayuda; sólo una segunda intención limpia o
   oculta según la política existente.

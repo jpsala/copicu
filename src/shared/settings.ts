@@ -86,6 +86,8 @@ export type AppSettings = {
   };
   history: {
     retentionCount: number;
+    deleteFolderClipsDefault: boolean;
+    deleteFolderDescendantsDefault: boolean;
   };
   appearance: {
     theme: ThemeSetting;
@@ -140,6 +142,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   history: {
     retentionCount: 0,
+    deleteFolderClipsDefault: false,
+    deleteFolderDescendantsDefault: false,
   },
   appearance: {
     theme: "system",
@@ -234,7 +238,12 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
       defaultSearchScopes: normalizeSearchScopes(picker.defaultSearchScopes),
       defaultExcludedSearchScopes: normalizeExcludedSearchScopes(picker.defaultExcludedSearchScopes),
     },
-    history: { ...DEFAULT_SETTINGS.history, ...settings.history },
+    history: {
+      ...DEFAULT_SETTINGS.history,
+      ...settings.history,
+      deleteFolderClipsDefault: settings.history?.deleteFolderClipsDefault === true,
+      deleteFolderDescendantsDefault: settings.history?.deleteFolderDescendantsDefault === true,
+    },
     appearance: {
       ...DEFAULT_SETTINGS.appearance,
       ...settings.appearance,

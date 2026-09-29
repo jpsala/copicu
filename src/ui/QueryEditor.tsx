@@ -13,6 +13,7 @@ import CodeMirror, {
   type ViewUpdate,
 } from "@uiw/react-codemirror";
 import {
+  acceptCompletion,
   autocompletion,
   closeCompletion,
   completionStatus,
@@ -46,6 +47,7 @@ type QueryEditorProps = {
   value: string;
   knownTagSlugs: string[];
   scopeSelection: SearchScopeSelection;
+  folderPaths?: string[];
   scenarioOptions?: QueryEditorScenarioOption[];
   placeholder?: string;
   hidden?: boolean;
@@ -297,12 +299,37 @@ function queryCompletionSource(
   context: CompletionContext,
   knownTagSlugs: string[],
   scopeSelection: SearchScopeSelection,
+  folderPaths: string[],
   scenarioOptions: QueryEditorScenarioOption[],
   onScenarioActivate: (id: number) => void,
 ) {
   if (context.state.readOnly) return null;
   const query = context.state.doc.toString();
   const range = completionContextRange(query, context);
+  const folderToken = searchTokenAt(query, completionCursor(context));
+  if (folderToken.prefix.startsWith("/") && folderToken.from < completionCursor(context)) {
+    const term = folderToken.prefix.slice(1).toLocaleLowerCase();
+    const paths = ["", ...folderPaths].filter((path) => path.toLocaleLowerCase().includes(term));
+    return {
+      from: folderToken.from,
+      to: folderToken.to,
+      filter: false,
+      options: paths.map((path) => ({
+        label: path || "/",
+        detail: path ? "Folder path" : "Unfiled clips",
+        type: "class",
+        apply: (view: EditorViewType, completion: Completion, from: number, to: number) => {
+          const replacement = path ? `folder:"${path.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : "folder:/";
+          view.dispatch({
+            changes: { from, to, insert: replacement },
+            selection: { anchor: from + replacement.length },
+            annotations: pickedCompletion.of(completion),
+            userEvent: "input.complete",
+          });
+        },
+      })),
+    };
+  }
   const scenarios = scenarioCompletions(query, scenarioOptions, onScenarioActivate);
   if (scenarios.length > 0) {
     return { ...range, options: scenarios, filter: false };
@@ -337,6 +364,7 @@ export const QueryEditor = forwardRef<QueryEditorHandle, QueryEditorProps>(funct
   knownTagSlugs,
   scopeSelection,
   scenarioOptions = [],
+  folderPaths = [],
   placeholder = "Search · in: scopes, tag: tags, re: pattern",
   hidden = false,
   onChange,
@@ -435,11 +463,12 @@ export const QueryEditor = forwardRef<QueryEditorHandle, QueryEditorProps>(funct
       context,
       knownTagSlugs,
       scopeSelection,
+      folderPaths,
       scenarioOptions,
       (id) => {
         onScenarioActivateRef.current?.(id);
       },
-    ), [knownTagSlugs, scenarioOptions, scopeSelection]);
+    ), [knownTagSlugs, scenarioOptions, scopeSelection, folderPaths]);
 
   const extensions = useMemo(() => [
     EditorView.contentAttributes.of({
@@ -468,8 +497,15 @@ export const QueryEditor = forwardRef<QueryEditorHandle, QueryEditorProps>(funct
         const keyboardEvent = event as KeyboardEvent;
         if (keyboardEvent.isComposing || keyboardEvent.keyCode === 229) return false;
         if (keyboardEvent.key === "Tab" && completionStatus(view.state) === "active") {
-          closeCompletion(view);
-          return false;
+          if (keyboardEvent.shiftKey) {
+            closeCompletion(view);
+            return false;
+          }
+          if (!keyboardEvent.ctrlKey && !keyboardEvent.altKey && !keyboardEvent.metaKey) {
+            acceptCompletion(view);
+            keyboardEvent.preventDefault();
+            return true;
+          }
         }
         if (completionStatus(view.state) === "active") return false;
         if (keyboardEvent.key === "Enter") {

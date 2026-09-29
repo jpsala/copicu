@@ -3,7 +3,6 @@ param(
   [switch] $DefaultAppData,
   [switch] $RemoteDebug,
   [switch] $ViteDev,
-  [switch] $EnableClipboardWatcher,
   [int] $RemoteDebugPort = 9222,
   [int] $TimeoutSeconds = 180
 )
@@ -100,25 +99,14 @@ if (-not $DefaultAppData) {
   if (-not $env:COPICU_GLOBAL_SHORTCUT) {
     $env:COPICU_GLOBAL_SHORTCUT = "Ctrl+Shift+."
   }
-  if ($EnableClipboardWatcher -or ($env:COPICU_ENABLE_CLIPBOARD_WATCHER -eq "1")) {
-    Remove-Item Env:\COPICU_DISABLE_CLIPBOARD_WATCHER -ErrorAction SilentlyContinue
-  }
-  $watcherEnabled = -not [bool] $env:COPICU_DISABLE_CLIPBOARD_WATCHER
-  if ($watcherEnabled) {
-    $env:COPICU_ENABLE_CLIPBOARD_WATCHER = "1"
-  } else {
-    Remove-Item Env:\COPICU_ENABLE_CLIPBOARD_WATCHER -ErrorAction SilentlyContinue
-  }
   Write-Step "using dev app data: $isolatedData" $startedAt
   Write-Step "using dev scripts dir: $isolatedScripts" $startedAt
   Write-Step "using dev default hotkey: $env:COPICU_GLOBAL_SHORTCUT" $startedAt
-  Write-Step ("dev clipboard watcher " + ($(if ($watcherEnabled) { "enabled" } else { "disabled" }))) $startedAt
+  Write-Step "dev clipboard watcher enabled" $startedAt
 } else {
   Remove-Item Env:\COPICU_APP_DATA_DIR -ErrorAction SilentlyContinue
   Remove-Item Env:\COPICU_SCRIPTS_DIR -ErrorAction SilentlyContinue
   Remove-Item Env:\COPICU_GLOBAL_SHORTCUT -ErrorAction SilentlyContinue
-  Remove-Item Env:\COPICU_DISABLE_CLIPBOARD_WATCHER -ErrorAction SilentlyContinue
-  Remove-Item Env:\COPICU_ENABLE_CLIPBOARD_WATCHER -ErrorAction SilentlyContinue
   Write-Step "using default app data" $startedAt
 }
 

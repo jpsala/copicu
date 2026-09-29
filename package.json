@@ -1,13 +1,12 @@
 {
   "name": "copicu",
   "private": true,
-  "version": "0.4.25",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "dev:isolated": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1",
     "dev:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1",
-    "dev:restart:watcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/restart-dev.ps1 -EnableClipboardWatcher",
     "dev:built": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -Built",
     "dev:built:fresh": "npm run build && npm run dev:built",
     "dev:background": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -Background",
@@ -31,7 +30,6 @@
     "scripts:run-example": "node scripts/run-example-action.mjs",
     "tauri": "tauri",
     "tauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1",
-    "tauri:dev:watcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/isolated-dev.ps1 -EnableClipboardWatcher",
     "tauri:build": "tauri build",
     "skills:status": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status",
     "skills:on": "powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 on",

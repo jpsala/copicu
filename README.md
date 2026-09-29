@@ -2,23 +2,23 @@
 
 **Copicu is a local-first, scriptable clipboard manager for Windows power users.**
 
-It turns clipboard history into working memory: search it, preview it, organize it with metadata, run local actions over it, and paste useful fragments back into the app you came from.
+It turns clipboard history into working memory: search it, preview it, organize it in folders, keep a marked working set across searches, run local actions, and paste useful fragments back into the app you came from.
 
 Copicu is Windows-first today. It is inspired by advanced clipboard tools like CopyQ, but it is not a CopyQ-compatible clone and does not try to run CopyQ scripts.
 
 ## Demo
 
-These assets use generated synthetic clipboard data only.
+The v0.5.0 picker, rendered by the actual React UI with synthetic mocked data. These screenshots do not demonstrate native capture or paste.
 
-Compact picker feed with overflow indicators, bounded image previews, Saved Views, and Scenarios:
+Folder tree with a scoped preview feed:
 
-![Copicu synthetic picker screenshot](docs/assets/screenshots/picker-synthetic-history.png)
+![Copicu picker with Projects folder and nested Notes](docs/assets/screenshots/picker-folders-v0.5.0.png)
 
-Full-surface content editor opened with `F2`:
+Persistent marks, with global actions distinguished from loaded results:
 
-![Copicu synthetic full editor screenshot](docs/assets/screenshots/picker-full-editor.png)
+![Copicu marked menu showing five global marks and two in loaded results](docs/assets/screenshots/picker-marked-scope-v0.5.0.png)
 
-Short generated flow showing search, expansion, quick inline editing, and save:
+Earlier generated workflow illustration (not refreshed for v0.5.0), showing search, expansion, inline editing, and save:
 
 ![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
 
@@ -35,12 +35,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.4.25](https://github.com/jpsala/copicu/releases/tag/v0.4.25)
-- Asset: `Copicu_0.4.25_x64-setup.exe`
+- [v0.5.0](https://github.com/jpsala/copicu/releases/tag/v0.5.0)
+- Asset: `Copicu_0.5.0_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `1BA4D23871CA7B3C6C30037DE2232A909250B9540ADA9B4C6893D10D1AEEDBDF`
+- SHA256: `79F716B9EF97A44DCC5A7064DA23E59139297B617FFF88AC19B323B4B674384E`
 
-Picker now refreshes history on native show without waiting for WebView focus.
+Folders, persistent marked working sets, and more reliable scoped search.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -79,12 +79,15 @@ Copicu is early-stage, but the core is functional:
 - store history and metadata locally with SQLite;
 - store image/blob payloads outside SQLite;
 - deduplicate content by hash;
-- open a compact searchable picker;
+- open a compact searchable picker with a collapsible folder tree;
+- browse All history, unfiled Root (`/`), or the direct clips in a folder, and search within that scope;
+- explicitly arm a folder as the capture destination, move clips by menu or drag, and manage nested folders;
+- keep persistent marks across searches and restarts, separate from temporary batch selection;
 - navigate primarily with the keyboard;
 - search plain text or scoped fields like `meta:`, `title:`, `notes:`, `ctx:`, `tag:`, `kind:`, and `is:marked`;
-- save the current search as a named **Saved View**, then reopen it from the compact Views menu;
-- create independent **Scenarios** that remember their own query and apply optional tags or structured metadata to new captures while active;
-- switch or stop Scenarios from the picker without opening Settings;
+- save the current search as a named **Saved search**;
+- create independent **Capture modes** that remember their query and apply optional tags or structured metadata to new captures while active;
+- open saved searches and switch or stop capture modes from **Organize** in the picker menu;
 - choose whether search runs in realtime, on Enter, or only from the Search button;
 - copy the selected item;
 - paste the selected item into the previous Windows app;
@@ -95,7 +98,7 @@ Copicu is early-stage, but the core is functional:
 - open tag-filtered picker routes;
 - run built-in actions and trusted local TypeScript/JavaScript scripts;
 - use a command palette and local/global shortcut routes;
-- optionally use AI-assisted search/actions when configured by the user;
+- optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
 
 ## Core Flows
@@ -112,7 +115,7 @@ Useful query examples:
 - `ctx:vivaldi` searches hidden capture context such as source app/window/URL metadata.
 - `window:pull request` searches captured source window titles. `title:` is reserved for the editable item title.
 
-The picker can filter while typing, wait for Enter, or wait for the Search button. `Ctrl+Enter` runs the current query in any mode. Plain text always uses local deterministic search; prefix a request with `ai:` to invoke the optional AI planner.
+The picker can filter while typing, wait for Enter, or wait for the Search button. `Ctrl+Enter` runs the current query in any mode. Plain text always uses local deterministic search; prefix a request with `ai:` to send it to the optional assistant, which can apply a deterministic picker filter. `re:` starts a local case-insensitive regex query (not combinable with other query filters); Find searches within the applied results.
 
 Paste-to-previous-window is intentionally Windows-first and depends on native focus behavior, target app timing, and paste shortcuts. Please report target-specific failures with synthetic reproduction data.
 
@@ -130,14 +133,27 @@ Visible metadata is user-editable and searchable with `meta:`, `title:`, and `no
 
 This makes the clipboard useful for recurring snippets, links, prompts, code, screenshots, and temporary project notes instead of being just a flat list.
 
-**Saved Views** and **Scenarios** serve different workflows:
+**Selection and marks:** Ctrl/Shift and row checkboxes build the same temporary selection, cleared when applying another search or hiding the picker. Flags build a persistent marked working set across searches and restarts. Add or remove selected clips from marks in the selection menu; the flag menu shows the global total, marks in loaded results and the scope of global batch actions. Clearing marks does not delete clips. Marked clips are protected from automatic retention, but can still be explicitly deleted.
 
-- A Saved View is a passive named filter. Use **Views → Save current search as view** to preserve the current picker query without changing future captures.
-- A Scenario is an active work session. Use **Scenario → Create from current search** to preserve the query and optionally apply tags, client, project, or activity metadata to every new capture until you switch or stop it.
-- Both open from matching compact menus in the picker. Creating or editing one never creates, renames, or deletes the other.
-- Existing Scenarios are migrated locally to own their query, while historical Saved Views remain available and unchanged.
+**Folders:** All history searches everywhere; `/` shows unfiled clips; each folder shows only its direct clips, not its descendants. Changing folders preserves the applied filter but clears temporary selection. `Ctrl+B` toggles the tree and `Ctrl+P` switches by full folder path. You can also search `folder:"Projects/Notes"` or `folder:/` from All history.
 
-### 3. Run Local Actions And Scripts
+Browsing a folder does not route new captures there. Use **Arm folder** explicitly; changing folders disarms it, hiding/reopening preserves it, and restarting returns the destination to Root. Duplicate captures keep their existing location. Move a clip or selected group by its menu or drag to a folder/Root; drops move immediately. All history is not a destination.
+
+Deleting a folder always opens a confirmation with exact counts and independent choices for direct clips and subfolders. Retaining clips moves them to Root; retaining subfolders reparents them without flattening their contents. Foldered, Inbox and marked clips are protected from automatic retention. Moving an otherwise unprotected clip to Root makes it eligible for the next pruning pass. Explicit clip deletion can still delete protected clips and is not an undo workflow.
+
+**Saved searches** (formerly Saved Views) and **Capture modes** (formerly Scenarios) serve different workflows under **picker menu → Organize**:
+
+- A Saved search is a passive named filter. Saving a query does not change future captures.
+- A Capture mode is an active work session with its own query and optional tags or structured metadata for new captures until switched or stopped. It does not select a folder destination.
+- They remain independent of folders, marks and each other.
+
+### 3. Optional Assistant And Metadata
+
+`F2` opens the unified content and metadata editor; save commits both together. `Shift+F2` opens metadata-only editing, including explicit batch operations for mixed selections. Capture context stays separate and read-only rather than becoming your editable title or notes.
+
+`Ctrl+I` or an `ai:` request opens the standalone assistant with picker context. The assistant is a prototype for conversation, local history/image search, read-only SQL and product operations such as metadata edits, creation, export and trusted scripts. **YOLO is its default mode and skips per-operation approval; switch to Confirm to review exact write/export/execution arguments.** It does not run in idle and has no universal undo. Deterministic search remains local; optional AI requests use your configured provider. Review selected-content disclosure before sending. Richer automation and an Explorer-style history table remain proposed, not implemented.
+
+### 4. Run Local Actions And Scripts
 
 Copicu has a shared concept called an **Action**. Actions can be built in or provided by local TypeScript/JavaScript scripts.
 
@@ -146,11 +162,11 @@ Example workflows:
 - clean tracking parameters from URLs;
 - format JSON before pasting;
 - normalize whitespace;
-- join checked clips into Markdown;
+- join selected clips into Markdown;
 - extract URLs from selected clips;
 - tag selected clips;
 - paste transformed content into the previous app;
-- create a Markdown summary from checked items.
+- create a Markdown summary from selected items.
 
 The repo already includes runnable showcase examples under [scripts/examples/](scripts/examples/). Copy them to your Copicu scripts folder, refresh diagnostics in Settings, then run them from the item menu, command palette, or local shortcuts while the picker is focused:
 
@@ -178,7 +194,7 @@ Clipboard history is sensitive. Copicu is local-first by design:
 - examples, screenshots, tests, and issues should use synthetic data;
 - real clipboard dumps, local databases, `.env` files, secrets, and private logs should never be committed.
 
-AI features are optional and disabled by default. Some AI operations, such as search planning, can translate a natural-language request into local filters like `meta:`/`ctx:` without sending clipboard payloads. Other operations, such as summarizing selected clips, necessarily send selected content to the configured provider and should remain explicit, capability-based, and reviewable.
+AI features are optional and disabled by default. Sending an assistant turn contacts your configured provider; tools may supply clipboard text, images or search results as part of that conversation. Local deterministic search does not contact a provider. Review disclosure and scope before sending, and use Confirm mode when you need per-operation approval; the assistant defaults to YOLO. Conversation history is stored locally and can contain sensitive content.
 
 Use [.env.example](.env.example) if you want to test OpenAI-compatible providers locally.
 
@@ -246,11 +262,13 @@ Open an issue using the templates in this repo and include synthetic reproductio
 Near-term priorities:
 
 - stronger paste-to-previous-window validation across target apps;
-- query explain/chips so scoped search results are easier to understand;
+- continued refinement of applied search explanations and scoped-query usability;
 - more built-in actions and sample scripts;
 - a stable script/action API;
 - richer previews for text, code, URLs, HTML, Markdown, and images;
-- continued refinement of tags, Saved Views, Scenarios, and smart collections;
+- continued refinement of folders, persistent marks, tags, Saved searches and Capture modes;
+- a proposed task-oriented history manager/Explorer table, separate from the implemented picker folder tree;
+- further assistant dogfood and approval-driven workflows;
 - public benchmark plan for large histories;
 - clearer Windows packaging and distribution;
 - cross-platform support only where native behavior can be made reliable.
@@ -318,6 +336,8 @@ User-facing docs:
 
 - [docs/user/README.md](docs/user/README.md)
 - [docs/user/scripts.md](docs/user/scripts.md)
+- [v0.5.0 release notes and upgrade guidance](docs/releases/v0.5.0.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 Project and contributor docs:
 

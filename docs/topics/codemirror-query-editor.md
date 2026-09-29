@@ -108,10 +108,10 @@ Puntos de entrada del estudio: `src/shared/search.ts`, `src/main.tsx`,
   propio teclado y no consulta defaultPrevented; Enter acepta opciones.
   CodeMirror tambien acepta con Enter por defecto y no liga Tab a aceptar.
   Los bindings del picker anterior no son un requisito de la nueva UX.
-- La integracion actual conserva Enter como aceptacion de completion de CodeMirror;
-  no agrega `acceptCompletion` a Tab. Tab sigue disponible para recorrido de foco:
-  cualquier rediseño de atajos debe cambiar este contrato y su smoke, no prometer
-  una aceptacion que el binding instalado no ejecuta.
+- Enter y Tab aceptan la completion activa sin activar un clip. Tab conserva el
+  foco en el editor; sin completion, recorre foco normalmente. Shift+Tab cierra
+  completion sin aceptarla y recorre foco hacia atras. Aceptar conserva la misma
+  politica Realtime/Enter que tipear o pegar.
 - `@uiw/react-codemirror` permite configuracion minima, pero su wrapper instalado
   usa un latch de 200 ms para diferir ciertos cambios externos mientras se
   escribe; esto NO retrasa su onChange normal. `QueryEditor` sincroniza cambios
@@ -340,7 +340,8 @@ query inicial capturada en closures de apply tras ediciones posteriores.
 Binding nuevo debe tener un unico dueño y precedencia explicita para completion,
 snippets, edicion y acciones del picker. Con completion activa, Enter acepta la
 opcion y no llega a App; sin completion, Enter ejecuta la politica de App. Tab
-conserva el recorrido de foco y nunca acepta completion. Un mismo keypress no
+acepta completion activa y conserva foco; sin completion recorre foco. Shift+Tab
+cierra sin aceptar y recorre foco hacia atras. Un mismo keypress no
 debe aceptar sugerencia Y activar un clip/aplicar efectos extra.
 Escape cierra la capa activa antes de descartar/esconder. Composicion IME gana
 sobre bindings de completion y aplicacion; una transaccion `input.compose`
@@ -374,9 +375,9 @@ si no aportan a la query. No hace falta React Aria/Ariakit/Downshift/LSP para el
   Si requiere intervencion humana, solicitarla por la tool canonica.
 - Probar teclado, click, pegar, undo/redo, selecciones, Escape, Tab/Enter y foco
   al reabrir. Cero teclas perdidas, cero click/foco manual requerido.
-- Smoke de teclado: Enter acepta una completion activa; Tab no la acepta por
-  defecto en este binding y conserva el recorrido de foco. No duplicar Enter como
-  aceptacion y aplicacion de clip en el mismo keypress.
+- Smoke de teclado: Enter y Tab aceptan una completion activa; Tab mantiene foco.
+  Sin completion, Tab recorre foco; Shift+Tab cierra sin aceptar y retrocede foco.
+  No duplicar aceptacion y aplicacion de clip en el mismo keypress.
 - Medir bundle final, latencia nativa comparada, memoria/CPU idle y estabilidad
   de instancia; no inventar umbrales satisfechos ni inferir Tauri desde Node.
 - Tests focalizados que defiendan comportamiento; build/checks finales una vez

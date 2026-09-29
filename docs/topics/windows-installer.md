@@ -277,6 +277,7 @@ El cierre de un track de implementacion tampoco demuestra distribucion:
   la version efectivamente instalada por separado, no inferirla del tag.
 - Mantener cambios aun no distribuidos en `CHANGELOG.md` Unreleased y su estado
   operativo en `WORKING_MEMORY.md`; no duplicar ese inventario en este topic.
+- `-Summary` es una línea para README/updater; `-NotesFile` conserva Markdown completo y el helper agrega hash real/HEAD en una copia UTF8 sin BOM, sin modificar la fuente. `-DryRun` no detiene procesos ni escribe archivos/lee claves. Una ejecución real con `-SkipBuild` también exige firma existente no vacía; el placeholder pertenece sólo a DryRun. El build detiene únicamente ejecutables positivamente identificados bajo targets del repo, no la app instalada.
 - Las notas de release deben distinguir defectos corregidos de sintomas cuya
   desaparicion no fue medida. Pruebas en dev aislado no prueban la resolucion
   de un hang intermitente en la instalada.
@@ -342,7 +343,7 @@ Los comandos dev no deben usar esa DB por defecto. `npm run tauri:dev`, `npm run
 
 El hotkey default del perfil dev aislado es `Ctrl+Shift+.` para no competir con la instalada. Si alguna investigacion necesita reproducir contra el perfil real, debe ser opt-in explicito, no default.
 
-Dev aislado mantiene app-data/scripts separados y hotkey propio, pero el clipboard watcher queda habilitado por defecto para que dogfood/dev capture como la instalada. Si una prueba necesita estabilidad sin captura real, debe deshabilitarlo explicitamente con `COPICU_DISABLE_CLIPBOARD_WATCHER=1`.
+Dev aislado mantiene app-data/scripts separados y hotkey propio; captura cambios del portapapeles como la instalada.
 
 El tray de dev debe distinguirse de la instalada:
 
@@ -351,6 +352,20 @@ El tray de dev debe distinguirse de la instalada:
 - icono `src-tauri/icons/tray-dev.png` con badge `D`.
 
 La instalada conserva tooltip/icono normal `Copicu`.
+
+### Smoke Seguro Del Binario Instalado
+
+Para comprobar el ejecutable distribuido sin abrir el historial personal,
+iniciar una segunda instancia de `%LOCALAPPDATA%\Copicu\copicu.exe` con
+`COPICU_APP_DATA_DIR` y `COPICU_SCRIPTS_DIR` apuntando a un perfil temporal
+exclusivo y un `COPICU_GLOBAL_SHORTCUT` distinto del instalado. Verificar ruta
+y PID de esa instancia antes de interactuar; usar sólo datos sintéticos en el
+portapapeles durante la prueba. Cerrar únicamente la instancia aislada y retirar
+sólo su perfil temporal; conservar el proceso de uso diario.
+
+El perfil vacío permite comprobar arranque, render, búsqueda y errores locales.
+No demuestra captura de clipboard, paste a la ventana anterior, proveedor real
+ni actualización end-to-end. Mantener esas pruebas como gates separados.
 
 ## Fuentes
 

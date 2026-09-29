@@ -1,9 +1,9 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { AppSettings, SearchScope } from "../../src/shared/settings";
 
 import { Buffer } from "node:buffer";
 import { deflateSync } from "node:zlib";
-declare const process: { platform: string };
+declare const process: { platform: string; env: Record<string, string | undefined> };
 
 function pngDataUrl(width: number, height: number, color: string) {
   const chunk = (type: string, data: Buffer) => {
@@ -488,6 +488,11 @@ async function mockTauriInvoke(
     (window as any).__copicuTestWindowPinned = false;
     (window as any).__copicuTestHistoryItems = items;
     (window as any).__copicuTestHistoryResponses = [];
+    (window as any).__copicuTestFolders = [
+      { id: 7, parentId: null, name: "Projects", path: "Projects", directItemCount: 1, descendantFolderCount: 1, subtreeItemCount: 2 },
+      { id: 8, parentId: 7, name: "Notes", path: "Projects/Notes", directItemCount: 1, descendantFolderCount: 0, subtreeItemCount: 1 },
+    ];
+    (window as any).__copicuTestFolderDestination = { folderId: null, armed: false };
     (window as any).__copicuTestBoundaryShifted = false;
     (window as any).__copicuTestCompoundPending = pending;
     (window as any).__copicuTestMockOptions = mockOptions;
@@ -962,10 +967,15 @@ async function mockTauriInvoke(
           ? actual.startsWith(candidate.slice(0, -1))
           : actual === candidate;
       };
+      const scopeToken = String(descriptor.effectiveQuery).match(/(?:^|\s)(?:folder-id:(\d+)|folder:\/|folder:"([^"]+)")(?=\s|$)/);
       const source = (sourceOverride ?? findSourceItems()).filter((item: any) => {
         const kind = valueToComparable(item.content_kind);
         const mime = valueToComparable(item.mime_primary);
         const marked = Boolean(item.is_marked ?? item.marked);
+        const scopedFolderId = scopeToken?.[1] ? Number(scopeToken[1])
+          : scopeToken?.[2] ? (window as any).__copicuTestFolders.find((folder: { path: string }) => folder.path === scopeToken[2])?.id
+            : null;
+        if (scopeToken && item.folderId != scopedFolderId) return false;
         return matchesText(item)
           && (filters?.kind ?? []).every((candidate: any) => kind === valueToComparable(candidate))
           && (filters?.notKind ?? []).every((candidate: any) => kind !== valueToComparable(candidate))
@@ -1433,6 +1443,8 @@ async function mockTauriInvoke(
               },
             ];
             if (cmd === "list_actions") {
+              // Public demo fixtures show built-ins, not internal registry-test scripts.
+              if ((window as any).__copicuPublicReleaseDemo) return actions;
               return [
                 ...actions,
                 ...[
@@ -1840,10 +1852,19 @@ async function mockTauriInvoke(
             const appliedDescriptor = canonicalDescriptor.descriptor;
             const includeCounts = request.includeCounts !== false;
             const interpretedQuery = aiMode ? "long" : request.query ?? "";
-            const requestQuery = (aiMode ? interpretedQuery : request.query?.toLocaleLowerCase()) ?? query;
+            const scopeToken = (request.query ?? "").match(/(?:^|\s)(folder-id:(\d+)|folder:\/|folder:"([^"]+)")(?=\s|$)/);
+            const scopedSourceItems = scopeToken
+              ? sourceItems.filter((item: any) => scopeToken[2]
+                ? item.folderId === Number(scopeToken[2])
+                : scopeToken[3]
+                  ? item.folderId === (window as any).__copicuTestFolders.find((f: any) => f.path === scopeToken[3])?.id
+                  : item.folderId == null)
+              : sourceItems;
+            const requestQuery = ((aiMode ? interpretedQuery : request.query?.toLocaleLowerCase()) ?? query)
+              .replace(/(?:^|\s)(?:folder-id:\d+|folder:\/|folder:"[^"]+")(?=\s|$)/g, "").trim();
             const descriptorResult = mockOptions.findAppliedDescriptor
               ? descriptorMembership(appliedDescriptor, sourceItems)
-              : { supported: true, items: sourceItems };
+              : { supported: true, items: scopedSourceItems };
             if (!descriptorResult.supported) {
               throw new Error("history mock cannot evaluate the appliedDescriptor plan");
             }
@@ -1881,7 +1902,7 @@ async function mockTauriInvoke(
               : mockOptions.findAppliedDescriptor
               ? descriptorResult.items
               : regex
-              ? sourceItems.filter((item: Record<string, unknown>) => [
+              ? scopedSourceItems.filter((item: Record<string, unknown>) => [
                   item.text,
                   item.title,
                   item.notes,
@@ -1891,7 +1912,7 @@ async function mockTauriInvoke(
                   item.context_search_text,
                 ].some((value) => regex.test(typeof value === "string" ? value : "")))
               : requestQuery
-              ? sourceItems.filter((item: any) => {
+              ? scopedSourceItems.filter((item: any) => {
                   if (requestQuery === "is:marked") {
                     return Boolean(item.is_marked);
                   }
@@ -1904,6 +1925,11 @@ async function mockTauriInvoke(
                   if (["is:not-inbox", "is:not_inbox", "-is:inbox"].includes(requestQuery)) {
                     return !item.is_inbox;
                   }
+                  const tagSearch = requestQuery.match(/^tag:([^\s,]+)$/);
+                  if (tagSearch) {
+                    return (item.tags ?? "").toLocaleLowerCase().split(/[\s,]+/)
+                      .some((tag: string) => tag.replace(/^#/, "") === tagSearch[1]);
+                  }
                   return [
                     item.text,
                     item.title ?? "",
@@ -1914,7 +1940,7 @@ async function mockTauriInvoke(
                     .toLocaleLowerCase()
                     .includes(requestQuery);
                 })
-              : sourceItems;
+              : scopedSourceItems;
             const cursor = request.cursor;
             const startIndex = cursor
               ? filteredItems.findIndex(
@@ -1948,7 +1974,7 @@ async function mockTauriInvoke(
                       afterId: cursorItem.id,
                     }
                   : null,
-              totalCount: includeCounts ? sourceItems.length : null,
+              totalCount: includeCounts ? scopedSourceItems.length : null,
               filteredCount: includeCounts ? filteredItems.length : null,
               interpretedQuery: request.explain ? interpretedQuery : null,
               explanation: request.explain
@@ -1973,8 +1999,26 @@ async function mockTauriInvoke(
           case "get_history_items_preview": {
             const ids = new Set(args.ids);
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
-            return sourceItems.filter((item: any) => ids.has(item.id))
-              .map((item: any) => withHistoryPreview(item, false));
+            let requestedItems = sourceItems.filter((item: any) => ids.has(item.id));
+            if (args.appliedDescriptor) {
+              const descriptor = args.appliedDescriptor;
+              // The default search mock emits an empty plan; materialize its simple
+              // query here so retained previews enforce membership like real SQLite.
+              const query = descriptor.effectiveQuery.replace(/(?:^|\s)(?:folder-id:\d+|folder:\/|folder:"[^"]+")(?=\s|$)/g, "").trim();
+              const tag = query.match(/^tag:([^\s,]+)$/);
+              const plan = descriptor.plan;
+              const previewDescriptor = !plan.text && !plan.filters && query
+                ? { ...descriptor, plan: {
+                    ...plan,
+                    text: !tag && query !== "is:marked" ? { all: [query], any: [], phrases: [], exclude: [] } : null,
+                    filters: tag ? { tags: [tag[1]] } : query === "is:marked" ? { marked: true } : null,
+                  } }
+                : descriptor;
+              const membership = descriptorMembership(previewDescriptor, requestedItems);
+              if (!membership.supported) throw new Error("preview mock cannot evaluate the appliedDescriptor plan");
+              requestedItems = membership.items;
+            }
+            return requestedItems.map((item: any) => withHistoryPreview(item, false));
           }
           case "get_history_item": {
             const sourceItems = (window as any).__copicuTestHistoryItems ?? items;
@@ -2453,6 +2497,73 @@ async function mockTauriInvoke(
               },
             };
             return (window as any).__copicuTestSettings;
+          case "consume_capture_folder_feedback":
+            return [];
+          case "list_folders":
+            return structuredClone((window as any).__copicuTestFolders);
+          case "root_item_count":
+            return (window as any).__copicuTestHistoryItems.filter((item: { folderId: number | null }) => item.folderId === null).length;
+          case "get_capture_folder_destination":
+            return (window as any).__copicuTestFolderDestination.folderId;
+          case "get_capture_folder_destination_state":
+            return { ...(window as any).__copicuTestFolderDestination };
+          case "set_capture_folder_destination":
+            (window as any).__copicuTestFolderDestination = { folderId: args.folderId, armed: args.armed ?? args.folderId !== null };
+            return args.folderId;
+          case "create_folder": {
+            const folders = (window as any).__copicuTestFolders;
+            const parent = folders.find((f: any) => f.id === args.parentId);
+            const folder = { id: Math.max(8, ...folders.map((f: any) => f.id)) + 1, parentId: args.parentId, name: args.name, path: parent ? `${parent.path}/${args.name}` : args.name, directItemCount: 0, descendantFolderCount: 0, subtreeItemCount: 0 };
+            folders.push(folder);
+            return folder;
+          }
+          case "rename_folder": {
+            const folders = (window as any).__copicuTestFolders;
+            const folder = folders.find((entry: { id: number }) => entry.id === args.id);
+            const previousPath = folder.path;
+            folder.name = args.name;
+            folder.path = folder.parentId === null ? args.name : `${folders.find((entry: { id: number }) => entry.id === folder.parentId).path}/${args.name}`;
+            for (const descendant of folders.filter((entry: { path: string }) => entry.path.startsWith(`${previousPath}/`))) {
+              descendant.path = folder.path + descendant.path.slice(previousPath.length);
+            }
+            return folder;
+          }
+          case "move_folder": {
+            const folders = (window as any).__copicuTestFolders;
+            const folder = folders.find((entry: { id: number }) => entry.id === args.id);
+            const previousPath = folder.path;
+            folder.parentId = args.parentId;
+            folder.path = args.parentId === null ? folder.name : `${folders.find((entry: { id: number }) => entry.id === args.parentId).path}/${folder.name}`;
+            for (const descendant of folders.filter((entry: { path: string }) => entry.path.startsWith(`${previousPath}/`))) {
+              descendant.path = folder.path + descendant.path.slice(previousPath.length);
+            }
+            return folder;
+          }
+          case "folder_delete_preview": {
+            const folder = (window as any).__copicuTestFolders.find((f: any) => f.id === args.id);
+            return { directItemCount: folder.directItemCount, subtreeItemCount: folder.subtreeItemCount, descendantFolderCount: folder.descendantFolderCount };
+          }
+          case "delete_folder": {
+            const folders = (window as any).__copicuTestFolders;
+            const folder = folders.find((entry: { id: number }) => entry.id === args.id);
+            const subtreeIds = folders.filter((entry: { path: string }) =>
+              entry.path === folder.path || entry.path.startsWith(`${folder.path}/`)).map((entry: { id: number }) => entry.id);
+            const removedIds = args.deleteDescendants ? subtreeIds : [folder.id];
+            const preview = { directItemCount: folder.directItemCount, subtreeItemCount: folder.subtreeItemCount, descendantFolderCount: folder.descendantFolderCount };
+            (window as any).__copicuTestHistoryItems = (window as any).__copicuTestHistoryItems
+              .filter((item: { folderId?: number | null }) => !args.deleteClips || !removedIds.includes(item.folderId))
+              .map((item: { folderId?: number | null }) => !args.deleteClips && removedIds.includes(item.folderId)
+                ? { ...item, folderId: null } : item);
+            (window as any).__copicuTestFolders = folders.filter((entry: { id: number }) => !removedIds.includes(entry.id))
+              .map((entry: { parentId: number | null; path: string }) =>
+                !args.deleteDescendants && entry.parentId === folder.id
+                  ? { ...entry, parentId: folder.parentId, path: entry.path.slice(folder.path.length + 1) }
+                  : entry);
+            return preview;
+          }
+          case "move_history_items_to_folder":
+            (window as any).__copicuTestHistoryItems = (window as any).__copicuTestHistoryItems.map((item: any) => args.itemIds.includes(item.id) ? { ...item, folderId: args.folderId } : item);
+            return args.itemIds.length;
           default:
             throw new Error(`Unhandled mocked Tauri command: ${cmd}`);
         }
@@ -3095,7 +3206,7 @@ test("picker row kebab and grouped menu stay keyboard reachable at 420 px", asyn
   await expect(kebab).toBeFocused();
 });
 
-test("current navigation stays separate from explicit bulk selection", async ({ page }) => {
+test("plain click replaces bulk selection while keyboard navigation keeps it", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
   await waitForDefaultHistoryReady(page);
@@ -3131,6 +3242,7 @@ test("current navigation stays separate from explicit bulk selection", async ({ 
   await expect(first).toHaveAttribute("aria-current", "true");
 
   await firstCheckbox.click();
+  await thirdRow.hover();
   await thirdRow.getByLabel("Select item").click();
   await expect(first).toHaveClass(/is-multi-selected/);
   await expect(third).toHaveClass(/is-multi-selected/);
@@ -3139,12 +3251,41 @@ test("current navigation stays separate from explicit bulk selection", async ({ 
   );
   await expect(page.getByRole("status", { name: "Picker status" })).toContainText("2 clips selected.");
 
-  // A normal click changes current without clearing the explicit group.
+  await search.hover();
+  await expect(firstRow.locator(".item-selection-button")).toHaveCSS("opacity", "1");
+  await expect(thirdRow.locator(".item-selection-button")).toHaveCSS("opacity", "1");
+  await expect(rowItems.nth(1).locator(".item-selection-button")).toHaveCSS("opacity", "0");
+  await expect(firstRow.getByLabel("Deselect item")).toBeChecked();
+  await expect(thirdRow.getByLabel("Deselect item")).toBeChecked();
+  // A checked row remains directly deselectable without hover.
+  await firstRow.getByLabel("Deselect item").click();
+  await search.hover();
+  await expect(firstRow.locator(".item-selection-button")).toHaveCSS("opacity", "0");
+  await expect(thirdRow.locator(".item-selection-button")).toHaveCSS("opacity", "1");
+
+  // A plain click on another row replaces the previous bulk selection.
   await fourth.click();
   await expect(fourth).toHaveAttribute("aria-current", "true");
+  await expect(first).not.toHaveClass(/is-multi-selected/);
+  await expect(third).not.toHaveClass(/is-multi-selected/);
+  await expect(page.locator(".selection-menu-button")).toHaveAccessibleName("Open selected clips menu, 0 selected");
+
+  // Ctrl-click highlights a transient group; clicking outside the feed clears it.
+  await first.click();
+  await third.click({ modifiers: ["Control"] });
   await expect(first).toHaveClass(/is-multi-selected/);
   await expect(third).toHaveClass(/is-multi-selected/);
-  await expect(fourth).not.toHaveClass(/is-multi-selected/);
+  await page.locator(".search-filter-strip").hover();
+  await expect(firstRow.locator(".item-selection-button")).toHaveCSS("opacity", "1");
+  await expect(thirdRow.locator(".item-selection-button")).toHaveCSS("opacity", "1");
+  await search.click();
+  await expect(first).not.toHaveClass(/is-multi-selected/);
+  await expect(third).not.toHaveClass(/is-multi-selected/);
+  await expect(page.locator(".selection-menu-button")).toHaveAccessibleName("Open selected clips menu, 0 selected");
+  await firstRow.hover();
+  await firstCheckbox.click();
+  await thirdRow.hover();
+  await thirdRow.getByLabel("Select item").click();
   await fourth.focus();
   await expect(fourth).toBeFocused();
   await fourth.press("ArrowUp");
@@ -4229,17 +4370,18 @@ test("selection menu stays transient and independent from persistent marks", asy
   await expect(menu.getByRole("menuitem", { name: "Edit tags for selected" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Edit metadata for selected", exact: true })).toBeVisible();
   await expect(menu.getByText("Change marks for selection", { exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Mark all 4 selected clips", exact: true })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: "Add 4 selected clips to marks", exact: true })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: "Remove 0 selected clips from marks", exact: true })).toBeDisabled();
   await expect(menu.getByRole("menuitem", { name: "Delete 4 selected", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Clear selection", exact: true })).toBeVisible();
 
-  await menu.getByRole("menuitem", { name: "Mark all 4 selected clips", exact: true }).click();
+  await menu.getByRole("menuitem", { name: "Add 4 selected clips to marks", exact: true }).click();
   await expect(page.getByLabel("Unmark item")).toHaveCount(4);
   await expect(page.locator(".mark-menu-count")).toHaveText("4");
   menu = await openSelectionMenu(page);
-  await expect(menu.getByRole("menuitem", { name: "Unmark all 4 selected clips", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Mark all 4 selected clips", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Remove 4 selected clips from marks", exact: true })).toBeEnabled();
+  await expect(menu.getByRole("menuitem", { name: "Add 0 selected clips to marks", exact: true })).toBeDisabled();
 
   await menu.getByRole("menuitem", { name: "Clear selection", exact: true }).click();
   await expect(trigger).toHaveAccessibleName("Open selected clips menu, 0 selected");
@@ -4256,6 +4398,150 @@ test("selection menu stays transient and independent from persistent marks", asy
   await expect(page.getByLabel("Deselect item")).toHaveCount(2);
 });
 
+
+test("mixed selection has counted explicit add and remove marks without changing selection", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory.map((item, index) => ({ ...item, is_marked: index < 2 })));
+  await gotoShell(page);
+  let menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true }).click();
+  menu = await openSelectionMenu(page);
+  await expect(menu.getByRole("menuitem", { name: "Add 2 selected clips to marks", exact: true })).toBeEnabled();
+  await menu.getByRole("menuitem", { name: "Remove 2 selected clips from marks", exact: true }).click();
+  await expect(page.locator(".mark-menu-count")).toHaveText("0");
+  await expect(page.locator(".selection-menu-count")).toHaveText("4");
+  menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Add 4 selected clips to marks", exact: true }).click();
+  await expect(page.locator(".mark-menu-count")).toHaveText("4");
+  await expect(page.locator(".selection-menu-count")).toHaveText("4");
+  const mutations = await page.evaluate(() => (window as MetadataVisualRuntime).__copicuTestInvocations
+    ?.filter(({ cmd }) => cmd === "set_history_items_marked").map(({ args }) => args.request));
+  expect(mutations).toEqual([
+    { ids: syntheticLongHistory.slice(0, 2).map(({ id }) => id), marked: false },
+    { ids: syntheticLongHistory.map(({ id }) => id), marked: true },
+  ]);
+});
+
+test("automatic refresh preserves surviving selected IDs and removes deleted ones", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await page.locator(".feed-item").nth(0).hover();
+  await page.getByLabel("Select item", { exact: true }).first().click();
+  await page.locator(".feed-item").nth(1).hover();
+  await page.getByLabel("Select item", { exact: true }).first().click();
+  await expect(page.locator(".selection-menu-count")).toHaveText("2");
+  await page.evaluate(async () => {
+    const state = window as any;
+    state.__copicuTestHistoryItems = state.__copicuTestHistoryItems.filter((item: any) => item.id !== state.__copicuTestHistoryItems[0].id);
+    state.__copicuTestHistoryItems[0].title = "SYNTH_REFRESH_SURVIVOR";
+    await state.__copicuTestEmitEvent("copicu://history/changed", { itemId: state.__copicuTestHistoryItems[0].id, contentKind: "text" });
+  });
+  await expect(page.getByText("SYNTH_REFRESH_SURVIVOR", { exact: true })).toBeVisible();
+  await expect(page.locator(".selection-menu-count")).toHaveText("1");
+  await expect(page.getByLabel("Deselect item", { exact: true })).toHaveCount(1);
+});
+
+test("automatic refresh at the top preserves selected clips from later loaded pages", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory);
+  await gotoShell(page);
+  const feed = page.locator(".history-feed-scroll");
+  await expect.poll(async () => {
+    await feed.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    return page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ }).count();
+  }).toBe(1);
+  let menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Select 80 loaded clips", exact: true }).click();
+  await feed.evaluate((element) => { element.scrollTop = 0; });
+  await expect(page.locator(".selection-menu-count")).toHaveText("80");
+  await page.evaluate(async () => {
+    const state = window as any;
+    state.__copicuTestHistoryItems.pop();
+    state.__copicuTestHistoryItems[0].title = "SYNTH_PAGED_REFRESH";
+    await state.__copicuTestEmitEvent("copicu://history/changed", { itemId: state.__copicuTestHistoryItems[0].id, contentKind: "text" });
+  });
+  await expect(page.getByText("SYNTH_PAGED_REFRESH", { exact: true })).toBeVisible();
+  await expect(page.locator(".selection-menu-count")).toHaveText("79");
+  expect(await feed.evaluate((element) => element.scrollTop)).toBe(0);
+  menu = await openSelectionMenu(page);
+  await expect(menu.getByRole("menuitem", { name: "Select 79 loaded clips", exact: true })).toBeVisible();
+});
+
+for (const query of ["is:marked", "tag:working"]) {
+  test(`retained refresh evicts existing selected clips that leave ${query}`, async ({ page }) => {
+    await mockTauriInvoke(page, syntheticPagedHistory.map((item) => ({ ...item, is_marked: true, tags: "#working" })));
+    await gotoShell(page);
+    await page.getByLabel("Search clipboard history").fill(query);
+    await expect(page.locator("[title='Result count']")).toHaveText("80 clips");
+    const feed = page.locator(".history-feed-scroll");
+    await expect.poll(async () => {
+      await feed.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+      return page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ }).count();
+    }).toBe(1);
+    const menu = await openSelectionMenu(page);
+    await menu.getByRole("menuitem", { name: "Select 80 loaded clips", exact: true }).click();
+    const scrollBefore = await feed.evaluate((element) => element.scrollTop);
+    const removedId = await page.evaluate(async (filter) => {
+      const state = window as any;
+      const lost = state.__copicuTestHistoryItems[0];
+      if (filter === "is:marked") lost.is_marked = false;
+      else lost.tags = "";
+      await state.__copicuTestEmitEvent("copicu://history/changed", { itemId: lost.id, contentKind: "text" });
+      return lost.id;
+    }, query);
+    await expect(page.locator(`#history-item-${removedId}`)).toHaveCount(0);
+    await expect(page.locator(".selection-menu-count")).toHaveText("79");
+    const refreshedMenu = await openSelectionMenu(page);
+    await expect(refreshedMenu.getByRole("menuitem", { name: "Select 79 loaded clips", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect(await feed.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(Math.abs((await feed.evaluate((element) => element.scrollTop)) - scrollBefore)).toBeLessThan(250);
+    expect(await page.evaluate((id) => (window as any).__copicuTestHistoryItems.some((item: any) => item.id === id), removedId)).toBe(true);
+  });
+}
+
+test("mark mutation retains all loaded selected clips beyond page one", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory);
+  await gotoShell(page);
+  const feed = page.locator(".history-feed-scroll");
+  await expect.poll(async () => {
+    await feed.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    return page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ }).count();
+  }).toBe(1);
+  let menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Select 80 loaded clips", exact: true }).click();
+  await feed.evaluate((element) => { element.scrollTop = 0; });
+  for (const command of ["Add 80 selected clips to marks", "Remove 80 selected clips from marks"]) {
+    menu = await openSelectionMenu(page);
+    await menu.getByRole("menuitem", { name: command, exact: true }).click();
+    await expect(page.locator(".mark-menu-count")).toHaveText(command.startsWith("Add") ? "80" : "0");
+    await expect(page.locator(".selection-menu-count")).toHaveText("80");
+    await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestInvocations
+      .filter((call: any) => call.cmd === "get_history_items_preview").length)).toBeGreaterThan(0);
+    menu = await openSelectionMenu(page);
+    await expect(menu.getByRole("menuitem", { name: "Select 80 loaded clips", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect(await feed.evaluate((element) => element.scrollTop)).toBe(0);
+  }
+  await expect(page.locator(".mark-menu-count")).toHaveText("0");
+});
+
+test("persistent marks scope stays keyboard accessible without narrow overflow", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory.map((item) => ({ ...item, is_marked: true })));
+  await gotoShell(page);
+  await page.getByLabel("Search clipboard history").fill("markdown");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+  const trigger = page.getByRole("button", { name: /^Open marked clips menu/ });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const menu = page.getByRole("menu", { name: "Marked clips", exact: true });
+  await expect(menu.getByRole("note")).toContainText("including 3 outside loaded results");
+  await expect(menu.getByText("Marks persist across searches, hide and restart. Removing marks never deletes clips.", { exact: true })).toBeVisible();
+  const bounds = await menu.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(await menu.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+});
 
 test("selection menu disables visible selection when history is empty", async ({ page }) => {
   await mockTauriInvoke(page, []);
@@ -4348,6 +4634,9 @@ test("marked header count and batch actions include clips outside the current fi
   await expect(counter).toHaveText("4");
   marksMenu = await openMarksMenu(page);
   await expect(marksMenu.getByText("Actions for marked clips")).toBeVisible();
+  await expect(marksMenu.getByText("4 marked total · 1 in loaded results", { exact: true })).toBeVisible();
+  await expect(marksMenu.getByRole("note")).toHaveText("All 4 marked clips, including 3 outside loaded results. Applies to metadata, actions and delete.");
+  await expect(page.locator(".selection-menu-count")).toHaveText("0");
   await expect(marksMenu.getByRole("menuitem", { name: "Join marked" })).toBeVisible();
   await expect(marksMenu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
   const editTags = marksMenu.getByRole("menuitem", { name: "Edit tags for marked" });
@@ -4362,6 +4651,28 @@ test("marked header count and batch actions include clips outside the current fi
     const calls = (window as MetadataVisualRuntime).__copicuTestInvocations ?? [];
     return calls.filter(({ cmd }) => cmd === "open_metadata_window").at(-1)?.args.request?.itemIds;
   }))).toEqual(new Set(syntheticLongHistory.map(({ id }) => id)));
+});
+
+test("marked batch commands wait for every global page before enabling metadata and delete", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory.map((item) => ({ ...item, is_marked: true })), null, {
+    historyPageSizeOverride: 2,
+    historySearchDelayMs: 30,
+  });
+  await gotoShell(page);
+  await expect(page.locator(".mark-menu-count")).toHaveText("80");
+  await page.getByLabel("Search clipboard history").fill("COPICU_SYNTH_PAGE_80");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 80 matches");
+  const menu = await openMarksMenu(page);
+  await expect(menu.getByRole("note")).toHaveText("Loading all marked clips before enabling actions…");
+  await expect(menu.getByRole("menuitem", { name: "Edit metadata for marked", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Delete 80 marked clips", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("note")).toHaveText("All 80 marked clips, including 79 outside loaded results. Applies to metadata, actions and delete.");
+  await expect(menu.getByRole("menuitem", { name: "Delete 80 marked clips", exact: true })).toBeEnabled();
+  await menu.getByRole("menuitem", { name: "Edit metadata for marked", exact: true }).click();
+  await expect.poll(async () => new Set(await page.evaluate(() => {
+    const calls = (window as MetadataVisualRuntime).__copicuTestInvocations ?? [];
+    return calls.filter(({ cmd }) => cmd === "open_metadata_window").at(-1)?.args.request?.itemIds;
+  }))).toEqual(new Set(syntheticPagedHistory.map(({ id }) => id)));
 });
 
 test("marked menu deletes every marked clip, including clips outside the current filter", async ({ page }) => {
@@ -5631,6 +5942,36 @@ test("query editor accepts keyboard and click completions and closes Escape", as
   ).toBeGreaterThan(0);
 });
 
+test("Tab accepts completion and keeps search focus without applying in Enter mode", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
+  await search.fill("tag:wo");
+  await expect(suggestions.getByRole("option", { name: "tag:work" })).toHaveAttribute("aria-selected", "true");
+  await page.waitForTimeout(100);
+  await page.evaluate(() => { (window as any).__copicuTestInvocations = []; });
+  await search.press("Tab");
+  await expect.poll(() => search.textContent()).toBe("tag:work");
+  await expect(search).toBeFocused();
+  await expect(suggestions).toHaveCount(0);
+  await page.waitForTimeout(180);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter(
+    (call: any) => call.cmd === "history_search" || call.cmd === "activate_item",
+  ).length)).toBe(0);
+
+  // With no completion, Tab still traverses focus; Shift+Tab never accepts.
+  await search.press("Tab");
+  await expect(search).not.toBeFocused();
+  await search.fill("tag:wo");
+  await expect(suggestions).toBeVisible();
+  await search.press("Shift+Tab");
+  await expect.poll(() => search.textContent()).toBe("tag:wo");
+  await expect(search).not.toBeFocused();
+  await expect(suggestions).toHaveCount(0);
+});
+
 test("Enter accepts completion before applying the same query", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, { searchTriggerMode: "enter" });
   await gotoShell(page);
@@ -6722,6 +7063,7 @@ for (const hideTrigger of ["Escape", "hide button"] as const) {
     const rows = page.locator(".history-feed.has-items > li");
     await rows.nth(1).hover();
     await rows.nth(1).getByLabel("Select item").click();
+    await rows.nth(2).hover();
     await rows.nth(2).getByLabel("Select item").click();
     await expect(page.locator(".selection-menu-count")).toHaveText("2");
 
@@ -7060,7 +7402,7 @@ test("selection menu deletes selected items when current differs", async ({ page
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
-  await page.getByRole("group", { name: /COPICU_SYNTH_MULTILINE/ }).click();
+  await page.getByLabel("Search clipboard history").press("ArrowDown");
   await expect(page.getByRole("group", { name: /COPICU_SYNTH_MULTILINE/ })).toHaveAttribute("aria-current", "true");
   const menu = await openSelectionMenu(page);
   await menu.getByRole("menuitem", { name: "Delete 2 selected", exact: true }).click();
@@ -7120,7 +7462,7 @@ test("multi selection tag action opens the frozen selection in the standalone in
   await gotoShell(page);
 
   await selectLongSingleLineAndUnbroken(page);
-  await page.getByRole("group", { name: /COPICU_SYNTH_MULTILINE/ }).click();
+  await page.getByLabel("Search clipboard history").press("ArrowDown");
   const menu = await openSelectionMenu(page);
   await menu.getByRole("menuitem", { name: "Edit tags for selected" }).click();
 
@@ -8687,4 +9029,493 @@ test("UiHost retains editable input after a failed response and ignores duplicat
   await expect(input).toHaveValue("Keep edited input");
   await page.getByRole("button", { name: "Submit", exact: true }).click();
   await expect(input).toBeHidden();
+});
+
+async function revealFolderTree(page: Page) {
+  if (!(await page.locator(".folder-tree.is-open").count())) {
+    await page.getByRole("button", { name: "Show folders" }).click();
+  }
+}
+
+async function folderOf(page: Page, id: number) {
+  return page.evaluate((targetId) => {
+    // The mock IPC fixture owns this in-page history array.
+    const testWindow = window as Window & { __copicuTestHistoryItems: Array<{ id: number; folderId: number | null }> };
+    return testWindow.__copicuTestHistoryItems.find((item) => item.id === targetId)?.folderId;
+  }, id);
+}
+
+async function dragClipToFolder(source: Locator, target: Locator) {
+  const bounds = await source.boundingBox();
+  if (!bounds) throw new Error("Drag source is not visible");
+  await source.dragTo(target, { sourcePosition: { x: Math.round(bounds.width * .68), y: Math.min(18, bounds.height / 2) } });
+}
+
+// Public assets are an explicit opt-in, never a side effect of the ordinary suite.
+// Uses the actual React picker with synthetic IPC fixtures, not native clipboard data.
+test("capture synthetic release picker screenshots (opt-in)", async ({ page }, testInfo) => {
+  test.skip(process.env.COPICU_CAPTURE_RELEASE_SCREENSHOTS !== "1", "Public asset capture is opt-in");
+  test.skip(testInfo.project.name !== "chromium-desktop", "One canonical desktop capture");
+  await page.setViewportSize({ width: 1040, height: 760 });
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  await page.route("**/*", (route) => {
+    const url = new URL(route.request().url());
+    return url.hostname === "127.0.0.1" || url.protocol === "data:" || url.protocol === "blob:"
+      ? route.continue() : route.abort();
+  });
+  const snippets = [
+    { text: "npm run build\n✓ TypeScript checked\n✓ Demo workspace built in 1.2s", title: "Build check", tags: "development", folderId: 7 },
+    { text: "SELECT title, notes\nFROM demo_clipboard_items\nWHERE project = 'synthetic-demo';", title: "Local query example", tags: "sql", folderId: 7 },
+    { text: "## Release checklist\n- Review folder destinations\n- Check marked clips across searches\n- Keep all demo content synthetic", title: "Release notes", tags: "demo,review", folderId: 7 },
+    { text: "https://example.test/docs/keyboard-workflows", title: "Keyboard workflow reference", tags: "reference", folderId: 8 },
+    { text: "Meeting notes: confirm the next synthetic demo review on Thursday.", title: "Demo review", tags: "notes", folderId: 8 },
+    { text: "Draft: Thanks for the review. The sample changes are ready to check.", title: "Reply draft", tags: "draft", folderId: null },
+  ];
+  await mockTauriInvoke(page, snippets.map((snippet, index) => ({
+    ...syntheticLongHistory[1], ...snippet, id: 9700 + index,
+    normalized_hash: `public-release-demo-${index}`, mime_primary: "text/plain",
+    notes: null, is_marked: index !== 1, marked_at_unix_ms: index !== 1 ? 1_800_000_003_000 : null,
+  })));
+  await page.addInitScript(() => {
+    (window as any).__copicuPublicReleaseDemo = true;
+    (window as any).__copicuTestFolders = [
+      { id: 7, parentId: null, name: "Projects", path: "Projects", directItemCount: 3, descendantFolderCount: 1, subtreeItemCount: 5 },
+      { id: 8, parentId: 7, name: "Notes", path: "Projects/Notes", directItemCount: 2, descendantFolderCount: 0, subtreeItemCount: 2 },
+    ];
+  });
+  await gotoShell(page);
+  await revealFolderTree(page);
+  const projects = page.getByRole("treeitem", { name: /Projects/ });
+  await projects.click();
+  await projects.press("ArrowRight");
+  await expect(page.getByRole("treeitem", { name: /Notes/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /Build check/ })).toBeVisible();
+  await expect(page.locator(".feed-item")).toHaveCount(3);
+  await page.mouse.move(1030, 750);
+  await page.screenshot({ path: "docs/assets/screenshots/picker-folders-v0.5.0.png", animations: "disabled" });
+  const menu = await openMarksMenu(page);
+  await expect(menu.getByText("5 marked total · 2 in loaded results", { exact: true })).toBeVisible();
+  await expect(menu.getByRole("note")).toContainText("including 3 outside loaded results");
+  await page.mouse.move(20, 750);
+  await page.screenshot({ path: "docs/assets/screenshots/picker-marked-scope-v0.5.0.png", animations: "disabled" });
+});
+
+test("folder tree scopes search and preserves CodeMirror caret ownership", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 501, folderId: null, text: "ROOT_ONLY_TOKEN" },
+    { ...syntheticLongHistory[1], id: 502, folderId: 7, text: "PROJECT_ONLY_TOKEN" },
+    { ...syntheticLongHistory[2], id: 503, folderId: 8, text: "NOTES_ONLY_TOKEN" },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await expect(page.getByRole("group", { name: /PROJECT_ONLY_TOKEN/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /ROOT_ONLY_TOKEN/ })).toHaveCount(0);
+  await page.waitForFunction(() => (window as any).__copicuTestInvocations.some((call: any) =>
+    call.cmd === "history_search" && call.args.request.query === "folder-id:7"));
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("alpha beta");
+  await search.click();
+  await search.press("Home");
+  await search.press("ArrowRight");
+  await page.keyboard.type("X");
+  await expect(search).toContainText("aXlpha beta");
+  await page.keyboard.press("Control+p");
+  await expect(page.getByRole("dialog", { name: "Switch folder" })).toBeVisible();
+  await page.getByLabel("Find folder").fill("Notes");
+  await page.getByRole("option", { name: "Projects/Notes" }).click();
+  await page.waitForFunction(() => (window as any).__copicuTestInvocations.some((call: any) =>
+    call.cmd === "history_search" && call.args.request.query.endsWith("folder-id:8")));
+});
+
+test("folder navigation preserves applied tag filters", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[1], id: 501, folderId: null, text: "ROOT_TAG_MATCH", tags: "work" },
+    { ...syntheticLongHistory[1], id: 502, folderId: 7, text: "PROJECT_TAG_MATCH", tags: "work" },
+    { ...syntheticLongHistory[1], id: 503, folderId: 7, text: "PROJECT_OTHER_TAG", tags: "backend" },
+  ]);
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("3 total");
+  await revealFolderTree(page);
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("tag:wo");
+  await expect(page.locator(".cm-tooltip-autocomplete").getByRole("option", { name: "tag:work" })).toBeVisible();
+  await page.waitForTimeout(100);
+  await search.press("Tab");
+  await expect.poll(() => search.textContent()).toBe("tag:work");
+  await expect(page.getByRole("group", { name: /PROJECT_OTHER_TAG/ })).toHaveCount(0);
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await expect.poll(() => search.textContent()).toBe("tag:work");
+  await expect(page.getByRole("group", { name: /PROJECT_TAG_MATCH/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /ROOT_TAG_MATCH/ })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: /PROJECT_OTHER_TAG/ })).toHaveCount(0);
+  await page.waitForFunction(() => (window as any).__copicuTestInvocations.some((call: any) =>
+    call.cmd === "history_search" && call.args.request.query === "tag:work folder-id:7"));
+});
+
+test("folder navigation keeps an unapplied draft separate from its applied filter", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[1], id: 502, folderId: 7, text: "PROJECT_TAG_MATCH", tags: "work" },
+    { ...syntheticLongHistory[1], id: 503, folderId: 7, text: "PROJECT_OTHER_TAG", tags: "backend" },
+  ], null, { searchTriggerMode: "enter" });
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("2 total");
+  await revealFolderTree(page);
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("tag:wo");
+  await page.locator(".cm-tooltip-autocomplete").getByRole("option", { name: "tag:work" }).click();
+  await search.press("Enter");
+  await expect(page.getByRole("group", { name: /PROJECT_OTHER_TAG/ })).toHaveCount(0);
+  await search.fill("tag:");
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await expect.poll(() => search.textContent()).toBe("tag:");
+  await expect(page.getByRole("group", { name: /PROJECT_TAG_MATCH/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /PROJECT_OTHER_TAG/ })).toHaveCount(0);
+  await page.waitForFunction(() => (window as any).__copicuTestInvocations.some((call: any) =>
+    call.cmd === "history_search" && call.args.request.query === "tag:work folder-id:7"));
+});
+
+test("Ctrl+P cycles folder results with arrows while input keeps focus", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await page.getByLabel("Search clipboard history").press("Control+p");
+  const input = page.getByLabel("Find folder");
+  await input.fill("Projects");
+  await input.press("ArrowDown");
+  await expect(input).toBeFocused();
+  await expect(page.getByRole("option", { name: "Projects/Notes" })).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowUp");
+  await expect(page.getByRole("option", { name: "Projects", exact: true })).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowDown");
+  await input.press("Enter");
+  await expect(page.getByRole("button", { name: "Switch folder, browsing Projects/Notes" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Switch folder" })).toHaveCount(0);
+});
+
+test("focused clip crosses to folder tree and typing returns to scoped search", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 601, folderId: null, text: "ROW_FOCUS_TOKEN" },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  const row = page.locator(".feed-item").first();
+  await row.focus();
+  await row.press("ArrowLeft");
+  await expect(page.getByRole("treeitem", { name: "All history" })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".history-feed-scroll")).toBeFocused();
+  await row.focus();
+  await page.keyboard.type("ROW");
+  await expect(page.getByLabel("Search clipboard history")).toContainText("ROW");
+});
+
+test("Explorer-like folder tree selects with arrows, expands branches, and opens context actions", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 611, folderId: 7, text: "PROJECT_TREE_TOKEN" },
+    { ...syntheticLongHistory[1], id: 612, folderId: 8, text: "NOTES_TREE_TOKEN" },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  const root = page.locator('[data-folder-row="null"]');
+  await root.focus();
+  await root.press("ArrowDown");
+  const projects = page.getByRole("treeitem", { name: /Projects/ });
+  await expect(projects).toBeFocused();
+  await expect(projects).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("group", { name: /PROJECT_TREE_TOKEN/ })).toBeVisible();
+  await projects.press("ArrowRight");
+  await expect(projects).toHaveAttribute("aria-expanded", "true");
+  await projects.press("ArrowRight");
+  const notes = page.getByRole("treeitem", { name: /Notes/ });
+  await expect(notes).toBeFocused();
+  await expect(page.getByRole("group", { name: /NOTES_TREE_TOKEN/ })).toBeVisible();
+  await notes.press("ArrowLeft");
+  await expect(projects).toBeFocused();
+  await projects.press("Shift+F10");
+  await expect(page.getByRole("menu", { name: "Actions for Projects" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Actions for Projects" })).toHaveCount(0);
+});
+
+test("narrow tree collapses without losing scope and destination survives picker reopen", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 720 });
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await page.getByRole("button", { name: "Show folders" }).click();
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await expect(page.getByRole("treeitem", { name: /Projects/ })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Switch folder, browsing Projects" })).toBeVisible();
+  await page.getByRole("button", { name: "Show folders" }).click();
+  await page.getByRole("button", { name: "Arm folder" }).click();
+  await expect(page.locator(".folder-capture-status")).toContainText("Capturing → Projects");
+  await page.evaluate(async () => (window as any).__copicuTestEmitEvent("copicu://picker/hidden", null));
+  await page.evaluate(async () => (window as any).__copicuTestEmitEvent("copicu://picker/shown", null));
+  await expect(page.locator(".folder-capture-status")).toContainText("Capturing → Projects");
+  await page.locator('[data-folder-row="null"]').click();
+  await expect(page.locator(".folder-capture-status")).toHaveCount(0);
+});
+
+test("Ctrl+B collapses and restores the tree without changing the active folder", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  const tree = page.getByRole("tree", { name: "History folders" });
+  if (!(await page.locator(".folder-tree.is-open").count())) await page.getByRole("button", { name: "Show folders" }).click();
+  const search = page.getByLabel("Search clipboard history");
+  await search.focus();
+  await search.press("Control+b");
+  await expect(tree).toBeHidden();
+  await expect(page.getByRole("button", { name: "Switch folder, browsing Projects" })).toBeVisible();
+  await search.press("Control+b");
+  await expect(tree).toBeVisible();
+  await expect(tree.getByRole("treeitem", { name: /Projects/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("folder controls share the filter strip without adding a feed header", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  const scope = page.getByRole("button", { name: "Switch folder, browsing All history" });
+  await expect(scope).toBeVisible();
+  await expect(page.locator(".folder-active-feed")).toHaveCount(0);
+  await expect(page.locator(".search-filter-strip .folder-scope-chip")).toBeVisible();
+  await page.getByRole("button", { name: "Hide folders" }).hover();
+  await expect(page.getByRole("tooltip").locator(".shortcut-badge[aria-label='Ctrl+B']")).toBeVisible();
+  await page.getByRole("button", { name: "Hide folders" }).click();
+  await expect(page.getByRole("button", { name: "Show folders" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show folders" })).toBeFocused();
+  await scope.hover();
+  await expect(page.getByRole("tooltip").locator(".shortcut-badge[aria-label='Ctrl+P']")).toBeVisible();
+  await scope.click();
+  await expect(page.getByRole("dialog", { name: "Switch folder" })).toBeVisible();
+});
+
+test("dragging one clip to a folder moves only that clip and refreshes its feed", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 901, folderId: null, text: "DRAG_ONE" },
+    { ...syntheticLongHistory[1], id: 902, folderId: null, text: "STAYS_ROOT" },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  await expect(page.locator('[data-folder-row="null"]')).toContainText("/");
+  await expect(page.locator('[data-folder-row="null"] .folder-tree-count')).toHaveText("2");
+  await dragClipToFolder(page.getByRole("group", { name: /DRAG_ONE/ }), page.getByRole("treeitem", { name: /Projects/ }));
+  await expect.poll(() => folderOf(page, 901)).toBe(7);
+  await expect.poll(() => folderOf(page, 902)).toBeNull();
+  await expect(page.locator('[data-folder-row="null"] .folder-tree-count')).toHaveText("1");
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await expect(page.locator("#clipboard-feed")).toContainText("DRAG_ONE");
+  await expect(page.locator("#clipboard-feed")).not.toContainText("STAYS_ROOT");
+});
+
+test("internal drag marks valid folder targets with a grabbing cursor", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 951, folderId: null, text: "POINTER_DRAG_TOKEN" }]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  const source = await page.getByRole("group", { name: /POINTER_DRAG_TOKEN/ }).boundingBox();
+  const folder = await page.getByRole("treeitem", { name: /Projects/ }).boundingBox();
+  const all = await page.getByRole("treeitem", { name: "All history" }).boundingBox();
+  if (!source || !folder || !all) throw new Error("Drag source or tree target is not visible");
+  await page.mouse.move(source.x + source.width * .8, source.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(folder.x + folder.width / 2, folder.y + folder.height / 2, { steps: 8 });
+  await expect(page.locator('[data-folder-drop-id="7"]')).toHaveClass(/is-drop-target/);
+  await expect(page.locator('[data-folder-drop-id="7"]')).toHaveCSS("cursor", "grabbing");
+  await expect(page.locator(".folder-drop-hint")).toHaveText("Move 1");
+  const root = await page.locator('[data-folder-row="null"]').boundingBox();
+  if (!root) throw new Error("Root drop target is not visible");
+  await page.mouse.move(root.x + root.width / 2, root.y + root.height / 2);
+  await expect(page.locator('[data-folder-drop-id="root"]')).toHaveClass(/is-drop-target/);
+  await expect(page.locator('[data-folder-drop-id="root"]')).toHaveCSS("cursor", "grabbing");
+  await expect(page.locator(".folder-drop-hint")).toHaveText("Move 1");
+  await page.mouse.move(all.x + all.width / 2, all.y + all.height / 2);
+  await expect(page.getByRole("treeitem", { name: "All history" })).toHaveCSS("cursor", "not-allowed");
+  await page.mouse.move(folder.x + folder.width / 2, folder.y + folder.height / 2);
+  await page.mouse.up();
+  await expect.poll(() => folderOf(page, 951)).toBe(7);
+  await expect(page.locator("html")).not.toHaveClass(/clip-pointer-dragging/);
+});
+
+test("dragging from image and inline Markdown previews moves their clips", async ({ page }) => {
+  await page.setViewportSize({ width: 587, height: 833 });
+  const png = pngDataUrl(160, 90, "#245f53");
+  await mockTauriInvoke(page, [
+    { ...syntheticCompactPreviewHistory[2], id: 931, thumbnail_data_url: png, folderId: null },
+    { ...syntheticLongHistory[1], id: 932, text: `Before ![Inline image](${png}) after`, title: null, folderId: null },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  const target = page.getByRole("treeitem", { name: /Projects/ });
+  await page.locator("#history-item-931 .image-preview img").dragTo(target);
+  await expect.poll(() => folderOf(page, 931)).toBe(7);
+  await page.locator("#history-item-932 .markdown-image-frame img").dragTo(target);
+  await expect.poll(() => folderOf(page, 932)).toBe(7);
+});
+
+test("dragging selected clips moves the group and Root moves immediately", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 911, folderId: 7, text: "DRAG_GROUP_ONE" },
+    { ...syntheticLongHistory[1], id: 912, folderId: 7, text: "DRAG_GROUP_TWO" },
+    { ...syntheticLongHistory[2], id: 913, folderId: 7, text: "DRAG_GROUP_STAYS" },
+  ]);
+  await gotoShell(page);
+  const first = page.getByRole("group", { name: /DRAG_GROUP_ONE/ });
+  await first.click();
+  await page.getByRole("group", { name: /DRAG_GROUP_TWO/ }).click({ modifiers: ["Control"] });
+  await expect(page.locator(".selection-menu-button")).toHaveAccessibleName("Open selected clips menu, 2 selected");
+  await revealFolderTree(page);
+  await page.getByRole("button", { name: "Expand Projects" }).click();
+  await dragClipToFolder(first, page.getByRole("treeitem", { name: /Notes/ }));
+  await expect.poll(() => folderOf(page, 911)).toBe(8);
+  await expect.poll(() => folderOf(page, 912)).toBe(8);
+  await expect.poll(() => folderOf(page, 913)).toBe(7);
+  await page.getByRole("treeitem", { name: /Notes/ }).click();
+  await expect(page.locator("#clipboard-feed")).toContainText("DRAG_GROUP_ONE");
+  await expect(page.locator("#clipboard-feed")).toContainText("DRAG_GROUP_TWO");
+  await expect(page.locator("#clipboard-feed")).not.toContainText("DRAG_GROUP_STAYS");
+  await revealFolderTree(page);
+  await dragClipToFolder(page.getByRole("group", { name: /DRAG_GROUP_ONE/ }), page.locator('[data-folder-row="null"]'));
+  await expect(page.getByRole("dialog", { name: "moveItems folder" })).toHaveCount(0);
+  await expect.poll(() => folderOf(page, 911)).toBeNull();
+  await expect.poll(() => folderOf(page, 912)).toBe(8);
+});
+
+for (const [deleteClips, deleteDescendants] of [[false, false], [true, false], [false, true], [true, true]]) {
+  test(`folder deletion preview applies independent choices (${deleteClips}, ${deleteDescendants})`, async ({ page }) => {
+    await mockTauriInvoke(page, [
+      { ...syntheticLongHistory[0], id: 701, folderId: 7, text: "DIRECT_FOLDER_TOKEN" },
+      { ...syntheticLongHistory[1], id: 702, folderId: 8, text: "CHILD_FOLDER_TOKEN" },
+    ]);
+    await gotoShell(page);
+    await revealFolderTree(page);
+    await page.getByRole("button", { name: "Actions for Projects" }).click();
+    await page.getByRole("menuitem", { name: "Delete folder…" }).click();
+    const dialog = page.getByRole("dialog", { name: "delete folder" });
+    await expect(dialog).toContainText("1 direct clips; 1 descendant folders; 2 clips in subtree.");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("treeitem", { name: /Projects/ })).toBeVisible();
+    await page.getByRole("button", { name: "Actions for Projects" }).click();
+    await page.getByRole("menuitem", { name: "Delete folder…" }).click();
+    await dialog.getByRole("checkbox", { name: /Delete clips/ }).setChecked(deleteClips);
+    await dialog.getByRole("checkbox", { name: /Delete 1 descendant folders/ }).setChecked(deleteDescendants);
+    await dialog.getByRole("button", { name: "Delete folder" }).click();
+    await expect(page.getByRole("treeitem", { name: /Projects/ })).toHaveCount(0);
+    await page.locator('[data-folder-row="null"]').click();
+    await expect(page.getByRole("group", { name: /DIRECT_FOLDER_TOKEN/ })).toHaveCount(deleteClips ? 0 : 1);
+    await expect(page.getByRole("group", { name: /CHILD_FOLDER_TOKEN/ })).toHaveCount(deleteDescendants && !deleteClips ? 1 : 0);
+    if (!(await page.getByRole("tree", { name: "History folders" }).isVisible())) {
+      await page.getByRole("button", { name: "Show folders" }).click();
+    }
+    await expect(page.getByRole("treeitem", { name: /Notes/ })).toHaveCount(deleteDescendants ? 0 : 1);
+  });
+}
+
+test("slash completion inserts a path at the caret while untouched slash stays literal", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  const search = page.getByLabel("Search clipboard history");
+  const suggestions = page.locator(".cm-tooltip-autocomplete");
+  await search.fill("alpha /Notes beta");
+  await search.press("Home");
+  await search.press("End");
+  await search.fill("alpha /Not");
+  await expect(suggestions.getByRole("option", { name: "Projects/Notes" })).toBeVisible();
+  await expect(suggestions.getByRole("option", { name: "Projects/Notes" })).toHaveAttribute("aria-selected", "true");
+  await page.waitForTimeout(100);
+  await search.press("Enter");
+  await expect(search).toContainText('alpha folder:"Projects/Notes"');
+  await search.fill("literal/path");
+  await expect(suggestions.getByRole("option", { name: "Projects/Notes" })).toHaveCount(0);
+  await search.fill("/");
+  await search.press("Escape");
+  await expect(search).toContainText("/");
+});
+
+test("moving one item to Root warns and changes only that item's feed", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 701, folderId: 7 },
+    { ...syntheticLongHistory[1], id: 702, folderId: 7 },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await page.locator(".feed-item").first().hover();
+  await page.getByRole("button", { name: "Open item actions" }).first().click();
+  await page.getByRole("menuitem", { name: "Move clip to folder…" }).click();
+  const dialog = page.getByRole("dialog", { name: "moveItems folder" });
+  await expect(dialog).toContainText("eligible for automatic retention");
+  await dialog.getByRole("button", { name: "Move clips" }).click();
+  if (!(await page.getByRole("tree", { name: "History folders" }).isVisible())) {
+    await page.getByRole("button", { name: "Show folders" }).click();
+  }
+  await page.locator('[data-folder-row="null"]').click();
+  await expect(page.locator("#clipboard-feed")).toContainText(syntheticLongHistory[0].text.slice(0, 40));
+  await expect(page.locator("#clipboard-feed")).not.toContainText(syntheticLongHistory[1].text.slice(0, 40));
+});
+
+test("Find uses the applied folder snapshot instead of matching another folder", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 801, folderId: null, text: "Shared needle root" },
+    { ...syntheticLongHistory[1], id: 802, folderId: 7, text: "Shared needle project" },
+  ]);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  await page.getByRole("treeitem", { name: /Projects/ }).click();
+  await page.getByLabel("Search clipboard history").press("Control+f");
+  await page.getByLabel("Find in results").fill("needle");
+  await expect(page.locator(".find-count")).toContainText("1");
+  await expect(page.getByRole("group", { name: /needle root/ })).toHaveCount(0);
+});
+
+test("feed Left enters tree, tree arrows navigate, and typing returns to scoped search", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  const feed = page.locator(".history-feed-scroll");
+  await feed.focus();
+  await feed.press("ArrowLeft");
+  await expect(page.getByRole("treeitem", { name: "All history" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator('[data-folder-row="null"]')).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("treeitem", { name: /Projects/ })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("treeitem", { name: /Notes/ })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(feed).toBeFocused();
+  await page.keyboard.type("x");
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  await expect(page.getByLabel("Search clipboard history")).toContainText("x");
+});
+
+test("folder create, rename, and reparent keep full paths current", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  if (!(await page.getByRole("tree", { name: "History folders" }).isVisible())) {
+    await page.getByRole("button", { name: "Show folders" }).click();
+  }
+  await page.getByRole("button", { name: "Actions for Projects" }).click();
+  await page.getByRole("menuitem", { name: "New child folder" }).click();
+  const create = page.getByRole("dialog", { name: "create folder" });
+  await create.getByLabel("Folder name").fill("Stories");
+  await create.getByRole("button", { name: "Create folder" }).click();
+  if (!(await page.getByRole("tree", { name: "History folders" }).isVisible())) {
+    await page.getByRole("button", { name: "Show folders" }).click();
+  }
+  await expect(page.getByRole("treeitem", { name: /Stories/ })).toBeVisible();
+  await page.getByRole("button", { name: "Actions for Stories" }).click();
+  await page.getByRole("menuitem", { name: "Rename folder" }).click();
+  const rename = page.getByRole("dialog", { name: "rename folder" });
+  await rename.getByLabel("Folder name").fill("Archives");
+  await rename.getByRole("button", { name: "Rename folder" }).click();
+  await expect(page.getByRole("treeitem", { name: /Archives/ })).toBeVisible();
+  await page.getByRole("button", { name: "Actions for Archives" }).click();
+  await page.getByRole("menuitem", { name: "Move folder" }).click();
+  const move = page.getByRole("dialog", { name: "reparent folder" });
+  await expect(move.getByLabel("Destination")).toHaveValue("7");
+  await move.getByLabel("Destination").selectOption("root");
+  await move.getByRole("button", { name: "Move folder" }).click();
+  await page.getByLabel("Search clipboard history").fill("/Arch");
+  await expect(page.locator(".cm-tooltip-autocomplete").getByRole("option", { name: "Archives Folder path" })).toBeVisible();
 });

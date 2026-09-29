@@ -87,6 +87,10 @@ pub struct SearchPlanFiltersV1 {
     #[serde(default)]
     pub inbox: Option<bool>,
     #[serde(default)]
+    pub folders: Vec<String>,
+    #[serde(default)]
+    pub folder_ids: Vec<i64>,
+    #[serde(default)]
     pub date: Vec<SearchPlanDateFilterV1>,
     #[serde(default)]
     pub source_app: Vec<String>,
@@ -233,6 +237,8 @@ pub(super) struct ParsedHistoryQuery {
     pub(super) excluded_text_scopes: Vec<SearchPlanTextScopeV1>,
     pub(super) tags: Vec<String>,
     pub(super) excluded_tags: Vec<String>,
+    pub(super) folders: Vec<String>,
+    pub(super) folder_ids: Vec<i64>,
     pub(super) kinds: Vec<String>,
     pub(super) excluded_kinds: Vec<String>,
     pub(super) mimes: Vec<String>,
@@ -295,6 +301,12 @@ pub(super) fn parse_history_query(query: &str) -> ParsedHistoryQuery {
 
         let key = key.to_ascii_lowercase();
         match key.as_str() {
+            "folder" if !negated && !value.is_empty() => parsed.folders.push(value.to_string()),
+            "folder-id" if !negated => {
+                if let Ok(id) = value.parse::<i64>() {
+                    parsed.folder_ids.push(id);
+                }
+            }
             "tag" | "tags" => {
                 for value in split_filter_values(value) {
                     push_tag_filter(&mut parsed, value, negated);
@@ -716,6 +728,8 @@ fn parsed_query_to_search_plan(query: ParsedHistoryQuery) -> SearchPlanV1 {
     let mut filters = SearchPlanFiltersV1::default();
     filters.tags = query.tags;
     filters.not_tags = query.excluded_tags;
+    filters.folders = query.folders;
+    filters.folder_ids = query.folder_ids;
     filters.kind = query
         .kinds
         .iter()
@@ -802,6 +816,8 @@ impl SearchPlanFiltersV1 {
             && self.not_tags.is_empty()
             && self.has.is_empty()
             && self.missing.is_empty()
+            && self.folders.is_empty()
+            && self.folder_ids.is_empty()
             && self.inbox.is_none()
             && self.marked.is_none()
             && self.date.is_empty()
@@ -872,6 +888,24 @@ pub(super) fn compile_search_plan(plan: &SearchPlanV1) -> Result<CompiledHistory
         }
         for tag in clean_values(&filters.not_tags) {
             push_tag_clause(&mut clauses, &mut params, tag, true);
+        }
+        for path in &filters.folders {
+            if path == "/" {
+                clauses.push("folder_id IS NULL".to_string());
+            } else {
+                clauses.push(
+                    "folder_id IN (WITH RECURSIVE paths(id, path) AS (
+                        SELECT id, name FROM folders WHERE parent_id IS NULL
+                        UNION ALL SELECT f.id, paths.path || '/' || f.name
+                        FROM folders f JOIN paths ON f.parent_id = paths.id
+                    ) SELECT id FROM paths WHERE path = ? COLLATE NOCASE)".to_string(),
+                );
+                params.push(Value::Text(path.clone()));
+            }
+        }
+        for id in &filters.folder_ids {
+            clauses.push("folder_id = ?".to_string());
+            params.push(Value::Integer(*id));
         }
         for kind in &filters.kind {
             clauses.push("content_kind = ?".to_string());
@@ -1081,7 +1115,7 @@ pub(super) fn history_item_select_columns(include_content: bool) -> String {
          normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
          COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
          mime_primary, blob_path, thumbnail_path, byte_size, width, height,
-         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms"
+         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id"
     )
 }
 
@@ -1926,6 +1960,8 @@ pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation 
                 | "before"
                 | "until"
                 | "on"
+                | "folder"
+                | "folder-id"
         );
         if !known {
             diagnostics.push(search_diagnostic(
@@ -1963,6 +1999,8 @@ pub(super) fn search_query_explanation(query: &str) -> HistorySearchExplanation 
                 }),
                 "has" => values.iter().all(|value| parse_has_filter(value).is_some()),
                 "in" => !negated && parse_text_scope_filters(value).is_some(),
+                "folder-id" => !negated && values.len() == 1 && value.parse::<i64>().is_ok_and(|id| id > 0),
+                "folder" => !negated && values.len() == 1 && (value == "/" || (!value.starts_with('/') && !value.ends_with('/') && !value.split('/').any(str::is_empty))),
                 "after" | "since" | "before" | "until" | "on" => {
                     !negated
                         && values.len() == 1

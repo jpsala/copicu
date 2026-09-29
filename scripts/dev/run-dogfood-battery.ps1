@@ -90,7 +90,6 @@ Set-Content -LiteralPath $StartCmd -Encoding ASCII -Value @"
 set COPICU_APP_DATA_DIR=$AppDataDir
 set COPICU_SCRIPTS_DIR=$ScriptsDir
 set COPICU_GLOBAL_SHORTCUT=$Hotkey
-set COPICU_DISABLE_CLIPBOARD_WATCHER=1
 cd /d $RepoRoot
 "$CopicuExe" > "$StartOut" 2> "$StartErr"
 "@

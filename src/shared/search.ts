@@ -720,6 +720,8 @@ export function searchSuggestions(
   const closedValues = CLOSED_VALUES[canonicalKey] ?? [];
   const normalizedValue = activeValue.prefix.toLocaleLowerCase();
   return closedValues
+    // Legacy checked aliases remain valid, but the UI teaches persistent marks.
+    .filter((item) => canonicalKey !== "is" || (item !== "checked" && item !== "unchecked"))
     .filter((item) => item.startsWith(normalizedValue) && item !== normalizedValue)
     .map((item) => {
       const renderedValue = formatSearchCompletionValue(item, activeValue.quoted);

@@ -3,6 +3,8 @@ param(
   [string] $Bump = "",
   [string] $Title,
   [string] $Notes,
+  [string] $NotesFile,
+  [string] $Summary,
   [switch] $PreRelease
 )
 
@@ -28,6 +30,12 @@ try {
   }
   if ($Notes) {
     $releaseParams.Notes = $Notes
+  }
+  if ($NotesFile) {
+    $releaseParams.NotesFile = $NotesFile
+  }
+  if ($Summary) {
+    $releaseParams.Summary = $Summary
   }
   if ($PreRelease) {
     $releaseParams.PreRelease = $true

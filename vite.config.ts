@@ -7,6 +7,20 @@ const restartMode = process.env.COPICU_VITE_RESTART_MODE === "1";
 const probeMode = process.env.COPICU_VITE_PROBE_MODE === "1";
 const tauriDevMode = process.env.COPICU_TAURI_DEV === "1" || restartMode;
 
+// Keep the editor and its parser/runtime helpers together: splitting individual
+// CodeMirror packages can introduce cyclic chunk imports during editor startup.
+const CODEMIRROR_VENDOR_PACKAGES = [
+  "@codemirror/",
+  "@lezer/",
+  "@uiw/react-codemirror/",
+  "@uiw/codemirror-extensions-basic-setup/",
+  "codemirror/",
+  "@marijn/find-cluster-break/",
+  "crelt/",
+  "style-mod/",
+  "w3c-keyname/",
+] as const;
+
 const HIGHLIGHT_VENDOR_PACKAGES = [
   "rehype-highlight",
   "highlight.js",
@@ -54,6 +68,9 @@ function vendorChunk(moduleId: string) {
   }
   if (id.includes("/node_modules/react/") || id.includes("/node_modules/react-dom/")) {
     return "vendor-react";
+  }
+  if (matchesNodePackage(id, CODEMIRROR_VENDOR_PACKAGES)) {
+    return "vendor-codemirror";
   }
   if (matchesNodePackage(id, HIGHLIGHT_VENDOR_PACKAGES)) {
     return "vendor-highlight";

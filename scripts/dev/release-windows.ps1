@@ -5,6 +5,8 @@ param(
   [string] $Title,
   [string] $Notes,
   [string] $NotesFile,
+  [ValidatePattern('\A[^\r\n]*\z')]
+  [string] $Summary,
   [string] $CommitMessage,
   [string] $Remote = "origin",
   [string] $Target = "main",
@@ -365,15 +367,80 @@ Copicu is used daily
 }
 
 function Stop-CopicuProcessesForRelease() {
+  if ($DryRun) {
+    Write-Step "Copicu processes would be stopped before release build"
+    return
+  }
+
   $processes = @(Get-Process copicu -ErrorAction SilentlyContinue)
   if (-not $processes) {
     return
   }
+  $buildRoots = @(
+    (Join-Path $repoRoot "src-tauri\target"),
+    (Join-Path $repoRoot "target")
+  ) | ForEach-Object { [System.IO.Path]::GetFullPath($_).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar }
+  $stopped = $false
   foreach ($process in $processes) {
-    Write-Step "stopping copicu.exe pid=$($process.Id) before release build"
+    try {
+      $processPath = $process.Path
+      if (-not $processPath) { continue }
+      $processPath = [System.IO.Path]::GetFullPath($processPath)
+    } catch {
+      continue # Unknown/inaccessible executable paths are not ours to stop.
+    }
+    $repoOwned = @($buildRoots | Where-Object { $processPath.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+    if (-not $repoOwned -or [System.IO.Path]::GetFileName($processPath) -ine "copicu.exe") {
+      continue
+    }
+    Write-Step "stopping repo-owned copicu.exe pid=$($process.Id) before release build"
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    $stopped = $true
   }
-  Start-Sleep -Seconds 1
+  if ($stopped) { Start-Sleep -Seconds 1 }
+}
+
+function Get-UpdaterSignature([string] $SignaturePath) {
+  if (Test-Path -LiteralPath $SignaturePath) {
+    $signature = (Get-Content -LiteralPath $SignaturePath -Raw).Trim()
+    if (-not $signature) { throw "Updater signature is empty: $SignaturePath" }
+    return $signature
+  }
+  if ($DryRun) {
+    Write-Step "updater signature would be read from: $SignaturePath"
+    return "DRYRUN-SIGNATURE"
+  }
+  throw "Updater signature not found: $SignaturePath"
+}
+
+function Resolve-ReleaseSummary([string] $Summary, [string] $Notes, [string] $ReleaseTag, [string] $Sha256) {
+  if ($Summary) {
+    if ($Summary -match '[\r\n]') {
+      throw "Summary must be a single line; use Notes or NotesFile for the full release body."
+    }
+    if ($Summary.Trim()) { return $Summary.Trim() }
+  }
+  if ($Notes) {
+    $firstLine = (($Notes -replace '<filled after build>', $Sha256) -split "`r?`n" | Select-Object -First 1).Trim()
+    if ($firstLine) { return $firstLine }
+  }
+  return "``$ReleaseTag`` updates the Windows installer and current release notes for this cut."
+}
+
+function New-ReleaseNotesBody([string] $Notes, [string] $NotesFile, [string] $Sha256, [string] $TargetCommit) {
+  $body = if ($NotesFile) { Get-Content -LiteralPath $NotesFile -Raw -Encoding utf8 } else { $Notes }
+  $body = $body -replace '<filled after build>', $Sha256
+  return $body + "`n`nInstaller SHA256: ``$Sha256```nTarget commit: ``$TargetCommit``"
+}
+
+function Write-ReleaseNotesFile([string] $OutputPath, [string] $Body) {
+  if ($DryRun) {
+    Write-Step "assembled release notes would be written to: $OutputPath"
+    return
+  }
+  New-Item -ItemType Directory -Force -Path (Split-Path $OutputPath -Parent) | Out-Null
+  $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($OutputPath, $Body, $utf8WithoutBom)
 }
 
 function Assert-NoForbiddenStagedFiles() {
@@ -493,22 +560,9 @@ try {
   $signaturePath = "$installer.sig"
   $latestJsonPath = Join-Path (Split-Path $installer -Parent) "latest.json"
 
-  $releaseSummary = "``$Tag`` updates the Windows installer and current release notes for this cut."
-  if ($Notes) {
-    $releaseSummary = (($Notes -replace '<filled after build>', $hash) -split "`r?`n" | Select-Object -First 1)
-    if (-not $releaseSummary.Trim()) {
-      $releaseSummary = "``$Tag`` updates the Windows installer and current release notes for this cut."
-    }
-  }
+  $releaseSummary = Resolve-ReleaseSummary -Summary $Summary -Notes $Notes -ReleaseTag $Tag -Sha256 $hash
 
-  if (Test-Path -LiteralPath $signaturePath) {
-    $signature = (Get-Content -LiteralPath $signaturePath -Raw).Trim()
-  } elseif ($DryRun -or $SkipBuild) {
-    $signature = "DRYRUN-SIGNATURE"
-    Write-Step "updater signature would be read from: $signaturePath"
-  } else {
-    throw "Updater signature not found: $signaturePath"
-  }
+  $signature = Get-UpdaterSignature -SignaturePath $signaturePath
 
   New-UpdaterManifest -OutputPath $latestJsonPath -Version $version -ReleaseTag $Tag -AssetName $assetName -Signature $signature -Summary $releaseSummary
   Write-Step "updater manifest: $latestJsonPath"
@@ -554,17 +608,14 @@ try {
     }
     Invoke-Checked "gh.exe" @("auth", "status")
 
-    if (-not $NotesFile) {
-      New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-      $NotesFile = Join-Path $runDir "$($Tag)-notes.md"
-      $notesBody = ($Notes -replace '<filled after build>', $hash)
-      $notesBody = $notesBody + "`n`nInstaller SHA256: ``$hash```nTarget commit: ``$head``"
-      if (-not $DryRun) {
-        Set-Content -LiteralPath $NotesFile -Value $notesBody -Encoding utf8
-      }
+    $uploadNotesFile = Join-Path $runDir "$($Tag)-upload-notes.md"
+    if ($NotesFile -and [System.IO.Path]::GetFullPath($NotesFile) -eq [System.IO.Path]::GetFullPath($uploadNotesFile)) {
+      throw "NotesFile must not be the generated upload notes path: $uploadNotesFile"
     }
+    $notesBody = New-ReleaseNotesBody -Notes $Notes -NotesFile $NotesFile -Sha256 $hash -TargetCommit $head
+    Write-ReleaseNotesFile -OutputPath $uploadNotesFile -Body $notesBody
 
-    $releaseArgs = @("release", "create", $Tag, $installer, $signaturePath, $latestJsonPath, "--target", $head, "--title", $Title, "--notes-file", $NotesFile)
+    $releaseArgs = @("release", "create", $Tag, $installer, $signaturePath, $latestJsonPath, "--target", $head, "--title", $Title, "--notes-file", $uploadNotesFile)
     if ($PreRelease) {
       $releaseArgs += "--prerelease"
     }

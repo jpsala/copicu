@@ -14,6 +14,8 @@ triggers:
   - mouse interaction
   - tabs
   - inbox
+  - folders
+  - carpetas
 primary_refs:
   - ../../specs/001-mvp0-native-spike/spec.md
   - ../../specs/001-mvp0-native-spike/tasks.md
@@ -21,6 +23,7 @@ primary_refs:
   - ../topics/windows-focus-and-paste.md
   - ../topics/copyq-technical-baseline.md
   - ../../specs/010-inbox-copy/spec.md
+  - ../../specs/014-folders/spec.md
 ---
 
 # Picker Interaction
@@ -32,6 +35,17 @@ El picker de Copicu debe ser una herramienta local rapida, keyboard-first y prev
 La vista principal no debe tratar cada resultado como un item chico con preview separado por defecto. La direccion preferida es un feed/lista de previews: cada entrada muestra directamente el contenido util, con truncado y densidad controlada.
 
 La estetica de CopyQ no es el objetivo, pero su idea de mostrar contenido directamente y operar rapido por teclado es valiosa.
+
+## Carpetas Y Foco
+
+El picker separa **All history**, **/** (Root, clips sin carpeta) y carpetas jerárquicas. Cada feed muestra clips directos, no toda la descendencia; el árbol muestra el conteo directo de `/` y de cada carpeta independientemente de la búsqueda o página visible. La búsqueda, Find, selección y paginación siguen el alcance aplicado. El árbol se inspira en el panel de navegación del Explorador de Windows, sin copiar su chrome: íconos de carpeta, sangría, disclosure, resaltado de fila completa, menú contextual y foco visible. `Up`/`Down` cambian carpeta visible y feed sin cerrar el árbol, `Left` contrae o va al padre, `Right` expande o avanza al hijo (en hoja pasa al feed), `Enter` abre y `Shift+F10` abre acciones. `Ctrl+B` pliega el árbol sin perder la carpeta actual; en ancho estrecho se superpone al feed. El plegado se controla en el borde derecho del sidebar; el botón compacto de reapertura y el chip de alcance actual comparten la tira de filtros, sin crear filas sobre el feed. El chip abre el cambio rápido (`Ctrl+P`); sus atajos, como los demás del picker, aparecen en tooltips. El input del cambio rápido conserva foco y `Up`/`Down` mueven el resultado activo, `Enter` abre, `Escape` cierra; la ruta completa desambigua nombres. En el feed, `Left` enfoca el árbol; el editor de búsqueda conserva su caret y flechas propias.
+
+Desde el feed se arrastra un clip al árbol para moverlo directamente a una carpeta, incluso desde previews de imagen y Markdown: sus `<img>` no inician un drag nativo independiente del clip. Si el clip arrastrado pertenece a la selección explícita, se mueve el grupo; si no, sólo ese clip. Root también mueve inmediatamente sin confirmación; All history no acepta drop. El menú contextual conserva la alternativa por teclado.
+En WebView2, el drag HTML nativo omitía `dragover`/`drop` y mostraba prohibido aun sobre destinos válidos. El movimiento interno usa eventos de puntero en todos los entornos: destino válido muestra cursor de mano cerrada (`grabbing`) y resaltado antes de soltar; All history sigue inválido.
+
+Cambiar de carpeta conserva el filtro aplicado y el texto del editor; un borrador pendiente sigue sujeto a Realtime/Enter, sin aplicarse por navegar. El nuevo alcance invalida cursor, Find y selección; Clear sigue siendo la acción explícita para quitar el filtro.
+
+La navegación no arma destino de captura: **Arm folder** elige explícitamente la carpeta activa o Root. Cuando está armado, el destino se indica aparte del chip de navegación en la tira de filtros y persiste al ocultar/reabrir el picker; cambiar de carpeta lo desarma. Al reiniciar el proceso, el destino vuelve a Root. Mover clips a Root puede reactivar la retención automática; el diálogo de movimiento por menú lo advierte, sin interrumpir el drop. Borrar una carpeta siempre pide confirmar dos decisiones independientes sobre clips directos y subcarpetas, con conteos exactos; los defaults de Settings no impiden cambiarlas por operación. Contrato completo: [`014-folders`](../../specs/014-folders/spec.md).
 
 ## Inspiracion Consultada
 
@@ -80,19 +94,20 @@ Implementacion actual 2026-06-05:
 El picker ya no es una pantalla de diagnostico. La pantalla principal es:
 
 - search como cabecera, con accesos directos mediante iconos a New item, Search/AI, Realtime/Enter y ayuda; en ventana estrecha la busqueda ocupa una fila completa y los controles una segunda;
-- bandera y contador global siempre visibles junto al kebab abren directamente el menu de marcados; no representan la seleccion transitoria de checkboxes ni se reducen al filtro actual. El menu separa `Filter history`, acciones globales para todos los clips marcados y `Change marks in current results`; los comandos distinguen por nombre y cantidad entre clips cargados y todos los clips que coinciden. Las acciones globales incluyen borrar todos los marcados, aun si quedan fuera del filtro actual, y esperan la carga completa del conjunto. Enter abre, Escape devuelve foco al boton y todas las acciones participan de la navegacion de teclado;
-- la seleccion explicita usa un boton con contador a la izquierda del buscador; en ventana estrecha inicia la fila de controles. Permanece visible incluso en cero; su menu muestra primero `Change marks for selection`, con una accion contada para marcar o desmarcar todos los clips seleccionados, y despues las demas acciones compartidas, metadata y borrado. `Select N loaded clips` explicita el alcance cargado. Reemplaza el checkbox maestro y la barra adicional, sin cambiar la altura del feed al seleccionar;
+- bandera y contador global siempre visibles junto al kebab abren directamente el menu de marcados; no representan la selección transitoria de checkboxes ni se reducen al filtro actual. El menu muestra total global, marcados en resultados cargados y cantidad fuera de esos resultados antes de acciones batch; `loaded results` no significa todos los matches ni sólo el viewport. Explica que las marcas sobreviven búsquedas, hide y restart y que quitar marcas no borra clips. El menu separa `Filter history`, acciones globales para todos los clips marcados y `Change marks in current results`; los comandos distinguen por nombre y cantidad entre clips cargados y todos los clips que coinciden. Las acciones globales incluyen borrar todos los marcados, aun si quedan fuera del filtro actual, y esperan la carga completa del conjunto. Enter abre, Escape devuelve foco al boton y todas las acciones participan de la navegacion de teclado;
+- la seleccion explicita usa un boton con contador a la izquierda del buscador; en ventana estrecha inicia la fila de controles. Permanece visible incluso en cero; su menu ofrece `Change marks for selection`, con comandos separados y contados para añadir los seleccionados aún no marcados y quitar los seleccionados ya marcados. Ambas opciones funcionan con selección mixta; una cantidad cero deshabilita sólo esa opción. Después aparecen acciones compartidas, metadata y borrado. `Select N loaded clips` explicita el alcance cargado. Reemplaza el checkbox maestro y la barra adicional, sin cambiar la altura del feed al seleccionar;
 - el alcance de busqueda permanece visible debajo del header, incluso con query vacia: un unico selector muestra los campos efectivos, mientras los filtros adicionales quedan separados; la indicacion de defaults vive dentro del selector;
 - un borrador pendiente distingue los campos de la proxima busqueda de los resultados aplicados; limpiar recupera los campos predeterminados sin ocultarlos. En modo AI no se anticipan campos que el planner aun no determino;
 - feed preview-first;
 - cada item muestra solo contenido por defecto;
 - no mostrar fecha/hora, tipo, cantidad de caracteres ni cantidad de lineas en items normales;
 - si hay metadata (`title`, `tags`, `notes`), mostrarla como franja visual separada arriba del contenido;
-- checkbox, marca persistente, Delete y menu kebab aparecen al pasar el mouse,
-  enfocar la fila o abrir su menu; navegar o seleccionar por sí solo no revela
-  las acciones. Delete siempre queda disponible en hover;
+- checkbox sin seleccionar, marca persistente, Delete y menu kebab aparecen al
+  pasar el mouse, enfocar la fila o abrir su menu. Un checkbox seleccionado queda
+  visible y permite deseleccionar aun sin hover; no revela las demas acciones.
+  Delete siempre queda disponible en hover;
 - bandera, Delete y kebab forman una unica fila de controles alineados a la derecha; la marca persistente sigue visible fuera de esos estados y no significa favorito ni pin; el gutter de acciones es estable, sin tapar ni desplazar el preview;
-- current, hover y seleccion multiple son estados distintos: clic simple y navegacion por teclado mueven current sin quitar checks. La seleccion sigue limitada a los resultados cargados y se limpia al aplicar otra busqueda u ocultar el picker; las marcas permanecen. El contextual de una fila fuera del grupo limpia la seleccion y opera solo esa fila;
+- current, hover y seleccion multiple son estados distintos: un clic simple en otra fila o fuera de las filas limpia el grupo explícito; `Ctrl`+clic alterna miembros y resalta el grupo con sus checkboxes seleccionados visibles al retirar el puntero, `Shift`+clic extiende rango y los checkboxes permiten sumar filas. La navegación por teclado mueve current sin quitar checks. La selección sigue limitada a los resultados cargados y se limpia al aplicar otra búsqueda u ocultar el picker; las marcas permanecen. El contextual de una fila fuera del grupo limpia la selección y opera solo esa fila;
 - acciones actuales: activate, paste, edit, edit metadata, delete;
 - texto normal se muestra como preview monospace;
 - Markdown con imagenes se renderiza preservando el orden del origen: bloques de texto y lineas `![...](...)` aparecen en la misma secuencia;
@@ -243,7 +258,7 @@ Activacion:
 - Todo item nuevo capturado desde el clipboard pasa a ser el activo despues del refresh o en la proxima apertura del picker.
 - MVP inmediato: `Enter` copia el item seleccionado al clipboard y oculta la ventana.
 - Despues: setting para que `Enter` pegue en la ventana previa.
-- Click cambia current sin modificar los checks; checkbox, Ctrl-click y Shift-click modifican la seleccion explicita.
+- Clic simple cambia current y limpia la selección explícita previa; checkbox, Ctrl-click y Shift-click construyen la selección múltiple. La navegación por teclado puede mover current sin quitar checks.
 - Doble click activa.
 
 Mouse y acciones contextuales:
@@ -274,6 +289,7 @@ Estado actual 2026-06-22:
 - Decision 2026-06-12: el lifecycle de sesion transitoria del picker es host-owned. `PickerSessionController` marca una sesion hidden/resettable cuando `host::hide_picker()` oculta, la X nativa deriva a cached-hide o focus-lost ejecuta `window.hide()`. El renderer no debe adivinar ese lifecycle solo por `focus`/`visibilitychange`; consume `consume_picker_session_snapshot()` y, si hay reset pendiente, limpia query/seleccion y refresca historial con `queryOverride: ""`.
 - Invariante 2026-07-28: si hay capturas mientras el picker está oculto, el host conserva el ID de la captura más reciente en la sesión y lo entrega al reabrir. Esa captura queda activa aunque WebView haya perdido el evento en background; reset debe limpiar también los refs síncronos de selección e invalidar refreshes previos.
 - el scroll manual del feed no se debe resetear por refresh automatico del historial. `scrollIntoView` corre solo cuando cambia `selectedIndex`, no cuando cambia `history`.
+- el refresh automático y el refresh tras añadir/quitar marcas conservan los IDs seleccionados que siguen en el snapshot aplicado, incluso si provienen de páginas posteriores y el usuario volvió al inicio del feed. `get_history_items_preview` con descriptor validado aplica su predicado a los IDs solicitados; sin descriptor conserva lectura por ID. Existir en SQLite no basta para retener una fila que dejó de coincidir con el filtro. Los IDs borrados o que ya no coinciden salen de la selección. Esto no cambia el reset por búsqueda explícita/hide; las marcas son independientes y además están protegidas de retención automática. Contrato y regresiones: [`015-persistent-working-set`](../../specs/015-persistent-working-set/spec.md), `automatic refresh preserves surviving selected IDs` y `automatic refresh at the top preserves selected clips from later loaded pages` en `tests/visual/shell.spec.ts`.
 - Dogfood 2026-07-09: los refresh/reset async del picker deben estar guardados por una generacion de interaccion de seleccion; un refresh viejo no puede devolver el item activo al primero ni scrollear arriba despues de que el usuario navego.
 - Invariante 2026-08-03: detectar overflow de una preview no debe pedir automaticamente el contenido completo ni insertar el summary despues de un IPC. El summary usa el DTO disponible y el contenido completo se carga solo al expandir, evitando cambios de altura escalonados al abrir.
 - Dogfood 2026-07-09: el badge de conteos no debe caer a `history.length` cuando backend/Tauri omite conteos como `null`; solo numeros actualizan `totalCount`/`filteredCount`.

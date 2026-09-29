@@ -1,96 +1,42 @@
-# Public Assets Plan
+# Public Demo Assets
 
-Public screenshots and gifs for Copicu should live under this directory and use only synthetic clipboard data.
+All public assets must use synthetic data. Never include real clipboard payloads, native profiles, private apps/URLs, credentials, logs, `.env` files or databases.
 
-Do not include real clipboard content, private URLs, private logs, `.env` files, local databases, blob payloads, or screenshots of private apps.
+## Current v0.5.0 Picker Screenshots
 
-## Directory Layout
+- `screenshots/picker-folders-v0.5.0.png`: rendered React picker with an expanded folder tree and the direct clips in Projects.
+- `screenshots/picker-marked-scope-v0.5.0.png`: same picker with the persistent-mark menu, showing five marks globally, two in loaded results and three outside them.
 
-```text
-docs/assets/
-  screenshots/
-  gifs/
-  videos/
-  source-data/
+These are actual app frontend renders using the existing Playwright `mockTauriInvoke` fixture, not hand-drawn mockups or storyboards. All snippets, folders, metadata and IPC responses are synthetic. They demonstrate UI state only, not native clipboard capture, focus, persistence or paste. No native profile is opened; external network requests are blocked during capture. The implemented surface is a picker folder tree, not the proposed Explorer table.
+
+### Reproduce (Explicit Opt-In)
+
+From the repository root, with installed project dependencies and Playwright Chromium already available:
+
+```powershell
+$env:COPICU_VISUAL_PORT='1542'
+$env:COPICU_CAPTURE_RELEASE_SCREENSHOTS='1'
+npx playwright test tests/visual/shell.spec.ts --project chromium-desktop --workers=1 --grep 'capture synthetic release picker screenshots'
+Remove-Item Env:COPICU_CAPTURE_RELEASE_SCREENSHOTS
+Remove-Item Env:COPICU_VISUAL_PORT
 ```
 
-Suggested filenames:
+The normal Playwright config builds the frontend with the visual-test flag and serves it locally. Coordinate with any other worker building `dist`: do not serve a changing build during capture. The test writes only these two named assets when the opt-in environment variable is exactly `1`; the ordinary suite skips it and does not modify `docs/assets`. Narrow-window projects skip capture to avoid overwriting the canonical desktop assets. Review both images before publication.
 
-- `screenshots/picker-synthetic-history.png`
-- `screenshots/settings-ai-synthetic.png`
-- `screenshots/markdown-output-synthetic.png`
-- `gifs/picker-search-copy.gif`
-- `gifs/paste-to-previous-window.gif`
-- `gifs/tag-filter-workflow.gif`
-- `gifs/ai-command-markdown-output.gif`
-- `videos/copicu-picker-search-paste-real.mp4`
-- `videos/copicu-install-first-run.mp4`
-- `source-data/synthetic-clips.md`
-- `source-data/public-demo-clips.json`
-
-## Required Assets
-
-- Picker screenshot with synthetic text, code, URL, Markdown, and image-like items.
-- Settings/AI configuration screenshot with no API key and no private endpoint.
-- Short gif: open picker, search, copy selected item.
-- Short gif: paste selected item into a temporary target app.
-- Short gif: tag or filtered picker workflow.
-- Short gif: AI command mode producing Markdown output from synthetic checked items.
-
-## Synthetic Clip Ideas
-
-- `npm run build` output excerpt from a fake project.
-- Fake local URL: `https://example.test/docs/copicu-alpha`.
-- Fake bug note: `Investigate auth retry loop in staging fixture`.
-- Fake SQL snippet against `demo_clipboard_items`.
-- Fake Markdown meeting note with action items.
-- Generated placeholder image with the text `SYNTHETIC SCREENSHOT`.
-
-## Capture Rules
-
-- Use a clean dev profile or isolated app data directory.
-- Seed only synthetic items.
-- Keep the picker compact and readable.
-- Prefer short gifs under 10 seconds.
-- Prefer MP4 for longer YouTube/release demos.
-- Avoid showing unrelated desktop windows.
-- Re-check the frame for hidden private content before publishing.
-
-## Demo Pipelines
-
-Generated/storyboard demos:
-
-- Render scripted frames with Playwright.
-- Encode MP4/GIF with FFmpeg.
-- Use for README gifs, thumbnails, and concept demos.
-
-Real app recordings:
-
-- Run Copicu with isolated `COPICU_APP_DATA_DIR`.
-- Seed history only with synthetic clips.
-- Record screen or a fixed region with FFmpeg/OBS.
-- Use a temporary target app for paste demos.
-- Save MP4 under `docs/assets/videos/` and export GIF only when the clip is short enough for README.
-
-Current Windows capture note:
-
-- `scripts/demos/record-picker-search-paste-demo.ps1` prepares a real picker/search/paste recording with a synthetic backdrop.
-- Do not launch Copicu/WebView2 with `--disable-gpu --disable-gpu-compositing` for public demo capture; that produced a white WebView in Computer Use/Windows Graphics Capture on this machine.
-- On this machine, FFmpeg `gdigrab` can record the WinForms target but may capture the Tauri/WebView2 surface as blank/black/white.
-- Computer Use can verify the real Tauri window with Windows Graphics Capture once Copicu has rendered normally.
-- Do not publish failed `gdigrab` outputs. The script deletes real-demo outputs unless validation succeeds.
-- Use `-UseExistingApp` when Copicu has already been started manually and visually confirmed to be rendered/usable.
-- Next capture attempt should use OBS, Windows Graphics Capture/desktop duplication, or another capturer that can see WebView2 surfaces.
-
-Current source data:
-
-- `source-data/synthetic-clips.md`: human-readable synthetic snippets for screenshots, docs and manual seeding.
-- `source-data/public-demo-clips.json`: structured fake clips suitable for generated demos or future seed scripts.
-
-Current generated demo:
+## Earlier Workflow Assets (Not Refreshed For v0.5.0)
 
 - `screenshots/picker-synthetic-history.png`
 - `screenshots/picker-full-editor.png`
-- `videos/copicu-synthetic-picker-demo.mp4`
-- `gifs/copicu-synthetic-picker-demo.gif`
 - `screenshots/copicu-synthetic-picker-demo-poster.png`
+- `gifs/copicu-synthetic-picker-demo.gif`
+- `videos/copicu-synthetic-picker-demo.mp4`
+
+The earlier generated GIF/video and poster illustrate an earlier search/edit workflow. They are not evidence of the current folder/marked UI or a refreshed native app recording. Keep generated/storyboard illustrations labelled as such; never present them as current app captures.
+
+## Source Data And Other Pipelines
+
+`source-data/synthetic-clips.md` and `source-data/public-demo-clips.json` contain reusable fake clips. Prefer `example.test` URLs and local/data-URL imagery; do not request remote media for screenshots.
+
+A native capture, if separately authorized, must use isolated app data, synthetic clips and a temporary external paste target. Keep the picker compact, avoid unrelated desktop windows, and inspect every frame. Prefer GIFs under ten seconds and MP4 for longer flows.
+
+`scripts/demos/record-picker-search-paste-demo.ps1` prepares a native recording. On this Windows machine FFmpeg `gdigrab` can capture the WinForms target but may leave Tauri/WebView2 blank. Do not publish failed captures or launch WebView2 with `--disable-gpu --disable-gpu-compositing` as a workaround. Use a capturer that can see WebView2, such as Windows Graphics Capture or OBS, and verify rendering first. Native capture is separate from the mocked React screenshot test.

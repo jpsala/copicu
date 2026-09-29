@@ -24,7 +24,7 @@ Contrato: `specs/013-conversational-assistant/spec.md`,
 
 ### 2026-09-17 - Asistente general con SQL de lectura y efectos por API
 
-Estado: accepted por JP para un prototipo local, sin publicación ni instalación.
+Estado: accepted por JP; integrado al producto.
 
 Decisión: agregar un chat standalone que compone el catálogo completo de tools,
 con contexto del picker, lectura real de imágenes y scripts reutilizables.

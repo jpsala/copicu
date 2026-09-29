@@ -11,6 +11,7 @@ Spec inicial creada:
 - [Settings Foundation](003-settings-foundation/spec.md)
 - [Actions Scripting API](004-actions-scripting-api/spec.md)
 - [Conversational Assistant Prototype](013-conversational-assistant/spec.md)
+- [Persistent Marked Working Set](015-persistent-working-set/spec.md)
 
 El prototipo Tauri valida:
 

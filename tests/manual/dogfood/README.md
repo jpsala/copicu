@@ -30,7 +30,7 @@ El comando:
 1. Cierra Copicu repo-owned previo.
 2. Levanta `src-tauri/target/release/copicu.exe` en la sesion interactiva de Windows.
 3. Usa app-data aislada en `.codex-run/dogfood-battery/app-data`.
-4. Deshabilita clipboard watcher para que el test sea estable.
+4. Captura los cambios del portapapeles en ese perfil aislado.
 5. Siembra fixtures text/path/url/json/code/markdown con `seed_dogfood_history.py`.
 6. Corre la bateria mock de scripts/API (`dogfood:api`) contra ejemplos y `999-api-surface-smoke.ts`.
 7. Abre el picker con `Ctrl+Shift+.`.
@@ -171,6 +171,6 @@ Pendiente ampliar:
 - No usar `%APPDATA%\dev.jpsala.copicu` para esta bateria: siempre app-data aislada.
 - AX/UIA no es oracle único para WebView; combinar foco, teclado, screenshots y estado de producto.
 - Todo click por coordenadas usa el screenshot más reciente del mismo target y se recaptura tras cambios de ventana/display.
-- No dejar watcher activo salvo test específico de clipboard capture.
+- Usar sólo datos sintéticos en el portapapeles durante la batería.
 - No cerrar apps del usuario fuera de procesos repo-owned.
 - Ejecutar en sesión Windows interactiva; no usar Session 0 como oracle de foco, hotkeys o clipboard.

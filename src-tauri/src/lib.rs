@@ -1237,6 +1237,14 @@ fn find_cancel_owner(
 }
 
 #[cfg(not(test))]
+fn canonical_folder_scope(query: &str) -> Option<&str> {
+    query.split_whitespace().last().filter(|token| {
+        *token == "folder:/"
+            || token.strip_prefix("folder-id:").is_some_and(|id| id.parse::<i64>().is_ok_and(|id| id > 0))
+    })
+}
+
+#[cfg(not(test))]
 fn history_search_with_ai_planner(
     app: &tauri::AppHandle,
     storage: &storage::AppStorage,
@@ -1276,7 +1284,11 @@ fn history_search_with_ai_planner(
         .clone()
         .unwrap_or_else(|| request.query.clone());
     let mut planned_request = request.clone();
-    let effective_query = plan.query.trim().to_string();
+    let scope = canonical_folder_scope(&request.query);
+    let effective_query = match scope {
+        Some(scope) => format!("{} {}", plan.query.trim(), scope),
+        None => plan.query.trim().to_string(),
+    };
     planned_request.query = effective_query.clone();
     planned_request.mode = storage::HistorySearchMode::Structured;
     planned_request.explain = true;
@@ -1400,6 +1412,9 @@ fn execute_ai_history_action_plan(
                 .map(str::trim)
                 .unwrap_or("")
                 .to_string();
+            if let Some(scope) = canonical_folder_scope(&request.query) {
+                refreshed_request.query = format!("{} {}", refreshed_request.query, scope);
+            }
             refreshed_request.mode = storage::HistorySearchMode::Structured;
             refreshed_request.explain = true;
             refreshed_request.applied_descriptor =
@@ -2254,6 +2269,89 @@ async fn apply_metadata_selection_intent(
         eprintln!("history changed emit failed: {error}");
     }
     Ok(result)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn list_folders(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::FolderSummary>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "list_folders")?;
+    storage.list_folders()
+}
+#[cfg(not(test))]
+#[tauri::command]
+fn root_item_count(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<i64, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "root_item_count")?;
+    storage.root_item_count()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn create_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, parent_id: Option<i64>, name: String) -> Result<storage::FolderSummary, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_folder")?;
+    storage.create_folder(parent_id, &name)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn rename_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64, name: String) -> Result<storage::FolderSummary, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "rename_folder")?;
+    storage.rename_folder(id, &name)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn move_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64, parent_id: Option<i64>) -> Result<storage::FolderSummary, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "move_folder")?;
+    storage.move_folder(id, parent_id)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn folder_delete_preview(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64) -> Result<storage::FolderDeletePreview, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "folder_delete_preview")?;
+    storage.folder_delete_preview(id)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn delete_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64, delete_clips: bool, delete_descendants: bool) -> Result<storage::FolderDeletePreview, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "delete_folder")?;
+    storage.delete_folder(id, delete_clips, delete_descendants)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn move_history_items_to_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, item_ids: Vec<i64>, folder_id: Option<i64>) -> Result<usize, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "move_history_items_to_folder")?;
+    storage.move_history_items_to_folder(item_ids, folder_id)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_capture_folder_destination(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<Option<i64>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_capture_folder_destination")?;
+    storage.get_capture_folder_destination()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn get_capture_folder_destination_state(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<storage::CaptureFolderDestinationState, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "get_capture_folder_destination_state")?;
+    storage.get_capture_folder_destination_state()
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn set_capture_folder_destination(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, folder_id: Option<i64>, armed: Option<bool>) -> Result<Option<i64>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_capture_folder_destination")?;
+    storage.set_capture_folder_destination(folder_id, armed.unwrap_or(folder_id.is_some()))
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn consume_capture_folder_feedback(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::CaptureFolderFeedback>, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "consume_capture_folder_feedback")?;
+    Ok(storage.consume_capture_folder_feedback())
 }
 
 #[cfg(not(test))]
@@ -3892,6 +3990,18 @@ pub fn run() {
             count_marked_history_items,
             create_history_item,
             delete_history_item,
+            list_folders,
+            root_item_count,
+            create_folder,
+            rename_folder,
+            move_folder,
+            folder_delete_preview,
+            delete_folder,
+            move_history_items_to_folder,
+            get_capture_folder_destination,
+            get_capture_folder_destination_state,
+            set_capture_folder_destination,
+            consume_capture_folder_feedback,
             get_history_item,
             set_history_item_inbox,
             set_picker_default_search_scopes,
@@ -4027,23 +4137,19 @@ pub fn run() {
             }
             previous_window.spawn_foreground_tracker();
             app.manage(previous_window.clone());
-            if std::env::var_os("COPICU_DISABLE_CLIPBOARD_WATCHER").is_some() {
-                eprintln!("clipboard watcher disabled by COPICU_DISABLE_CLIPBOARD_WATCHER");
-            } else {
-                match clipboard::spawn_text_watcher(
-                    app.handle().clone(),
-                    storage.clone(),
-                    suppression,
-                    previous_window,
-                    capture_tag_context,
-                    active_scenario,
-                    initial_settings.general.capture_enabled,
-                ) {
-                    Ok(capture) => {
-                        app.manage(capture);
-                    }
-                    Err(error) => eprintln!("clipboard watcher failed to start: {error}"),
+            match clipboard::spawn_text_watcher(
+                app.handle().clone(),
+                storage.clone(),
+                suppression,
+                previous_window,
+                capture_tag_context,
+                active_scenario,
+                initial_settings.general.capture_enabled,
+            ) {
+                Ok(capture) => {
+                    app.manage(capture);
                 }
+                Err(error) => eprintln!("clipboard watcher failed to start: {error}"),
             }
             if let Err(error) = actions::refresh_script_action_cache(&storage) {
                 eprintln!("script action startup refresh failed: {error}");

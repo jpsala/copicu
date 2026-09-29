@@ -507,5 +507,21 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
     DROP TABLE clipboard_item_properties;
     "#,
     ),
+    M::up(
+        r#"
+    CREATE TABLE folders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id INTEGER REFERENCES folders(id),
+        name TEXT NOT NULL COLLATE NOCASE,
+        CHECK (length(trim(name)) > 0),
+        CHECK (instr(name, '/') = 0)
+    );
+    CREATE UNIQUE INDEX idx_folders_root_name ON folders(name COLLATE NOCASE) WHERE parent_id IS NULL;
+    CREATE UNIQUE INDEX idx_folders_sibling_name ON folders(parent_id, name COLLATE NOCASE) WHERE parent_id IS NOT NULL;
+    CREATE INDEX idx_folders_parent ON folders(parent_id);
+    ALTER TABLE clipboard_items ADD COLUMN folder_id INTEGER REFERENCES folders(id);
+    CREATE INDEX idx_clipboard_items_folder ON clipboard_items(folder_id);
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

@@ -130,7 +130,7 @@ Cierre dev runtime 2026-06-12:
   - `npm run visual:check` pasa 80/80;
   - `npm run capabilities:drift:test` pasa;
   - `npm run ai:planner:test` pasa;
-  - `restart-dev.ps1 -EnableClipboardWatcher -RemoteDebug -ViteDev` monta picker en CDP con input enfocado y `window.__copicuDev=true`;
+  - `restart-dev.ps1 -RemoteDebug -ViteDev` monta picker en CDP con input enfocado y `window.__copicuDev=true`;
   - paste por API dev (`__copicuDev.invoke("activate_item", ...)`) contra Notepad pasa.
 - Corte release chunk gate 2026-06-14:
   - `mise run dev-vite-chunk-check` y `mise run release-vite-chunk-check` miden `npm run build` con Node 24.16.0 pinneado por `mise.toml`;

@@ -11,12 +11,15 @@ triggers:
   - FTS
   - tags
   - AI search
+  - folders
+  - carpetas
 primary_refs:
   - ../../src-tauri/src/storage.rs
   - docs/topics/search-plan-engine.md
   - docs/topics/picker-interaction.md
   - docs/topics/ai-search-and-actions.md
   - ../tracks/008-filtering-search-foundation.md
+  - ../../specs/014-folders/spec.md
 ---
 
 # Filtering And Query Syntax
@@ -156,6 +159,10 @@ política que escribir o pegar. Contrato y verificación:
 [`012-codemirror-query-editor`](../../specs/012-codemirror-query-editor/spec.md);
 arquitectura, mediciones y límites:
 [`codemirror-query-editor`](codemirror-query-editor.md).
+
+## Alcance Por Carpeta
+
+El árbol aplica un alcance estable por ID (`folder-id:<id>`) a cada request de historial; Root usa `folder:/` y All history no agrega alcance. El snapshot aplicado es dueño de query y cursor: cambiar de carpeta conserva el filtro aplicado y el draft del editor, pero invalida el snapshot del alcance anterior, el cursor y Find antes de recargar. Navegar no confirma un draft pendiente ni incompleto; sigue vigente la política Realtime/Enter. Un filtro de carpeta explícito en el texto intersecta el alcance del árbol; elegir All history permite buscar globalmente. Rust resuelve `folder:"Ruta/Completa"` por ruta exacta o `folder:/` para Root; un nombre repetido en otra rama no equivale a la ruta completa. Escribir `/` como inicio de token abre completion de rutas y reemplaza sólo ese token al aceptarla; sin aceptar, `/` permanece texto literal. `#` sigue siendo etiqueta. Ver [`014-folders`](../../specs/014-folders/spec.md).
 
 ## Filter Lock
 
@@ -321,11 +328,11 @@ predeterminado cuando no hay un `in:` explicito:
 | `has:blob` | requiere blob asociado |
 | `has:image` | alias estructural para `kind:image` |
 | `-has:notes` | requiere ausencia de notes |
-| `is:marked` | requiere items checked/marked |
+| `is:marked` | requiere items marcados persistentes |
 | `is:checked` | alias de `is:marked` |
-| `is:unmarked` | requiere items no checked |
+| `is:unmarked` | requiere items no marcados |
 | `is:unchecked` | alias de `is:unmarked` |
-| `-is:marked` | equivalente practico de unchecked |
+| `-is:marked` | equivalente practico de `is:unmarked` |
 | `after:2026-06-02` | `created_at_unix_ms >=` inicio de ese dia |
 | `before:2026-06-02` | `created_at_unix_ms <` inicio de ese dia |
 | `on:2026-06-02` | rango de un dia |
@@ -337,20 +344,20 @@ Valores separados por coma funcionan en algunos filtros, por ejemplo `tag:ypf,sq
 
 `meta:` y `has:metadata` abarcan titulo, notas y tags.
 
-## Checked / Marked Items
+## Marcados Persistentes
 
-El estado checked vive en SQLite como `clipboard_items.is_marked` y `marked_at_unix_ms`. En codigo y storage el nombre durable es `marked`; en UI puede aparecer como checked porque el control se usa para seleccionar un batch persistente de items.
+El conjunto de trabajo marcado vive en SQLite como `clipboard_items.is_marked` y `marked_at_unix_ms`. UI, storage y API usan `marked`; los checkboxes del picker representan selección temporal, igual que Ctrl/Shift, no marcas persistentes. `is:checked` y `is:unchecked` siguen válidos por compatibilidad, pero autocomplete y ayuda enseñan `marked`/`unmarked`.
 
 La query syntax soporta `is:`:
 
 - `is:marked` e `is:checked` agregan `is_marked != 0`;
 - `is:unmarked` e `is:unchecked` agregan `is_marked = 0`;
-- `-is:marked` y `-is:checked` tambien filtran unchecked;
-- `-is:unmarked` y `-is:unchecked` filtran checked.
+- `-is:marked` y `-is:checked` tambien filtran no marcados;
+- `-is:unmarked` y `-is:unchecked` filtran marcados.
 
 `selected` no es alias de `marked`: selected es estado transitorio del picker, no metadata persistida del item. Por ahora no hay filtro `is:selected`; si hiciera falta para actions/UI, debe resolverse desde el snapshot de seleccion del frontend/host y no como query SQLite global.
 
-El menu de mark del picker usa esta misma sintaxis: `Marked` escribe `is:marked`, `Unmarked` escribe `-is:marked`, y `All history` remueve terminos `is:*` conocidos. Las acciones batch sobre checked cargan todos los marcados con `list_history_page({ query: "is:marked" })`, no solo los visibles.
+El menu de mark del picker usa esta misma sintaxis: `Marked` escribe `is:marked`, `Unmarked` escribe `-is:marked`, y `All history` remueve terminos `is:*` conocidos. Las acciones batch sobre marcados cargan todos los marcados con `list_history_page({ query: "is:marked" })`, no solo los visibles.
 
 Las operaciones `All results` / `None results` llaman `set_history_query_marked` con la query actual. El backend vuelve a parsear la misma query y actualiza todos los resultados que matchean, no solo la pagina cargada.
 
@@ -372,7 +379,7 @@ Las operaciones `All results` / `None results` llaman `set_history_query_marked`
 - `history_search(..., explain: true)` devuelve un explain versionado con chips removibles y diagnosticos tipados; el AST interno completo sigue siendo Rust-only.
 - Los chips representan filtros estructurados aplicados; existe autocomplete local de tags/operadores, pero no un query builder visual.
 - No hay ranking por relevancia; el orden por defecto prioriza Inbox y luego recencia. El cursor debe cumplir el invariante de keyset anterior.
-- La nomenclatura UI mezcla checked y marked. Decision pendiente: consolidar copy visible sin perder que storage/API usan `marked`.
+- La selección temporal no es un filtro SQL global. Los aliases legacy checked/unchecked no cambian ese contrato.
 
 ## Relacion Con AI
 

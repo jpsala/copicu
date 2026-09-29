@@ -4,6 +4,64 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-29
+
+### Added
+
+- Hierarchical folders with a keyboard-accessible tree, direct-clip feeds,
+  scoped search/Find, menu and pointer-based clip moves, and exact folder
+  deletion previews with independent clip/subfolder retention choices.
+- Explicit session-only capture destinations, with global deduplication
+  preserving an existing clip's folder; Ctrl+P switching, Ctrl+B tree toggle,
+  and slash completion for folder queries.
+- Current public user guidance and actual React picker screenshots rendered
+  with synthetic mocked data. [Full release notes](docs/releases/v0.5.0.md).
+
+### Changed
+
+- Separate counted add/remove-mark commands for mixed temporary selections,
+  with global-versus-loaded scope explained before marked batch actions.
+- Protect marked, Inbox and foldered clips and image payloads from automatic
+  retention without consuming the ordinary Root-history count budget.
+- Keep selected checkboxes visible and teach marked/unmarked query names while
+  preserving checked/unchecked aliases. Tab accepts query completions.
+- Separate full release notes from the short README/updater summary; dry runs
+  have no local mutations or process effects, and real release preparation
+  stops only positively identified repo-owned build executables.
+- Split the editor vendor graph cohesively so the strict default Vite chunk
+  gate passes without increasing its limit. Repair context-router metadata.
+- Dev clipboard capture is enabled normally; pause it through Settings/tray
+  when needed rather than relying on removed watcher-specific launch flags.
+
+### Fixed
+
+- Preserve applied filters and unapplied drafts when switching folder scope.
+- Preserve paginated selections during automatic refresh and mark mutations,
+  while removing clips that no longer match the validated applied predicate.
+- Reject missing or empty updater signatures even when skipping the build;
+  rich notes retain actual installer hash and target commit without BOM.
+
+### Upgrade
+
+- Existing SQLite clips migrate to Root. Back up the complete app data directory
+  before upgrading; an older executable is not a supported schema rollback.
+- Explorer-style table view is proposed, not implemented. Windows Authenticode
+  signing and broad native paste-target validation remain separate work.
+
+## [0.4.25] - 2026-09-26
+
+### Fixed
+
+- Refresh picker history on native show without waiting for a WebView focus
+  transition.
+
+## [0.4.24] - 2026-09-24
+
+### Fixed
+
+- Conceal cached picker history while reopening until a fresh applied snapshot
+  is ready, including failed refresh and Retry paths.
+
 ## [0.4.23] - 2026-09-24
 
 ### Added

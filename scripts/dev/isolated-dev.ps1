@@ -1,6 +1,5 @@
 param(
   [switch] $Built,
-  [switch] $EnableClipboardWatcher,
   [switch] $Background
 )
 
@@ -15,25 +14,13 @@ $env:COPICU_SCRIPTS_DIR = Join-Path $profileRoot "scripts"
 if (-not $env:COPICU_GLOBAL_SHORTCUT) {
   $env:COPICU_GLOBAL_SHORTCUT = "Ctrl+Shift+."
 }
-$watcherRequested = $EnableClipboardWatcher -or ($env:COPICU_ENABLE_CLIPBOARD_WATCHER -eq "1")
-if ($Background) {
-  if ($watcherRequested) {
-    throw "Background smoke cannot enable the shared desktop clipboard watcher."
-  }
-  $env:COPICU_DISABLE_CLIPBOARD_WATCHER = "1"
-}
-if ($watcherRequested) {
-  Remove-Item Env:\COPICU_DISABLE_CLIPBOARD_WATCHER -ErrorAction SilentlyContinue
-}
-$watcherEnabled = -not [bool] $env:COPICU_DISABLE_CLIPBOARD_WATCHER
-
 New-Item -ItemType Directory -Force -Path $env:COPICU_APP_DATA_DIR, $env:COPICU_SCRIPTS_DIR | Out-Null
 
 Write-Host "Copicu dev isolated profile:"
 Write-Host "  app data: $env:COPICU_APP_DATA_DIR"
 Write-Host "  scripts : $env:COPICU_SCRIPTS_DIR"
 Write-Host "  hotkey  : $env:COPICU_GLOBAL_SHORTCUT"
-Write-Host ("  watcher : " + ($(if ($watcherEnabled) { "enabled" } else { "disabled" })))
+Write-Host "  watcher : enabled"
 
 Push-Location $repoRoot
 try {

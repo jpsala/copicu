@@ -1,4 +1,16 @@
 import type { AppliedSearchDescriptor } from "./searchSnapshot";
+export type FolderSummary = {
+  id: number;
+  parentId: number | null;
+  name: string;
+  path: string;
+  directItemCount: number;
+  descendantFolderCount: number;
+  subtreeItemCount: number;
+};
+
+export type FolderDeletePreview = Pick<FolderSummary, "directItemCount" | "descendantFolderCount" | "subtreeItemCount">;
+export type FolderScope = { kind: "all" } | { kind: "root" } | { kind: "folder"; folderId: number };
 
 export type FindField = "content" | "imageAlt" | "title" | "tag" | "notes";
 
