@@ -17,6 +17,10 @@ primary_refs:
 
 # Windows Installer
 
+## Distribución Vigente
+
+Release público stable/latest: [v0.5.0](https://github.com/jpsala/copicu/releases/tag/v0.5.0), desde `cc32a7c0317065317cc44fb8eaf30f0f30e479dc`. Instalador, firma Tauri y manifest remotos verificados; SHA256 vigente en `README.md`. CI del corte pasó y el ejecutable extraído del NSIS pasó smoke nativo sintético aislado. No se ejecutó el instalador ni se actualizó la instalación local. Cierre/evidencia: [`039-release-0.5.0`](../tracks/039-release-0.5.0.md); notas y migración: [`v0.5.0`](../releases/v0.5.0.md). Firma updater no equivale a Authenticode.
+
 ## Decision Actual
 
 Usar **NSIS** como instalador Windows principal para Copicu.

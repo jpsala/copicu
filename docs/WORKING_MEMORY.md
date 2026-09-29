@@ -4,19 +4,19 @@ Router operativo corto. Actualizado: 2026-09-29. Historia anterior: `docs/refere
 
 ## Foco Único De Ejecución
 
-- **Estado:** `active`.
+- **Estado:** `complete`.
 - **Referencia:** `docs/tracks/039-release-0.5.0.md`.
-- **Resultado:** JP autorizó preparar, commitear, pushear y publicar v0.5.0; no instalación local. Carpetas, búsqueda y conjunto marcado integrados; tabla tipo Explorador sólo propuesta futura.
-- **Gate:** chunk gate estricto, context audit, docs/demos sintéticas, revisión, checks y smoke con límites explícitos antes de publicar. Sin secretos ni historial real en GitHub.
-- **Siguiente acción:** integrar frentes paralelos, validar el corte, push y CI del commit exacto, publicar artefactos firmados del updater; restaurar dev si el build lo detiene.
+- **Resultado:** v0.5.0 publicado como stable/latest desde cc32a7c, push y CI verdes; instalador/firma/manifest descargados y verificados. Carpetas, búsqueda y marcados distribuidos, docs/demos actuales. Sin instalación local; tabla Explorador sólo propuesta.
+- **Gate:** 442 visuales, Rust 259 + 1 ignored, Node 36, gate estricto/contexto y smoke nativo sintético pasaron; no matriz amplia de paste. Dev restaurada con perfil conservado, debugging apagado y hidden startup/responding.
+- **Siguiente acción:** dogfood de v0.5.0; instalar sólo con pedido explícito. Evaluar la propuesta de tabla por separado.
 
 ## Lectura Rápida
 
 | Área | Estado | Abrir primero | Siguiente acción |
 | --- | --- | --- | --- |
-| Release / GitHub | active | `docs/tracks/039-release-0.5.0.md`, `docs/topics/windows-installer.md` | Preparar publicación autorizada sin instalar; versión pública vigente en `README.md`. |
-| Selección / marcados | complete/local | `docs/tracks/038-persistent-working-set.md`, `specs/015-persistent-working-set/spec.md` | Integrar al release; controles temporales y marcas durables, retención y scope global separados. |
-| Carpetas / picker | complete/local, accepted JP | `specs/014-folders/spec.md`, `docs/topics/picker-interaction.md` | Integrar al release; preservar búsqueda aplicada y draft al navegar carpetas. |
+| Release / GitHub | complete/distributed | `docs/tracks/039-release-0.5.0.md`, `docs/topics/windows-installer.md` | v0.5.0 publicado y verificado; instalado local no actualizado. Versión pública vigente en `README.md`. |
+| Selección / marcados | complete/distributed | `docs/tracks/038-persistent-working-set.md`, `specs/015-persistent-working-set/spec.md` | Dogfood de v0.5.0; controles temporales y marcas durables, retención y scope global separados. |
+| Carpetas / picker | complete/distributed, accepted JP | `specs/014-folders/spec.md`, `docs/topics/picker-interaction.md` | Dogfood de v0.5.0; preservar búsqueda aplicada y draft al navegar carpetas. |
 | Appearance / batch menus | complete/distributed | `docs/topics/appearance-and-themes.md`, `docs/topics/picker-interaction.md` | Dogfood sin atribuirle hang intermitente. |
 | Confiabilidad / metadata | complete | `docs/tracks/035-picker-reliability.md` | Históricos se limitan sólo al recapturarse. |
 | Actions modularization | active | `docs/tracks/017-actions-modularization.md` | Próxima extracción mecánica chica, sin tocar runner Node. |
