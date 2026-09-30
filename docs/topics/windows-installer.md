@@ -19,7 +19,7 @@ primary_refs:
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.0](https://github.com/jpsala/copicu/releases/tag/v0.5.0), desde `cc32a7c0317065317cc44fb8eaf30f0f30e479dc`. Instalador, firma Tauri y manifest remotos verificados; SHA256 vigente en `README.md`. CI del corte pasó y el ejecutable extraído del NSIS pasó smoke nativo sintético aislado. No se ejecutó el instalador ni se actualizó la instalación local. Cierre/evidencia: [`039-release-0.5.0`](../tracks/039-release-0.5.0.md); notas y migración: [`v0.5.0`](../releases/v0.5.0.md). Firma updater no equivale a Authenticode.
+Release público stable/latest: [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1), desde `6b1ad8b8099578ee84e8332fd9a54e0b043c1763`. Instalador, firma Tauri y manifest descargados/verificados; SHA256 vigente en `README.md`. CI del corte pasó. El mismo NSIS se instaló localmente y el ejecutable instalado pasó smoke WebView2 con perfil sintético separado: resize pointer/keyboard, menús, overlay/clamp, hide/reopen y preferencia tras reinicio. UI por CDP después de foreground por hotkey nativo; no certifica OS-pointer, C0 de type global ni matriz de paste. Perfil normal conservado y app instalada relanzada. Cierre/evidencia: [`040-resizable-folder-sidebar`](../tracks/040-resizable-folder-sidebar.md); notas: [`v0.5.1`](../releases/v0.5.1.md). Firma updater no equivale a Authenticode.
 
 ## Decision Actual
 
@@ -273,6 +273,10 @@ secretos, destino ambiguo, validaciones fallidas o credenciales faltantes.
 ### Separar Codigo, Release E Instalada
 
 Un push a `main` no publica un instalador ni actualiza la app de uso diario.
+Para verificar que la instalación corresponde al artefacto publicado, comparar
+el ejecutable instalado con el extraído del NSIS verificado, no sólo con
+`target/release/copicu.exe`: Tauri parchea metadata de bundle durante el empaquetado
+y ese archivo de trabajo puede diferir del payload final.
 El cierre de un track de implementacion tampoco demuestra distribucion:
 
 - `npm run install:current` promueve el codigo local a la instalada; no equivale

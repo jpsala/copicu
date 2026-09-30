@@ -1,6 +1,6 @@
 ---
 id: resizable-folder-sidebar
-status: active
+status: complete
 updated: 2026-09-30
 ---
 
@@ -47,10 +47,16 @@ Continuar en una sesión nueva: agregar un divisor vertical entre la barra later
 
 ## Aceptación Y Dogfood
 
-- Build y gate estricto de chunks: pasan, cero large-chunk warnings. Visual completa: 454 pasan, 2 skipped; focalizados resize/minimum: 10 pasan, menú finales: 2 pasan (ambos proyectos, posiciones/foco/dismiss en 1000/600/420 px). Node Settings/search-snapshot/structured-search: 30 pasan. Rust: 260 pasan + 1 ignored; cargo check pasa. Context audit: 0 errores, 2 warnings por tamaño de topics existentes. Evidencia local en `.codex-run/sidebar-140-*` y `.codex-run/folder-menu-*`, incluidos screenshots sintéticos.
-- Dev built reiniciada sin reemplazar/borrar el perfil `.codex-run/dev-isolated/app-data`; proceso 22508 responde, debug remoto apagado. Log startup confirma picker hotkey `Ctrl+Shift+.`. Estado previo al cierre de release; instalación/publicación actuales se verifican abajo.
-- Límites de aceptación: tests de renderer Chromium usan mock backend sintético; Rust verifica SQLite real y reopen en perfil temporal sintético. No se certifica drag nativo WebView2, restart de preferencia end-to-end Tauri ni C0 con estos checks.
-- Dogfood pendiente: con perfil separado y clips exclusivamente sintéticos, probar drag/teclado a 140/400/máximo, hide/show, reinicio del proceso, reducir/ampliar ventana sin perder ancho preferido, overlay <=560, cancelar por pérdida de foco y mover un clip sintético a carpeta; verificar caret/search, selección/marcados y capture destination. No usar el perfil dev existente como fixture descartable.
+- Build y gate estricto de chunks: pasan, cero large-chunk warnings. Visual completa: 454 pasan, 2 skipped; focalizados resize/minimum: 10 pasan, menú finales: 2 pasan (ambos proyectos, posiciones/foco/dismiss en 1000/600/420 px). Node Settings/search-snapshot/structured-search/release-helper/chunk-config: 39 pasan. Rust: 260 pasan + 1 ignored; cargo check pasa. Context audit: 0 errores, 2 warnings por tamaño de topics existentes. Evidencia local en `.codex-run/sidebar-140-*` y `.codex-run/folder-menu-*`, incluidos screenshots sintéticos.
+- El perfil `.codex-run/dev-isolated/app-data` se conservó sin reemplazo ni borrado. El cierre de release detuvo dev; la instancia vigente es la instalada, según distribución abajo.
+- Límites de aceptación: Chromium usa mock backend sintético; Rust verifica SQLite real y reopen en perfil temporal. El smoke instalado descrito abajo añade WebView2/SQLite y restart reales, con UI por CDP; no es certificación de OS-pointer, C0 de type global ni matriz de paste. El movimiento de clips no cambió; seguir dogfood nativo sintético sin usar el perfil dev como fixture descartable.
+
+## Distribución v0.5.1
+
+- JP pidió release/update-all/install. `npm run release:install` publicó patch stable/latest desde `6b1ad8b8099578ee84e8332fd9a54e0b043c1763`, pusheado a main/origin; CI Agentic Validation pasó. Docs, changelog, guía y tres screenshots React sintéticos actualizados; descripción GitHub refrescada.
+- [Release](https://github.com/jpsala/copicu/releases/tag/v0.5.1) y [NSIS directo](https://github.com/jpsala/copicu/releases/download/v0.5.1/Copicu_0.5.1_x64-setup.exe). Tres assets remotos completos: NSIS 13,615,738 bytes, `.sig` 416 bytes, `latest.json` 942 bytes. Descarga remota idéntica al local; firma criptográfica válida para el trust root, manifest sin BOM con versión/URL/firma correctas. SHA256: `9B0812C1C35145B1F71F6A621243FD0ED27E6389E7D80194ED57C0E0DF460871`.
+- Mismo NSIS instalado: `%LOCALAPPDATA%/Copicu/copicu.exe`, ProductVersion 0.5.1; hash del ejecutable instalado coincide con el extraído del NSIS (`5F0B8F737AD144C9328A76E97D0BF20760FDA7B7E0AC2000264BC01C686B4C8D`). Smoke del ejecutable instalado con perfil separado comprobó mínimo keyboard 140, pointer a 400, posición de puntitos/clic derecho, clamp sin pisar preferencia, overlay 420 px, hide/reopen y ancho 400 tras reinicio real del proceso. Foreground por hotkey nativo, UI por CDP; clipboard preservado/restaurado en RAM, sin historial real como fixture. Perfil normal relanzado, PID 34456; dev quedó detenida por el cierre de instalación, su perfil conservado.
+- Evidencia local no versionada: `.codex-run/release-051-*.log/json`, `.codex-run/release-smoke/v0.5.1-1790731168373/result.json` y screenshots sintéticos. Las tres imágenes públicas tag-pinned devuelven HTTP 200 y coinciden byte a byte con las locales. No claims de hang intermitente ni C0/paste no ejecutados.
 
 ## Permisos Y Ownership
 

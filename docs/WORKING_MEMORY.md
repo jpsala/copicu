@@ -4,18 +4,18 @@ Router operativo corto. Actualizado: 2026-09-30. Historia anterior: `docs/refere
 
 ## Foco Único De Ejecución
 
-- **Estado:** `active`.
+- **Estado:** `complete`.
 - **Referencia:** `docs/tracks/040-resizable-folder-sidebar.md`.
 - **Resultado:** división estándar de 1 px, divisor pointer/keyboard y ancho Settings/SQLite implementados: default 214, mínimo 140, techo 600 px reservando 320 px de feed; clamp temporal no pisa preferencia y overlay <=560 intacto. Menú de carpetas anclado al viewport vía portal, sin offset del sidebar. 400 px no es mínimo; tabla Explorador fuera de scope.
-- **Gate:** build/chunks, visual 454 + 2 skipped, sidebar 10 focalizados y menú 2 finales, Node 30, Rust 260 + 1 ignored y cargo check pasan. Dev built reiniciada con perfil conservado, debug remoto apagado, hotkey confirmada Ctrl+Shift+.
-- **Siguiente acción:** JP autoriza release/update-all/install: cerrar patch estable v0.5.1 vía `npm run release:install`, incluir docs/demos sintéticas, verificar remoto e instalada con perfil sintético y registrar resultado en track 040. No usar el perfil dev como fixture.
+- **Gate:** v0.5.1 stable/latest publicado desde `6b1ad8b`, instalado y artefactos remotos verificados. Build/chunks, visual 454 + 2 skipped, Node 39, Rust 260 + 1 ignored, cargo check/CI pasan. Smoke instalado WebView2/CDP con perfil sintético pasa resize/menús/clamp/overlay/hide/reopen/restart; no C0 ni matriz OS-pointer/paste.
+- **Siguiente acción:** dogfood de v0.5.1 instalada (perfil normal relanzado, PID 34456); dev detenida, perfil dev conservado. Evidencia/URLs/hash en track 040; sin tareas de publicación/instalación pendientes.
 
 ## Lectura Rápida
 
 | Área | Estado | Abrir primero | Siguiente acción |
 | --- | --- | --- | --- |
-| Sidebar redimensionable | complete/dogfood | `docs/tracks/040-resizable-folder-sidebar.md` | Implementado/verificado; dogfood nativo sintético pendiente. Preferencia 140–600 px, sangría 10 px/nivel, default 214, feed mínimo 320. Sin commit. |
-| Release / GitHub | complete/distributed | `docs/tracks/039-release-0.5.0.md`, `docs/topics/windows-installer.md` | v0.5.0 publicado y verificado; instalado local no actualizado. Versión pública vigente en `README.md`. |
+| Sidebar redimensionable | complete/distributed | `docs/tracks/040-resizable-folder-sidebar.md` | v0.5.1 publicada/instalada y smoke sintético pasa; preferencia 140–600 px, sangría 10 px/nivel, default 214, feed mínimo 320. |
+| Release / GitHub | complete/distributed | `docs/tracks/040-resizable-folder-sidebar.md`, `docs/topics/windows-installer.md` | v0.5.1 stable/latest publicada, assets y SHA256/firma verificados; instalación local 0.5.1. Versión pública en `README.md`. |
 | Selección / marcados | complete/distributed | `docs/tracks/038-persistent-working-set.md`, `specs/015-persistent-working-set/spec.md` | Dogfood de v0.5.0; controles temporales y marcas durables, retención y scope global separados. |
 | Carpetas / picker | complete/distributed, accepted JP | `specs/014-folders/spec.md`, `docs/topics/picker-interaction.md` | Dogfood de v0.5.0; preservar búsqueda aplicada y draft al navegar carpetas. |
 | Appearance / batch menus | complete/distributed | `docs/topics/appearance-and-themes.md`, `docs/topics/picker-interaction.md` | Dogfood sin atribuirle hang intermitente. |
