@@ -918,6 +918,8 @@ impl Default for AutoUpdateSettings {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PickerSettings {
+    #[serde(default = "default_folder_sidebar_width")]
+    pub folder_sidebar_width: u32,
     pub hide_on_focus_lost: bool,
     pub enter_action: EnterAction,
     #[serde(default = "default_promote_active_on_copy")]
@@ -1266,6 +1268,7 @@ impl Default for AppSettings {
             },
             auto_update: AutoUpdateSettings::default(),
             picker: PickerSettings {
+                folder_sidebar_width: default_folder_sidebar_width(),
                 hide_on_focus_lost: true,
                 enter_action: EnterAction::Copy,
                 promote_active_on_copy: default_promote_active_on_copy(),
@@ -3086,6 +3089,18 @@ impl AppStorage {
         persist_settings_to_conn(&conn, &settings)?;
         Ok(settings)
     }
+    pub fn update_folder_sidebar_width(&self, width: u32) -> Result<AppSettings, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        let mut settings = settings_from_conn(&conn)?;
+        settings.picker.folder_sidebar_width = width.clamp(140, 600);
+        validate_settings(&settings)?;
+        persist_settings_to_conn(&conn, &settings)?;
+        Ok(settings)
+    }
+
     pub fn update_default_search_scopes(
         &self,
         included: Vec<SearchDefaultScope>,
@@ -5433,7 +5448,12 @@ fn settings_from_conn(conn: &Connection) -> Result<AppSettings, String> {
     Ok(settings)
 }
 
+fn default_folder_sidebar_width() -> u32 {
+    214
+}
+
 fn normalize_loaded_settings(settings: &mut AppSettings) {
+    settings.picker.folder_sidebar_width = settings.picker.folder_sidebar_width.clamp(140, 600);
     if settings.picker.search_trigger_mode == SearchTriggerMode::Manual {
         settings.picker.search_trigger_mode = SearchTriggerMode::Enter;
     }
@@ -5602,6 +5622,9 @@ fn pruned_blob_paths_from_conn(
 }
 
 fn validate_settings(settings: &AppSettings) -> Result<(), String> {
+    if !(140..=600).contains(&settings.picker.folder_sidebar_width) {
+        return Err("folder sidebar width must be between 140 and 600 pixels".to_string());
+    }
     if settings.schema_version != SETTINGS_SCHEMA_VERSION {
         return Err(format!(
             "unsupported settings schema version: {}",
@@ -6499,6 +6522,41 @@ mod tests {
         assert_eq!(
             storage.get_settings().expect("settings should load"),
             AppSettings::default()
+        );
+    }
+
+    #[test]
+    fn sidebar_width_settings_default_normalize_and_survive_reopen() {
+        let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
+        legacy["picker"].as_object_mut().unwrap().remove("folderSidebarWidth");
+        let old: AppSettings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(old.picker.folder_sidebar_width, 214);
+        let dir = test_app_data_dir();
+        {
+            let storage = AppStorage::open(&dir).unwrap();
+            let mut settings = old;
+            settings.history.retention_count = 777;
+            storage.update_settings(settings).unwrap();
+            assert_eq!(
+                storage.update_folder_sidebar_width(0).unwrap().picker.folder_sidebar_width,
+                140
+            );
+            assert_eq!(
+                storage.update_folder_sidebar_width(999).unwrap().picker.folder_sidebar_width,
+                600
+            );
+            storage.update_folder_sidebar_width(400).unwrap();
+        }
+        let reopened = AppStorage::open(&dir).unwrap();
+        let saved = reopened.get_settings().unwrap();
+        assert_eq!(saved.picker.folder_sidebar_width, 400);
+        assert_eq!(saved.history.retention_count, 777);
+        let mut invalid = saved.clone();
+        invalid.picker.folder_sidebar_width = 0;
+        assert!(validate_settings(&invalid).is_err());
+        assert_eq!(
+            reopened.update_settings(invalid).unwrap().picker.folder_sidebar_width,
+            140
         );
     }
 

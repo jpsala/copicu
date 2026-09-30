@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { FolderWorkspace, folderScopeLabel, folderScopeQuery } from "./ui/FolderWorkspace";
+import { FolderSidebarLayout } from "./ui/FolderSidebarLayout";
 import { createPortal } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -1343,6 +1344,21 @@ function App() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const sidebarSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const saveFolderSidebarWidth = useCallback((width: number): Promise<void> => {
+    const save = sidebarSaveQueue.current.then(async () => {
+      try {
+        const next = await invoke<AppSettings>("set_picker_folder_sidebar_width", { width });
+        setSettings((current) => ({ ...current, picker: {
+          ...current.picker, folderSidebarWidth: normalizeSettings(next).picker.folderSidebarWidth,
+        } }));
+      } catch (error) {
+        setActionError(`Could not save folder width: ${String(error)}`);
+      }
+    });
+    sidebarSaveQueue.current = save;
+    return save;
+  }, []);
   const imageHoverPreview = useImageHoverPreview(settings.appearance.imageHoverPreview);
   const [scopeSaveState, setScopeSaveState] = useState<"idle" | "saving" | "error">("idle");
   const [scopeSaveError, setScopeSaveError] = useState<string | null>(null);
@@ -7700,7 +7716,7 @@ function App() {
               : ""}
         </PickerStatusAnnouncer>
         </PickerHeader>
-        <div className="folder-workspace-body">
+        <FolderSidebarLayout preferredWidth={settings.picker.folderSidebarWidth} open={folderTreeOpen} onCommit={saveFolderSidebarWidth}>
         <FolderWorkspace
           folders={folders}
           reload={reloadFolders}
@@ -8536,7 +8552,7 @@ function App() {
             </ol>
           </div>
         </PickerFeed>
-        </div>
+        </FolderSidebarLayout>
         {commandPalette ? (
           <CommandPalette
             query={commandPalette.query}

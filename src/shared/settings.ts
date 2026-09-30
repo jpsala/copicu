@@ -72,6 +72,7 @@ export type AppSettings = {
     checkIntervalMinutes: number;
   };
   picker: {
+    folderSidebarWidth: number;
     hideOnFocusLost: boolean;
     enterAction: EnterAction;
     promoteActiveOnCopy: boolean;
@@ -128,6 +129,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     checkIntervalMinutes: 60,
   },
   picker: {
+    folderSidebarWidth: 214,
     hideOnFocusLost: true,
     enterAction: "copy",
     promoteActiveOnCopy: true,
@@ -189,6 +191,20 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
 };
 
+export const FOLDER_SIDEBAR_MIN = 140;
+export const FOLDER_SIDEBAR_MAX = 600;
+export const FOLDER_FEED_MIN = 320;
+
+export function normalizeFolderSidebarWidth(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(FOLDER_SIDEBAR_MIN, Math.min(FOLDER_SIDEBAR_MAX, Math.round(value)))
+    : 214;
+}
+
+export function folderSidebarMaximum(workspaceWidth: number): number {
+  return Math.max(FOLDER_SIDEBAR_MIN, Math.min(FOLDER_SIDEBAR_MAX, Math.floor(workspaceWidth - FOLDER_FEED_MIN)));
+}
+
 function normalizeSearchTriggerMode(value: unknown): SearchTriggerMode {
   return value === "enter" || value === "manual" ? "enter" : "realtime";
 }
@@ -234,6 +250,7 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
     autoUpdate: { ...DEFAULT_SETTINGS.autoUpdate, ...settings.autoUpdate },
     picker: {
       ...picker,
+      folderSidebarWidth: normalizeFolderSidebarWidth(picker.folderSidebarWidth),
       searchTriggerMode: normalizeSearchTriggerMode(picker.searchTriggerMode),
       defaultSearchScopes: normalizeSearchScopes(picker.defaultSearchScopes),
       defaultExcludedSearchScopes: normalizeExcludedSearchScopes(picker.defaultExcludedSearchScopes),

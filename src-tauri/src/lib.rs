@@ -2631,6 +2631,22 @@ fn set_picker_search_trigger_mode(
 
 #[cfg(not(test))]
 #[tauri::command]
+fn set_picker_folder_sidebar_width(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    storage: State<'_, storage::AppStorage>,
+    width: u32,
+) -> Result<storage::AppSettings, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "set_picker_folder_sidebar_width")?;
+    let next_settings = storage.update_folder_sidebar_width(width)?;
+    if let Err(error) = app.emit_to(SETTINGS_WINDOW_LABEL, SETTINGS_UPDATED_EVENT, next_settings.clone()) {
+        diag_log("picker.folder_sidebar_width.sync_failed", format!("error={error}"));
+    }
+    Ok(next_settings)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 fn set_picker_default_search_scopes(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -4005,6 +4021,7 @@ pub fn run() {
             get_history_item,
             set_history_item_inbox,
             set_picker_default_search_scopes,
+            set_picker_folder_sidebar_width,
             get_settings,
             update_settings,
             set_external_editor_shortcut,

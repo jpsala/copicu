@@ -8,6 +8,7 @@ import History from "lucide-react/dist/esm/icons/history.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import PanelLeftClose from "lucide-react/dist/esm/icons/panel-left-close.mjs";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { FolderSummary, FolderScope, FolderDeletePreview } from "../shared/contracts";
 import { ShortcutBadge } from "./ShortcutBadge";
 import { UiTooltip } from "./controls";
@@ -120,6 +121,9 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
   useEffect(() => {
     if (dialog) dialogRef.current?.querySelector<HTMLElement>("input, select, button")?.focus();
   }, [dialog]);
+  useEffect(() => {
+    if (!treeOpen) setMenu(undefined);
+  }, [treeOpen]);
   useEffect(() => {
     if (menu !== undefined) menuRef.current?.querySelector<HTMLElement>("button")?.focus();
   }, [menu]);
@@ -270,7 +274,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
           const selected = row.id === "all" ? scope.kind === "all" : row.id === null ? scope.kind === "root" : scope.kind === "folder" && scope.folderId === row.id;
           const expansionId = typeof row.id === "number" ? row.id : 0;
           const open = expanded.has(expansionId);
-          return <div key={String(row.id)} data-folder-drop-id={row.id === "all" ? undefined : row.id === null ? "root" : row.id} className={`folder-tree-entry${dropTarget === (row.id === null ? "root" : String(row.id)) ? " is-drop-target" : ""}`} style={{ paddingInlineStart: `${row.depth * 16 + 4}px` }} onContextMenu={(event) => {
+          return <div key={String(row.id)} data-folder-drop-id={row.id === "all" ? undefined : row.id === null ? "root" : row.id} className={`folder-tree-entry${dropTarget === (row.id === null ? "root" : String(row.id)) ? " is-drop-target" : ""}`} style={{ paddingInlineStart: `${row.depth * 10 + 4}px` }} onContextMenu={(event) => {
             event.preventDefault();
             const target = event.currentTarget.querySelector<HTMLElement>('[role="treeitem"]');
             if (target) openMenu(row.id, target, event.clientX, event.clientY);
@@ -289,7 +293,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
         <button type="button" disabled={scope.kind === "all" || (destinationArmed && destination === currentId)} onClick={() => void onDestinationChange(currentId, true).catch((e) => onError(String(e)))}>Arm {scope.kind === "root" ? "/" : "folder"}</button>
         {destinationArmed && <button type="button" onClick={() => void onDestinationChange(null, false).catch((error) => onError(String(error)))}>Disarm</button>}
       </div>
-      {menu !== undefined && <div className="folder-context-menu" role="menu" aria-label={`Actions for ${menu === "all" ? "All history" : menu === null ? "/" : folders.find((folder) => folder.id === menu)?.name ?? "folder"}`} ref={menuRef} style={{ left: Math.max(8, Math.min(menuAnchor.x, window.innerWidth - 206)), top: Math.max(8, Math.min(menuAnchor.y, window.innerHeight - 220)) }} onKeyDown={(event) => {
+      {menu !== undefined && createPortal(<div className="folder-context-menu" role="menu" aria-label={`Actions for ${menu === "all" ? "All history" : menu === null ? "/" : folders.find((folder) => folder.id === menu)?.name ?? "folder"}`} ref={menuRef} style={{ left: Math.max(8, Math.min(menuAnchor.x, window.innerWidth - 206)), top: Math.max(8, Math.min(menuAnchor.y, window.innerHeight - 220)) }} onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); close(); }
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
@@ -301,7 +305,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
         <button role="menuitem" onClick={(event) => openDialog("create", menu === "all" ? null : menu, event.currentTarget)}>New {menu === "all" ? "root " : "child "}folder</button>
         {typeof menu === "number" && <><button role="menuitem" onClick={(event) => openDialog("rename", menu, event.currentTarget)}>Rename folder</button><button role="menuitem" onClick={(event) => openDialog("reparent", menu, event.currentTarget)}>Move folder</button><button role="menuitem" onClick={(event) => openDialog("delete", menu, event.currentTarget)}>Delete folder…</button></>}
         <button role="menuitem" onClick={close}>Close menu</button>
-      </div>}
+      </div>, document.body)}
     </aside>
     {switcher && <div className="folder-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <div className="folder-dialog" role="dialog" aria-modal="true" aria-label="Switch folder" onKeyDown={(event) => {

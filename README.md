@@ -8,17 +8,21 @@ Copicu is Windows-first today. It is inspired by advanced clipboard tools like C
 
 ## Demo
 
-The v0.5.0 picker, rendered by the actual React UI with synthetic mocked data. These screenshots do not demonstrate native capture or paste.
+The v0.5.1 picker, rendered by the actual React UI with synthetic mocked data. These screenshots do not demonstrate native capture or paste.
 
-Folder tree with a scoped preview feed:
+Resizable folder tree with a scoped preview feed:
 
-![Copicu picker with Projects folder and nested Notes](docs/assets/screenshots/picker-folders-v0.5.0.png)
+![Copicu picker with a resized folder tree and scoped previews](docs/assets/screenshots/picker-folders-v0.5.1.png)
+
+Folder actions anchored below their button:
+
+![Copicu folder actions beside the Projects folder](docs/assets/screenshots/picker-folder-menu-v0.5.1.png)
 
 Persistent marks, with global actions distinguished from loaded results:
 
-![Copicu marked menu showing five global marks and two in loaded results](docs/assets/screenshots/picker-marked-scope-v0.5.0.png)
+![Copicu marked menu showing five global marks and two in loaded results](docs/assets/screenshots/picker-marked-scope-v0.5.1.png)
 
-Earlier generated workflow illustration (not refreshed for v0.5.0), showing search, expansion, inline editing, and save:
+Earlier generated workflow illustration (not refreshed for v0.5.1), showing search, expansion, inline editing, and save:
 
 ![Copicu synthetic picker demo](docs/assets/gifs/copicu-synthetic-picker-demo.gif)
 
@@ -35,12 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.0](https://github.com/jpsala/copicu/releases/tag/v0.5.0)
-- Asset: `Copicu_0.5.0_x64-setup.exe`
+- [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1)
+- Asset: `Copicu_0.5.1_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `79F716B9EF97A44DCC5A7064DA23E59139297B617FFF88AC19B323B4B674384E`
+- SHA256: `9B0812C1C35145B1F71F6A621243FD0ED27E6389E7D80194ED57C0E0DF460871`
 
-Folders, persistent marked working sets, and more reliable scoped search.
+Resizable folder sidebar with saved width, compact indentation, and correctly anchored folder menus.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -79,7 +83,7 @@ Copicu is early-stage, but the core is functional:
 - store history and metadata locally with SQLite;
 - store image/blob payloads outside SQLite;
 - deduplicate content by hash;
-- open a compact searchable picker with a collapsible folder tree;
+- open a compact searchable picker with a collapsible, resizable folder tree and saved width;
 - browse All history, unfiled Root (`/`), or the direct clips in a folder, and search within that scope;
 - explicitly arm a folder as the capture destination, move clips by menu or drag, and manage nested folders;
 - keep persistent marks across searches and restarts, separate from temporary batch selection;

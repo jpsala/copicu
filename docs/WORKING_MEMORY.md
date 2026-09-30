@@ -1,19 +1,20 @@
 # Working Memory
 
-Router operativo corto. Actualizado: 2026-09-29. Historia anterior: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`. Si un detalle crece, promover a topic/track/spec; no usar como transcript.
+Router operativo corto. Actualizado: 2026-09-30. Historia anterior: `docs/reference/working-memory-archive-2026-06-14-pre-pi-os.md`. Si un detalle crece, promover a topic/track/spec; no usar como transcript.
 
 ## Foco Único De Ejecución
 
-- **Estado:** `complete`.
-- **Referencia:** `docs/tracks/039-release-0.5.0.md`.
-- **Resultado:** v0.5.0 publicado como stable/latest desde cc32a7c, push y CI verdes; instalador/firma/manifest descargados y verificados. Carpetas, búsqueda y marcados distribuidos, docs/demos actuales. Sin instalación local; tabla Explorador sólo propuesta.
-- **Gate:** 442 visuales, Rust 259 + 1 ignored, Node 36, gate estricto/contexto y smoke nativo sintético pasaron; no matriz amplia de paste. Dev restaurada con perfil conservado, debugging apagado y hidden startup/responding.
-- **Siguiente acción:** dogfood de v0.5.0; instalar sólo con pedido explícito. Evaluar la propuesta de tabla por separado.
+- **Estado:** `active`.
+- **Referencia:** `docs/tracks/040-resizable-folder-sidebar.md`.
+- **Resultado:** división estándar de 1 px, divisor pointer/keyboard y ancho Settings/SQLite implementados: default 214, mínimo 140, techo 600 px reservando 320 px de feed; clamp temporal no pisa preferencia y overlay <=560 intacto. Menú de carpetas anclado al viewport vía portal, sin offset del sidebar. 400 px no es mínimo; tabla Explorador fuera de scope.
+- **Gate:** build/chunks, visual 454 + 2 skipped, sidebar 10 focalizados y menú 2 finales, Node 30, Rust 260 + 1 ignored y cargo check pasan. Dev built reiniciada con perfil conservado, debug remoto apagado, hotkey confirmada Ctrl+Shift+.
+- **Siguiente acción:** JP autoriza release/update-all/install: cerrar patch estable v0.5.1 vía `npm run release:install`, incluir docs/demos sintéticas, verificar remoto e instalada con perfil sintético y registrar resultado en track 040. No usar el perfil dev como fixture.
 
 ## Lectura Rápida
 
 | Área | Estado | Abrir primero | Siguiente acción |
 | --- | --- | --- | --- |
+| Sidebar redimensionable | complete/dogfood | `docs/tracks/040-resizable-folder-sidebar.md` | Implementado/verificado; dogfood nativo sintético pendiente. Preferencia 140–600 px, sangría 10 px/nivel, default 214, feed mínimo 320. Sin commit. |
 | Release / GitHub | complete/distributed | `docs/tracks/039-release-0.5.0.md`, `docs/topics/windows-installer.md` | v0.5.0 publicado y verificado; instalado local no actualizado. Versión pública vigente en `README.md`. |
 | Selección / marcados | complete/distributed | `docs/tracks/038-persistent-working-set.md`, `specs/015-persistent-working-set/spec.md` | Dogfood de v0.5.0; controles temporales y marcas durables, retención y scope global separados. |
 | Carpetas / picker | complete/distributed, accepted JP | `specs/014-folders/spec.md`, `docs/topics/picker-interaction.md` | Dogfood de v0.5.0; preservar búsqueda aplicada y draft al navegar carpetas. |

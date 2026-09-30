@@ -4,6 +4,26 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-30
+
+### Added
+
+- Accessible pointer/keyboard sidebar resizing, with the preferred width saved
+  in Settings/SQLite across reopen and restart. [Full release notes](docs/releases/v0.5.1.md).
+
+### Changed
+
+- Use a thin, straight panel divider with an invisible drag target, a 140 px
+  minimum and 10 px folder indentation. Preserve feed space and narrow overlays
+  without overwriting the preferred width when the window temporarily clamps it.
+- Refresh user guidance and actual React screenshots using synthetic data.
+
+### Fixed
+
+- Position folder context menus beside the pointer, dots or keyboard anchor,
+  outside the transformed sidebar, without an extra header offset. Preserve
+  keyboard focus/return and dismiss the menu when collapsing the tree.
+
 ## [0.5.0] - 2026-09-29
 
 ### Added

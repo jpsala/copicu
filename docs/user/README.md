@@ -64,7 +64,8 @@ Flags create persistent marks that survive searches, hide/show and restarts. The
 ## Folders And Capture Destination
 
 - **All history** includes every location. **/** is Root, containing unfiled clips. A folder feed contains only its direct clips, not its descendants. Tree counts describe direct clips independently of the current search.
-- `Ctrl+B` toggles the tree; `Ctrl+P` switches by full path. Tree arrows navigate and expand/collapse; `Shift+F10` opens folder actions.
+- `Ctrl+B` toggles the tree; `Ctrl+P` switches by full path. Tree arrows navigate and expand/collapse; `Shift+F10` opens folder actions. Right-click opens actions at the pointer; the dots open them below the button.
+- Drag the thin sidebar/feed divider to resize folders. Its width is saved across reopen/restart. With the divider focused, Left/Right adjust 10 px, Shift adjusts 40 px, Home/End reach the limits and Escape cancels an unfinished adjustment. The minimum is 140 px, the maximum is 600 px while reserving 320 px for the feed; the default remains 214 px. Smaller windows temporarily clamp the layout without erasing your preferred width. Narrow windows keep the overlay tree.
 - Changing folders keeps your applied filter and any pending query draft, but clears temporary selection. From All history, `folder:"Projects/Notes"` filters an exact path and `folder:/` filters Root. Explicit folder clauses intersect the browsing scope.
 - Browsing is not capture routing. Click **Arm folder** to send new captures and manual items to that destination. Changing folders disarms it; hide/show retains it in the running session; restarting returns to Root. Recapturing a duplicate retains its existing folder.
 - Move a clip or selection through its menu, or drag to a folder/Root. Dragging a selected row moves the group; dragging another row moves only that clip. Drops move immediately with no confirmation; All history cannot receive drops.

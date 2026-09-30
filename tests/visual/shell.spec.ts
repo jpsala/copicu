@@ -2482,6 +2482,10 @@ async function mockTauriInvoke(
               testWindow.__copicuTestSettingsUpdateActive -= 1;
             }
           }
+          case "set_picker_folder_sidebar_width":
+            if ((window as any).__copicuTestSidebarSaveFailure) throw new Error("Synthetic sidebar save failure");
+            (window as any).__copicuTestSettings.picker.folderSidebarWidth = args.width;
+            return structuredClone((window as any).__copicuTestSettings);
           case "set_picker_search_trigger_mode":
             if ((window as any).__copicuTestMockOptions?.searchTriggerUpdateDelayMs > 0) {
               await new Promise((resolve) => window.setTimeout(
@@ -9091,13 +9095,24 @@ test("capture synthetic release picker screenshots (opt-in)", async ({ page }, t
   await expect(page.getByRole("treeitem", { name: /Notes/ })).toBeVisible();
   await expect(page.getByRole("group", { name: /Build check/ })).toBeVisible();
   await expect(page.locator(".feed-item")).toHaveCount(3);
+  const divider = page.getByRole("separator", { name: "Folder sidebar width" });
+  const dividerBounds = (await divider.boundingBox())!;
+  await page.mouse.move(dividerBounds.x + 4, dividerBounds.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(dividerBounds.x + 90, dividerBounds.y + 80);
+  await page.mouse.up();
+  await expect(divider).toHaveAttribute("aria-valuenow", "300");
   await page.mouse.move(1030, 750);
-  await page.screenshot({ path: "docs/assets/screenshots/picker-folders-v0.5.0.png", animations: "disabled" });
+  await page.screenshot({ path: "docs/assets/screenshots/picker-folders-v0.5.1.png", animations: "disabled" });
+  await page.getByRole("button", { name: "Actions for Projects" }).click();
+  await page.mouse.move(1030, 750);
+  await page.screenshot({ path: "docs/assets/screenshots/picker-folder-menu-v0.5.1.png", animations: "disabled" });
+  await page.getByRole("menu", { name: "Actions for Projects" }).press("Escape");
   const menu = await openMarksMenu(page);
   await expect(menu.getByText("5 marked total · 2 in loaded results", { exact: true })).toBeVisible();
   await expect(menu.getByRole("note")).toContainText("including 3 outside loaded results");
   await page.mouse.move(20, 750);
-  await page.screenshot({ path: "docs/assets/screenshots/picker-marked-scope-v0.5.0.png", animations: "disabled" });
+  await page.screenshot({ path: "docs/assets/screenshots/picker-marked-scope-v0.5.1.png", animations: "disabled" });
 });
 
 test("folder tree scopes search and preserves CodeMirror caret ownership", async ({ page }) => {
@@ -9518,4 +9533,244 @@ test("folder create, rename, and reparent keep full paths current", async ({ pag
   await move.getByRole("button", { name: "Move folder" }).click();
   await page.getByLabel("Search clipboard history").fill("/Arch");
   await expect(page.locator(".cm-tooltip-autocomplete").getByRole("option", { name: "Archives Folder path" })).toBeVisible();
+});
+
+async function sidebarWrites(page: Page) {
+  return page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "set_picker_folder_sidebar_width"));
+}
+
+async function openResizableSidebar(page: Page) {
+  await page.setViewportSize({ width: 1000, height: 620 });
+  await mockTauriInvoke(page);
+  await page.goto("/");
+  if (!(await page.locator(".folder-tree.is-open").isVisible())) await page.getByRole("button", { name: "Show folders" }).click();
+  const separator = page.getByRole("separator", { name: "Folder sidebar width" });
+  await expect(separator).toHaveAttribute("aria-valuenow", "214");
+  return separator;
+}
+
+test("sidebar resize pointer commits once, preserves focus and selection, cancels cleanly", async ({ page }) => {
+  const separator = await openResizableSidebar(page);
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("COPICU");
+  await page.waitForFunction(() => (window as any).__copicuTestAppliedDescriptor?.displayQuery === "COPICU");
+  const selected = page.locator(".feed-item").nth(1);
+  await selected.click({ modifiers: ["Control"] });
+  await expect(selected).toHaveClass(/is-multi-selected/);
+  await search.focus();
+  const box = (await separator.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 186, box.y + 100, { steps: 8 });
+  await expect(separator).toHaveAttribute("aria-valuenow", "400");
+  expect(await sidebarWrites(page)).toHaveLength(0);
+  await expect(search).toBeFocused();
+  await expect(selected).toHaveClass(/is-multi-selected/);
+  await page.mouse.up();
+  await expect(selected).toHaveClass(/is-multi-selected/);
+  await expect.poll(async () => (await sidebarWrites(page)).length).toBe(1);
+  await page.getByRole("button", { name: "Hide folders" }).click();
+  await page.getByRole("button", { name: "Show folders" }).click();
+  await expect(separator).toHaveAttribute("aria-valuenow", "400");
+  await expect(search).toContainText("COPICU");
+  for (const abort of ["pointercancel", "blur", "collapse"]) {
+    const current = (await separator.boundingBox())!;
+    await page.mouse.move(current.x + 4, current.y + 100);
+    await page.mouse.down();
+    await page.mouse.move(current.x + 44, current.y + 100);
+    if (abort === "pointercancel") await separator.dispatchEvent("pointercancel");
+    else if (abort === "blur") await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    else await page.getByRole("button", { name: "Hide folders" }).evaluate((button: HTMLButtonElement) => button.click());
+    await page.mouse.up();
+    if (abort === "collapse") await page.getByRole("button", { name: "Show folders" }).click();
+    await expect(separator).toHaveAttribute("aria-valuenow", "400");
+    expect(await sidebarWrites(page)).toHaveLength(1);
+  }
+});
+
+test("sidebar resize keyboard limits, responsive clamp and narrow overlay preserve preference", async ({ page }) => {
+  const separator = await openResizableSidebar(page);
+  await separator.focus();
+  await separator.press("Home");
+  await expect(separator).toHaveAttribute("aria-valuenow", "140");
+  await separator.press("Shift+ArrowRight");
+  await expect(separator).toHaveAttribute("aria-valuenow", "180");
+  await separator.press("End");
+  await expect(separator).toHaveAttribute("aria-valuenow", "600");
+  await expect.poll(async () => (await sidebarWrites(page)).length).toBe(3);
+  await page.setViewportSize({ width: 600, height: 620 });
+  await expect.poll(async () => Number(await separator.getAttribute("aria-valuenow"))).toBeLessThan(280);
+  expect(await sidebarWrites(page)).toHaveLength(3);
+  expect((await page.locator(".feed-panel").boundingBox())!.width).toBeGreaterThanOrEqual(320);
+  await page.setViewportSize({ width: 420, height: 620 });
+  await expect(separator).toHaveCount(0);
+  await page.getByRole("button", { name: "Show folders" }).click();
+  await expect(page.locator(".folder-tree")).toBeVisible();
+  expect(await page.locator(".feed-panel").evaluate((node) => getComputedStyle(node).marginLeft)).toBe("0px");
+  expect(await page.locator(".folder-tree").evaluate((node) => node.getBoundingClientRect().width)).toBeLessThanOrEqual(250);
+  await page.setViewportSize({ width: 1000, height: 620 });
+  await expect(separator).toHaveAttribute("aria-valuenow", "600");
+  expect(await sidebarWrites(page)).toHaveLength(3);
+  // Simulate a new renderer reading the persisted mock backend, not localStorage.
+  await page.addInitScript(() => { (window as any).__copicuTestSettings.picker.folderSidebarWidth = 600; });
+  await page.reload();
+  await expect(separator).toHaveAttribute("aria-valuenow", "600");
+  expect(await page.locator(".folder-workspace-body").evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await separator.focus();
+  await page.keyboard.down("ArrowLeft");
+  await page.keyboard.press("Escape");
+  await page.keyboard.up("ArrowLeft");
+  await expect(separator).toHaveAttribute("aria-valuenow", "600");
+  expect(await sidebarWrites(page)).toHaveLength(0);
+});
+
+test("folder context menu anchors to pointer, ellipsis and keyboard in viewport coordinates", async ({ page }, testInfo) => {
+  const separator = await openResizableSidebar(page);
+  await separator.press("Home");
+  for (const width of [1000, 600, 420]) {
+    await page.setViewportSize({ width, height: 620 });
+    if (width === 420) await page.getByRole("button", { name: "Show folders" }).click();
+    const folder = page.getByRole("treeitem", { name: /Projects/ });
+    const more = page.getByRole("button", { name: "Actions for Projects" });
+    const menu = page.getByRole("menu", { name: "Actions for Projects" });
+    await more.click();
+    let anchor = (await more.boundingBox())!;
+    let bounds = (await menu.boundingBox())!;
+    expect(Math.abs(bounds.x - Math.max(8, Math.min(anchor.x, width - 206)))).toBeLessThanOrEqual(1);
+    expect(Math.abs(bounds.y - (anchor.y + anchor.height))).toBeLessThanOrEqual(1);
+    expect(await menu.evaluate((node) => node.parentElement === document.body)).toBe(true);
+    await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await menu.press("ArrowDown");
+    await expect(menu.getByRole("menuitem", { name: "Rename folder" })).toBeFocused();
+    await menu.press("Escape");
+    await expect(more).toBeFocused();
+    await folder.click({ button: "right", position: { x: 10, y: 10 } });
+    anchor = (await folder.boundingBox())!;
+    bounds = (await menu.boundingBox())!;
+    expect(Math.abs(bounds.x - (anchor.x + 10))).toBeLessThanOrEqual(1);
+    expect(Math.abs(bounds.y - (anchor.y + 10))).toBeLessThanOrEqual(1);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 8);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(612);
+    if (width === 1000) await page.screenshot({ path: `.codex-run/folder-menu-${testInfo.project.name}.png` });
+    await menu.press("Escape");
+    await expect(folder).toBeFocused();
+    await folder.press("Shift+F10");
+    bounds = (await menu.boundingBox())!;
+    anchor = (await folder.boundingBox())!;
+    expect(Math.abs(bounds.x - (anchor.x + 24))).toBeLessThanOrEqual(1);
+    expect(Math.abs(bounds.y - (anchor.y + anchor.height))).toBeLessThanOrEqual(1);
+    await page.getByRole("button", { name: "Hide folders" }).click();
+    await expect(menu).toHaveCount(0);
+    await page.getByRole("button", { name: "Show folders" }).click();
+    await more.click();
+    await page.getByLabel("Search clipboard history").click();
+    await expect(menu).toHaveCount(0);
+  }
+});
+
+test("sidebar minimum 140 keeps controls and counts usable with compact folder indentation", async ({ page }, testInfo) => {
+  const separator = await openResizableSidebar(page);
+  await separator.press("Home");
+  await expect(separator).toHaveAttribute("aria-valuenow", "140");
+  await expect(page.locator(".folder-tree")).toHaveCSS("width", "140px");
+  await page.getByRole("button", { name: "Expand Projects" }).click();
+  await expect(page.getByRole("treeitem", { name: /Projects/ }).locator("..")).toHaveCSS("padding-inline-start", "14px");
+  await expect(page.getByRole("treeitem", { name: /Notes/ }).locator("..")).toHaveCSS("padding-inline-start", "24px");
+  // A four-digit direct count and short name stand in for the screenshot, without real history.
+  await page.evaluate(() => {
+    const row = document.querySelector('[data-folder-row="7"]')!;
+    document.querySelector('[data-folder-row="null"] .folder-tree-count')!.textContent = "4916";
+    row.querySelector(".folder-tree-label")!.textContent = "test";
+  });
+  const geometry = await page.locator(".folder-tree").evaluate((tree) => {
+    const bounds = tree.getBoundingClientRect();
+    const controls = Array.from(tree.querySelectorAll(".folder-tree-heading button, .folder-expand, .folder-more, .folder-tree-count"));
+    const label = tree.querySelector('[data-folder-row="7"] .folder-tree-label')!;
+    const all = tree.querySelector('[data-folder-row="all"] .folder-tree-label')!;
+    return { inside: controls.every((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.left >= bounds.left && rect.right <= bounds.right;
+    }), shortNameFits: label.scrollWidth <= label.clientWidth, allFits: all.scrollWidth <= all.clientWidth,
+      noOverflow: tree.scrollWidth <= tree.clientWidth };
+  });
+  expect(geometry).toEqual({ inside: true, shortNameFits: true, allFits: true, noOverflow: true });
+  await page.screenshot({ path: `.codex-run/sidebar-140-${testInfo.project.name}.png` });
+  await page.getByRole("button", { name: "Hide folders" }).click();
+  await page.getByRole("button", { name: "Show folders" }).click();
+  await expect(separator).toHaveAttribute("aria-valuenow", "140");
+});
+
+test("sidebar divider is a single straight panel edge with an invisible hit target", async ({ page }, testInfo) => {
+  const separator = await openResizableSidebar(page);
+  const geometry = await separator.evaluate((node) => {
+    const tree = document.querySelector(".folder-tree")!.getBoundingClientRect();
+    const body = document.querySelector(".folder-workspace-body")!.getBoundingClientRect();
+    const header = document.querySelector(".picker-header")!.getBoundingClientRect();
+    const handle = node.getBoundingClientRect();
+    const line = getComputedStyle(node, "::after");
+    return { width: line.width, background: line.backgroundColor, hitWidth: handle.width,
+      lineLeft: handle.left + parseFloat(line.left), treeRight: tree.right,
+      top: handle.top, bodyTop: body.top, headerBottom: header.bottom, height: handle.height, bodyHeight: body.height };
+  });
+  expect(geometry.width).toBe("1px");
+  expect(geometry.background).toBe("rgba(0, 0, 0, 0)");
+  expect(geometry.hitWidth).toBe(8);
+  expect(geometry.lineLeft).toBeCloseTo(geometry.treeRight - 1);
+  expect(geometry.top).toBeCloseTo(geometry.bodyTop);
+  expect(geometry.top).toBeCloseTo(geometry.headerBottom);
+  expect(geometry.height).toBeCloseTo(geometry.bodyHeight);
+  await separator.hover();
+  await expect(separator).toHaveCSS("cursor", "col-resize");
+  expect(await separator.evaluate((node) => getComputedStyle(node, "::after").width)).toBe("1px");
+  await page.screenshot({ path: `.codex-run/sidebar-standard-${testInfo.project.name}.png` });
+  await separator.focus();
+  await expect(separator).toHaveCSS("outline-style", "none");
+  expect(await separator.evaluate((node) => getComputedStyle(node, "::after").width)).toBe("1px");
+});
+
+test("sidebar resize pointer bounds, keyboard repeat, failed save and unmount remain safe", async ({ page }, testInfo) => {
+  const separator = await openResizableSidebar(page);
+  let box = (await separator.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(0, box.y + 100);
+  await expect(separator).toHaveAttribute("aria-valuenow", "140");
+  await page.mouse.up();
+  await expect.poll(async () => (await sidebarWrites(page)).length).toBe(1);
+  box = (await separator.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(999, box.y + 100);
+  await expect(separator).toHaveAttribute("aria-valuenow", "600");
+  await page.mouse.up();
+  await expect.poll(async () => (await sidebarWrites(page)).length).toBe(2);
+  await separator.focus();
+  await page.keyboard.down("ArrowLeft");
+  await page.keyboard.down("ArrowLeft");
+  expect(await sidebarWrites(page)).toHaveLength(2);
+  await searchFocusAndCommit();
+  await expect(separator).toHaveAttribute("aria-valuenow", "580");
+  await expect.poll(async () => (await sidebarWrites(page)).length).toBe(3);
+  await page.evaluate(() => { (window as any).__copicuTestSidebarSaveFailure = true; });
+  await separator.press("Home");
+  await expect(page.getByText(/Could not save folder width:/)).toBeVisible();
+  await expect(separator).toHaveAttribute("aria-valuenow", "580");
+  await page.evaluate(() => { (window as any).__copicuTestSidebarSaveFailure = false; });
+  await page.screenshot({ path: `.codex-run/sidebar-${testInfo.project.name}.png` });
+  box = (await separator.boundingBox())!;
+  await page.mouse.move(box.x + 4, box.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 40, box.y + 100);
+  await page.goto("/?window=settings");
+  await page.mouse.up();
+  await expect(separator).toHaveCount(0);
+  expect(await sidebarWrites(page)).toHaveLength(0);
+  await page.goto("/");
+  await expect(separator).toHaveAttribute("aria-valuenow", "214");
+  expect(await page.locator("html").evaluate((node) => node.classList.contains("clip-pointer-dragging"))).toBe(false);
+
+  async function searchFocusAndCommit() {
+    await page.getByLabel("Search clipboard history").focus();
+    await page.keyboard.up("ArrowLeft");
+  }
 });
