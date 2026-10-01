@@ -21,6 +21,10 @@ mod paste_queue;
 mod picker_session;
 mod scenario;
 mod script_editor;
+// Shared runtime is opt-in; normal builds do not initialize sharing.
+#[cfg(any(test, feature = "shared-clipboard"))]
+#[allow(dead_code)] // Candidate APIs are exercised by tests, not app startup.
+mod shared_clipboard;
 pub mod storage;
 mod surface_registry;
 mod ui_host;

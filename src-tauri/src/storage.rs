@@ -24,6 +24,11 @@ mod schema;
 mod search;
 #[path = "storage/folders.rs"]
 mod folders;
+// Explicit sharing adapter; never initialized by normal migrations/startup.
+#[cfg(any(test, feature = "shared-clipboard"))]
+#[path = "storage/shared.rs"]
+#[allow(dead_code)] // Explicit candidate adapter; startup does not call it.
+pub(crate) mod shared;
 
 use self::blobs::{
     blob_path_is_referenced, path_to_db_string, relative_blob_path, write_blob, IMAGE_BLOB_DIR,

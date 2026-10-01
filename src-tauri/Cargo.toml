@@ -7,6 +7,21 @@ edition = "2021"
 default-run = "copicu"
 autobins = false
 
+[features]
+shared-clipboard-n1 = [
+  "windows/Win32_Graphics_Gdi",
+  "windows/Win32_Security_Cryptography",
+  "windows/Win32_System_JobObjects"
+]
+shared-clipboard = [
+  "dep:chacha20poly1305",
+  "dep:ed25519-dalek",
+  "dep:hpke",
+  "dep:reqwest",
+  "dep:rustls",
+  "windows/Win32_Security_Cryptography"
+]
+
 [lib]
 name = "copicu_lib"
 crate-type = ["rlib"]
@@ -14,6 +29,11 @@ crate-type = ["rlib"]
 [[bin]]
 name = "copicu"
 path = "src/main.rs"
+
+[[bin]]
+name = "shared-clipboard-n1"
+path = "src/bin/shared_clipboard_n1.rs"
+required-features = ["shared-clipboard-n1"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
@@ -45,6 +65,11 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 unicode-normalization = "=0.1.24"
 caseless = "0.2.2"
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"], optional = true }
+ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["fast", "zeroize"], optional = true }
+hpke = { version = "=0.14.1", default-features = false, features = ["alloc", "x25519", "chacha"], optional = true }
+reqwest = { version = "=0.13.4", default-features = false, features = ["json", "blocking", "rustls-no-provider"], optional = true }
+rustls = { version = "=0.23.40", default-features = false, features = ["ring", "std", "tls12"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
