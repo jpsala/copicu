@@ -1,11 +1,24 @@
 ---
+title: Superficies auxiliares de ui-host
+status: paused
+summary: Primer slice de notify y confirm/input registrado; contrastar UI auxiliar con contratos posteriores de ventanas de producto.
+last_worked: null
+next: Revisar qué auxiliares siguen en ui-host y qué superficies requieren registry y ventana standalone antes de otro corte.
+topics: [actions-and-scripting-api, ui-surface-architecture, custom-window-system]
+---
+
+# UI Host Custom Surface
+
+**Importación OS2:** UTC histórica desconocida; `null` no implica que el slice nunca se trabajó. Metadata original:
+
+```yaml
 id: ui-host-custom-surface
 status: first-slice-implemented
 priority: 4
 updated: 2026-06-06
----
+```
 
-# UI Host Custom Surface
+Pausado como slice parcial con criterios de UI y propuestas anteriores. Contrastar las superficies con contratos posteriores antes de retomarlo; no reactivar el prompt histórico ni permisos de producto.
 
 Crear una superficie propia para UI auxiliar de Copicu: notificaciones custom, prompts y elementos interactivos que scripts o la app necesiten mostrar fuera del picker principal.
 
@@ -217,10 +230,12 @@ No implementado todavía:
 - Visual checks cubren desktop y ventana angosta.
 - `ui.notify` nativo sigue disponible como fallback simple.
 
-## Prompt Para Próxima Sesión
+## Prompt Histórico De La Primera Pasada
+
+El siguiente prompt conserva intención y límites del corte anterior, no un kickoff vigente. Comprobar cwd/AGENTS y contratos posteriores antes de retomar; no ejecutar permisos o planes de producto por leerlo. La ruta actual es track pertinente -> topics/secciones necesarias, sin Working Memory activa.
 
 ```text
-Estamos en c:\dev\chat\copyq-tauri. Leer AGENTS.md y docs iniciales.
+Comprobar el checkout/worktree de Copicu autorizado y AGENTS.md.
 
 Continuar Actions/Scripting UI auxiliar con el track:
 
@@ -228,7 +243,6 @@ docs/tracks/009-ui-host-custom-surface.md
 docs/tracks/004-actions-scripting.md
 docs/topics/actions-and-scripting-api.md
 specs/004-actions-scripting-api/spec.md
-docs/WORKING_MEMORY.md
 
 Objetivo: implementar primer slice de ui-host propio para UI auxiliar controlada por Copicu.
 

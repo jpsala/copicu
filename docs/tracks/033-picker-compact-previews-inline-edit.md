@@ -1,4 +1,16 @@
 ---
+title: Previews compactas y edición inline
+status: closed
+summary: Overflow medido, expansión acotada y edición rápida registrados como implementados, manteniendo F2 y scroll del feed.
+last_worked: null
+topics: [picker-interaction, ui-surface-architecture, codemirror-query-editor]
+---
+
+# 033 Picker Compact Previews And Inline Edit
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el corte anterior sin atribuir avance nuevo. Metadata original:
+
+```yaml
 id: picker-compact-previews-inline-edit
 status: complete
 updated: 2026-07-31
@@ -7,9 +19,9 @@ related:
   - docs/topics/picker-interaction.md
   - docs/topics/ui-surface-architecture.md
   - docs/tracks/023-item-preview-window.md
----
+```
 
-# 033 Picker Compact Previews And Inline Edit
+Cerrado el corte implementado, incluida la corrección de carga diferida registrada. No importar receta `balanced` ni usar la autorización del batch local como permiso vigente para producto.
 
 ## Objetivo
 

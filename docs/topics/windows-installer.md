@@ -1,21 +1,18 @@
 ---
-id: windows-installer
-status: active
-kind: decision-map
-triggers:
+title: Instalación y distribución Windows
+summary: NSIS, updater, firma, perfiles privados y separación de dev, release e instalada con gates de autorización actual.
+keywords:
   - instalador
   - installer
   - NSIS
   - MSI
   - updater
   - release Windows
-primary_refs:
-  - ../DEVELOPMENT.md
-  - ../DECISIONS.md
-  - ../../src-tauri/tauri.conf.json
 ---
 
 # Windows Installer
+
+Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores](../DECISIONS.md) y [config Tauri](../../src-tauri/tauri.conf.json). Los procedimientos de distribución requieren autorización explícita y actual; este topic y sus resultados históricos no la conceden.
 
 ## Distribución Vigente
 
@@ -284,7 +281,7 @@ El cierre de un track de implementacion tampoco demuestra distribucion:
 - `npm run release:windows` publica el corte y sus assets firmados; comprobar
   la version efectivamente instalada por separado, no inferirla del tag.
 - Mantener cambios aun no distribuidos en `CHANGELOG.md` Unreleased y su estado
-  operativo en `WORKING_MEMORY.md`; no duplicar ese inventario en este topic.
+  operativo en el track pertinente; no mantener Working Memory activa ni duplicar ese inventario en este topic. Publicar o instalar sigue requiriendo autorización explícita y actual.
 - `-Summary` es una línea para README/updater; `-NotesFile` conserva Markdown completo y el helper agrega hash real/HEAD en una copia UTF8 sin BOM, sin modificar la fuente. `-DryRun` no detiene procesos ni escribe archivos/lee claves. Una ejecución real con `-SkipBuild` también exige firma existente no vacía; el placeholder pertenece sólo a DryRun. El build detiene únicamente ejecutables positivamente identificados bajo targets del repo, no la app instalada.
 - Las notas de release deben distinguir defectos corregidos de sintomas cuya
   desaparicion no fue medida. Pruebas en dev aislado no prueban la resolucion

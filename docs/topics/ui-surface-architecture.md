@@ -1,8 +1,7 @@
 ---
-id: ui-surface-architecture
-status: active
-kind: how-to
-triggers:
+title: Arquitectura de superficies UI
+summary: Contratos de picker, Settings y editores, ownership de ventanas, componentes compartidos y comprobaciones UI pertinentes.
+keywords:
   - UI architecture
   - surface architecture
   - ventanas
@@ -11,22 +10,15 @@ triggers:
   - editor
   - Mantine
   - impeccable
-primary_refs:
-  - docs/topics/window-state-and-monitor-policy.md
-  - docs/topics/appearance-and-themes.md
-  - docs/topics/custom-window-system.md
-  - docs/topics/mantine-ui-system.md
-  - docs/topics/ui-design-and-impeccable.md
-  - src/main.tsx
-  - src/styles.css
-  - src/mantineTheme.ts
-  - src/themeCatalog.ts
-  - src-tauri/src/lib.rs
 ---
 
 # UI Surface Architecture
 
-Contrato operativo para tocar UI en Copicu.
+Referencias de entrada: [bounds](window-state-and-monitor-policy.md), [appearance](appearance-and-themes.md), [ventanas custom](custom-window-system.md), [Mantine](mantine-ui-system.md), [QA](ui-design-and-impeccable.md), [frontend](../../src/main.tsx), [estilos](../../src/styles.css), [theme Mantine](../../src/mantineTheme.ts), [presets](../../src/themeCatalog.ts) y [host Rust](../../src-tauri/src/lib.rs).
+
+Contrato operativo para tocar UI en Copicu dentro de un encargo autorizado. La revisión de documentación no inicia UI ni autoriza cambios de producto.
+
+La decisión F2 del 2026-09-10 unifica content y metadata porque describen el mismo clip: compartir dirty state, cancel guard y commit SQLite all-or-nothing evita rutas cotidianas separadas y guardados parciales, sin convertir metadata en texto libre. La superficie y sus accesos se detallan abajo; procedencia de la razón en el [archivo de decisiones](../reference/os2-legacy/DECISIONS.md).
 
 ## Regla Corta
 
@@ -192,6 +184,6 @@ Cuando se toca UI:
 - `docs/topics/appearance-and-themes.md` si cambia modo, temas o density;
 - `docs/topics/mantine-ui-system.md` si cambia uso de Mantine/wrappers/theme.
 - `docs/topics/ui-design-and-impeccable.md` si cambia el workflow de QA/polish.
-- `docs/WORKING_MEMORY.md` solo para una linea corta de estado operativo.
+- el topic pertinente para decisiones con razones; no mantener estado en Working Memory ni un registro global.
 
-No duplicar historia larga. Guardar decisiones y proximo paso concreto.
+No duplicar historia larga. Guardar conocimiento/decisiones en el topic y estado/próximo paso en el track, sin ampliar el alcance a ejecutar UI o modificar producto por una curaduría documental.

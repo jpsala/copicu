@@ -1,137 +1,73 @@
 ---
-id: agentic-os-operations
-status: active
-kind: how-to
-triggers:
+title: Realinear la documentación y capacidades locales de Copicu
+summary: Auditar y curar contexto dentro del pedido actual, sin importar permisos ni runtime de AOS, OMP u OS2.
+keywords:
   - realinear os
   - auditar sistema agentico
   - reparar sistema agentico
   - drift de contexto
+  - actualizar sistema agentic
+  - migrar sistema agentico
+  - adopción OS2
+  - upstream downstream
+  - context bloat
   - actualizar omp
   - sistema agentico
   - omp
   - init os
   - adopt os
   - update os
-  - migrar sistema agentico
-  - upstream downstream
   - metasistema
   - manager-only
-primary_refs:
-  - AGENTS.md
-  - docs/GLOSSARY.md
-  - docs/WORKING_MEMORY.md
-  - docs/skills/
-  - docs/tracks/
-  - .omp/config.yml
-  - scripts/toggle-skills-link.ps1
-  - scripts/context.ts
-  - scripts/lib/context-catalog.ts
-  - scripts/lib/context-router.ts
-  - scripts/agent-context-audit.ts
 ---
 
-# Operaciones Del Sistema Agentico
+# Operaciones Del Sistema Documental
 
-Usar este topic cuando JP pida auditar, reparar, actualizar o realinear la capa agentica del repo.
+Usar ante un pedido de JP para auditar, reparar o realinear la capa documental de Copicu. `realinear os` es una intención conversacional y la skill local es una ayuda portable, no prueba de un comando instalado ni autorización permanente.
 
-## Principio Upstream / Downstream
+## Frontera Y Razón
 
-Copicu es un downstream agentic local sobre OMP nativo. Las mejoras portables
-pueden compararse con `C:\dev\os`, pero sólo viajan piezas aplicables: reglas del
-proyecto, memoria viva, topics, tracks, scripts y skills usadas aquí.
+OS2 aporta recuperación selectiva y fuentes durables independientes del harness. Copicu conserva producto, dominio, datos, seguridad y efectos externos. AOS y `C:/dev/os` son antecedentes, no upstream obligatorio ni configuración a instalar; OMP/Pi sólo aportan capacidades cuando se usan.
 
-No copiar piezas manager-only: registry, working memory/tracks/decisiones de
-otro proyecto, inventarios globales ni docs que declaren a Copicu como upstream.
-Si una mejora sirve, reescribirla como contexto local.
+Comparar mejoras por necesidad concreta y reescribir sólo las aplicables. No copiar registry, perfiles, inventarios, memoria, decisiones/tracks de otros proyectos ni políticas de modelos, tools o permisos. No adoptar otro repo, configurar un runtime ni modificar `.omp/`, scripts o junctions por el mero hecho de curar docs.
 
-## Intenciones
+## Lectura Mínima
 
-| Pedido | Accion |
-| --- | --- |
-| `realinear os` | Auditar y reparar drift de la capa agentica local. |
-| `actualizar sistema agentic` / `update` | Comparar mejoras portables y traer sólo las aplicables sin pisar contexto ni copiar manager-only. |
-| `adopt` / migracion | Fusionar reglas y memoria existentes; no resetear con templates genericos. |
-| context bloat | Compactar ruta caliente y mover historia a `docs/reference/` o tracks archivadas. |
+1. Comprobar el repo/cwd, [AGENTS.md](../../AGENTS.md), pedido actual y cambios ajenos.
+2. Buscar por intención en nombres y metadata. Abrir el track pertinente y sólo las secciones necesarias de topics; el [mapa](../README.md) ayuda cuando haga falta.
+3. Consultar código, specs, scripts o referencias profundas sólo para una inconsistencia concreta que el encargo permita investigar. No abrir archivos históricos como paquete inicial.
 
-## Comando `realinear os`
+No leer ni mantener Working Memory como foco. La consulta CLI OS2 local es opcional y sólo devuelve metadata; el parser/router AOS se retiró sin trasladar foco, scoring o autoridad de runtime.
 
-Objetivo: volver a alinear la capa agentica con el proposito real del proyecto sin tocar producto, datos, deploy ni arquitectura de app salvo pedido explicito.
+## Revisar
 
-### Lectura Minima
+- Entrada liviana, sin transcript ni lectura obligatoria de catálogo.
+- Un track por trabajo retomable: objetivo, estado, próximo paso y evidencia, sin router global duplicado.
+- Topics: conocimiento y decisiones con razones; planes y permisos históricos no se vuelven reglas actuales.
+- Referencias útiles con destino claro; formatos heredados y fechas desconocidas señalados, no convertidos por intuición.
+- Skills portables en `docs/skills/`; discovery del harness opcional, sin dos carpetas canónicas ni reparación automática de junctions.
+- Invariantes de clipboard, Tauri, datos dev/instalados, foco, updater e instalación preservadas. Para dogfood, [gates de tools](agent-tool-routing.md); no ejecutar UI como audit documental.
+- Sin defaults de runtime importados ni garantía de que un script antiguo detecte todo drift.
 
-1. `AGENTS.md`.
-2. Ejecutar `bun run context -- show`.
-3. `docs/WORKING_MEMORY.md`.
-4. `bun run context -- topics`.
-5. Track relevante en `docs/tracks/`.
-6. `docs/topics/local-codex-skills.md` si el drift involucra skills o slash commands.
-7. Este topic.
-8. `scripts/agent-context-audit.ts` y `scripts/context.ts` si hay que corregir validacion o consultas.
+## Corregir Dentro Del Pedido
 
-No abrir docs largos, specs completas, rationale, archivos archivados ni referencias profundas salvo que una inconsistencia concreta lo requiera.
+Con alcance de edición autorizado: compactar duplicaciones, reparar referencias comprobadas, actualizar fuentes y promover conocimiento reusable al topic pertinente. Conservar evidencia útil antes de archivar y dejar enlaces de compatibilidad cuando correspondan. Los tracks cerrados OS2 permanecen en `docs/tracks/`, no se archivan por ceremonia.
 
-### Revisar
+Un pedido de estudiar o sólo leer no autoriza estas escrituras. No ampliar el alcance porque una corrección parezca pequeña. Preguntar ante pérdida de memoria dudosa, una decisión nueva de producto/sistema, instalación, configuración externa, scripts con efectos o un permiso faltante.
 
-- Ruta caliente: `AGENTS.md`, consulta dinámica, `WORKING_MEMORY.md` y tracks activos siguen chicos y no son transcript.
-- Routing: topics relevantes existen, tienen triggers utiles y se descubren mediante el catálogo dinámico.
-- Continuidad: track activo tiene estado, next step y refs que existen.
-- Skills: `docs/skills/` existe; `.agents/skills` es junction estable de compatibilidad y `skills:off` es no-op legacy.
-- OMP: `.omp/config.yml` sólo habilita `computer`; no hay lifecycle, wrapper local ni manifest/package project-local.
-- Decisiones: lo durable esta en `docs/DECISIONS.md` o topic estable, no enterrado en tracks.
-- Specs: specs activas estan indexadas, no tienen prefijos duplicados y tienen `spec.md`.
-- Drift: docs raiz no contradicen la ruta inicial, los comandos reales ni el estado actual del repo.
-- Archivos sueltos: notas, drafts, handoffs o contexto viejo tienen destino claro.
-- Audit: `scripts/agent-context-audit.ts` detecta la clase de problema encontrada si puede repetirse.
+## Cierre
 
-### Corregir Sin Preguntar
+1. Curar sólo el delta útil: estado y pendientes en el track; reglas/decisiones reutilizables en su topic. No mantener documentos globales de foco, decisiones o preguntas.
+2. Revisar diff, metadata aplicable, referencias y coherencia semántica. Separar evidencia anterior de comprobación propia; no llamar OS2 al audit AOS ni declarar catálogo válido si hay metadata legacy pendiente.
+3. Informar hecho, comprobado, pendiente y límites. Guardar no cambia de sesión; un handoff prepara un kickoff copiable sin lanzar otra sesión. Procedimiento en [continuidad documental](docs-knowledge-system.md#guardar-y-preparar-un-handoff).
 
-- Compactar texto repetido en ruta caliente.
-- Actualizar links, triggers, frontmatter y referencias rotas obvias.
-- Mover informacion durable desde tracks a topic, decision o doc estable.
-- Marcar o archivar trabajos cerrados cuando el estado sea claro.
-- Consultar `bun run context -- show` y ajustar fuentes canónicas.
-- Ajustar el audit para cubrir drift recurrente y barato de validar.
+Instalar, commit, push, publicación, deploy, producción, acciones destructivas, datos privados, credenciales y envíos externos requieren autorización explícita y actual. La curaduría no los habilita.
 
-### Preguntar Antes
+## Criterio De Éxito
 
-- Borrar memoria que podria ser util.
-- Mover archivos historicos grandes cuando no este claro su destino.
-- Cambiar convenciones principales del sistema.
-- Tocar codigo producto, specs de feature, datos, deploy o release.
-- Reemplazar diferencias locales respecto del upstream `c:\dev\os` sin revisar/mergear.
+Encontrar y comprender objetivo, estado y próximo paso con lectura selectiva, sin depender del harness ni perder gates locales. Metadata/enlaces válidos son una comprobación estructural; comprensión desde una sesión realmente nueva y uso del producto requieren evidencia distinta. No garantizar “perfecto” ni aceptación humana por pasar un audit.
 
-### Cierre
+## Referencias
 
-1. Actualizar `docs/WORKING_MEMORY.md` si cambio estado vivo.
-2. Registrar decision durable en `docs/DECISIONS.md` si cambio una regla.
-3. Actualizar el track relevante o archivarlo si corresponde.
-4. Ejecutar:
-
-```powershell
-bun run context -- show
-bun run context:audit
-```
-
-5. Reportar que se realineo, que se corrigio, que quedo pendiente y si el audit paso.
-
-## Actualizar Desde Upstream
-
-1. Leer primero el sistema local y verificar `git status`.
-2. Comparar sólo la capa agentic local: `AGENTS.md`, docs de contexto, topics base, scripts, `.omp/`, `.agents`, `.specify` y `docs/skills/` si aplica.
-3. Preservar memoria local: `docs/WORKING_MEMORY.md`, `docs/DECISIONS.md`, tracks, specs y topics de producto no se pisan; se fusionan si hace falta.
-4. Preservar convenciones locales como `docs/tracks/`, reglas de producto, Windows-first, Tauri, clipboard privacy, dev/instalada y release.
-5. Traer mejoras portables de scripts, skills o audit cuando no dependan de
-   contexto manager-only.
-6. Si aparece una política de implementación mínima, propagarla sólo como modo
-   liviano: no instalar packages ni dependencias locales salvo pedido explícito.
-7. Omitir registry, decisiones/tracks/memoria de otro proyecto, inventarios
-   personales y docs meta.
-8. Reescribir cualquier mejora como contexto local de Copicu antes de incorporarla.
-9. Documentar divergencias locales en `docs/topics/docs-knowledge-system.md` o un topic agentico local.
-10. Preservar `docs/skills/` como fuente canonica; usar `scripts/toggle-skills-link.ps1 status|on|off` para discovery bajo demanda.
-11. Regenerar indice y correr audit antes de reportar.
-
-## Criterio De Exito
-
-Una sesion nueva puede leer poco, entender que esta activo, abrir el topic correcto, continuar un track y confiar en que el audit detecta el drift que acaba de corregirse.
+- [Sistema de conocimiento](docs-knowledge-system.md), [calidad documental](os-quality.md), [skills locales](local-codex-skills.md) y [adopción OS2](../tracks/os2-adoption.md).
+- [Consultor local](../../scripts/knowledge.ts) y [check documental](../../scripts/docs-check.ts): sin dependencia del procedimiento manual, harness, instalación o reparación de discovery. `check` incluye fixtures temporales, no producto.

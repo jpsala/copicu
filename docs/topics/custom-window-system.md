@@ -1,8 +1,7 @@
 ---
-id: custom-window-system
-status: draft
-kind: decision-map
-triggers:
+title: Ventanas custom de Tauri y WebView2
+summary: Reglas documentadas de registry, lifecycle Rust-owned, capabilities y bounds; referencia heredada con propuestas de diseño.
+keywords:
   - custom windows
   - multiwindow
   - multiple windows
@@ -11,17 +10,11 @@ triggers:
   - ui-host
   - frameless
   - undecorated
-primary_refs:
-  - docs/topics/ui-surface-architecture.md
-  - docs/topics/window-state-and-monitor-policy.md
-  - docs/tracks/009-ui-host-custom-surface.md
-  - docs/reference/custom-window-system-archive-2026-06-25.md
-  - src-tauri/src/surface_registry.rs
-  - src-tauri/src/window_state.rs
-  - src/ui/window/
 ---
 
 # Custom Window System
+
+Referencia heredada marcada como `draft`; la adaptación de metadata no acepta propuestas nuevas ni verifica producto. Fuentes: [superficies](ui-surface-architecture.md), [bounds](window-state-and-monitor-policy.md), [track](../tracks/009-ui-host-custom-surface.md), [archivo anterior](../reference/custom-window-system-archive-2026-06-25.md), [registry](../../src-tauri/src/surface_registry.rs), [window state](../../src-tauri/src/window_state.rs) y [UI de ventanas](../../src/ui/window/).
 
 Router compacto para ventanas custom Tauri/WebView2. La version larga previa quedo archivada en `docs/reference/custom-window-system-archive-2026-06-25.md`.
 

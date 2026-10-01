@@ -7,7 +7,7 @@ Status: complete, accepted by JP on 2026-09-29; included in the v0.5.0 release c
 - JP accepted the current behavior and closed this work; no further folder tasks are active.
 - Latest verification: frontend build and built-debug Tauri build passed; all 420 Playwright tests passed, including immediate Root drop, grabbing cursor, Root target highlight and folder deletion choices.
 - Dev uses the existing `.codex-run/dev-isolated/app-data` profile; current process ownership and shortcut must be verified from runtime logs, not inferred from an override. Working Memory routes the active operation.
-- JP authorized distribution in v0.5.0. Publication/verification state: `docs/tracks/039-release-0.5.0.md`; no local installation authorized.
+- JP authorized distribution in v0.5.0. Publication/verification state: `docs/tracks/039-release-0-5-0.md`; no local installation authorized.
 
 ## Model
 
@@ -38,6 +38,6 @@ Status: complete, accepted by JP on 2026-09-29; included in the v0.5.0 release c
 
 ## Local dogfood
 
-- The local worktree has SQLite folders, scoped search, explicit capture destination, four deletion combinations with Settings defaults, a picker tree, `Ctrl+B`, `Ctrl+P`, and `/` completion. Distribution state is tracked in `docs/tracks/039-release-0.5.0.md`; the installed app is not updated by a release-only request.
+- The local worktree has SQLite folders, scoped search, explicit capture destination, four deletion combinations with Settings defaults, a picker tree, `Ctrl+B`, `Ctrl+P`, and `/` completion. Distribution state is tracked in `docs/tracks/039-release-0-5-0.md`; the installed app is not updated by a release-only request.
 - Use a newly created empty dev profile for UI dogfood. The reusable `.codex-run/dev-isolated` profile can contain real clipboard history; do not assume it is disposable.
 - The folder switcher keeps its input focused while `Up`/`Down` move an active, scroll-into-view result; `Enter` opens and `Escape` dismisses. The tree uses Windows Explorer navigation-pane conventions within Copicu's compact system: folder icons, aligned indent, disclosure chevrons, full-row selection/focus and contextual actions. Root is displayed as `/` with its exact direct clip count. WebView2's native drag omitted `dragover`/`drop` and showed a prohibited cursor even on valid targets, so internal moves use pointer events and show a grabbing cursor and target highlight before release. Root drop is immediate, with frontend regression checks for target highlighting and no confirmation; JP confirmed the updated behavior works during Dev dogfood; this is user acceptance, not a new automated native smoke. Native UI smoke in an isolated 587 px Dev profile verified exact count updates and a pointer move back to a folder; image-preview drag, single/group selection, click-away and quick switching were also verified with synthetic clips. The installed app has not been updated.

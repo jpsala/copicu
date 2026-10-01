@@ -1,10 +1,23 @@
 ---
-id: local-rpc-cli
+title: RPC local y CLI de producto
 status: active
-updated: 2026-08-10
+summary: Plan V1 de Named Pipe por perfil y fachada Actions, sin TCP, SQL arbitrario, auto-start ni efectos destructivos.
+last_worked: null
+next: Revisar spec y contratos de Phase 1 frente al estado actual, confirmando alcance de implementación y gates antes de ejecutar.
+topics: [actions-and-scripting-api, sqlite-storage, windows-installer]
 ---
 
 # Local RPC And CLI
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva discovery y plan, no una implementación acreditada hoy. Metadata original:
+
+```yaml
+id: local-rpc-cli
+status: active
+updated: 2026-08-10
+```
+
+Se mantiene abierto el plan RPC de producto, distinto del consultor documental AOS/OS2. El mandato de una sesión, workers y smokes del cuerpo es histórico; no iniciar app/servicio, cambiar PATH, instalar o ejecutar por ese permiso.
 
 ## Objetivo
 

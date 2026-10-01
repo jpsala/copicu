@@ -1,4 +1,16 @@
 ---
+title: Architecture Hardening completado
+status: closed
+summary: Cortes pequeños de endurecimiento registrados como completados, sin rediseñar producto ni reabrir la campaña.
+last_worked: null
+topics: [minimal-implementation, performance-and-memory, actions-and-scripting-api]
+---
+
+# Architecture Hardening
+
+**Importación OS2:** UTC histórica desconocida; `null` no borra trabajo ni acreditación anterior. Metadata original:
+
+```yaml
 id: architecture-hardening
 status: complete
 updated: 2026-06-10
@@ -6,9 +18,9 @@ spec: ../../specs/007-architecture-hardening/spec.md
 plan: ../../specs/007-architecture-hardening/plan.md
 tasks: ../../specs/007-architecture-hardening/tasks.md
 orchestration: ../../specs/007-architecture-hardening/orchestration.md
----
+```
 
-# Architecture Hardening
+Cerrado según el resultado explícito de `Estado`. El prompt de arranque y reparto de agentes del cuerpo pertenecen a esa campaña, no autorizan reiniciarla, ampliar arquitectura o lanzar sesiones hoy.
 
 ## Estado
 

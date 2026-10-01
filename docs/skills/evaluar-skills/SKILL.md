@@ -1,19 +1,19 @@
 ---
 name: evaluar-skills
-description: Audit an AOS repo's agentic system and propose which commands, topics, tracks, rules, or workflows should become local hybrid skills. Use when JP asks to revisar/evaluar qué se puede pasar a skills, promover algo a skill, crear slash commands desde el sistema agéntico, or inspect whether the repo has skill candidates.
+description: Audit Copicu's portable procedures and propose which workflows merit local skills without installing tools or governing the harness. Use when JP asks to revisar/evaluar qué se puede pasar a skills, promover algo a skill, crear slash commands desde el sistema agéntico, or inspect whether the repo has skill candidates.
 ---
 
 # Evaluar Skills
 
 ## Workflow
 
-1. Run `bun run context -- show` first, then read `docs/WORKING_MEMORY.md` and query `bun run context -- topics`.
-2. Open `docs/topics/local-codex-skills.md`; treat it as the canonical rubric.
+1. Check the current request, repo/cwd and WIP. Discover candidates selectively by names/metadata and scoped searches, without Working Memory or an obligatory legacy catalog.
+2. Open [local skills](../../topics/local-codex-skills.md) and only the relevant sections; treat it as the canonical rubric.
 3. Inspect candidates without loading everything: search `AGENTS.md`, `docs/topics/`, `docs/tracks/`, and `docs/skills/README.md` for commands, repeated workflows, and named user intents.
 4. Classify each candidate as `skill`, `hybrid skill`, `topic`, `active rule`, `track`, or `do not promote`.
 5. Produce a shortlist with reason, trigger phrase, canonical source, and risk/cost.
 6. If JP asks to implement, create or update only `docs/skills/<name>/`; keep durable logic in topics/scripts/docs and avoid duplicating long procedures.
-7. Run `scripts/ensure-skills-link.ps1`, validate changed skills, query the context catalog, and run the audit.
+7. Validate the changed metadata, references, procedure and gates. Do not run junction repair, install external validators, generate global indexes or certify OS2 with an AOS audit. Discovery changes require their own current authorization; report unverified harness behavior.
 
 ## Default Recommendation
 

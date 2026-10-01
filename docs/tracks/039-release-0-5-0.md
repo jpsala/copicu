@@ -1,10 +1,22 @@
 ---
-id: release-0.5.0
-status: complete
-updated: 2026-09-29
+title: Release histórico v0.5.0
+status: closed
+summary: Publicación, artefactos firmados y smoke sintético registrados; instalación y Explorer quedaron fuera de aquella autorización.
+last_worked: null
+topics: [windows-installer, open-source-github, sqlite-storage]
 ---
 
 # Copicu v0.5.0 Release
+
+**Importación OS2:** UTC histórica desconocida; `null` mantiene evidencia del release sin afirmar vigencia o UTC inferida de logs. Metadata original:
+
+```yaml
+id: release-0.5.0
+status: complete
+updated: 2026-09-29
+```
+
+Nombre anterior `039-release-0.5.0.md`, normalizado a kebab-case sólo para el track; no cambia versión, tag, notas o artefactos del producto. Cerrado el release publicado y verificado según ese corte. Sus autorizaciones de commit/push/publicación, modelos y workers no se transfieren; no abrir keys, restaurar clipboard, instalar o repetir efectos externos por este registro.
 
 ## Scope and authorization
 

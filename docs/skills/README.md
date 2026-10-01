@@ -1,35 +1,29 @@
 # Skills Locales
 
-`docs/skills/` es la fuente canonica de las skills locales del repo.
+`docs/skills/` es la única fuente canónica portable. Skills no amplían permisos ni requieren OMP, Pi o una junction para recuperar conocimiento OS2.
 
 ## Regla
 
-- No duplicar skills en dos carpetas reales.
-- `.agents/skills` mantiene discovery OMP y debe apuntar por junction a `docs/skills/`.
-- Si se agrega o modifica una skill, editar `docs/skills/<nombre>/`.
-- Si una skill es operativa del sistema, documentarla tambien en topics/working memory/decisions cuando cambie el comportamiento durable.
+- No duplicar una skill en dos carpetas reales; editar `docs/skills/<nombre>/`.
+- Promover sólo procedimientos repetibles útiles, no cada topic, intención o capacidad de un harness.
+- Conocimiento y decisiones con razones al topic pertinente; estado del trabajo al track. No mantener Working Memory, decisiones globales ni un índice paralelo.
+- `.agents/skills` es compatibilidad opcional de discovery. Su presencia/tipo se comprueban antes de operarla; no se crea ni repara al validar docs.
 
+## Validación
 
-## Validacion
+Revisar metadata, referencias, procedimiento y gates de lo cambiado. Un validador externo, como el `quick_validate.py` histórico de `agent-infra`, sólo se usa si está disponible y autorizado. Si falta, registrar el límite, no instalar herramientas ni editar otro repo.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/toggle-skills-link.ps1 status
-powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
-python C:\dev\agent-infra\rules\skills\.system\skill-creator\scripts\quick_validate.py docs/skills/<nombre>
-bun run context -- show
-bun run context:audit
-```
+`bun run docs:check` valida YAML/tipos/rutas y canon local; `check` añade regresiones con fixtures temporales. El tooling AOS fue retirado. No se habilita discovery ni se valida el comportamiento real de una skill en el harness por esas comprobaciones.
 
-## Mantenimiento
+## Compatibilidad Operativa
 
-- Si una skill nueva usa metadata UI, crear o regenerar `agents/openai.yaml`.
-- Si un doc humano apunta a `.agents/skills` como fuente de verdad, corregirlo a `docs/skills/`.
-- Si Codex deja de descubrir skills, reparar primero la junction antes de tocar contenido: `bun run skills:on`.
-- Si OMP muestra demasiadas skills, no borrar el junction: algunos hosts cachean paths; `off`/`toggle` son aliases legacy no destructivos.
-- Tras mover o portar el repo a otro disco, correr `scripts/ensure-skills-link.ps1`: si encuentra una carpeta real en `.agents/skills`, la mueve a backup, fusiona items faltantes hacia `docs/skills/` y recrea el junction sin perder contenido.
+- `scripts/toggle-skills-link.ps1 status` consulta discovery. Los scripts `ensure-skills-link.ps1` y los modos `on`/reparación pueden modificar junctions, crear backups y fusionar carpetas; no ejecutarlos como lectura, audit documental ni paso automático después de mover el repo.
+- Ante reparación autorizada, comprobar repo, destino y WIP; preservar carpetas reales y revisar efectos antes de actuar. No borrar una junction por limpiar la paleta: algunos hosts cachean paths.
+- `off`/`toggle` se documentaron como aliases legacy no destructivos; comprobar el script vigente antes de operar, no inferir comportamiento del nombre.
+- Generar metadata UI como `agents/openai.yaml` sólo para un host que la requiera y dentro del pedido, no como dependencia del núcleo.
 
-## Aplicar En Otros Repos
+## Portar A Otro Repo
 
-- Copiar o fusionar `docs/skills/` sólo cuando el repo destino necesite esas capacidades locales.
-- No copiar `.agents/skills` como carpeta real; recrearla en destino con `scripts/ensure-skills-link.ps1`. Si el port ya trajo una carpeta real, el script la preserva como `.agents/skills.backup-*` y copia skills faltantes al canon.
-- Mantener las skills hibridas: metadata y cuerpo corto en la skill, procedimiento durable en topics, scripts o docs canonicos del repo destino.
+Sólo con alcance explícito para ese destino y una necesidad real. Adaptar o fusionar capacidades pertinentes, no copiar el catálogo entero ni permisos históricos. No copiar `.agents/skills` como carpeta canónica ni ejecutar scripts de reparación por la mera portación.
+
+[Rubrica y capacidades](../topics/local-codex-skills.md), [realinear](../topics/agentic-os-operations.md) y [seguridad local](../../AGENTS.md).

@@ -1,19 +1,16 @@
 ---
-id: macos-portability-research-unindexed
-status: reference
-kind: research-notes
-triggers:
+title: Investigación de portabilidad macOS
+summary: Referencia aparcada de clipboard, foco previo y paste nativo en Mac, sin cambiar el roadmap Windows-first.
+keywords:
   - macOS port
   - Mac port
   - clipboard manager mac
   - paste previous window macOS
-primary_refs:
-  - docs/tracks/015-macos-port-spike.md
-  - src-tauri/src/window_focus.rs
-  - src-tauri/src/clipboard_probe.rs
 ---
 
 # macOS Portability Research
+
+Referencias de entrada: [track aparcado](../tracks/015-macos-port-spike.md), [foco](../../src-tauri/src/window_focus.rs) y [clipboard probe](../../src-tauri/src/clipboard_probe.rs).
 
 Estado: estacionado e indexado como referencia profunda. No cambia el roadmap Windows-first.
 

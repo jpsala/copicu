@@ -1,4 +1,16 @@
 ---
+title: Separación UX de Saved Views y Scenarios
+status: closed
+summary: Views como filtros pasivos y Scenarios como única captura contextual visible, según corte implementado y registrado.
+last_worked: null
+topics: [picker-interaction, filtering-and-query-syntax, tag-management-hotkeys]
+---
+
+# 031 Saved History Views UX Follow-up
+
+**Importación OS2:** UTC histórica desconocida; `null` no borra evidencia anterior ni prueba UX actual. Metadata original:
+
+```yaml
 id: saved-history-views-ux-followup
 status: implementation-validated
 updated: 2026-07-29
@@ -9,9 +21,9 @@ related:
   - docs/tracks/028-active-scenarios-metadata.md
   - docs/tracks/029-picker-scenario-switcher.md
   - docs/topics/picker-interaction.md
----
+```
 
-# 031 Saved History Views UX Follow-up
+Cerrado el follow-up UX conforme al resultado registrado. No importar receta/permisos, eliminar datos históricos de views ni activar captura por abrirlas; el modelo independiente posterior consta en 032.
 
 ## Objetivo
 

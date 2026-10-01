@@ -4,4 +4,6 @@ argument-hint: "<tema o decisión>"
 ---
 Investiga esta necesidad técnica siguiendo `docs/topics/technical-research-process.md`: $ARGUMENTS
 
-Usa búsquedas scoped del repo para ubicar código y patrones; `web_search` más `read` para fuentes primarias actuales; y la skill `librarian` cuando haya que verificar internals, commits o comportamiento de una librería open source en su código. Resume fuentes, opciones, riesgos y recomendación para Copicu. No instales dependencias ni envíes código, secretos o datos privados a servicios externos. Si el hallazgo afecta arquitectura, dependencias o roadmap, proponé el destino durable mínimo: topic, decisión o spec.
+Recurso opt-in de OMP; leerlo no instala un comando, amplía permisos ni obliga a ese harness. Comprobá pedido/cwd/AGENTS y recuperá sólo el track/topic y secciones pertinentes. Usa búsquedas scoped para patrones locales y capacidades realmente disponibles y autorizadas para fuentes primarias; `web_search`, `read` o una skill de código externo son opciones, no dependencias obligatorias ni permiso para instalarlas.
+
+Resume fuentes, opciones, razones, riesgos e incertidumbres. No instales dependencias ni envíes código, secretos, clipboard o datos privados a servicios externos. Si evidencia externa contradice el repo, presentar ambas y consultar a JP antes de decidir. Con edición autorizada, conocimiento y decisiones con razones al topic pertinente; estado/bloqueos al track; specs grandes según el encargo. Sin Working Memory activa, índices ni registro global de decisiones.

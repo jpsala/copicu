@@ -1,28 +1,18 @@
-# Preguntas Abiertas
+# Preguntas Anteriores: Referencia Histórica
 
-- Cual es la plataforma primaria del primer MVP: Windows solamente o cross-platform desde el inicio?
-- Donde deben vivir la base SQLite y el directorio de blobs por ambiente/desarrollo?
-- Que limites iniciales se quieren para cantidad de items, edad maxima y tamano total?
-- Para imagenes: que limite inicial de tamano/dimensiones evita inflar disco y memoria?
-- Para imagenes: hay que soportar paste/write-back de imagen en MVP de rich content o alcanza con preview + copy como archivo/blob?
-- Hace falta importar/exportar historial o settings desde el inicio?
-- Cual es el schema minimo de metadata por item para no bloquear busqueda, plugins y AI?
-- Cual es la API minima para plugins personales JavaScript/TypeScript sin sandbox complejo?
-- Vale la pena soportar Python como runner externo opcional para scripts locales, o alcanza con JS/TS al inicio?
-- Que operaciones AI personales conviene implementar primero?
-- La UI de busqueda debe mostrar chips/facets editables o alcanza con un summary "Interpreted as"?
-- La semantica de fechas de query syntax debe ser UTC, timezone local o configurable?
-- Cuando conviene migrar de `LIKE` a SQLite FTS5 y que ranking usar?
-- Como capturar source process/window para habilitar `app:` sin filtrar datos privados?
-- Que modelo de OpenRouter conviene usar por defecto para AI query planning barato y rapido?
-- Como validar y explicar planes AI de busqueda antes de ejecutarlos?
-- Que logs redacted guardar para prompts/responses AI sin persistir payload real?
-- Que utilitario o estrategia se usara para screenshots/recortes de pantalla?
-- MUI conviene como base visual o conviene una UI mas custom/headless para evitar look generico?
-- TanStack Query/Table/Virtual aportan suficiente para adoptarlos desde el scaffold?
+Este archivo es compatibilidad, no backlog global activo. El [original íntegro](reference/os2-legacy/OPEN_QUESTIONS.md) conserva las preguntas del arranque byte a byte. Algunas pueden estar resueltas por contratos posteriores: no activarlas, cerrarlas ni convertirlas en requisitos sólo por leer el archivo histórico.
 
-## Postergadas Explicitamente
+Incertidumbres de conocimiento y decisiones van al topic pertinente; preguntas de ejecución y bloqueos al track del trabajo. Actualizar la fuente existente, no duplicar preguntas globales.
 
-- Politica fina de privacidad para plugins/AI.
-- Sandbox, firma, marketplace o permisos granulares para plugins JavaScript/TypeScript.
-- Manejo avanzado de secretos/password managers mas alla de no persistir datos reales en tests/logs.
+## Consultar Por Tema
+
+- Plataforma y alcance: [dirección](topics/product-direction.md), [ambición](topics/product-ambition.md) y el track del trabajo pertinente.
+- SQLite/blobs, retención y schema: [storage](topics/sqlite-storage.md) y [clipboard](topics/clipboard.md).
+- Imágenes, rich content, screenshots y write-back: [clipboard](topics/clipboard.md), [foco/paste](topics/windows-focus-and-paste.md) y [track de captura](tracks/image-capture-spike.md).
+- Importación CopyQ: [track de importación](tracks/007-copyq-import.md); API de plugins y runners: [Actions/Scripting](topics/actions-and-scripting-api.md).
+- Search, fechas, facets, source filters y ranking/FTS5: [query syntax](topics/filtering-and-query-syntax.md), [motor de search](topics/search-plan-engine.md) y [rendimiento](topics/performance-and-memory.md).
+- AI, endpoints/modelos del producto y privacidad externa: [AI search/actions](topics/ai-search-and-actions.md), [Actions/Scripting](topics/actions-and-scripting-api.md) y [gates locales](../AGENTS.md). Modelos del producto no son defaults del harness.
+- UI, componentes y virtualización: [Mantine](topics/mantine-ui-system.md), [superficies](topics/ui-surface-architecture.md) y [track de lista virtual](tracks/002-virtual-history-list.md).
+- Clips sensibles, sandbox y permisos tentativos: [Actions/Scripting](topics/actions-and-scripting-api.md) y [track de clips seguros](tracks/020-secure-clips-password.md). Mantener sus límites y gates; esta curaduría no autoriza implementarlos.
+
+Estas rutas permiten encontrar los contratos y preguntas locales sin mantener otro router de estado. La copia histórica preserva lo aún no reconciliado; ningún check documental demuestra que una pregunta de producto quedó resuelta.

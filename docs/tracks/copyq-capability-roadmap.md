@@ -1,10 +1,23 @@
 ---
-id: copyq-capability-roadmap
+title: Roadmap de capacidades CopyQ-inspired
 status: active
-updated: 2026-06-05
+summary: Estudio de opciones y brechas del baseline CopyQ para decidir capacidades de Copicu sin prometer compatibilidad.
+last_worked: null
+next: Contrastar una brecha observable con los contratos posteriores y acordar alcance antes de crear una spec o implementar.
+topics: [copyq-technical-baseline, product-ambition, product-direction]
 ---
 
 # CopyQ Capability Roadmap
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el estudio anterior sin acreditar comparación nueva. Metadata original:
+
+```yaml
+id: copyq-capability-roadmap
+status: active
+updated: 2026-06-05
+```
+
+Se mantiene abierto el trabajo de evaluación, no un backlog obligatorio ni estado actual de todas las features. Tablas, rutas de specs sugeridas y prioridades reflejan el corte antiguo: contrastar fuentes posteriores sin recrear scaffolds, abrir otros repos o importar paridad/permisos.
 
 Estudio comparativo de capacidades de CopyQ contra Copicu. El objetivo no es copiar CopyQ ni prometer compatibilidad, sino usarlo como mapa de posibilidades y decidir qué vale la pena absorber, mejorar o descartar.
 

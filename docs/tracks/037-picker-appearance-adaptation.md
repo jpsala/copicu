@@ -1,10 +1,22 @@
 ---
-id: picker-appearance-adaptation
-status: complete
-updated: 2026-09-16
+title: Adaptación visual del picker y autosave
+status: closed
+summary: Preferencias de previews, acciones y details registradas como implementadas con autosave y release v0.4.20.
+last_worked: null
+topics: [appearance-and-themes, mantine-ui-system, picker-interaction]
 ---
 
 # Picker Appearance Adaptation
+
+**Importación OS2:** UTC histórica desconocida; `null` preserva evidencia previa sin fechar un nuevo smoke. Metadata original:
+
+```yaml
+id: picker-appearance-adaptation
+status: complete
+updated: 2026-09-16
+```
+
+Cerrado el corte con implementación, checks y distribución registrados. No repetir cambios de preferencias en la instalada, pruebas visibles, release o instalación por esa historia.
 
 ## Objetivo
 

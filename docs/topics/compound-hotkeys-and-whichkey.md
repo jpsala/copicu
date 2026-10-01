@@ -1,22 +1,18 @@
 ---
-id: compound-hotkeys-and-whichkey
-status: active
-kind: decision-map
-triggers:
+title: Hotkeys compuestos y WhichKey
+summary: Motor de secuencias de teclado y menú de descubrimiento reusable, distinto del caso de uso de tags.
+keywords:
   - hotkeys compuestos
   - hotkey sequence
   - key sequence
   - chord
   - whichkey
   - which key
-primary_refs:
-  - docs/topics/global-shortcut-and-tray.md
-  - docs/topics/tag-management-hotkeys.md
-  - ../tracks/012-tags-and-hotkeys.md
-  - ../../specs/006-tags-and-hotkeys/spec.md
 ---
 
 # Compound Hotkeys And WhichKey
+
+Referencias de entrada: [shortcut/tray](global-shortcut-and-tray.md), [tags](tag-management-hotkeys.md), [track 012](../tracks/012-tags-and-hotkeys.md) y [spec](../../specs/006-tags-and-hotkeys/spec.md).
 
 Topic para el motor de hotkeys compuestos y el menu tipo WhichKey. Esto es distinto del caso de uso de tags: tags consume el motor, pero el motor tambien debe servir para scripts, comandos y acciones futuras.
 

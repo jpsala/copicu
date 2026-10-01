@@ -1,11 +1,24 @@
 ---
+title: Orden de historial y deduplicación
+status: paused
+summary: Dedupe y move-to-top registrados como implementados; orden manual y drag con virtualización siguen pendientes.
+last_worked: null
+next: Decidir alcance de orden manual y drag por IDs frente a búsquedas y virtualización antes de implementar.
+topics: [clipboard, sqlite-storage, picker-interaction]
+---
+
+# History Ordering And Dedupe
+
+**Importación OS2:** UTC histórica desconocida; `null` no indica ausencia de trabajo ni una prueba actual. Metadata original:
+
+```yaml
 id: history-ordering-dedupe
 status: first-slice-implemented
 priority: 3
 updated: 2026-06-05
----
+```
 
-# History Ordering And Dedupe
+Pausado como slice parcial: los checks de dedupe/move-to-top constan cumplidos, pero `Done Cuando` aún pide drag persistido y comprobación con lista virtual. No reactivar migraciones de datos por este registro.
 
 Definir e implementar move-to-top, dedupe y drag & drop de items, compatible con virtualización.
 

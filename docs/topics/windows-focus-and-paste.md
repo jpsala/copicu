@@ -1,20 +1,18 @@
 ---
-id: windows-focus-and-paste
-status: active
-kind: reference
-triggers:
+title: Foco previo y paste en Windows
+summary: Recuperación de ventana destino, Win32 y SendInput, paste target-aware y límites de foco y seguridad.
+keywords:
   - paste-to-previous-window
   - foco previo
   - previous window
   - SetForegroundWindow
   - SendInput
   - Ctrl+V
-primary_refs:
-  - specs/001-mvp0-native-spike/spec.md
-  - specs/001-mvp0-native-spike/research.md
 ---
 
 # Windows Focus And Paste
+
+Referencias de entrada: [spike](../../specs/001-mvp0-native-spike/spec.md) y [research inicial](../../specs/001-mvp0-native-spike/research.md).
 
 Topic para recordar/restaurar foco previo y pegar el item seleccionado en Windows.
 

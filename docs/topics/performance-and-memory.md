@@ -1,8 +1,7 @@
 ---
-id: performance-and-memory
-status: active
-kind: decision-map
-triggers:
+title: Rendimiento y memoria del picker
+summary: Política de idle, apertura, payloads e historiales grandes con mediciones y límites para claims públicos.
+keywords:
   - performance
   - memoria
   - consumo
@@ -10,15 +9,11 @@ triggers:
   - velocidad
   - large history
   - benchmarks
-primary_refs:
-  - docs/tracks/014-performance-memory.md
-  - docs/topics/sqlite-storage.md
-  - docs/topics/filtering-and-query-syntax.md
-  - docs/topics/picker-interaction.md
-  - docs/topics/actions-and-scripting-api.md
 ---
 
 # Performance And Memory
+
+Referencias de entrada: [track](../tracks/014-performance-memory.md), [storage](sqlite-storage.md), [search](filtering-and-query-syntax.md), [picker](picker-interaction.md) y [scripting](actions-and-scripting-api.md).
 
 Topic durable para optimizar velocidad, consumo de memoria, CPU en idle, IPC y costo de render del picker.
 

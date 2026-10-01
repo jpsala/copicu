@@ -1,10 +1,22 @@
 ---
-id: 007-copyq-import
-status: imported
-updated: 2026-06-23
+title: Importaciones históricas desde CopyQ
+status: closed
+summary: Importaciones registradas en instalada y dev aislado; preservar límites de privacidad y diferencias de dedupe de imágenes.
+last_worked: null
+topics: [copyq-technical-baseline, clipboard, sqlite-storage]
 ---
 
 # 007 CopyQ Import
+
+**Importación OS2:** UTC histórica no acreditada; `null` conserva evidencia previa sin inventar hora a partir de backups. Metadata original:
+
+```yaml
+id: 007-copyq-import
+status: imported
+updated: 2026-06-23
+```
+
+Cerrado el conjunto de importaciones relatadas, no una herramienta universal ni todos los follow-ons. No reimportar, abrir DB privadas, repetir backups/reparaciones o iniciar CopyQ por autorizaciones históricas; una nueva importación exige alcance propio.
 
 Investigacion para importar datos existentes de CopyQ desde `C:\tools\copyq` hacia Copicu.
 

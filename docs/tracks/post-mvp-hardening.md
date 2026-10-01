@@ -1,10 +1,23 @@
 ---
-id: post-mvp-hardening
-status: active
-updated: 2026-06-06
+title: Plan histórico de endurecimiento post-MVP
+status: paused
+summary: Checklist del arranque por contrastar con cortes posteriores de confiabilidad, privacidad, storage y distribución.
+last_worked: null
+next: Reconciliar pendientes del checklist con fuentes actuales y un caso observable antes de retomar dogfood o hardening.
+topics: [performance-and-memory, clipboard, sqlite-storage, windows-installer]
 ---
 
 # Post-MVP Hardening
+
+**Importación OS2:** UTC histórica desconocida; `null` mantiene el plan anterior sin simular nuevos resultados. Metadata original:
+
+```yaml
+id: post-mvp-hardening
+status: active
+updated: 2026-06-06
+```
+
+Pausado para reconciliar vigencia: este checklist del MVP antecede a los cortes cerrados y releases posteriores, por lo que no es el estado actual entero de Copicu. No reactivar privacidad/storage/distribución o dogfood con datos reales por un plan histórico; preservar perfiles privados y gates actuales.
 
 Trabajo vivo para convertir el MVP 0 validado en una herramienta local confiable de uso diario.
 

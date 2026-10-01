@@ -1,10 +1,23 @@
 ---
-id: actions-modularization
+title: Modularización de Actions
 status: active
-updated: 2026-06-11
+summary: Extracciones mecánicas registradas preservando contratos y capabilities; Node runner exige regresión enfocada antes de moverse.
+last_worked: null
+next: Revisar si existe otra extracción mecánica pequeña; no mover Node runner sin cobertura de timeout, stdout y errores redacted.
+topics: [actions-and-scripting-api, minimal-implementation]
 ---
 
 # Actions Modularization
+
+**Importación OS2:** UTC histórica desconocida; `null` mantiene los cortes anteriores sin fecharlos como nuevos. Metadata original:
+
+```yaml
+id: actions-modularization
+status: active
+updated: 2026-06-11
+```
+
+Se conserva abierto el seguimiento mecánico del registro, no un permiso para refactorizar producto. Capabilities y contrato público no se amplían; comprobaciones anteriores no son tests ejecutados hoy.
 
 Trabajo vivo para reducir el tamano y acoplamiento de `src-tauri/src/actions.rs` sin cambiar contratos de scripts, capabilities ni protocolo del runner.
 

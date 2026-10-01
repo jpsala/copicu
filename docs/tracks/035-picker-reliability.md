@@ -1,10 +1,22 @@
 ---
-id: picker-reliability
-status: complete
-updated: 2026-09-09
+title: Confiabilidad del picker y retención
+status: closed
+summary: Correcciones y gate de tres capturas por clip registrados como cerrados; no hay causa única acreditada del hang.
+last_worked: null
+topics: [clipboard, sqlite-storage, performance-and-memory, windows-focus-and-paste]
 ---
 
 # Picker Reliability
+
+**Importación OS2:** UTC histórica desconocida; `null` preserva correcciones anteriores sin certificar la instalada hoy. Metadata original:
+
+```yaml
+id: picker-reliability
+status: complete
+updated: 2026-09-09
+```
+
+Cerrado el corte autorizado según `Estado Y Gate`, no una nueva aceptación de todos los hangs/paste. No reabrir Architecture Hardening, RPC o reparación masiva de datos ni heredar permisos de distribución.
 
 ## Estado Y Gate
 
@@ -14,7 +26,7 @@ paste historico al destino equivocado. Este track no reabre Architecture Hardeni
 
 Gate funcional de retencion resuelto por JP e implementado: ultimas 3 capturas
 por clip, no 3 procedencias ni limite por edad. El corte autorizado esta cerrado.
-Distribucion completada; estado de release/instalada en `WORKING_MEMORY.md`.
+Distribución completada según evidencia registrada del corte; consultar el track de release pertinente y `docs/topics/windows-installer.md`, no Working Memory (stub histórico). La distribución narrada no concede autorización actual para publicar, instalar o reparar datos.
 Reparar thumbnails/datos historicos en masa requiere alcance propio. RPC queda fuera.
 
 ## Contratos Implementados

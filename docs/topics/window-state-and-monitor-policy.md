@@ -1,8 +1,7 @@
 ---
-id: window-state-and-monitor-policy
-status: active
-kind: decision-map
-triggers:
+title: Bounds de ventanas y política de monitores
+summary: Registry Rust, resize y persistencia por monitor con restauración y clamp al workArea.
+keywords:
   - window state
   - remember window position
   - multi monitor
@@ -12,19 +11,11 @@ triggers:
   - posicion ventana
   - tamano ventana
   - multiples monitores
-primary_refs:
-  - docs/topics/custom-window-system.md
-  - docs/topics/ui-surface-architecture.md
-  - src-tauri/src/window_state.rs
-  - src-tauri/src/lib.rs
-  - src/ui/window/CustomWindowFrame.tsx
-  - src/ui/window/windowChrome.ts
-  - src/ui/window/windowVariants.ts
-  - src-tauri/tauri.conf.json
-  - src-tauri/capabilities/surface-main.json
 ---
 
 # Window State And Monitor Policy
+
+Referencias de entrada: [ventanas custom](custom-window-system.md), [superficies](ui-surface-architecture.md), [window state](../../src-tauri/src/window_state.rs), [host](../../src-tauri/src/lib.rs), [frame](../../src/ui/window/CustomWindowFrame.tsx), [chrome](../../src/ui/window/windowChrome.ts), [variants](../../src/ui/window/windowVariants.ts), [config Tauri](../../src-tauri/tauri.conf.json) y [capability](../../src-tauri/capabilities/surface-main.json).
 
 Contrato para resize y persistencia de posicion/tamano de ventanas en Copicu.
 

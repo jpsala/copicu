@@ -1,11 +1,23 @@
 ---
+title: Lista virtual e historial paginado
+status: closed
+summary: Primer slice de virtualización, keyset pagination y selección por ID completado según el registro; FTS queda aparte.
+last_worked: null
+topics: [picker-interaction, filtering-and-query-syntax, performance-and-memory]
+---
+
+# Virtual History List
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva trabajo previo sin fecharlo como reciente. Metadata original:
+
+```yaml
 id: virtual-history-list
 status: first-slice-implemented
 priority: 2
 updated: 2026-06-06
----
+```
 
-# Virtual History List
+Cerrado el primer slice: `Done Cuando` está cumplido según evidencia registrada. La evaluación FTS5 es seguimiento separado, no paridad ni aceptación nativa nueva. No heredar permisos de pruebas o app.
 
 Implementar lista virtual/infinite scroll y búsqueda paginada para soportar miles o cientos de miles de items sin cargar todo en React.
 

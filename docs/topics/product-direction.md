@@ -1,24 +1,18 @@
 ---
-id: product-direction
-status: active
-kind: explanation
-triggers:
+title: Dirección de producto y alcance inicial de Copicu
+summary: Baseline CopyQ-inspired, prioridades de confiabilidad y recomendaciones del arranque; contrastar con contratos posteriores.
+keywords:
   - producto
   - MVP
   - CopyQ
   - recomendaciones
   - alcance
   - roadmap
-primary_refs:
-  - ../PROJECT.md
-  - ../DEVELOPMENT.md
-  - ../DECISIONS.md
-  - ../OPEN_QUESTIONS.md
-  - ../reference/copyq-feature-inventory.md
-  - docs/topics/product-ambition.md
 ---
 
 # Direccion De Producto
+
+Orientación del arranque, no una instrucción para recrear el scaffold ni un estado operativo actual. Para el alcance de producto y decisiones posteriores, contrastar [ambición](product-ambition.md), [PROJECT](../PROJECT.md), [desarrollo](../DEVELOPMENT.md) y el track pertinente. El [inventario CopyQ](../reference/copyq-feature-inventory.md) es referencia, no promesa de paridad; [decisiones](../DECISIONS.md) y [preguntas](../OPEN_QUESTIONS.md) anteriores son compatibilidad histórica.
 
 ## Resumen
 
@@ -98,7 +92,7 @@ Crear un prototipo Tauri 2 chico enfocado solo en:
 
 ## Senales Para Promover A Decision
 
-Actualizar `docs/DECISIONS.md` cuando se defina:
+Conservar la decisión y sus razones en el topic de producto/arquitectura pertinente cuando se defina:
 
 - frontend framework;
 - plataforma primaria;

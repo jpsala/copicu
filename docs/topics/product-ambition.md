@@ -1,21 +1,18 @@
 ---
-id: product-ambition
-status: active
-kind: decision-map
-triggers:
+title: Ambición de producto de Copicu
+summary: Clipboard manager local CopyQ-inspired con UI moderna, búsqueda, metadata, scripting personal y AI, sin promesa de paridad.
+keywords:
   - Copicu
   - CopyQ baseline
   - AI
   - plugins
   - metadata
   - product ambition
-primary_refs:
-  - ../PROJECT.md
-  - docs/topics/product-direction.md
-  - ../reference/copyq-feature-inventory.md
 ---
 
 # Ambicion De Producto
+
+Referencias de entrada: [PROJECT](../PROJECT.md), [dirección](product-direction.md) y [inventario CopyQ](../reference/copyq-feature-inventory.md).
 
 ## Tesis
 

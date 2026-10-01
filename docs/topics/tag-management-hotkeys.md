@@ -1,24 +1,23 @@
 ---
-id: tag-management-hotkeys
-status: draft
-kind: decision-map
-triggers:
+title: Tags y hotkeys filtrados
+summary: Contratos y decisiones de tags, metadata y shortcuts mediante scripts; referencia heredada con propuestas aún por evaluar.
+keywords:
   - tags
   - tag hotkey
   - tag shortcut
   - pantalla de tags
   - colecciones
-primary_refs:
-  - docs/topics/filtering-and-query-syntax.md
-  - docs/topics/global-shortcut-and-tray.md
-  - docs/topics/ui-surface-architecture.md
-  - ../../specs/006-tags-and-hotkeys/spec.md
-  - ../tracks/012-tags-and-hotkeys.md
 ---
 
 # Tag Management And Hotkeys
 
+Referencia heredada marcada como `draft`; la conversión de metadata no acepta propuestas nuevas. Fuentes: [query syntax](filtering-and-query-syntax.md), [shortcut/tray](global-shortcut-and-tray.md), [superficies](ui-surface-architecture.md), [spec](../../specs/006-tags-and-hotkeys/spec.md) y [track](../tracks/012-tags-and-hotkeys.md).
+
 Topic para tags como metadata y para la decision historica sobre shortcuts filtrados. La direccion vigente es que los hotkeys filtrados vivan en scripts, no en Settings > Tags.
+
+## Decisión De Metadata Del 2026-09-11
+
+Según la decisión de JP conservada en el [archivo anterior](../reference/os2-legacy/DECISIONS.md), tags es el único conjunto normalizado de metadata editable; title y notes siguen como escalares. Los tres campos estructurados fijos anteriores se retiraron conservando tags, provenance y suppression. Razón: no respondían a un workflow validado ni aportaban comportamiento observable en Search; sostener otra clasificación duplicaba UI, contratos y persistencia. Esto documenta la decisión previa, no ejecuta una migración de datos ni autoriza borrar información hoy.
 
 ## Necesidad
 

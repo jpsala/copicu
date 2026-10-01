@@ -1,8 +1,7 @@
 ---
-id: open-source-github
-status: active
-kind: decision-map
-triggers:
+title: Open source y presencia pública en GitHub
+summary: Decisiones de licencia, README, issues reales, web y distribución; publicación e instalación mantienen autorización actual.
+keywords:
   - open source
   - GitHub public
   - repo publico
@@ -11,18 +10,11 @@ triggers:
   - project website
   - web del proyecto
   - contributors
-primary_refs:
-  - ../../README.md
-  - ../../.env.example
-  - ../tracks/013-open-source-growth.md
-  - ../PROJECT.md
-  - ../topics/product-register.md
-  - ../topics/ai-search-and-actions.md
-  - ../user/README.md
-  - ../user/scripts.md
 ---
 
 # Open Source And GitHub
+
+Referencias de entrada: [README público](../../README.md), plantilla `.env.example` (no credenciales), [track](../tracks/013-open-source-growth.md), [PROJECT](../PROJECT.md), [voz de producto](product-register.md), [AI](ai-search-and-actions.md), [guía de usuario](../user/README.md) y [scripts](../user/scripts.md).
 
 Topic para decisiones y pendientes sobre publicar Copicu como proyecto open source en GitHub.
 
@@ -331,12 +323,10 @@ Se publica como parte del repo:
 
 - `AGENTS.md`;
 - `docs/README.md`;
-- `docs/WORKING_MEMORY.md`;
 - `docs/PROJECT.md`;
 - `docs/ASSISTANT_RULES.md`;
 - `docs/DEVELOPMENT.md`;
-- `bun run context -- topics`;
-- `docs/topics/`;
+- `docs/topics/`, recuperables por nombres/metadata sin un consultor obligatorio;
 - `docs/tracks/`;
 - `specs/`.
 
@@ -347,7 +337,7 @@ No se publica:
 - `.env`;
 - bases locales o dumps de clipboard.
 
-No existe `CLOG.md` en el repo actual. La funcion equivalente queda cubierta por `docs/WORKING_MEMORY.md` y `docs/tracks/`.
+No existe `CLOG.md` en el repo actual. El trabajo retomable vive en `docs/tracks/`; conocimiento y decisiones con razones en `docs/topics/`, sin bitácora ni foco global. `WORKING_MEMORY.md` se conserva sólo como stub histórico, no como entrada operativa publicada.
 
 Beneficio publico:
 

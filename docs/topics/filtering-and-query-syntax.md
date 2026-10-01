@@ -1,8 +1,7 @@
 ---
-id: filtering-and-query-syntax
-status: active
-kind: reference
-triggers:
+title: Filtering y sintaxis local de queries
+summary: Contrato determinístico de búsqueda, filtros, carpetas, paginación, metadata y seguridad compartido por picker y APIs.
+keywords:
   - filtering
   - filtros
   - search
@@ -13,18 +12,13 @@ triggers:
   - AI search
   - folders
   - carpetas
-primary_refs:
-  - ../../src-tauri/src/storage.rs
-  - docs/topics/search-plan-engine.md
-  - docs/topics/picker-interaction.md
-  - docs/topics/ai-search-and-actions.md
-  - ../tracks/008-filtering-search-foundation.md
-  - ../../specs/014-folders/spec.md
 ---
 
 # Filtering And Query Syntax
 
-Este topic define la busqueda local deterministica de Copicu. Es el contrato que usa el picker hoy y que debe reutilizar el futuro AI query planner.
+Referencias de entrada: [storage](../../src-tauri/src/storage.rs), [motor](search-plan-engine.md), [picker](picker-interaction.md), [asistente](ai-search-and-actions.md), [track](../tracks/008-filtering-search-foundation.md) y [carpetas](../../specs/014-folders/spec.md).
+
+Este topic define la búsqueda local determinística de Copicu compartida por picker, scripts y APIs. El asistente general vuelve a ese contrato mediante `picker_filter`; el planner AI anterior fue reemplazado como entrada visible, según [AI search/actions](ai-search-and-actions.md).
 
 ## Principio
 

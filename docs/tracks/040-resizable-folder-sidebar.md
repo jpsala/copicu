@@ -1,10 +1,22 @@
 ---
-id: resizable-folder-sidebar
-status: complete
-updated: 2026-09-30
+title: Divisor del sidebar y ancho persistente
+status: closed
+summary: Resize pointer/keyboard, clamp y preferencia registrados como completados y distribuidos en v0.5.1, sin tabla Explorer.
+last_worked: null
+topics: [picker-interaction, ui-surface-architecture, windows-installer]
 ---
 
 # Divisor Y Ancho Persistente Del Sidebar
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva evidencia previa sin inventar hora desde release o procesos. Metadata original:
+
+```yaml
+id: resizable-folder-sidebar
+status: complete
+updated: 2026-09-30
+```
+
+Cerrado el corte registrado de resize y distribución v0.5.1. La sección `Permisos Y Ownership` describe autorización vigente entonces, no hoy: no repetir commit/push/release/install, operar perfiles privados o implementar Explorer por esta importación.
 
 ## Pedido De JP
 
@@ -20,7 +32,7 @@ Continuar en una sesión nueva: agregar un divisor vertical entre la barra later
 
 ## Fuentes Y Estado Comprobado
 
-- Repo `C:/dev/copicu`, main/origin/main; último HEAD al guardar `a43daac251d47bf662d4746deb503622ecfdd47e`, release v0.5.0 en `cc32a7c`. Release/CI/artefactos cerrados en `docs/tracks/039-release-0.5.0.md`.
+- Repo `C:/dev/copicu`, main/origin/main; último HEAD al guardar `a43daac251d47bf662d4746deb503622ecfdd47e`, release v0.5.0 en `cc32a7c`. Release/CI/artefactos cerrados en `docs/tracks/039-release-0-5-0.md`.
 - `src/styles.css` ~6860-6962: ancho actual `--folder-sidebar-width: 214px`; `.folder-tree` usa ese ancho y `.feed-panel` el mismo margin-left. A <=560 px el sidebar es overlay `min(250px, 78vw)` sin desplazar el feed.
 - `src/ui/FolderWorkspace.tsx`: árbol y sus controles; `src/main.tsx`: montaje, foco, `folderTreeOpen`, Settings y layout. Persistencia: `src/shared/settings.ts`, defaults/validación Rust en `src-tauri/src/storage.rs` y tipos compartidos donde corresponda.
 - Producto/UI: `docs/topics/picker-interaction.md`, `docs/topics/ui-surface-architecture.md`, `docs/topics/ui-design-and-impeccable.md`; skill local impeccable + registro product.

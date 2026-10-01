@@ -1,23 +1,18 @@
 ---
-id: ui-design-and-impeccable
-status: active
-kind: how-to
-triggers:
+title: Diseño UI y QA con Impeccable
+summary: Workflow local de audit y polish para UI pertinente, preservando QA, foco y accesibilidad sin instalar herramientas por defecto.
+keywords:
   - UI
   - visual polish
   - picker
   - settings
   - responsive
   - impeccable
-primary_refs:
-  - docs/topics/ui-surface-architecture.md
-  - docs/topics/appearance-and-themes.md
-  - docs/topics/mantine-ui-system.md
-  - docs/topics/picker-interaction.md
-  - docs/tracks/001-settings-design.md
 ---
 
 # UI Design And Impeccable
+
+Referencias de entrada: [superficies](ui-surface-architecture.md), [appearance](appearance-and-themes.md), [Mantine](mantine-ui-system.md), [picker](picker-interaction.md) y [track](../tracks/001-settings-design.md).
 
 ## Decision
 

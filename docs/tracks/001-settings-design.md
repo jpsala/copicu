@@ -1,11 +1,24 @@
 ---
+title: Diseño de Settings
+status: paused
+summary: Primer slice typed y UI standalone registrados; perfiles, exportación y policy de paste quedan como seguimiento.
+last_worked: null
+next: Contrastar los pendientes de perfiles, export/import y paste con el contrato vigente antes de elegir otro corte.
+topics: [sqlite-storage, appearance-and-themes, ui-surface-architecture]
+---
+
+# Settings Design
+
+**Importación OS2:** UTC histórica desconocida; `null` no niega el trabajo previo ni acredita avance hoy. Metadata original:
+
+```yaml
 id: settings-design
 status: first-slice-implemented
 priority: 1
 updated: 2026-06-06
----
+```
 
-# Settings Design
+Se pausa el seguimiento: el primer slice consta implementado, pero `Siguiente Corte` conserva pendientes. No se revalidó producto ni se transfieren permisos históricos.
 
 Diseñar la superficie de settings antes de seguir agregando opciones sueltas.
 

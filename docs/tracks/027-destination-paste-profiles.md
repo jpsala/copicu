@@ -1,4 +1,17 @@
 ---
+title: Perfiles de paste por aplicación destino
+status: paused
+summary: Propuesta aparcada de estrategias tipadas y diagnóstico por destino, separada de escenarios y sin UI configurable inicial.
+last_worked: null
+next: Acotar instrumentación y familias internas de paste con un destino real; UI de overrides sólo tras evidencia y autorización.
+topics: [windows-focus-and-paste, picker-interaction, clipboard]
+---
+
+# 027 Destination Paste Profiles
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el estudio previo sin acreditar mejoras nuevas. Metadata original:
+
+```yaml
 id: destination-paste-profiles
 status: parked
 updated: 2026-07-29
@@ -6,9 +19,9 @@ related:
   - docs/topics/picker-interaction.md
   - docs/tracks/019-paste-queue.md
   - docs/tracks/005-rich-mime-research.md
----
+```
 
-# 027 Destination Paste Profiles
+Se mantiene aparcado como `paused`, con fallback y diagnóstico por demostrar. No operar apps externas, input o clipboard ni implementar reglas nuevas por un plan histórico.
 
 ## Idea
 

@@ -91,10 +91,10 @@ For clipboard, paste, shortcut, tray, or focus changes, describe the Windows app
 
 Before starting a large feature, open an issue or discussion first. Features that affect product direction, native behavior, storage, scripts/actions, AI, privacy, or compatibility expectations should be planned before implementation.
 
-For work with coding agents, start from `AGENTS.md` and the docs listed there. Durable decisions live in `docs/`; current tracks live in `docs/tracks/`; larger feature plans live in `specs/`.
+For work with coding agents, start from `AGENTS.md`, then select only the relevant track/topic and sections. Knowledge and decisions with their reasons live in `docs/topics/`; work state and next steps in `docs/tracks/`; larger feature plans in `specs/`. No active global Working Memory or obligatory catalog is required.
 
 ## Agentic Tooling In This Repo
 
-Copicu includes a small amount of versioned agentic tooling for maintainers, such as `.pi/prompts/`, `.pi/extensions/`, and local skills under `docs/skills/`. These files are optional for normal contributors: you do not need Pi or the local agentic workflow to build, test, or contribute to Copicu.
+Copicu keeps portable project knowledge and local skills under `docs/skills/`. OMP/Pi and host-specific discovery are optional, not requirements of the OS2 documentation core or permission to run UI, publish, install, or modify a contributor's environment. Do not infer installed prompts/extensions from historical references.
 
-They are kept in the repo because they document repeatable project operations such as release prep, context indexing, dogfood checks, and Copicu-specific desktop automation. Local caches and private agent state remain ignored by `.gitignore`.
+The AOS context parser/router was retired. Optional `bun run knowledge -- search "intent"` queries OS2 metadata read-only without another checkout or harness. `bun run check` / `check:ci` validate documentation and run isolated tooling fixtures, not product/UI tests; discovery stays optional and is never repaired by a check. CI has a separate documentation job and preserves the strict release chunk gate. See `docs/README.md` and `docs/tracks/os2-adoption.md` for the manual path, limits and acceptance. Local caches and private agent state remain ignored by `.gitignore`.

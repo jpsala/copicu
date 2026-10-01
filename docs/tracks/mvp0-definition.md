@@ -1,10 +1,22 @@
 ---
-id: mvp0-definition
-status: historical
-updated: 2026-06-05
+title: Definición histórica del MVP 0
+status: closed
+summary: Definición del primer spike nativo pasada a spec formal, no scope operativo ni plan para recrear producto actual.
+last_worked: null
+topics: [product-direction, clipboard, global-shortcut-and-tray, windows-focus-and-paste]
 ---
 
 # MVP 0 Definition
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva trabajo de definición anterior. Metadata original:
+
+```yaml
+id: mvp0-definition
+status: historical
+updated: 2026-06-05
+```
+
+Cerrado como definición histórica ya materializada en spec, no descartado el conocimiento. No recrear scaffold, ejecutar el flujo manual o trasladar aquellos permisos por el próximo paso del documento antiguo.
 
 Trabajo histórico usado para definir el primer spike funcional de Copicu.
 

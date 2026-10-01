@@ -1,4 +1,16 @@
 ---
+title: Selección transitoria y marks durables
+status: closed
+summary: Separación de checkbox, activo y mark persistente registrada como implementada, con barra batch y reset de selección.
+last_worked: null
+topics: [picker-interaction, filtering-and-query-syntax, ui-surface-architecture]
+---
+
+# 030 Picker Selection And Marks UX
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el trabajo previo sin inventar una fecha. Metadata original:
+
+```yaml
 id: picker-selection-and-marks-ux
 status: implementation-validated
 updated: 2026-07-29
@@ -6,9 +18,9 @@ execution_route: balanced
 related:
   - docs/topics/picker-interaction.md
   - docs/tracks/012-tags-and-hotkeys.md
----
+```
 
-# 030 Picker Selection And Marks UX
+Cerrado el corte UX según resultado y comprobaciones registradas, no tests ejecutados hoy. La receta `balanced` y permisos anteriores no se transfieren; persistencia y retención posteriores se consultan en sus fuentes.
 
 ## Objetivo
 

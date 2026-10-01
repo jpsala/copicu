@@ -1,11 +1,23 @@
 ---
+title: Ventana de preview de items
+status: closed
+summary: Preview explícito de imagen, Markdown y texto completo registrado como implementado con límites de foco y paths.
+last_worked: null
+topics: [ui-surface-architecture, custom-window-system, window-state-and-monitor-policy]
+---
+
+# 023 Item Preview Window
+
+**Importación OS2:** UTC histórica desconocida; `null` mantiene la evidencia previa sin convertirla en test actual. Metadata original:
+
+```yaml
 id: 023-item-preview-window
 status: implementation-validated
 updated: 2026-07-28
 execution_route: strong
----
+```
 
-# 023 Item Preview Window
+Cerrado el corte de preview según resultado y evidencia registrados. No certificar UX/foco hoy ni heredar `execution_route: strong`, scopes o permisos de dogfood.
 
 ## Objetivo
 

@@ -79,7 +79,8 @@ Usuarios power de escritorio que copian y reutilizan texto, codigo, URLs, HTML o
 
 ## Infraestructura Agentica
 
-- `docs/skills/`: skills locales portables incluidas como parte de AOS.
-- `.agents/skills`: junction de compatibilidad hacia `docs/skills/`.
-- `scripts/ensure-skills-link.ps1`: recrea o valida la junction local `.agents/skills`.
-- `scripts/agent-context-audit.ts`: auditor de docs, topics, tracks y skills.
+- `docs/topics/` y `docs/tracks/`: conocimiento y trabajo recuperables por intención mediante la convención OS2, sin memoria global ni harness obligatorio.
+- `docs/skills/`: fuente canónica portable de procedimientos útiles; `.agents/skills` es discovery opcional, no otro canon ni requisito de lectura.
+- `scripts/ensure-skills-link.ps1`: compatibilidad legacy con efectos sobre junctions/backups/fusión de carpetas; no ejecutarlo automáticamente por mover o validar el repo.
+- `scripts/knowledge.ts`: consultor opcional de metadata OS2, sin focus/ranking, escrituras o dependencia de otro checkout.
+- `scripts/docs-check.ts`: checks locales de docs, skills y referencias; `check` agrega regresiones con fixtures temporales. Sin runtime obligatorio ni reparación de junctions. [Adopción](tracks/os2-adoption.md) conserva alcance/aceptación pendientes; los checks de producto permanecen separados.

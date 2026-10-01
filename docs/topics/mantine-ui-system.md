@@ -1,24 +1,18 @@
 ---
-id: mantine-ui-system
-status: active
-kind: decision-map
-triggers:
+title: Mantine como infraestructura UI
+summary: Componentes, temas y wrappers de Copicu con límites para no migrar en bloque el feed especializado del picker.
+keywords:
   - Mantine
   - MUI
   - UI library
   - component library
   - themes
   - design system
-primary_refs:
-  - docs/topics/ui-surface-architecture.md
-  - docs/topics/appearance-and-themes.md
-  - docs/tracks/036-appearance-settings.md
-  - src/mantineTheme.ts
-  - src/themeCatalog.ts
-  - src/main.tsx
 ---
 
 # Mantine UI System
+
+Referencias de entrada: [superficies](ui-surface-architecture.md), [appearance](appearance-and-themes.md), [track](../tracks/036-appearance-settings.md), [theme Mantine](../../src/mantineTheme.ts), [presets](../../src/themeCatalog.ts) y [frontend](../../src/main.tsx).
 
 Topic para adoptar Mantine como infraestructura de componentes y temas de Copicu.
 

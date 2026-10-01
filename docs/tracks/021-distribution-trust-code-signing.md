@@ -1,10 +1,23 @@
 ---
-id: distribution-trust-code-signing
-status: active-next
-updated: 2026-06-30
+title: Confianza de distribución y code signing
+status: active
+summary: Research de Authenticode, reputación SmartScreen y pipeline verificable; firma updater no equivale a publisher firmado.
+last_worked: null
+next: Contrastar requisitos SignPath y orden Authenticode/updater con artefactos públicos antes de decidir integración o solicitud.
+topics: [windows-installer, open-source-github, technical-research-process]
 ---
 
 # Distribution Trust And Code Signing
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el research y checkpoints anteriores. Metadata original:
+
+```yaml
+id: distribution-trust-code-signing
+status: active-next
+updated: 2026-06-30
+```
+
+Se conserva abierto el seguimiento de cadena de confianza. Versiones, permisos de firma y planes de backup de keys son históricos; consultar contratos de distribución posteriores y pedir permiso actual antes de secretos, servicios, instalación o publicación.
 
 Track para reducir la friccion de instalacion publica de Copicu en Windows. El problema no es solo tecnico: Copicu es un clipboard manager con hooks/global shortcuts, por lo que un warning de Windows/SmartScreen impacta fuerte en confianza y conversion.
 

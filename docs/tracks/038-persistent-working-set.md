@@ -1,14 +1,26 @@
 ---
-id: persistent-working-set
-status: complete
-updated: 2026-09-29
+title: Working set de marcados persistentes
+status: closed
+summary: Marcados separados de selección, protección de retención y pertenencia por query registrados en el corte v0.5.0.
+last_worked: null
+topics: [picker-interaction, filtering-and-query-syntax, sqlite-storage]
 ---
 
 # Persistent Marked Working Set
 
+**Importación OS2:** UTC histórica desconocida; `null` conserva supervisión y aceptación anteriores sin contarlas como nuevas. Metadata original:
+
+```yaml
+id: persistent-working-set
+status: complete
+updated: 2026-09-29
+```
+
+Cerrado el corte de implementación según resultado y revisión registrados; distribución corresponde a 039. Modelos, Run/Dispatches, recursos, permisos y dogfood del cuerpo son históricos, no autorización para relanzarlos o usar datos reales.
+
 ## Result
 
-Implemented and included in the v0.5.0 release cut, continuing JP dogfood. Distribution and later native smoke: [`039-release-0.5.0`](039-release-0.5.0.md). Contract: [`015-persistent-working-set`](../../specs/015-persistent-working-set/spec.md). Checkbox/Ctrl/Shift remain one transient selection, flags form a persistent working set. UI uses selected/marked, explicit counted Add/Remove commands and global-versus-loaded scope before batch actions; legacy query aliases stay valid but are not promoted. Marked clips and blobs are protected from automatic retention without consuming the ordinary-history budget. No new selection mode. This implementation cut did not publish/install; the later release is a separate authorized operation.
+Implemented and included in the v0.5.0 release cut, continuing JP dogfood. Distribution and later native smoke: [`039-release-0-5-0`](039-release-0-5-0.md). Contract: [`015-persistent-working-set`](../../specs/015-persistent-working-set/spec.md). Checkbox/Ctrl/Shift remain one transient selection, flags form a persistent working set. UI uses selected/marked, explicit counted Add/Remove commands and global-versus-loaded scope before batch actions; legacy query aliases stay valid but are not promoted. Marked clips and blobs are protected from automatic retention without consuming the ordinary-history budget. No new selection mode. This implementation cut did not publish/install; the later release is a separate authorized operation.
 
 Refresh retains all loaded selected IDs still matching the validated applied predicate, including after mark mutations and at the top after loading later pages. Existence alone is insufficient. Durable rules: `docs/topics/picker-interaction.md`, `docs/topics/filtering-and-query-syntax.md`, `docs/topics/sqlite-storage.md`; user explanation in `README.md` and Settings retention copy.
 

@@ -1,4 +1,17 @@
 ---
+title: Opciones arquitectónicas de clipboard
+status: active
+summary: Recomendaciones por evaluar una a una, con destino temático existente y sin rewrite, foco global ni paridad CopyQ.
+last_worked: null
+next: Elegir con JP un caso observable y su fuente pertinente antes de convertir una opción en spec o implementación.
+topics: [product-ambition, copyq-technical-baseline, actions-and-scripting-api]
+---
+
+# 025 Clipboard Power Architecture Options
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva recomendaciones sin fecharlas como avance reciente. Metadata original:
+
+```yaml
 id: clipboard-power-architecture-options
 status: active-roadmap
 updated: 2026-07-29
@@ -11,9 +24,9 @@ related:
   - docs/tracks/019-paste-queue.md
   - docs/tracks/020-secure-clips-password.md
   - specs/008-clipboard-enrichment
----
+```
 
-# 025 Clipboard Power Architecture Options
+Se conserva abierto el trabajo de evaluación. La tabla dirige opciones a sus fuentes, no mantiene estado/foco de otros tracks ni reactiva prioridades históricas. El orden tentativo no autoriza producto o un rewrite.
 
 ## Objetivo
 
@@ -25,17 +38,17 @@ Cada opción debe pasar por decisión y, si es grande, spec antes de implementac
 
 ## Opciones
 
-| Opción | Continuidad | Estado | Desbloquea |
-| --- | --- | --- | --- |
-| Item con múltiples representaciones/MIME | `005-rich-mime-research.md` | pendiente | HTML/RTF/file-list, paste fiel, previews y dedupe por representación |
-| Pipeline formal capture/paste y posible aislamiento del monitor | `026-capture-paste-pipeline.md` | parked | políticas, enrichment, routing, seguridad y separación de fallas |
-| Hooks seguros before/after capture/paste | `004-actions-scripting.md` | follow-up | transformaciones y automatización capability-scoped |
-| Perfiles de paste por aplicación destino | `027-destination-paste-profiles.md` | parked | paste-to-previous-window más confiable |
-| Vault seguro y políticas sensibles | `020-secure-clips-password.md` | parked | clips cifrados, auto-lock y redaction |
-| Paste Queue | `019-paste-queue.md` | parked | flujos secuenciales y formularios |
-| OCR y enrichment local | `specs/008-clipboard-enrichment/` | draft | búsqueda de imágenes y metadata derivada |
-| Escenarios activos y metadata contextual | `028-active-scenarios-metadata.md` | foco actual | trabajar dentro de cliente/proyecto/tarea con comportamiento explícito |
-| Sync cifrado y plugins más amplios | sin track dedicado | no priorizado | portabilidad o extensibilidad solo con necesidad real |
+| Opción | Continuidad | Desbloquea |
+| --- | --- | --- |
+| Item con múltiples representaciones/MIME | `005-rich-mime-research.md` | HTML/RTF/file-list, paste fiel, previews y dedupe por representación |
+| Pipeline formal capture/paste y posible aislamiento del monitor | `026-capture-paste-pipeline.md` | políticas, enrichment, routing, seguridad y separación de fallas |
+| Hooks seguros before/after capture/paste | `004-actions-scripting.md` | transformaciones y automatización capability-scoped |
+| Perfiles de paste por aplicación destino | `027-destination-paste-profiles.md` | paste-to-previous-window más confiable |
+| Vault seguro y políticas sensibles | `020-secure-clips-password.md` | clips cifrados, auto-lock y redaction |
+| Paste Queue | `019-paste-queue.md` | flujos secuenciales y formularios |
+| OCR y enrichment local | `specs/008-clipboard-enrichment/` | búsqueda de imágenes y metadata derivada |
+| Escenarios activos y metadata contextual | `028-active-scenarios-metadata.md` | trabajar dentro de cliente/proyecto/tarea con comportamiento explícito |
+| Sync cifrado y plugins más amplios | sin track dedicado | portabilidad o extensibilidad solo con necesidad real |
 
 ## Orden Tentativo
 

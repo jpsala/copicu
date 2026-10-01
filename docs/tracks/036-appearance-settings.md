@@ -1,10 +1,22 @@
 ---
-id: appearance-settings
-status: complete
-updated: 2026-09-16
+title: Settings de Appearance
+status: closed
+summary: Color mode, presets, Density y preview sintética registrados como implementados y distribuidos en v0.4.19.
+last_worked: null
+topics: [appearance-and-themes, mantine-ui-system, ui-surface-architecture]
 ---
 
 # Appearance Settings
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva implementación y evidencia previa sin fechar nuevas pruebas. Metadata original:
+
+```yaml
+id: appearance-settings
+status: complete
+updated: 2026-09-16
+```
+
+Cerrado el corte registrado de Appearance, con resultados y límites de tests/nativo documentados. No repetir release, instalación o dogfood por la autorización anterior; ampliaciones posteriores están en 037.
 
 ## Objetivo
 

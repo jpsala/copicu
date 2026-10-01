@@ -1,8 +1,7 @@
 ---
-id: actions-and-scripting-api
-status: active
-kind: decision-map
-triggers:
+title: Actions y Scripting API
+summary: Contrato de acciones TS/JS locales, runner de confianza, host APIs y límites de datos y capabilities.
+keywords:
   - actions
   - scripting
   - scripts
@@ -11,16 +10,11 @@ triggers:
   - JavaScript actions
   - CopyQ commands
   - command context
-primary_refs:
-  - docs/tracks/004-actions-scripting.md
-  - docs/tracks/017-actions-modularization.md
-  - specs/004-actions-scripting-api/spec.md
-  - scripts/examples/README.md
-  - scripts/examples/copicu-action.d.ts
-  - docs/reference/actions-and-scripting-api-archive-2026-06-25.md
 ---
 
 # Actions And Scripting API
+
+Referencias de entrada: [track de scripting](../tracks/004-actions-scripting.md), [modularización](../tracks/017-actions-modularization.md), [spec](../../specs/004-actions-scripting-api/spec.md), [ejemplos](../../scripts/examples/README.md), [tipos](../../scripts/examples/copicu-action.d.ts) y [referencia anterior](../reference/actions-and-scripting-api-archive-2026-06-25.md).
 
 Router compacto para acciones scriptables. La version larga previa quedo archivada en `docs/reference/actions-and-scripting-api-archive-2026-06-25.md`.
 

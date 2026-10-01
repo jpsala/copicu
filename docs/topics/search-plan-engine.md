@@ -1,22 +1,18 @@
 ---
-id: search-plan-engine
-status: draft
-kind: decision-map
-triggers:
+title: SearchPlan y compilación local de filtros
+summary: Propuesta heredada de plan validado y SQL parametrizado para filtros, distinta de la lectura SQL restringida del asistente.
+keywords:
   - SearchPlan
   - search plan
   - SQL compiler
   - busqueda potente
   - AI planner
   - filtros avanzados
-primary_refs:
-  - ../../specs/005-search-plan-engine/spec.md
-  - docs/topics/filtering-and-query-syntax.md
-  - docs/topics/ai-search-and-actions.md
-  - ../tracks/008-filtering-search-foundation.md
 ---
 
 # Search Plan Engine
+
+Referencia heredada marcada como `draft`; distinguir la propuesta original de contratos posteriores. Fuentes: [spec](../../specs/005-search-plan-engine/spec.md), [query syntax](filtering-and-query-syntax.md), [asistente](ai-search-and-actions.md) y [track](../tracks/008-filtering-search-foundation.md).
 
 ## Decision
 
@@ -30,7 +26,7 @@ query syntax | UI filters | scripts | AI
   -> SQLite
 ```
 
-La AI no debe generar SQL. Puede generar un plan estructurado.
+En el pipeline de filtros `SearchPlan`, el input se valida y Rust compila SQL parametrizado; un planner puede generar un plan estructurado, no SQL arbitrario para mutar datos. Esto no prohíbe la herramienta de lectura SQL restringida del asistente general, documentada después en [AI search/actions](ai-search-and-actions.md): lectura expresiva y efectos mediante APIs aprobadas son contratos distintos.
 
 ## Por Que
 

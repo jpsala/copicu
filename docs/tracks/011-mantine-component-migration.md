@@ -1,10 +1,23 @@
 ---
-id: 011-mantine-component-migration
-status: active-component-adoption
-updated: 2026-09-16
+title: Adopción de componentes Mantine
+status: active
+summary: Controles y wrappers con cortes registrados; adopción de ToastStack separada de Appearance y del feed virtualizado.
+last_worked: null
+next: Revisar controles y ToastStack manteniendo contratos de ventana y feed; Appearance corresponde a los tracks 036 y 037.
+topics: [mantine-ui-system, ui-surface-architecture, appearance-and-themes]
 ---
 
 # 011 Mantine Component Migration
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el trabajo previo sin fecharlo como reciente. Metadata original:
+
+```yaml
+id: 011-mantine-component-migration
+status: active-component-adoption
+updated: 2026-09-16
+```
+
+Se mantiene abierto el seguimiento de componentes. La propia fuente retiró Appearance a 036; el task de theme polish anterior no amplía este corte. No instalar extensiones ni ejecutar UI por importar metadata.
 
 Trabajo vivo para reducir CSS propio y migrar controles comunes de Copicu a Mantine sin romper el picker rapido, virtualizado y keyboard-first.
 

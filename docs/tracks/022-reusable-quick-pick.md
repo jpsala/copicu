@@ -1,10 +1,23 @@
 ---
-id: 022-reusable-quick-pick
-status: proposed
-updated: 2026-07-12
+title: Quick Pick reusable propuesto
+status: paused
+summary: Selección de historial por IDs con sesión exclusiva, cancelación y capabilities; propuesta antes de un API público genérico.
+last_worked: null
+next: Validar consumidor real y límites de aislamiento, foco y cancelación antes de acordar spec e implementación de history.pick.
+topics: [picker-interaction, actions-and-scripting-api, ui-surface-architecture]
 ---
 
 # 022 Reusable Quick Pick
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva la propuesta sin simular implementación. Metadata original:
+
+```yaml
+id: 022-reusable-quick-pick
+status: proposed
+updated: 2026-07-12
+```
+
+Pausado como propuesta, no feature aceptada por cambiar formato. Referencias a otro repo/AHK no autorizan abrirlo, copiar código, configurar hotkeys o mutar clipboard; conservar IDs-only y límites de capabilities del diseño.
 
 ## Goal
 

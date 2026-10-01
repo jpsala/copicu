@@ -1,4 +1,16 @@
 ---
+title: Captura contextual por tags
+status: closed
+summary: Tags de captura explícitos y batch patch atómico registrados como implementados, sin armar contextos por filtrar una vista.
+last_worked: null
+topics: [tag-management-hotkeys, clipboard, filtering-and-query-syntax]
+---
+
+# 024 Contextual Tag Capture
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el corte previo, no acredita una ejecución nueva. Metadata original:
+
+```yaml
 id: 024-contextual-tag-capture
 status: implementation-validated
 updated: 2026-07-29
@@ -6,9 +18,9 @@ execution_route: strong
 related:
   - docs/topics/tag-management-hotkeys.md
   - specs/009-saved-history-views/spec.md
----
+```
 
-# 024 Contextual Tag Capture
+Cerrado el flujo según resultado explícito y smoke registrados. No heredar `execution_route: strong` ni autorización de captura/app; preservar que los contextos son explícitos y transitorios.
 
 ## Objetivo
 

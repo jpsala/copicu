@@ -1,20 +1,18 @@
 ---
-id: clipboard
-status: active
-kind: reference
-triggers:
+title: Captura y contenido del clipboard
+summary: Watcher nativo, deduplicación, eventos de captura y fidelidad MIME con límites de privacidad y retención.
+keywords:
   - clipboard
   - portapapeles
   - clipboard manager
   - capture
   - text capture
   - HTML clipboard
-primary_refs:
-  - specs/001-mvp0-native-spike/spec.md
-  - specs/001-mvp0-native-spike/research.md
 ---
 
 # Clipboard
+
+Referencias de entrada: [spike MVP 0](../../specs/001-mvp0-native-spike/spec.md) y [research inicial](../../specs/001-mvp0-native-spike/research.md).
 
 Topic para decisiones, discovery y patterns sobre acceso al clipboard.
 

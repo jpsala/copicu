@@ -1,10 +1,23 @@
 ---
+title: Fixvox como referencia funcional
 status: paused
-updated: 2026-06-05
-topic: product-ambition
+summary: Estudio aparcado para adaptar flujos útiles a Tauri/Rust sin copiar arquitectura Electrobun o control plane externo.
+last_worked: null
+next: Si se retoma con permiso propio, elegir una feature y spec mínima contrastando Actions actual antes de recuperar flujos externos.
+topics: [product-ambition, actions-and-scripting-api]
 ---
 
 # Fixvox Reference Rethink
+
+**Importación OS2:** UTC histórica desconocida; `null` mantiene el estudio previo sin inventar hora. Metadata original:
+
+```yaml
+status: paused
+updated: 2026-06-05
+topic: product-ambition
+```
+
+Se conserva la pausa explícita. Rutas y recomendaciones del proyecto fuente son referencias históricas, no permiso para inspeccionar/modificar otro repo, portarlo o recrear specs sugeridas bajo el scope documental actual.
 
 Estado: paused
 Ultima actualizacion: 2026-06-05

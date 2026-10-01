@@ -1,8 +1,7 @@
 ---
-id: sqlite-storage
-status: active
-kind: reference
-triggers:
+title: SQLite y persistencia local
+summary: Schema, migraciones, carpetas, historial, blobs y protección de clips marcados frente a retención automática.
+keywords:
   - SQLite
   - rusqlite
   - storage
@@ -11,14 +10,11 @@ triggers:
   - historial
   - folders
   - carpetas
-primary_refs:
-  - docs/DEVELOPMENT.md
-  - specs/001-mvp0-native-spike/spec.md
-  - specs/001-mvp0-native-spike/research.md
-  - specs/014-folders/spec.md
 ---
 
 # SQLite Storage
+
+Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [spike](../../specs/001-mvp0-native-spike/spec.md), [research](../../specs/001-mvp0-native-spike/research.md) y [carpetas](../../specs/014-folders/spec.md).
 
 Topic para persistencia local, schema, migrations y eleccion de librerias SQLite.
 

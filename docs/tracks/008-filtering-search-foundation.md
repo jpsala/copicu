@@ -1,10 +1,23 @@
 ---
-id: filtering-search-foundation
+title: Fundación de búsqueda y filtro del picker
 status: active
-updated: 2026-09-11
+summary: Búsqueda local y corte CodeMirror con evidencia registrada; dogfood, IME y comparación de perfiles siguen como seguimiento.
+last_worked: null
+next: Acotar dogfood del editor y casos IME disponibles con datos sintéticos y builds equivalentes antes de afirmar mejoras.
+topics: [filtering-and-query-syntax, codemirror-query-editor, search-plan-engine, performance-and-memory]
 ---
 
 # Filtering Search Foundation
+
+**Importación OS2:** UTC histórica desconocida; `null` no convierte evidencia de producto en prueba actual. Metadata original:
+
+```yaml
+id: filtering-search-foundation
+status: active
+updated: 2026-09-11
+```
+
+Se conserva abierto el seguimiento expresado tras el corte CodeMirror. No iniciar dogfood, instalar ni publicar por esa condición o por permisos relatados en el cuerpo.
 
 Trabajo vivo para convertir la busqueda del picker en una base potente, local y reutilizable por AI/actions/plugins.
 

@@ -1,8 +1,7 @@
 ---
-id: minimal-implementation
-status: active
-kind: how-to
-triggers:
+title: Implementación mínima y Ponytail
+summary: Reusar y reducir superficie sin quitar seguridad, datos, accesibilidad, checks ni conocimiento durable.
+keywords:
   - ponytail
   - minimal implementation
   - implementacion minima
@@ -14,11 +13,6 @@ triggers:
   - dependencias innecesarias
   - diff minimo
   - revisar complejidad
-primary_refs:
-  - docs/topics/agentic-os-operations.md
-  - docs/topics/omp-agentic-os.md
-  - docs/topics/technical-research-process.md
-  - docs/DECISIONS.md
 ---
 
 # Implementacion Minima Y Ponytail
@@ -27,7 +21,7 @@ Copicu puede usar disciplina minimalista para implementar o revisar codigo, pero
 
 ## Regla Local
 
-AOS local gobierna contexto, memoria durable, continuidad, specs y gates propios; OMP gobierna la ejecución agentic. La disciplina minimalista gobierna sólo la forma de implementar una solución una vez entendido el flujo y el estado real de Copicu.
+Copicu conserva producto, datos, seguridad y efectos externos; OS2 organiza el conocimiento, independiente del harness. La disciplina minimalista orienta sólo la forma de implementar una solución dentro del pedido actual, una vez entendido el flujo y el estado real de Copicu.
 
 Antes de escribir codigo, preferir en este orden:
 
@@ -43,7 +37,7 @@ La escalera corre despues de leer el contexto necesario. Un diff chico en el lug
 
 ## Ponytail
 
-Ponytail (`DietrichGebert/ponytail`) queda aprobado como capacidad opcional / herramienta bajo demanda para implementacion y review minimalista.
+Ponytail (`DietrichGebert/ponytail`) figura como capacidad opcional bajo demanda para implementación/review minimalista. Esa decisión histórica no instala, habilita ni autoriza hoy una herramienta externa: respetar disponibilidad, privacidad y alcance actuales.
 
 Uso recomendado:
 
@@ -64,9 +58,13 @@ Nunca simplificar quitando:
 - seguridad, privacidad o separacion dev/instalada;
 - accesibilidad basica y navegacion keyboard-first;
 - verificaciones necesarias para logica no trivial;
-- memoria durable, topics, tracks o docs necesarios para continuidad AOS;
+- conocimiento durable, topics, tracks o docs necesarios para continuidad;
 - requisitos explicitamente pedidos por JP o por una spec aceptada.
 
 ## Uso En Este Repo
 
 Para tareas normales, aplicar esta politica como lente de review: menos superficie, menos dependencias y menos abstracciones nuevas, siempre preservando evidencia y checks. Para features grandes, sigue mandando el flujo de specs/tracks antes de optimizar el diff.
+
+## Referencias
+
+[Realinear documentación](agentic-os-operations.md), [OMP opcional](omp-agentic-os.md), [investigación técnica](technical-research-process.md) y [archivo de decisiones anteriores](../DECISIONS.md). No heredar permisos de esas referencias.

@@ -1,10 +1,23 @@
 ---
-id: secure-clips-password
-status: parked
-updated: 2026-06-29
+title: Clips seguros y password
+status: paused
+summary: Propuesta aparcada de cifrado local, preview redacted y recuperación bajo password, sin implementar un password manager.
+last_worked: null
+next: Si se retoma con alcance propio, definir spec, modelo de desbloqueo y pruebas de no exposición de plaintext antes de implementar.
+topics: [actions-and-scripting-api, sqlite-storage, clipboard]
 ---
 
 # Secure Clips / Password Metadata
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva estudio/propuestas anteriores sin inventar progreso. Metadata original:
+
+```yaml
+id: secure-clips-password
+status: parked
+updated: 2026-06-29
+```
+
+Se mantiene aparcado como `paused`. Las ideas de metadata/password son tentativas, no una implementación segura acreditada ni permiso para usar secretos reales, modificar DB o iniciar un vault.
 
 Track para pensar `guardar/recuperar con password`. Por ahora queda **parked**: es potente, pero toca seguridad, cifrado, metadata y UX sensible.
 

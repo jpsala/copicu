@@ -29,4 +29,4 @@ Final acceptance: build passed; visual suite 440 passed with two Chromium `ERR_N
 
 ## Non-goals
 
-Feature implementation did not include release/install, commit/push, remote services, dependency installation, named multiple working sets, UI redesign or unrelated agentic metadata repair. Subsequent authorized publication is tracked separately in `docs/tracks/039-release-0.5.0.md`; local installation remains excluded.
+Feature implementation did not include release/install, commit/push, remote services, dependency installation, named multiple working sets, UI redesign or unrelated agentic metadata repair. Subsequent authorized publication is tracked separately in `docs/tracks/039-release-0-5-0.md`; local installation remains excluded.

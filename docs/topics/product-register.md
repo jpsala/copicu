@@ -1,20 +1,17 @@
 ---
-id: product-register
-status: active
-kind: explanation
-triggers:
+title: Product register y principios de diseño
+summary: Brief de audiencia, personalidad, accesibilidad y anti-referencias para decisiones UI/producto de Copicu.
+keywords:
   - product register
   - brand personality
   - design principles
   - anti-references
   - audience
-primary_refs:
-  - ../PROJECT.md
-  - docs/topics/product-direction.md
-  - docs/topics/ui-surface-architecture.md
 ---
 
 # Product Register
+
+Referencias de entrada: [PROJECT](../PROJECT.md), [dirección](product-direction.md) y [superficies UI](ui-surface-architecture.md).
 
 Compact product and design brief for Copicu.
 

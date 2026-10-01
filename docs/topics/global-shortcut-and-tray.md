@@ -1,20 +1,18 @@
 ---
-id: global-shortcut-and-tray
-status: active
-kind: reference
-triggers:
+title: Global shortcut y tray
+summary: Lifecycle de background, apertura del picker con foco y oracles de teclado, sin transferir autorización de dogfood.
+keywords:
   - global shortcut
   - shortcut global
   - hotkey
   - tray
   - system tray
   - background app
-primary_refs:
-  - specs/001-mvp0-native-spike/spec.md
-  - specs/001-mvp0-native-spike/research.md
 ---
 
 # Global Shortcut And Tray
+
+Referencias de entrada: [spike](../../specs/001-mvp0-native-spike/spec.md) y [research inicial](../../specs/001-mvp0-native-spike/research.md).
 
 Topic para shortcut global, tray y lifecycle de ventana/background.
 

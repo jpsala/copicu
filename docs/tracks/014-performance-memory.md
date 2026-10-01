@@ -1,10 +1,23 @@
 ---
-id: performance-memory
+title: Rendimiento, memoria e idle
 status: active
-updated: 2026-06-11
+summary: Mediciones y cortes registrados de paginado, IPC y payloads; seguimiento de idle y working set con datos sintéticos.
+last_worked: null
+next: Acotar medición de idle, IPC y working set en builds comparables con datos sintéticos y permiso actual de pruebas.
+topics: [performance-and-memory, sqlite-storage, filtering-and-query-syntax, picker-interaction]
 ---
 
 # Performance And Memory
+
+**Importación OS2:** UTC histórica desconocida; `null` no es una medición nueva ni ausencia de trabajo. Metadata original:
+
+```yaml
+id: performance-memory
+status: active
+updated: 2026-06-11
+```
+
+Se conserva abierto el seguimiento de mediciones después de los cortes registrados. FTS5 ya se difería por evidencia específica; no activarlo, correr benchmarks/apps o usar DB reales por esta importación.
 
 Trabajo vivo para mejorar velocidad, memoria e idle cost de Copicu, desde los factores de mayor impacto a los menores.
 
@@ -487,12 +500,12 @@ Orden sugerido:
 
 Nota: el bloqueo de `npm run visual:check` por navegacion inicial Vite/Playwright quedo resuelto con build visual-test + `vite preview`. La decision FTS5 ya fue diferida por Architecture Hardening tras benchmark 50k sintetico; repetir medicion solo si aparece evidencia nueva de latencia por keypress, ranking requerido o datasets mayores.
 
-## Prompt Para Siguiente Sesion
+## Referencia Histórica Para Retomar
+
+El prompt siguiente refleja el corte anterior, no autorización ni estado nativo comprobado hoy. Comprobar cwd, AGENTS y el pedido antes de usar sus mediciones/procedimientos; no iniciar apps ni pruebas por esta referencia.
 
 ```text
-Estamos en C:\dev\chat\copyq-tauri. Lee primero docs/README.md, docs/WORKING_MEMORY.md, docs/topics/performance-and-memory.md y docs/tracks/014-performance-memory.md.
-
-Estamos en C:\dev\chat\copyq-tauri. Lee primero docs/README.md, docs/WORKING_MEMORY.md, docs/topics/performance-and-memory.md y docs/tracks/014-performance-memory.md.
+Comprobar el checkout/worktree de Copicu autorizado. Abrir este track y sólo las secciones necesarias de docs/topics/performance-and-memory.md; usar docs/README.md si falta mapa, sin Working Memory activa.
 
 Performance/memoria ya cerro Task 1/2/3/4/5 y primer corte de Task 6. `history_search` soporta `includeCounts=false`; paginas incrementales ya no recalculan conteos. Harness: `npm run perf:history -- <items>`.
 

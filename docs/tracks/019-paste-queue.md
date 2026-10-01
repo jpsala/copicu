@@ -1,10 +1,22 @@
 ---
-id: paste-queue
-status: completed
-updated: 2026-08-26
+title: Primer corte de Paste Queue
+status: closed
+summary: Cola efímera host-owned, Quick Actions y hotkey configurable registrados como implementados con smoke sintético.
+last_worked: null
+topics: [windows-focus-and-paste, hotkeys, actions-and-scripting-api]
 ---
 
 # Paste Queue
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva la evidencia previa sin marcar pruebas nuevas. Metadata original:
+
+```yaml
+id: paste-queue
+status: completed
+updated: 2026-08-26
+```
+
+Cerrado el primer corte según `Estado Implementado` y el smoke registrado. Append, recipes o nuevas colas no se implementan por esa clausura; no repetir input/paste o iniciar apps por permisos históricos.
 
 Primer corte implementado: cola efimera host-owned, acciones contextuales y hotkey global configurable, sin persistencia ni una superficie nueva.
 

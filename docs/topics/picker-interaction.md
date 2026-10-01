@@ -1,8 +1,7 @@
 ---
-id: picker-interaction
-status: active
-kind: decision-map
-triggers:
+title: Interacción del picker
+summary: Flujo keyboard-first y preview-first, navegación, selección, carpetas y comportamiento de ventana.
+keywords:
   - picker
   - buscador
   - search
@@ -16,17 +15,11 @@ triggers:
   - inbox
   - folders
   - carpetas
-primary_refs:
-  - ../../specs/001-mvp0-native-spike/spec.md
-  - ../../specs/001-mvp0-native-spike/tasks.md
-  - ../topics/product-direction.md
-  - ../topics/windows-focus-and-paste.md
-  - ../topics/copyq-technical-baseline.md
-  - ../../specs/010-inbox-copy/spec.md
-  - ../../specs/014-folders/spec.md
 ---
 
 # Picker Interaction
+
+Referencias de entrada: [spike](../../specs/001-mvp0-native-spike/spec.md), [tasks iniciales](../../specs/001-mvp0-native-spike/tasks.md), [dirección](product-direction.md), [paste](windows-focus-and-paste.md), [baseline CopyQ](copyq-technical-baseline.md), [Inbox](../../specs/010-inbox-copy/spec.md) y [carpetas](../../specs/014-folders/spec.md).
 
 ## Direccion
 

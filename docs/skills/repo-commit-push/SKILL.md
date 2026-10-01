@@ -7,23 +7,19 @@ description: Commit and push all needed repository changes with an inclusion che
 
 ## Workflow
 
-Use this skill to close a repository batch cleanly.
+Use this skill only for the effects explicitly requested by JP now. Commit, push,
+publication and installation are separate permissions. Reading this skill or a
+historical track never authorizes them.
 
-1. Read the repo's lightweight agent context first if present: context index, working memory, and project instructions.
+1. Check cwd/project instructions and the current request; recover only the pertinent track/topic and sections. No context index or active Working Memory.
 2. Inspect `git status --short --branch`, staged and unstaged diffs, and untracked files.
 3. Verify that generated or moved project assets that should be versioned are included, and that ignored/local files are intentionally excluded.
-4. Run the repo's relevant validation commands. For AOS repos, prefer:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/ensure-skills-link.ps1
-bun scripts/context.ts
-bun scripts/agent-context-audit.ts
-```
+4. Run relevant and authorized checks. `bun run check` validates documentation and its tooling fixtures; it does not replace product checks required by the changed surface. `bun run knowledge -- search "intent"` is optional metadata discovery. Do not repair junctions, install validators or run UI as a documentary check.
 
 5. Scan for obvious secrets before staging, especially `.env`, keys, tokens, databases, exports, and private local data.
-6. Stage complete file versions with `git add -A`, then re-check status and the staged diff.
+6. Stage complete versions of the files belonging to the authorized batch and re-check the staged diff. Use `git add -A` only if the entire worktree is within that approved inclusion scope; otherwise name paths explicitly and preserve unrelated WIP.
 7. Create the minimum sensible commits. Prefer one commit when the batch is tightly coupled; split only when commits stay individually coherent and valid.
-8. Push the current branch to its upstream or explicit remote.
+8. Push only with current explicit authorization, to the mechanically verified upstream or explicit remote. If only commit was requested, stop before push.
 9. Confirm the final status is clean and report commit hash, branch, push target, and validation result.
 
 ## Guardrails

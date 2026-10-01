@@ -1,8 +1,7 @@
 ---
-id: copyq-technical-baseline
-status: active
-kind: reference
-triggers:
+title: Baseline técnico de CopyQ
+summary: Investigar comportamientos de clipboard, picker y paste en CopyQ sin prometer compatibilidad ni copiar su arquitectura.
+keywords:
   - CopyQ
   - copyq
   - copy-q
@@ -12,13 +11,11 @@ triggers:
   - como lo hace CopyQ
   - enter item
   - paste selected item
-primary_refs:
-  - ../reference/copyq-feature-inventory.md
-  - ../topics/picker-interaction.md
-  - ../topics/windows-focus-and-paste.md
 ---
 
 # CopyQ Technical Baseline
+
+Referencias de entrada: [inventario](../reference/copyq-feature-inventory.md), [picker](picker-interaction.md) y [foco/paste](windows-focus-and-paste.md).
 
 CopyQ es el baseline tecnico principal para dudas de comportamiento. Copicu no busca ser compatible ni copiar feature-for-feature, pero cuando un flujo de clipboard no sea obvio o falle, conviene mirar como lo resuelve CopyQ antes de inventar.
 

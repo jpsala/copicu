@@ -1,10 +1,23 @@
 ---
-id: open-source-growth
+title: Growth open source y assets públicos
 status: active
-updated: 2026-06-22
+summary: Estrategia de audiencia, mensajes y assets sintéticos; revisión de claims antes de cualquier publicación autorizada.
+last_worked: null
+next: Preparar y revisar assets con datos sintéticos y claims acordes al producto antes de autorizar difusión.
+topics: [open-source-github, product-register, product-ambition]
 ---
 
 # Open Source Growth
+
+**Importación OS2:** UTC histórica desconocida; `null` mantiene evidencia anterior sin atribuir avance reciente. Metadata original:
+
+```yaml
+id: open-source-growth
+status: active
+updated: 2026-06-22
+```
+
+Se conserva abierto el trabajo de assets y feedback descrito. El estado no autoriza envíos, publicación, UI visible o issues sembrados; aplicar gates actuales antes de ejecutar planes anteriores.
 
 Trabajo vivo para convertir el repo publico de Copicu en un proyecto open source entendible, instalable, testeable y compartible.
 

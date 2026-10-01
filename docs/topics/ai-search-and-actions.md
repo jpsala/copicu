@@ -1,8 +1,7 @@
 ---
-id: ai-search-and-actions
-status: active
-kind: decision-map
-triggers:
+title: AI search y asistente de Copicu
+summary: Asistente opt-in del producto, búsqueda natural, lectura SQL restringida y efectos mediante APIs aprobadas.
+keywords:
   - AI
   - OpenAI
   - OpenRouter
@@ -14,18 +13,11 @@ triggers:
   - assistant
   - conversational agent
   - vision
-primary_refs:
-  - docs/tracks/006-ai-vague-search.md
-  - docs/tracks/004-actions-scripting.md
-  - docs/topics/search-plan-engine.md
-  - docs/topics/filtering-and-query-syntax.md
-  - docs/topics/product-ambition.md
-  - specs/013-conversational-assistant/spec.md
-  - scripts/assistant-tools.json
-  - src-tauri/src/assistant.rs
 ---
 
 # AI Search And Actions
+
+Referencias de entrada: [track AI anterior](../tracks/006-ai-vague-search.md), [scripting](../tracks/004-actions-scripting.md), [motor](search-plan-engine.md), [query syntax](filtering-and-query-syntax.md), [ambición](product-ambition.md), [spec del asistente](../../specs/013-conversational-assistant/spec.md), [catálogo de tools](../../scripts/assistant-tools.json) y [host Rust](../../src-tauri/src/assistant.rs).
 
 AI es una capacidad transversal de Copicu: búsqueda por lenguaje natural y un asistente conversacional opt-in que compone herramientas sobre el producto local.
 

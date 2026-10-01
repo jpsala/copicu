@@ -1,4 +1,16 @@
 ---
+title: Scenarios y capture modes explícitos
+status: closed
+summary: Scenarios SQLite, sesión transitoria y tags con provenance y suppression registrados como implementados.
+last_worked: null
+topics: [tag-management-hotkeys, clipboard, sqlite-storage, filtering-and-query-syntax]
+---
+
+# 028 Active Scenarios And Metadata
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva evidencia previa, no aceptación nueva. Metadata original:
+
+```yaml
 id: active-scenarios-metadata
 status: implementation-validated
 updated: 2026-09-11
@@ -6,9 +18,9 @@ execution_route: strong
 related:
   - docs/tracks/024-contextual-tag-capture.md
   - specs/009-saved-history-views/spec.md
----
+```
 
-# 028 Active Scenarios And Metadata
+Cerrado el corte explícitamente implementado, incluida la corrección posterior a tags-only. No importar `execution_route: strong`, restaurar sesiones ni activar captura por este registro.
 
 ## Objetivo
 

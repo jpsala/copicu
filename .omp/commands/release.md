@@ -6,17 +6,23 @@ Ejecutá un release completo de Copicu desde `C:/dev/copicu`, usando
 `docs/topics/windows-installer.md` y la skill `repo-commit-push` como contratos.
 Argumentos recibidos: $ARGUMENTS
 
-La invocación explícita de `/release` autoriza exactamente estos efectos sobre
-`jpsala/copicu`: incluir los cambios necesarios del repo, crear el commit de
-release, pushear la rama `main` a su upstream `origin`, crear el siguiente GitHub
-Release, subir el instalador NSIS y los artifacts del updater, instalar localmente
-ese mismo corte y relanzar Copicu. No extiendas esa autorización a otro repo,
-remote, rama, tag, asset o secreto.
+Recurso opt-in del harness, no parte del núcleo OS2 ni autorización al leerlo.
+Este procedimiento combinado sólo se ejecuta si JP pidió explícitamente **publicar
+e instalar este corte** en el destino actual. Realinear docs, migrar tooling o un
+`go` referido a esas tareas no lo autoriza. Si pidió sólo publicar o sólo instalar,
+no asumir la otra operación: resolver esa diferencia de alcance antes de actuar.
+
+Con ese pedido actual comprobado, los efectos quedan limitados a `jpsala/copicu`:
+incluir los cambios necesarios autorizados, crear el commit de release, push de
+`main` a `origin`, siguiente GitHub Release y sus assets, instalación de ese mismo
+corte y relanzamiento. No ampliar repo, remote, rama, tag, asset o acceso a secretos;
+ninguna autorización en un track histórico se transfiere.
 
 ## Preflight obligatorio
 
-1. Cargá el contexto liviano del repo y revisá `docs/WORKING_MEMORY.md`,
-   `CHANGELOG.md` y `docs/topics/windows-installer.md` sólo en lo necesario.
+1. Comprobá AGENTS/cwd, pedido actual y track pertinente. Consultá sólo las
+   secciones necesarias de `docs/topics/windows-installer.md` y `CHANGELOG.md`.
+   OS2 no requiere Working Memory activa, OMP ni un catálogo inicial completo.
 2. Verificá el estado completo del worktree, diffs staged/unstaged y untracked.
    Preservá cambios del usuario, incluí todo lo necesario para el corte y excluí
    secretos, `.env`, bases locales, logs, dumps, exports y artifacts transitorios.
@@ -33,16 +39,17 @@ remote, rama, tag, asset o secreto.
    `major` o `rc` se pasan como `-Bump`; el resto se usa como notas concisas.
    No inventes un tag manual ni muevas/republiques uno existente.
 5. Derivá notas verificables del cambio real. No afirmes arreglos no medidos.
-   Actualizá `CHANGELOG.md`, documentación durable y `WORKING_MEMORY.md` sólo si
-   falta estado real del corte.
+   Actualizá `CHANGELOG.md`, el track de release y el topic pertinente sólo si
+   falta delta durable. No mantener estado nuevo en el stub de Working Memory.
 6. Ejecutá las validaciones relevantes del batch antes de publicar. Como mínimo:
    `npm run build`, `npm run visual:check`, `cargo check --manifest-path
-   src-tauri/Cargo.toml --tests` y `bun run context:audit`. Corré tests focales
+   src-tauri/Cargo.toml --tests` y `bun run check` (docs y regresiones de tooling,
+   no validación de producto por sí sola). Corré tests focales
    adicionales exigidos por los archivos modificados. Ante cualquier fallo,
    corregí si pertenece al alcance; si no, detenete sin publicar.
 
-No pidas otra confirmación rutinaria: esta invocación ya autoriza el destino y
-los efectos exactos anteriores. Detenete antes de publicar si el destino es
+No pedir confirmación rutinaria adicional una vez comprobados el pedido combinado
+actual y el destino exacto. El texto de este recurso nunca los sustituye. Detenete antes de publicar si el destino es
 ambiguo, hay cambios ajenos inseguros, faltan credenciales, aparece un secreto,
 falla una salvaguarda o el corte no está verificable.
 

@@ -1,8 +1,7 @@
 ---
-id: hotkeys
-status: active
-kind: decision-map
-triggers:
+title: Hotkeys simples y compuestos
+summary: Motor de shortcuts globales/locales y secuencias, separado de sus consumidores WhichKey y tags.
+keywords:
   - hotkey
   - hotkeys
   - shortcut
@@ -10,15 +9,11 @@ triggers:
   - hotkey compuesto
   - key sequence
   - chord
-primary_refs:
-  - docs/topics/global-shortcut-and-tray.md
-  - docs/topics/whichkey.md
-  - docs/topics/tag-management-hotkeys.md
-  - ../tracks/012-tags-and-hotkeys.md
-  - ../../specs/006-tags-and-hotkeys/spec.md
 ---
 
 # Hotkeys
+
+Referencias de entrada: [shortcut/tray](global-shortcut-and-tray.md), [WhichKey](whichkey.md), [tags](tag-management-hotkeys.md), [track](../tracks/012-tags-and-hotkeys.md) y [spec](../../specs/006-tags-and-hotkeys/spec.md).
 
 Topic para el sistema de hotkeys de Copicu. Incluye hotkeys simples existentes y hotkeys compuestos. WhichKey es un consumidor visual separado; no es requisito para que el motor de hotkeys funcione.
 

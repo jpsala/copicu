@@ -1,8 +1,7 @@
 ---
-id: appearance-and-themes
-status: active
-kind: decision-map
-triggers:
+title: Appearance y temas del picker
+summary: Color, presets, density, geometría y autosave de Settings, separados de arquitectura de ventanas e interacción.
+keywords:
   - appearance
   - density
   - theme settings
@@ -11,20 +10,11 @@ triggers:
   - temas
   - dark mode
   - light mode
-primary_refs:
-  - docs/topics/ui-surface-architecture.md
-  - docs/topics/ui-design-and-impeccable.md
-  - docs/topics/mantine-ui-system.md
-  - docs/topics/picker-interaction.md
-  - docs/tracks/036-appearance-settings.md
-  - docs/tracks/037-picker-appearance-adaptation.md
-  - src/themeCatalog.ts
-  - src/shared/settings.ts
-  - src/styles.css
-  - src/main.tsx
 ---
 
 # Appearance And Themes
+
+Referencias de entrada: [superficies](ui-surface-architecture.md), [QA UI](ui-design-and-impeccable.md), [Mantine](mantine-ui-system.md), [picker](picker-interaction.md), [track 036](../tracks/036-appearance-settings.md), [track 037](../tracks/037-picker-appearance-adaptation.md), [theme catalog](../../src/themeCatalog.ts), [settings](../../src/shared/settings.ts), [estilos](../../src/styles.css) y [frontend](../../src/main.tsx).
 
 ## Alcance
 
@@ -185,4 +175,4 @@ accesibilidad o touch.
 
 El corte 037 se publicó e instaló como `v0.4.20`; su verificación histórica vive
 en `docs/tracks/037-picker-appearance-adaptation.md`. El estado del follow-on
-posterior al release vive sólo en `docs/WORKING_MEMORY.md`.
+posterior al release debe consultarse en el track de trabajo pertinente, no en Working Memory (stub histórico). La publicación/instalación relatada no autoriza operar hoy.

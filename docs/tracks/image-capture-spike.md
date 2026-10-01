@@ -1,10 +1,22 @@
 ---
-id: image-capture-spike
-status: validated
-updated: 2026-06-05
+title: Spike de captura image-only
+status: closed
+summary: Captura, PNG principal, thumbnails y copy-back registrados como validados con fuentes e imágenes sintéticas.
+last_worked: null
+topics: [clipboard, sqlite-storage, copyq-technical-baseline]
 ---
 
 # Image Capture Spike
+
+**Importación OS2:** UTC histórica desconocida; `null` preserva la validación previa sin afirmar tests actuales. Metadata original:
+
+```yaml
+id: image-capture-spike
+status: validated
+updated: 2026-06-05
+```
+
+Cerrado el spike image-only según estado y validación registrados, no la fidelidad MIME completa. Fallbacks Win32 o nuevos formatos requieren necesidad y spec propias; no iniciar captura/clipboard/apps por permisos antiguos.
 
 Trabajo vivo para arrancar la próxima sesión con captura de imágenes.
 

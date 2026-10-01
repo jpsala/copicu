@@ -1,11 +1,24 @@
 ---
+title: Investigación de formatos rich MIME
+status: paused
+summary: Investigación propuesta de HTML, RTF, listas de archivos y formatos custom sin fidelidad CopyQ asumida.
+last_worked: null
+next: Acotar un formato rich y muestras sintéticas por app, documentar decisión y spec antes de tocar storage.
+topics: [clipboard, copyq-technical-baseline, sqlite-storage]
+---
+
+# Rich MIME Research
+
+**Importación OS2:** no hay UTC acreditada del trabajo registrado; `null` mantiene la incertidumbre, no inventa una fecha. Metadata original:
+
+```yaml
 id: rich-mime-research
 status: pending
 priority: 5
 updated: 2026-06-05
----
+```
 
-# Rich MIME Research
+Pausado como investigación pendiente, no implementada por esta importación. Preservar muestras sintéticas y gates de datos antes de cualquier ejecución autorizada.
 
 Investigar preservación rich MIME antes de implementar HTML/RTF/file-list/custom formats.
 

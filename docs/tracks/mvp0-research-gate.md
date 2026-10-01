@@ -1,10 +1,22 @@
 ---
-id: mvp0-research-gate
-status: implementation-validated
-updated: 2026-06-05
+title: Research gate y spike nativo del MVP 0
+status: closed
+summary: Research, scaffold y validación inicial nativa registrados como completados; políticas posteriores requieren fuentes actuales.
+last_worked: null
+topics: [technical-research-process, clipboard, global-shortcut-and-tray, sqlite-storage, windows-focus-and-paste]
 ---
 
 # MVP 0 Research Gate
+
+**Importación OS2:** UTC histórica desconocida; `null` no niega los cortes previos ni implica validación nueva. Metadata original:
+
+```yaml
+id: mvp0-research-gate
+status: implementation-validated
+updated: 2026-06-05
+```
+
+Cerrado el research gate y spike explícitamente completos según el registro. Las tareas y prompt históricos no son ruta actual para iniciar apps, instalar tools o reabrir todos los pendientes del producto; el trabajo posterior vive en sus fuentes.
 
 Trabajo vivo para cerrar la investigacion tecnica previa al scaffold del MVP 0 y dejar listo el arranque de validacion manual.
 
@@ -131,9 +143,11 @@ Proximo corte:
 
 No volver a `Ctrl+Shift+V` sin repetir la validacion con app oculta.
 
-## Prompt Compacto Para Retomar
+## Prompt Histórico Del Spike
 
-Continuar en `C:\dev\chat\copyq-tauri`. Leer `AGENTS.md`, `docs/WORKING_MEMORY.md`, `docs/tracks/mvp0-research-gate.md`, `docs/tracks/image-capture-spike.md`, `docs/topics/picker-interaction.md`, `docs/topics/copyq-technical-baseline.md`, `docs/topics/clipboard.md`, `docs/DECISIONS.md` y `specs/001-mvp0-native-spike/tasks.md`. No crear carpetas de sesiones ni handoffs historicos; usar `tracks` y topics. Estado: app Tauri tiene watcher `clipboard-rs`, probe Win32 metadata-only, tray `Show/Hide/Quit`, hide-on-close, shortcut `Ctrl+Shift+,`, SQLite `copicu.sqlite3`, host API reusable, self-write suppression, paste-to-previous-window y paste target-aware validados. Picker actual: preview-first, search como unica cabecera, sin fecha/tipo/chars/lines, metadata `title`/`tags`/`notes` en franja separada, menu vertical `...` dentro del item con activate/paste/edit/edit metadata/delete, imagenes grandes usando PNG principal y Markdown con imagenes preservando orden de origen. Ventana actual: always-on-top, light/dark por sistema, hide-on-focus-lost diferido/cancelable para no cerrarse al mover/redimensionar, refresh automatico sin resetear scroll manual. Decision imagenes: modelo MIME-first, PNG normalizado como blob principal, metadata SQLite, thumbnail separado, limites desde el inicio, preservar MIME original solo si aporta fidelidad real y saltar imagen binaria cuando tambien hay texto salvo modo rich explicito. Checks pasados durante el corte: `npm run build`, `npm run visual:check`, `cargo check`, `cargo test`; manual paste targets paso. Regla actual: mantener `npm run tauri:dev` vivo hasta tener binario instalable. Proximo paso: validar manualmente picker real always-on-top/dark/mover/redimensionar/click afuera, seguir polish Markdown/HTML y dedup/move-to-top con datos sinteticos.
+Este párrafo conserva el estado y planes del spike, no un kickoff vigente. Antes de retomar, comprobar cwd/AGENTS, track pertinente y sólo sus topics/secciones necesarios. Las versiones, shortcuts, reglas de dev y permisos relatados pertenecen al corte histórico, no a la app o al pedido actuales; no iniciar UI por leerlos. La metadata heredada se preserva sin fabricar fechas de trabajo.
+
+Referencia anterior: leer `AGENTS.md`, `docs/tracks/mvp0-research-gate.md`, `docs/tracks/image-capture-spike.md`, `docs/topics/picker-interaction.md`, `docs/topics/copyq-technical-baseline.md`, `docs/topics/clipboard.md` y `specs/001-mvp0-native-spike/tasks.md`, sólo según la investigación autorizada. No crear carpetas de sesiones ni handoffs historicos; usar `tracks` y topics. Estado: app Tauri tiene watcher `clipboard-rs`, probe Win32 metadata-only, tray `Show/Hide/Quit`, hide-on-close, shortcut `Ctrl+Shift+,`, SQLite `copicu.sqlite3`, host API reusable, self-write suppression, paste-to-previous-window y paste target-aware validados. Picker actual: preview-first, search como unica cabecera, sin fecha/tipo/chars/lines, metadata `title`/`tags`/`notes` en franja separada, menu vertical `...` dentro del item con activate/paste/edit/edit metadata/delete, imagenes grandes usando PNG principal y Markdown con imagenes preservando orden de origen. Ventana actual: always-on-top, light/dark por sistema, hide-on-focus-lost diferido/cancelable para no cerrarse al mover/redimensionar, refresh automatico sin resetear scroll manual. Decision imagenes: modelo MIME-first, PNG normalizado como blob principal, metadata SQLite, thumbnail separado, limites desde el inicio, preservar MIME original solo si aporta fidelidad real y saltar imagen binaria cuando tambien hay texto salvo modo rich explicito. Checks pasados durante el corte: `npm run build`, `npm run visual:check`, `cargo check`, `cargo test`; manual paste targets paso. Regla actual: mantener `npm run tauri:dev` vivo hasta tener binario instalable. Proximo paso: validar manualmente picker real always-on-top/dark/mover/redimensionar/click afuera, seguir polish Markdown/HTML y dedup/move-to-top con datos sinteticos.
 
 ## Fuentes Clipboard Consultadas
 

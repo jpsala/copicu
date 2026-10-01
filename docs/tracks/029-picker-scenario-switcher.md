@@ -1,4 +1,16 @@
 ---
+title: Switcher de scenarios desde el picker
+status: closed
+summary: Switcher buscable, Alt+S y creación desde query registrados como implementados sin duplicar Settings o activar por contenido.
+last_worked: null
+topics: [picker-interaction, tag-management-hotkeys, ui-surface-architecture]
+---
+
+# 029 Picker Scenario Switcher
+
+**Importación OS2:** UTC histórica desconocida; `null` no niega el corte ni lo fecha como reciente. Metadata original:
+
+```yaml
 id: picker-scenario-switcher
 status: implementation-validated
 updated: 2026-07-29
@@ -6,9 +18,9 @@ execution_route: balanced
 related:
   - docs/tracks/028-active-scenarios-metadata.md
   - docs/topics/picker-interaction.md
----
+```
 
-# 029 Picker Scenario Switcher
+Cerrado por resultado y evidencia registrados del switcher. No importar receta `balanced` ni permisos de smoke/app; los modelos posteriores pueden cambiar el vínculo de views sin reabrir este corte automáticamente.
 
 ## Objetivo
 

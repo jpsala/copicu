@@ -1,4 +1,17 @@
 ---
+title: Pipeline formal de capture y paste
+status: paused
+summary: Propuesta aparcada de contratos tipados y límites transaccionales antes de considerar aislamiento del monitor.
+last_worked: null
+next: Si se retoma, documentar flujo actual y acotar CaptureEnvelope y MetadataPatch sin cambios observables antes de evaluar procesos.
+topics: [clipboard, actions-and-scripting-api, windows-focus-and-paste, sqlite-storage]
+---
+
+# 026 Capture/Paste Pipeline
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva la propuesta sin simular avance o aislamiento implementado. Metadata original:
+
+```yaml
 id: capture-paste-pipeline
 status: parked
 updated: 2026-07-29
@@ -7,9 +20,9 @@ related:
   - docs/tracks/004-actions-scripting.md
   - docs/tracks/005-rich-mime-research.md
   - specs/008-clipboard-enrichment
----
+```
 
-# 026 Capture/Paste Pipeline
+Se mantiene aparcado como `paused`. No rewrite, bus genérico o proceso extra por esta importación; una decisión y spec propias preceden cambios grandes de producto.
 
 ## Idea
 

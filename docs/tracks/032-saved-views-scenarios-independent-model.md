@@ -1,4 +1,16 @@
 ---
+title: Modelo independiente de Views y Scenarios
+status: closed
+summary: Queries propias de Scenario y Saved Views preservadas, con implementación y release v0.4.2 registrados.
+last_worked: null
+topics: [sqlite-storage, filtering-and-query-syntax, picker-interaction]
+---
+
+# 032 Saved Views And Scenarios Independent Model
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el release anterior sin acreditar distribución actual. Metadata original:
+
+```yaml
 id: saved-views-scenarios-independent-model
 status: released
 updated: 2026-07-30
@@ -8,9 +20,9 @@ related:
   - docs/tracks/029-picker-scenario-switcher.md
   - docs/tracks/031-saved-history-views-ux-followup.md
   - specs/009-saved-history-views/spec.md
----
+```
 
-# 032 Saved Views And Scenarios Independent Model
+Cerrado por implementación y distribución relatadas. No importar `strong`, repetir migraciones, borrar views o publicar/instalar usando aquel permiso; el release no se revalidó en esta importación.
 
 ## Objetivo
 

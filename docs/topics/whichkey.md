@@ -1,21 +1,17 @@
 ---
-id: whichkey
-status: active
-kind: decision-map
-triggers:
+title: WhichKey y menú de hotkeys
+summary: Superficie keyboard-first de descubrimiento de secuencias, separada del motor, con timers y reglas de foco.
+keywords:
   - whichkey
   - which key
   - menu de hotkeys
   - cheat sheet
   - shortcut menu
-primary_refs:
-  - docs/topics/hotkeys.md
-  - docs/topics/ui-surface-architecture.md
-  - ../tracks/012-tags-and-hotkeys.md
-  - ../../specs/006-tags-and-hotkeys/spec.md
 ---
 
 # WhichKey
+
+Referencias de entrada: [motor de hotkeys](hotkeys.md), [superficies](ui-surface-architecture.md), [track](../tracks/012-tags-and-hotkeys.md) y [spec](../../specs/006-tags-and-hotkeys/spec.md).
 
 Topic para la superficie visual tipo WhichKey: un menu keyboard-first que muestra las teclas posibles para el prefijo o contexto actual.
 

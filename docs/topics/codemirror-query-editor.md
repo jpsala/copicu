@@ -1,25 +1,18 @@
 ---
-id: codemirror-query-editor
-status: active
-kind: reference
-triggers:
+title: Editor textual de consultas con CodeMirror 6
+summary: Estudio y contrato del editor residente, precarga, autocomplete y límites de evidencia de foco y rendimiento.
+keywords:
   - CodeMirror
   - autocomplete
   - editor de consultas
   - query editor
   - precarga
   - picker instantaneo
-primary_refs:
-  - docs/topics/filtering-and-query-syntax.md
-  - docs/topics/performance-and-memory.md
-  - docs/topics/picker-interaction.md
-  - ../tracks/008-filtering-search-foundation.md
-  - ../../scripts/research/codemirror-bundle-study.mjs
-  - ../../scripts/research/codemirror-range-study.mjs
-  - ../../scripts/research/codemirror-preload-study.mjs
 ---
 
 # Editor Textual De Consultas Con CodeMirror 6
+
+Referencias de entrada: [query syntax](filtering-and-query-syntax.md), [rendimiento](performance-and-memory.md), [picker](picker-interaction.md), [track de search](../tracks/008-filtering-search-foundation.md), [estudio de bundle](../../scripts/research/codemirror-bundle-study.mjs), [rangos](../../scripts/research/codemirror-range-study.mjs) y [precarga](../../scripts/research/codemirror-preload-study.mjs).
 
 ## Estado Y Decision De Producto
 

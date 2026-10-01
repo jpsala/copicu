@@ -1,4 +1,16 @@
 ---
+title: Hotkeys, WhichKey y tags
+status: closed
+summary: Settings Hotkeys V1 y separación de motor, WhichKey y shortcuts filtrados según el corte registrado.
+last_worked: null
+topics: [hotkeys, whichkey, compound-hotkeys-and-whichkey, tag-management-hotkeys]
+---
+
+# 012 Hotkeys, WhichKey And Tags
+
+**Importación OS2:** UTC histórica desconocida; `null` no niega los cortes previos. Metadata original:
+
+```yaml
 status: complete
 updated: 2026-07-25
 execution_route: balanced
@@ -9,9 +21,9 @@ related:
   - docs/topics/compound-hotkeys-and-whichkey.md
 archive:
   - docs/reference/012-tags-and-hotkeys-archive-2026-06-14.md
----
+```
 
-# 012 Hotkeys, WhichKey And Tags
+Cerrado el corte registrado de Hotkeys V1 y tags, sin revalidación nativa actual. `execution_route: balanced` es historia, no receta/modelo ni autorización a importar. Nuevos defectos o ampliaciones requieren pedido propio.
 
 Estado vigente: Settings Hotkeys V1 implementado; hotkeys nativos por tag removidos; filtros por tag/query se expresan como scripts. Atajos criticos del picker pueden ser nativos aunque haya scripts historicos con el mismo gesto.
 

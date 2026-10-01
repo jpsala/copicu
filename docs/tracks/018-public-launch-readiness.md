@@ -1,10 +1,23 @@
 ---
-id: public-launch-readiness
+title: Readiness de distribución y presencia pública
 status: active
-updated: 2026-06-23
+summary: Checkpoints históricos de launch y seguimiento de updater y Authenticode; no confundir permisos o versiones anteriores con vigencia.
+last_worked: null
+next: Contrastar trust root y plan Authenticode con artefactos públicos y contrato vigente; credenciales o distribución requieren permiso actual.
+topics: [open-source-github, windows-installer, product-register]
 ---
 
 # Public Launch Readiness
+
+**Importación OS2:** UTC histórica desconocida; `null` no niega releases anteriores ni prueba la instalada actual. Metadata original:
+
+```yaml
+id: public-launch-readiness
+status: active
+updated: 2026-06-23
+```
+
+Se conserva abierto el seguimiento declarado de updater/firma. Versiones y métricas de checkpoints son históricas: consultar `windows-installer` para distribución registrada posterior. Planes de backup de secretos, publicación, instalación y adapters Pi no se activan ni heredan por este estado.
 
 Plan ejecutable para convertir Copicu en un proyecto open source entendible, confiable, instalable y promocionable sin sobreactuar claims ni esconder que es Windows alpha.
 

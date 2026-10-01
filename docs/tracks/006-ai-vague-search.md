@@ -1,11 +1,23 @@
 ---
+title: Planner AI de búsqueda reemplazado
+status: closed
+summary: Diseño y evidencia del planner inicial; la entrada visible ai y Ctrl+I fue reemplazada por el asistente general.
+last_worked: null
+topics: [ai-search-and-actions, filtering-and-query-syntax, search-plan-engine]
+---
+
+# AI Search, Metadata And Command Planning
+
+**Importación OS2:** UTC histórica desconocida; `null` no niega los cortes anteriores. Metadata original:
+
+```yaml
 id: ai-vague-search
 status: superseded-by-conversational-assistant
 priority: 6
 updated: 2026-09-18
----
+```
 
-# AI Search, Metadata And Command Planning
+Cerrado por sustitución explícita del corte retomable, no por un test ejecutado hoy. Conservar diseño/evidencia del planner sin reinstalarlo como entrada visible ni heredar permisos sobre providers o datos.
 
 El corte retomable de esta track fue reemplazado por
 `specs/013-conversational-assistant/spec.md`: `ai:` y `Ctrl+I` ya entran al

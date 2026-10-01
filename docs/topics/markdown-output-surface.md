@@ -1,8 +1,7 @@
 ---
-id: markdown-output-surface
-status: active
-kind: explanation
-triggers:
+title: Superficie de salida Markdown
+summary: Ventana ai-output para revisar informes y resultados de scripts/AI antes de copiar, guardar o convertir en items.
+keywords:
   - markdown output
   - salida markdown
   - ai-output
@@ -10,13 +9,11 @@ triggers:
   - summaries
   - reportes
   - export markdown
-primary_refs:
-  - docs/topics/actions-and-scripting-api.md
-  - ../user/scripts.md
-  - ../tracks/004-actions-scripting.md
 ---
 
 # Markdown Output Surface
+
+Referencias de entrada: [API](actions-and-scripting-api.md), [guía de scripts](../user/scripts.md) y [track](../tracks/004-actions-scripting.md).
 
 ## Qué Es
 

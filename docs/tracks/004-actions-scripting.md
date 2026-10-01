@@ -1,11 +1,24 @@
 ---
+title: Actions y scripting local
+status: active
+summary: APIs y runner TS/JS con evidencia histórica; dogfood y capabilities según consumidores reales permanecen abiertos.
+last_worked: null
+next: Acotar dogfood sintético de triggers, UI y anti-loop bajo permiso actual, ampliando capabilities sólo por consumidor real.
+topics: [actions-and-scripting-api, markdown-output-surface, agent-tool-routing]
+---
+
+# Actions And Scripting
+
+**Importación OS2:** UTC histórica desconocida; `null` conserva el trabajo previo sin simular avance reciente. Metadata original:
+
+```yaml
 id: actions-scripting
 status: active-dogfood
 priority: 4
 updated: 2026-07-24
----
+```
 
-# Actions And Scripting
+Se conserva abierto el seguimiento de dogfood y consumidores explícitos del registro. `active` no autoriza iniciar apps, ejecutar scripts, enviar clips a AI ni editar skills externas; los permisos anteriores no se transfieren.
 
 Unificar comandos automáticos, comandos de menú, shortcuts, scripting y futuros plugins bajo una sola superficie conceptual: Actions.
 
