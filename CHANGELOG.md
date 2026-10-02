@@ -4,6 +4,13 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-02
+
+- Publish the verified v0.5.2-rc.1 installer through the normal update channel,
+  making it discoverable by existing installations' **Check for updates**.
+  Product bytes and updater trust root are unchanged from the RC.
+  [Full release notes](docs/releases/v0.5.2.md).
+
 ## [0.5.2-rc.1] - 2026-10-02
 
 ### Added

@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "NSIS v0.5.2-rc.1 firmado e instalado, payload coincidente y smoke local comprobados; publicación y CI pendientes."
-last_worked: "2026-10-02T20:05:50Z"
-next: "Completar publicación RC autorizada y verificar GitHub/CI. Servicio remoto, identidad humana y dos PCs conservan gates separados."
+summary: "v0.5.2 normal/latest publicado con el mismo payload instalado y validado de la RC; servicio remoto e identidad humana/dos PCs pendientes."
+last_worked: "2026-10-02T20:23:49Z"
+next: "Si JP pide avanzar al servicio remoto, preparar identidad/HTTPS/recovery y aceptación en dos PCs; producto local y distribución v0.5.2 están cerrados."
 topics:
   - shared-clipboard
 ---
@@ -35,7 +35,7 @@ controles del recurso. Los hints de publicaciones sólo despiertan sync V1:
 no avanzan control water ni habilitan conexiones, imports, Windows o Actions.
 Ticks, leases, receipts, opt-ins y fences se conservan.
 
-**Candidata v0.5.2-rc.1:** NSIS core `0.5.2` generado offline con frontend normal,
+**Distribuido en v0.5.2:** NSIS core `0.5.2` generado offline con frontend normal,
 firma verificada y recursos/exe x64 comprobados. Su payload exacto pasa diez casos
 de publicaciones y trece de lifecycle con perfiles nuevos; regresión amplia
 379 Rust y 494 visuales aprobados. [Evidencia exacta](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02).
@@ -44,7 +44,17 @@ El mismo NSIS se instaló: exe `0.5.2`, hash idéntico al payload, diez casos IP
 de publicaciones y comprobación nativa breve del diálogo nuevo clip/árbol pasan.
 [Evidencia instalada](../../specs/016-shared-clipboard/local-acceptance.md#smoke-instalado-v052-rc1-2026-10-02).
 Los diez casos repiten la matriz del payload; no son casos nuevos adicionales.
-Publicación GitHub y CI del cierre todavía no están acreditadas.
+[RC publicada](https://github.com/jpsala/copicu/releases/tag/v0.5.2-rc.1) a
+`2026-10-02T20:16:29Z`, desde el tag/source inmutable
+`b8d7d83bdc671f3ef0351b86cc2d3599f95d3481`; digests de los tres assets coinciden.
+[Agentic Validation 37059318392](https://github.com/jpsala/copicu/actions/runs/37059318392)
+SUCCESS para esa fuente, incluidos documentación y chunks.
+JP pidió después que las otras PCs recibieran el update: se publicó
+[v0.5.2 normal/latest](https://github.com/jpsala/copicu/releases/tag/v0.5.2) a
+`2026-10-02T20:22:36Z`, desde el mismo commit, sin recompilar ni cambiar EXE/firma.
+Sólo el manifest apunta al tag normal. El endpoint real `releases/latest` entrega
+`0.5.2` y sus tres assets descargados coinciden; no acredita instalación en otra PC.
+[Recibo de promoción y updater](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
 
 ## Evidencia y recuperación mínima
 
@@ -70,10 +80,10 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Integrar y distribuir el NSIS revisado conforme al pedido vigente, comprobar
-   commit/tag/assets/hash/CI y conservar stable/latest v0.5.1 al publicar RC.
-   La actualización local está comprobada por hash/payload y smoke sintético;
-   no sustituye los checks remotos de distribución.
+1. Distribución v0.5.2 normal/latest y actualización local cerradas: tag/source, assets/hash,
+   firma, CI y smoke acreditados en
+   [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
+   La RC conserva su tag y evidencia; sólo el release normal entra al endpoint latest.
 2. Servicio remoto revisable, HTTPS/proxy, proveedor humano, vinculación/recovery
    E2EE y aceptación en dos PCs siguen abiertos. El provisioning sintético y dos
    procesos en una PC no los acreditan.
@@ -81,8 +91,8 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
    outbox, retención, leases, pausa y efectos. Lock/suspend/crash nativos siguen
    teniendo aceptación propia.
 
-Al retomar, verificar checkout/HEAD/WIP y archivos sin seguimiento: un worktree
-nuevo puede omitir esta implementación sin commit. Revalidar executable,
+Al retomar, verificar checkout/HEAD/WIP y archivos sin seguimiento contra la
+fuente distribuida del tag; no atribuirle cambios posteriores. Revalidar executable,
 PID/perfil/puerto/marker y opt-ins antes de operar instancias; los valores guardados
 en la aceptación son referencias históricas. Conservar el perfil habitual;
 no leer su historial como fixture ni cerrar procesos por nombre.

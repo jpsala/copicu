@@ -50,7 +50,7 @@ Copicu currently supports:
 - settings for core behavior;
 - built-in actions;
 - local trusted TypeScript/JavaScript scripts;
-- shared text clipboards in the local v0.5.2 candidate, with explicit connections and optional Windows/Action effects;
+- shared text clipboards in v0.5.2, with explicit connections and optional Windows/Action effects;
 - a Markdown output window for generated summaries, reports, translations, and compiled notes.
 
 ## Search, Select And Reuse
@@ -89,9 +89,9 @@ For mixed selections, leave the Folder field unchanged to retain each clip's loc
 
 Open **picker menu → Organize** for **Saved searches**, **Capture modes**, Inbox and Tags. A Saved search (formerly Saved View) is a passive query. A Capture mode (formerly Scenario) owns its query and can add configured metadata to new captures until stopped. Neither is a folder, and capture modes do not choose the destination folder.
 
-## Shared Clipboards In The v0.5.2 Candidate
+## Shared Clipboards In v0.5.2
 
-This candidate includes shared plain-text clipboards validated with a local synthetic service and prepared profiles. It does not provide human account linking or a deployed service, and it has not been accepted between two separate PCs. A normal unconfigured profile shows **Sharing is off** in **Settings → Sharing**. **Technical preparation for a local synthetic service** is for controlled local testing.
+v0.5.2 includes shared plain-text clipboards validated with a local synthetic service and prepared profiles. It does not provide human account linking or a deployed service, and it has not been accepted between two separate PCs. A normal unconfigured profile shows **Sharing is off** in **Settings → Sharing**. **Technical preparation for a local synthetic service** is for controlled local testing.
 
 On a device already linked to that local service:
 

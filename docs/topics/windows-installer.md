@@ -16,17 +16,39 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1), desde `6b1ad8b8099578ee84e8332fd9a54e0b043c1763`. Instalador, firma Tauri y manifest descargados/verificados; SHA256 vigente en `README.md`. CI del corte pasó. El mismo NSIS se instaló localmente y el ejecutable instalado pasó smoke WebView2 con perfil sintético separado: resize pointer/keyboard, menús, overlay/clamp, hide/reopen y preferencia tras reinicio. UI por CDP después de foreground por hotkey nativo; no certifica OS-pointer, C0 de type global ni matriz de paste. Perfil normal conservado y app instalada relanzada. Cierre/evidencia: [`040-resizable-folder-sidebar`](../tracks/040-resizable-folder-sidebar.md); notas: [`v0.5.1`](../releases/v0.5.1.md). Firma updater no equivale a Authenticode.
+Release público stable/latest: [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2),
+publicado a `2026-10-02T20:22:36Z`, desde el source/tag inmutable
+`b8d7d83bdc671f3ef0351b86cc2d3599f95d3481`. Promueve el mismo EXE/firma de la RC
+sin recompilar. NSIS SHA256
+`23159C9E9119F90251965062BB494DD6816C845C98E73E625AE65DE9069C830E`.
+El nuevo `latest.json`, 799 bytes y SHA256
+`86E02EB757B6DC0C0A98358C291A8A3A1C4073842C088887D1DE468F1C5F5D33`, apunta al
+instalador bajo el tag normal. Endpoint real latest HTTP 200/version `0.5.2`, API
+latest y los tres assets descargados comprobados a `2026-10-02T20:23:49Z`.
+[Recibo exacto](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
+La instalación local ya acreditada de core `0.5.2` coincide con ese payload;
+la promoción no añade otro smoke ni acredita instalación en otras PCs.
 
-Candidata `v0.5.2-rc.1`, core app/Cargo/NSIS `0.5.2`: paquete firmado y payload
+Distribución anterior [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1),
+fuente `6b1ad8b8099578ee84e8332fd9a54e0b043c1763`: conserva sus pruebas de resize,
+menús/overlay e instalación en
+[`040-resizable-folder-sidebar`](../tracks/040-resizable-folder-sidebar.md) y
+[`notas v0.5.1`](../releases/v0.5.1.md). Firma updater no equivale a Authenticode.
+
+[RC pública v0.5.2-rc.1](https://github.com/jpsala/copicu/releases/tag/v0.5.2-rc.1),
+core app/Cargo/NSIS `0.5.2`, publicada a `2026-10-02T20:16:29Z` desde el source/tag
+inmutable `b8d7d83bdc671f3ef0351b86cc2d3599f95d3481`: paquete firmado y payload
 exacto verificados localmente, con sharing/SSE, carpetas/metadata y SDK. Estado,
 hashes y pruebas en [aceptación de la candidata](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02);
 notas en [v0.5.2-rc.1](../releases/v0.5.2-rc.1.md). JP autorizó publicación RC y
 actualización local. El mismo NSIS ya se instaló con `/S /UPDATE`: exe `0.5.2`
 idéntico al payload y smoke sintético comprobados en
 [aceptación instalada](../../specs/016-shared-clipboard/local-acceptance.md#smoke-instalado-v052-rc1-2026-10-02).
-Publicación y CI aún pendientes de evidencia. La RC conserva la selección
-stable/latest del updater y no debe sustituir ese canal por inferencia.
+Los tres assets publicados coinciden por digest con los verificados.
+[Agentic Validation 37059318392](https://github.com/jpsala/copicu/actions/runs/37059318392)
+SUCCESS para esa fuente, incluidos documentación/chunks. La RC conserva su tag;
+el release normal v0.5.2 la promueve al canal latest. Distribuye el cliente local
+sin acreditar proveedor humano, servicio HTTPS ni aceptación entre dos PCs.
 
 ## Decision Actual
 
@@ -146,6 +168,14 @@ Politica inicial:
 - endpoint publico: `https://github.com/jpsala/copicu/releases/latest/download/latest.json`;
 - Windows `installMode: "passive"` para instalar sin interaccion;
 - si hay update, Copicu descarga, verifica firma Tauri, instala y relanza.
+
+El endpoint `releases/latest` ofrece el release normal marcado latest y excluye
+prereleases: publicar una RC por sí sola no hace llegar un update a ese canal.
+La promoción normal requiere autorización actual de JP; si conserva el core,
+fuente y binario ya verificados, puede reutilizar EXE/firma y generar un manifest
+con la URL del nuevo tag, comprobando después el endpoint real y los tres assets.
+Una instalación que ya tiene ese core no tiene una versión superior por el mero
+cambio de tag de RC a normal.
 
 Config base en `src-tauri/tauri.conf.json` mantiene `plugins.updater.pubkey`, endpoint y modo pasivo. Los artifacts de updater se habilitan solo en release con config mergeada:
 

@@ -39,12 +39,14 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1)
-- Asset: `Copicu_0.5.1_x64-setup.exe`
+- [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2)
+- Asset: `Copicu_0.5.2_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `9B0812C1C35145B1F71F6A621243FD0ED27E6389E7D80194ED57C0E0DF460871`
+- SHA256: `23159C9E9119F90251965062BB494DD6816C845C98E73E625AE65DE9069C830E`
 
-Resizable folder sidebar with saved width, compact indentation, and correctly anchored folder menus.
+Opt-in local shared clipboards with SSE and a common searchable folder selector.
+Existing installations can find v0.5.2 through **Check for updates**; the signed
+installer matches the locally verified v0.5.2-rc.1 payload.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -105,20 +107,19 @@ Copicu is early-stage, but the core is functional:
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
 
-### v0.5.2 candidate
+### New In v0.5.2
 
-The [v0.5.2-rc.1 candidate notes](docs/releases/v0.5.2-rc.1.md) cover opt-in
+The [v0.5.2 release notes](docs/releases/v0.5.2.md) cover opt-in
 shared clipboards and a common folder selector across the picker and editors.
 These features are validated locally with synthetic profiles; the hosted
 service, human account setup and testing between two physical PCs remain pending.
-The stable release above remains v0.5.1.
 
 From a folder or All history, use **Connect shared clipboard** to select or
 create a resource and choose sending, receiving or both. Sharing requires
 explicit provisioning and connections. Sending and receiving pause independently;
 opening shared history does not import clips or write the Windows clipboard.
-See the [user guide](docs/user/README.md#shared-clipboards-in-the-v052-candidate)
-for the candidate workflow.
+See the [user guide](docs/user/README.md#shared-clipboards-in-v052)
+for the sharing workflow.
 
 ## Core Flows
 
@@ -170,7 +171,7 @@ Deleting a folder always opens a confirmation with exact counts and independent 
 
 `F2` opens the unified content and metadata editor; save commits both together. `Shift+F2` opens metadata-only editing, including explicit batch operations for mixed selections. Capture context stays separate and read-only rather than becoming your editable title or notes.
 
-The candidate uses the same searchable folder tree in metadata, the content
+v0.5.2 uses the same searchable folder tree in metadata, the content
 editor, new clips and move dialogs. Filtering keeps matching ancestors visible;
 inline folder creation is prepared until Save or Move, together with the clip
 changes. Cancel leaves no new folders, and a move preserves each clip's tags.

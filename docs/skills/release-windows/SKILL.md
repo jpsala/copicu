@@ -24,8 +24,10 @@ Los efectos expresamente excluidos quedan fuera del encargo y no disparan una
 solicitud automática de permiso al terminar la preparación.
 
 Verificar tags/releases remotos y resolver el candidato con el helper existente,
-sin adivinar versión. Confirmar si el corte es stable o RC; conservar la elección
-de JP. El helper actual usa la versión core en package/Cargo/Tauri/NSIS incluso
+sin adivinar versión. Un pedido de release para actualizar las PCs usa el canal
+normal/latest; usar RC cuando JP la elija expresamente y conservar esa elección.
+El endpoint actual `releases/latest/download/latest.json` excluye prereleases:
+una RC no aparece en **Check for updates**. El helper usa la versión core en package/Cargo/Tauri/NSIS incluso
 cuando el tag GitHub tiene sufijo RC.
 Resolver una sola vez y registrar tag/core; pasar `-Tag` explícito en fases y
 reintentos. Repetir `-Bump rc` después de cambiar el core puede saltar otra versión.
@@ -102,6 +104,13 @@ Publicar sólo el candidato verificado y cubrir cada efecto con el pedido actual
 Evitar que RC cambie README/current stable o latest del updater. Comprobar URL,
 assets/hash/firma, CI y estado Git después del efecto; si un paso falla, no seguir
 con el dependiente ni repetir una publicación sin comprobar resultado remoto.
+
+Si JP pide que una RC llegue al actualizador, publicar el tag normal de su core
+con `--latest`, conservando la RC. Reusar EXE/.sig sólo si los bytes y las fuentes
+siguen verificados; generar un manifest con la URL del tag normal sin volver a
+incrementar versión. Comprobar además el endpoint HTTP real del updater, su
+versión, URL, firma y hash. Disponibilidad pública no prueba que otra PC ya lo
+haya instalado. Curar README/guía/notas y recibos del canal elegido.
 
 Cierre compacto: versión/tag, commit/target, artefacto/URL, checks/smoke propios,
 pendientes y límites. Curar delta en track/topic, sin transcript de agentes ni

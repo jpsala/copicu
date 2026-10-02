@@ -1,8 +1,8 @@
 ---
 title: Selector y navegador compartidos de carpetas
 status: closed
-summary: Árbol y metadata incluidos en v0.5.2-rc.1 instalado; diálogo/árbol nativos comprobados, publicación pendiente.
-last_worked: 2026-10-02T20:05:50Z
+summary: Árbol y metadata distribuidos en v0.5.2 normal/latest con el payload instalado y validado de la RC.
+last_worked: 2026-10-02T20:23:49Z
 topics: [shared-folder-controls, picker-interaction]
 ---
 
@@ -20,9 +20,18 @@ El control forma parte del NSIS firmado `v0.5.2-rc.1`, core `0.5.2`, preparado y
 validado localmente. Regresión amplia y artefacto exacto en
 [aceptación de la candidata](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02).
 Actualización local del mismo artefacto comprobada por hash/payload; Computer Use
-confirmó el diálogo de nuevo clip y el árbol selector superpuesto correctamente.
+confirmó el diálogo de nuevo clip, el árbol selector superpuesto correctamente y Cancel sin guardar.
 [Smoke instalado](../../specs/016-shared-clipboard/local-acceptance.md#smoke-instalado-v052-rc1-2026-10-02).
-La publicación GitHub sigue pendiente de evidencia.
+[v0.5.2-rc.1 publicada](https://github.com/jpsala/copicu/releases/tag/v0.5.2-rc.1)
+desde el source/tag inmutable `b8d7d83bdc671f3ef0351b86cc2d3599f95d3481`;
+[Agentic Validation 37059318392](https://github.com/jpsala/copicu/actions/runs/37059318392)
+SUCCESS para esa fuente, con documentación/chunks aprobados.
+[v0.5.2 normal/latest](https://github.com/jpsala/copicu/releases/tag/v0.5.2)
+se publicó después a `2026-10-02T20:22:36Z` desde el mismo commit, con EXE/firma
+idénticos y manifest dirigido al tag normal. El endpoint real latest entrega
+`0.5.2`; tres assets descargados y digests comprobados, sin repetir el smoke ni
+atribuir instalación a otra PC.
+[Recibo de distribución](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
 
 ## Verificación
 
@@ -39,8 +48,7 @@ estas pruebas no acreditan un instalador nuevo.
 
 ## Próximo paso
 
-La implementación local está cerrada; empaquetado/distribución pertenecen al cierre
-de candidata, separado de esta aceptación. Si JP aporta feedback de rapidez,
+La implementación local y distribución v0.5.2 normal/latest están cerradas. Si JP aporta feedback de rapidez,
 exploración o creación, ajustar el componente compartido sin ampliar a un
 administrador general de carpetas. Revalidar la dev y su perfil antes de operar;
 no borrar ni inspeccionar su historial como fixture.

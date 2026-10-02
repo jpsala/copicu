@@ -1,5 +1,53 @@
 # Prueba local: instalada ↔ dev
 
+## Release normal v0.5.2 (2026-10-02)
+
+Origen: JP pidió que las otras PCs recibieran el update, tras comprobar que una
+RC no entraba por el endpoint único del updater `releases/latest/download/latest.json`.
+El coordinador publicó [v0.5.2 normal/latest](https://github.com/jpsala/copicu/releases/tag/v0.5.2)
+a **2026-10-02T20:22:36Z**, release ID `402130186`, `prerelease=false` y
+`draft=false`, desde la misma fuente inmutable
+`b8d7d83bdc671f3ef0351b86cc2d3599f95d3481` validada por
+[Agentic Validation 37059318392](https://github.com/jpsala/copicu/actions/runs/37059318392).
+
+El EXE y `.sig` son idénticos a los de la RC; no hubo recompilación ni cambio de
+trust root. NSIS SHA256
+`23159C9E9119F90251965062BB494DD6816C845C98E73E625AE65DE9069C830E`.
+Sólo se generó el manifest dirigido al instalador del tag normal:
+
+- `latest.json`: **799 bytes**, SHA256
+  `86E02EB757B6DC0C0A98358C291A8A3A1C4073842C088887D1DE468F1C5F5D33`.
+- Versión `0.5.2`, URL [Copicu_0.5.2_x64-setup.exe](https://github.com/jpsala/copicu/releases/download/v0.5.2/Copicu_0.5.2_x64-setup.exe).
+- Endpoint real [latest.json](https://github.com/jpsala/copicu/releases/latest/download/latest.json)
+  comprobado a **2026-10-02T20:23:49Z**: HTTP 200, versión, tamaño, hash y URL
+  coinciden; API `releases/latest` devuelve `v0.5.2` normal y sin draft.
+- Los tres assets descargados coinciden byte a byte con los publicados/verificados.
+  Recibo: `.codex-run/release-v0.5.2/updater-endpoint-verification.json`.
+
+La instalación core `0.5.2` y smoke acreditados abajo sirven para el mismo payload.
+No se repiten ni suman como pruebas nuevas de la promoción. El endpoint acredita
+distribución disponible, no instalación en otra PC ni aceptación remota de sharing.
+Identidad humana, HTTPS/proxy, recovery y aceptación entre dos PCs siguen pendientes.
+La RC conserva su tag y recibos históricos; v0.5.1 quedó como distribución anterior.
+
+## RC publicada v0.5.2-rc.1 (2026-10-02)
+
+El coordinador verificó la [publicación de v0.5.2-rc.1](https://github.com/jpsala/copicu/releases/tag/v0.5.2-rc.1)
+a **2026-10-02T20:16:29Z**. El tag conserva como fuente inmutable el commit
+`b8d7d83bdc671f3ef0351b86cc2d3599f95d3481`, core `0.5.2`. Instalador, firma
+updater y manifest publicados: sus tres digests coinciden con los artefactos
+preparados. SHA256 del NSIS:
+`23159C9E9119F90251965062BB494DD6816C845C98E73E625AE65DE9069C830E`.
+
+[Agentic Validation, run 37059318392](https://github.com/jpsala/copicu/actions/runs/37059318392)
+terminó **SUCCESS**, con documentación y comprobación de chunks aprobadas para
+esa fuente. La instalación y smoke del mismo paquete están en la sección siguiente;
+la comprobación nativa incluyó cancelar el diálogo sin guardar.
+Al publicar la RC, stable/latest del updater seguía en **v0.5.1**; la promoción
+normal a **v0.5.2** y su endpoint se acreditan arriba. Identidad humana, servicio
+HTTPS/proxy, recovery y aceptación entre dos PCs siguen pendientes: la publicación
+de la RC distribuye el cliente local y no acredita esos servicios ni escenarios.
+
 ## Smoke instalado v0.5.2-rc.1 (2026-10-02)
 
 Origen: JP autorizó publicar la RC con commit/push y actualizar la instalación
@@ -21,12 +69,11 @@ Con el exe instalado, **10 casos de publicaciones pasan** en un fixture nuevo:
 Repiten la matriz del payload y no se suman como diez casos distintos nuevos.
 Son IPC real de WebView2 y no implican por sí solos interacción nativa.
 Computer Use del coordinador confirmó por separado el diálogo de nuevo clip y
-el árbol selector de carpetas superpuesto correctamente. Ese recorrido breve
+el árbol selector de carpetas superpuesto correctamente y Cancel sin guardar. Ese recorrido breve
 no acredita nuevas pruebas de publicación nativa, clipboard o paste.
 
-Publicación GitHub y CI de este cierre aún requieren evidencia propia; instalar
-el artefacto local no las acredita. Stable/latest y gates remotos se registran
-por separado del smoke local.
+Publicación GitHub y CI se acreditan en el recibo anterior, por separado del
+smoke local. La instalación coincide byte a byte con el payload del NSIS publicado.
 
 ## Candidata firmada v0.5.2-rc.1 (2026-10-02)
 
@@ -69,10 +116,11 @@ La instalada anterior `51044` se preservó. Son referencias para revalidar, no
 permiso ni garantía de actividad futura; plan local en `.codex-run/sse-restart-plan.json`.
 
 Este checkpoint de preparación no incluyó instalación, commit/push ni publicación.
-JP autorizó después publicar la RC y actualizar la instalación local; sus resultados
-requieren evidencia propia del cierre y no se infieren de este build.
-Notas revisables: [v0.5.2-rc.1](../../docs/releases/v0.5.2-rc.1.md).
-Stable/latest sigue v0.5.1; proveedor humano, servicio remoto, recovery y dos PCs
+JP autorizó después publicar la RC y actualizar la instalación local; los recibos
+de ese cierre están arriba y no se infieren de este build.
+Notas del artefacto publicado: [v0.5.2-rc.1](../../docs/releases/v0.5.2-rc.1.md).
+Al preparar esta RC, stable/latest era v0.5.1; la promoción normal posterior está
+acreditada arriba. Proveedor humano, servicio remoto, recovery y dos PCs
 no están acreditados. La instalada anterior no prueba este NSIS.
 
 ## Aceptación SSE local (2026-10-02)
