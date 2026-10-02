@@ -19,7 +19,11 @@ import {
   useState,
 } from "react";
 import { FolderWorkspace, folderScopeLabel, folderScopeQuery } from "./ui/FolderWorkspace";
+import { SharedClipboardConnect } from "./ui/SharedClipboardConnect";
+import { SharedClipboardLibrary } from "./ui/SharedClipboardLibrary";
+import { SharedConnectionStatus } from "./ui/SharedConnectionStatus";
 import { FolderSidebarLayout } from "./ui/FolderSidebarLayout";
+import { SharedClipboardFeed } from "./ui/SharedClipboardFeed";
 import { createPortal } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import {
@@ -425,6 +429,8 @@ type CreateItemDraft = {
   title: string | null;
   notes: string | null;
   tags: string[];
+  folder?: MetadataSelectionIntent["folder"];
+  metadataPayload: MetadataSelectionPayload;
 };
 
 const CREATE_METADATA_PAYLOAD = {
@@ -1289,6 +1295,9 @@ function App() {
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [rootItemCount, setRootItemCount] = useState<number | null>(null);
   const [folderScope, setFolderScope] = useState<FolderScope>({ kind: "all" });
+  const [sharedConnectScope, setSharedConnectScope] = useState<FolderScope | null>(null);
+  const [sharedLibraryOpen, setSharedLibraryOpen] = useState(false);
+  const [sharedUiRevision,setSharedUiRevision] = useState(0);
   const folderScopeRef = useRef<FolderScope>(folderScope);
   const [captureDestination, setCaptureDestination] = useState<number | null>(null);
   const [captureDestinationArmed, setCaptureDestinationArmed] = useState(false);
@@ -1320,6 +1329,17 @@ function App() {
   const [scenariosLoaded, setScenariosLoaded] = useState(false);
   const [pickerPinned, setPickerPinned] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [sharedFeedOpen, setSharedFeedOpen] = useState(false);
+  const sharedFeedDialogRef = useRef<HTMLDialogElement>(null);
+  const sharedFeedTriggerRef = useRef<HTMLButtonElement>(null);
+  const sharedFeedWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (sharedFeedOpen && sharedFeedDialogRef.current && !sharedFeedDialogRef.current.open) {
+      sharedFeedDialogRef.current.showModal();
+    }
+    if (!sharedFeedOpen && sharedFeedWasOpenRef.current) sharedFeedTriggerRef.current?.focus();
+    sharedFeedWasOpenRef.current = sharedFeedOpen;
+  }, [sharedFeedOpen]);
   const [probeError, setProbeError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -1879,6 +1899,9 @@ function App() {
 
   useEffect(() => {
     selectedItemIdRef.current = selectedItemId;
+    if (isTauriRuntime()) {
+      void invoke("shared_clipboard_set_active_item", { itemId: selectedItemId }).catch(() => {});
+    }
   }, [selectedItemId]);
 
   const focusSearch = useCallback(() => {
@@ -5123,9 +5146,22 @@ function App() {
       title: null,
       notes: null,
       tags: [],
+      metadataPayload: {
+        ...CREATE_METADATA_PAYLOAD,
+        snapshot: {
+          ...CREATE_METADATA_PAYLOAD.snapshot,
+          folder: {
+            state: "same",
+            folderId: captureDestinationArmed ? captureDestination : null,
+            path: captureDestinationArmed && captureDestination !== null
+              ? folders.find((folder) => folder.id === captureDestination)?.path ?? "/"
+              : "/",
+          },
+        },
+      },
     });
     window.setTimeout(() => editTextRef.current?.focus(), 0);
-  }, []);
+  }, [captureDestination, captureDestinationArmed, folders]);
 
   const renderBatchItemActions = useCallback(
     ({
@@ -5328,6 +5364,7 @@ function App() {
           ? nullableTrim(intent.notes.value)
           : null,
         tags: intent.tags.filter((entry) => entry.op === "add").map((entry) => entry.key),
+        folder: intent.folder,
       };
     });
   }, []);
@@ -5339,6 +5376,7 @@ function App() {
       title: createItemDraft.title,
       notes: createItemDraft.notes,
       tags: createItemDraft.tags,
+      folder: createItemDraft.folder,
       mimePrimary: "text/plain",
     };
     try {
@@ -5357,17 +5395,20 @@ function App() {
       selectionInteractionSeqRef.current += 1;
       await refreshHistory({ resetScroll: true, queryOverride: "", allowAi: false });
       await reloadFolders();
-      const existingLocation = result.created ? null : (await getHistoryItem(result.id)).folderId;
+      const existingLocation = (await getHistoryItem(result.id)).folderId;
       const destinationLabel = existingLocation === null
         ? "/"
-        : folders.find((folder) => folder.id === existingLocation)?.path ?? "another folder";
+        : folders.find((folder) => folder.id === existingLocation)?.path
+          ?? (createItemDraft.folder?.op === "create" ? createItemDraft.folder.path : "the selected folder");
       setSelectedItemId(result.id);
       selectionAnchorItemIdRef.current = result.id;
       pushToast({
         title: result.created ? "Item created" : "Item already existed",
         message: result.created
-          ? `Added to ${captureDestinationArmed ? captureDestination === null ? "/" : folders.find((folder) => folder.id === captureDestination)?.path ?? "the capture folder" : "/"}.`
-          : `Existing clip stays in ${destinationLabel}; metadata merged. Capture destination did not move it.`,
+          ? `Added to ${destinationLabel}.`
+          : createItemDraft.folder && createItemDraft.folder.op !== "untouched"
+            ? `Existing clip is in ${destinationLabel}; metadata merged.`
+            : `Existing clip stays in ${destinationLabel}; metadata merged. Capture destination did not move it.`,
         tone: result.created ? "success" : "info",
       });
       focusSearch();
@@ -6837,6 +6878,7 @@ function App() {
               settings={settings.editor}
               metadataPayload={editDraft.metadataPayload}
               availableTags={paletteTags}
+              availableFolders={folders}
               saving={editSaving}
               onChange={(text) => setEditDraft((draft) => draft ? { ...draft, text } : draft)}
               onCancel={() => {
@@ -7499,6 +7541,7 @@ function App() {
             <Radio size={13} aria-hidden="true" />
             <span>Capturing → {captureDestination === null ? "/" : folders.find((folder) => folder.id === captureDestination)?.path ?? "/"}</span>
           </span> : null}
+          <SharedConnectionStatus scope={folderScope} revision={sharedUiRevision} onConnect={() => setSharedConnectScope(folderScope)} onManage={() => setSharedLibraryOpen(true)} />
           {scopeChangePending ? (
             <span className="search-scope-pending" role="status"
               title={historyQuery.trim()
@@ -7715,6 +7758,14 @@ function App() {
               ? " Find has no matches in these results."
               : ""}
         </PickerStatusAnnouncer>
+        <UiButton ref={sharedFeedTriggerRef} type="button" variant="subtle" size="compact-xs" onClick={() => setSharedFeedOpen(true)}>Shared clipboard</UiButton>
+        {sharedFeedOpen ? createPortal(
+          <dialog ref={sharedFeedDialogRef} className="shared-feed-dialog" aria-label="Shared receptions"
+            onCancel={(event) => { event.preventDefault(); setSharedFeedOpen(false); }}
+            onClick={(event) => { if (event.target === event.currentTarget) setSharedFeedOpen(false); }}
+            onKeyDown={(event) => event.stopPropagation()}>
+            <SharedClipboardFeed onClose={() => setSharedFeedOpen(false)} onOpenSettings={() => { setSharedFeedOpen(false); void openSettingsWindow().then(() => emitTo("settings", "copicu://settings/focus-section", "sharing")).catch((error) => setSettingsError(String(error))); }} />
+          </dialog>, document.body) : null}
         </PickerHeader>
         <FolderSidebarLayout preferredWidth={settings.picker.folderSidebarWidth} open={folderTreeOpen} onCommit={saveFolderSidebarWidth}>
         <FolderWorkspace
@@ -7747,7 +7798,10 @@ function App() {
           switcher={folderSwitcherOpen}
           onSwitcherChange={setFolderSwitcherOpen}
           rootItemCount={rootItemCount}
+          onConnectShared={setSharedConnectScope}
         />
+        {sharedConnectScope && <SharedClipboardConnect scope={sharedConnectScope} folders={folders} onClose={() => setSharedConnectScope(null)} onConnected={() => setSharedUiRevision(value=>value+1)} />}
+        {sharedLibraryOpen && <SharedClipboardLibrary onClose={() => {setSharedLibraryOpen(false);setSharedUiRevision(value=>value+1);}} onConnect={() => { setSharedLibraryOpen(false); setSharedConnectScope({ kind: "all" }); }} />}
 
         <PickerFeed>
           <div className="history-reopen-loading" role="status"
@@ -8661,9 +8715,10 @@ function App() {
                 />
               </label>
               <MetadataInspector
-                payload={CREATE_METADATA_PAYLOAD}
+                payload={createItemDraft.metadataPayload}
                 variant="create"
                 availableTags={paletteTags}
+                availableFolders={folders}
                 showFooter={false}
                 onIntentChange={updateCreateMetadata}
                 onCancel={() => {
@@ -9274,7 +9329,9 @@ function unsupportedCapabilities(action: ActionDefinition) {
   if (action.source !== "script") {
     return [];
   }
-  return action.capabilities.filter((capability) => !SUPPORTED_SCRIPT_CAPABILITIES.has(capability));
+  return action.capabilities.filter((capability) => !SUPPORTED_SCRIPT_CAPABILITIES.has(capability)
+    && !["shared:read", "shared:publish"].includes(capability)
+    && !/^shared:(?:publish|receive|forward):[A-Za-z0-9_.:-]+$/.test(capability));
 }
 
 function actionMatchesSelection(action: ActionDefinition, items: HistoryItem[]) {

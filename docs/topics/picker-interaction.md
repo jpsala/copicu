@@ -23,6 +23,8 @@ Referencias de entrada: [spike](../../specs/001-mvp0-native-spike/spec.md), [tas
 
 ## Direccion
 
+El selector de destinos y el árbol reusable comparten el contrato de [controles de carpetas](shared-folder-controls.md); selección y creación en metadata se preparan hasta guardar.
+
 El picker de Copicu debe ser una herramienta local rapida, keyboard-first y preview-first.
 
 La vista principal no debe tratar cada resultado como un item chico con preview separado por defecto. La direccion preferida es un feed/lista de previews: cada entrada muestra directamente el contenido util, con truncado y densidad controlada.

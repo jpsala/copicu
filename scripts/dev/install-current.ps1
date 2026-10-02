@@ -26,7 +26,12 @@ try {
     Start-Sleep -Seconds 1
   }
 
-  $install = Start-Process -FilePath $installer -ArgumentList "/S" -Wait -PassThru
+  $installArguments = @("/S")
+  if (Test-Path -LiteralPath $installedExe) {
+    # NSIS can silently keep an existing binary when reinstalling the same version.
+    $installArguments += "/UPDATE"
+  }
+  $install = Start-Process -FilePath $installer -ArgumentList $installArguments -WindowStyle Hidden -Wait -PassThru
   if ($install.ExitCode -ne 0) {
     throw "Installer exited with code $($install.ExitCode)"
   }

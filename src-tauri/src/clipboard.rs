@@ -359,6 +359,13 @@ impl<R: Runtime> ClipboardHandler for TextClipboardHandler<R> {
             char_count: text_char_count,
         };
         let hash = hash_text(&normalized);
+        #[cfg(feature = "shared-clipboard")]
+        if crate::shared_native::is_remote_write(&hash) {
+            // Shared writes retain remote provenance and bypass ordinary capture
+            // enrichment/Actions as well as folder publication rules.
+            record_self_write(&self.state, hash, probe_result, Some(preview));
+            return;
+        }
         if self.suppression.consume_if_matches(&hash) {
             record_self_write(&self.state, hash, probe_result, Some(preview));
             persistent_log(

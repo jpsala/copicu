@@ -1,6 +1,6 @@
 ---
 title: Clipboard compartido y backup futuro
-summary: "Arquitectura draft de canales compartidos, suscripciones y envío explícito scriptable entre equipos."
+summary: "Contratos del producto local de sharing: acceso histórico, efectos opt-in y sincronización SSE; servicio remoto y dos PCs pendientes."
 keywords:
   - clipboard compartido
   - shared clipboard
@@ -13,42 +13,111 @@ keywords:
 
 # Clipboard compartido y backup futuro
 
-Entrada al diseño, **sin contrato shipping implementado**. JP confirmó Q1 `liveOnly`, Q2 texto plano y Q3 servicio privado. L1/N1 sintéticos y D1 SQLite candidato comprobados; C1/T1 opt-in incorpora cifrado, HPKE, DPAPI y relay HTTP/SQLite con interop real sobre datos nuevos sintéticos. Cinco dependencias aprobadas con «avancemos». Runtime/enrollment humano/watcher/UI/dos PCs siguen abiertos; sin deploy autorizado.
+Runtime, host Windows, UI y SDK están implementados y validados localmente con
+personas/equipos sintéticos; incluye prueba instalada ↔ dev y SSE S1–S6.
+Q1 `liveOnly`, Q2 texto plano y Q3 espacios propios por persona siguen vigentes.
+Identidad humana, recovery E2EE, servicio remoto y aceptación en dos PCs permanecen
+abiertos. Estado de la candidata, próximo paso y evidencia en
+[track 041](../tracks/041-shared-clipboard.md) y
+[aceptación local](../../specs/016-shared-clipboard/local-acceptance.md).
 
-- Producto y decisiones Q1–Q3: `specs/016-shared-clipboard/spec.md`.
-- Arquitectura, APIs tentativas, cifrado y gates técnicos: `specs/016-shared-clipboard/plan.md`.
-- Preflight: `specs/016-shared-clipboard/research.md`. Recomienda evaluar store único para texto, TLS existente, custody DPAPI y candidatos E2EE; registra L1/N1 sin dependencias nuevas y límites de sus tests. No acredita protocolo auditado, writer shipping, persistencia durable ni cuenta cloud.
-- N1/repro: `specs/016-shared-clipboard/n1-native-custody.md`. Correlacionar el writer después de `CloseClipboard`, bajo nueva exclusión con owner/marker/sequence estable. Una window station tiene su propio clipboard: otro desktop/carpeta no lo aísla; Sandbox exige redirección desactivada. HWND/marker públicos no autentican apps hostiles del mismo usuario.
-- Implementación local, checks y comandos de dependencias aprobados: `specs/016-shared-clipboard/local-implementation.md`. Distingue tests de bytes opacos del recorrido criptográfico real; el SQL candidato no se ejecuta sobre perfiles existentes ni autoriza efectos nativos.
-- Estado/próximo paso y permisos: `docs/tracks/041-shared-clipboard.md`.
+La capacidad se compila por defecto, pero sharing sigue apagado en un perfil
+sin configurar: no inicializa tablas auxiliares ni transporte de sharing ni
+publica sus copias. Una conexión explícita determina el flujo; Windows y Actions
+mantienen opt-ins propios. El corte está incluido en el NSIS firmado
+`v0.5.2-rc.1`, core `0.5.2`; estado de publicación/instalación en el track y
+[evidencia del artefacto](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02).
 
-Primer objetivo: Trabajo ↔ Casa, copiar y publicar por atajo/script; suscripción local configurable que puede actualizar Windows. Publicar no significa compartir todas las copias locales; recibir no significa pegar ni enfocar ventanas.
+## Identidades, conexiones y efectos
 
-Backup puede reutilizar identidad/custody/almacenamiento, pero no la retención/replay del canal. Drive, imágenes, publicación automática por carpeta/tag y biblioteca mutable no se consideran implementados ni aprobados por esta propuesta.
+- Recurso compartido, carpeta local y clip deduplicado tienen identidades distintas.
+  Publicaciones son inmutables; reintentos del host conservan su ID. Renombrar una
+  carpeta o recurso no cambia el destino configurado.
+- Una conexión explícita puede enviar, recibir o ambas desde una carpeta exacta,
+  Root o All history. El scope general se elige en Settings: Todo Copicu o Sólo
+  textos sin carpeta. El envío general admite ingresos locales nuevos al perfil;
+  mover un clip existente no crea ese ingreso. Una conexión de carpeta exacta con
+  envío habilitado sí publica entradas locales efectivas por movimiento al destino,
+  además de las capturas/creaciones nuevas. No incluye descendientes. El
+  solapamiento general/carpeta al mismo canal se admite una vez por ingreso.
+- Conectar, habilitar o reanudar no publica/importa el contenido previo. Consultar
+  historial autorizado no conecta, importa, escribe Windows ni ejecuta Actions.
+  Guardar o copiar una publicación constituye una intención separada.
+  Mover al mismo destino, recapturar un duplicado sin ingreso nuevo o editar
+  contenido/metadata por sí solo no publica. Un movimiento de origen remoto
+  tampoco publica, aunque entre a una carpeta emisora.
+- Recepción, guardado local, escritor built-in de Windows y Action de recepción
+  tienen controles independientes. Los efectos requieren opt-in; sólo un escritor
+  automático por perfil. `liveOnly` excluye recuperaciones/replay y el intervalo
+  pausado de los efectos automáticos. Una copia local, pausa, expiración o cambio
+  de generación invalida la escritura pendiente.
+- Origen remoto se conserva aunque se transforme, guarde o copie: no dispara
+  republicación automática. Forwarding exige grants explícitos y admite un solo
+  salto firmado; no hay routing ilimitado ni ejecución remota de scripts.
 
-Contratos existentes que deben preservarse: `docs/topics/actions-and-scripting-api.md`, `docs/topics/clipboard.md`, `docs/topics/sqlite-storage.md` y `specs/014-folders/spec.md`.
+Invitaciones, aceptación y aprobación validan cada equipo y transfieren paquetes
+HPKE. Acceso al historial anterior requiere permiso y claves del rango/epoch
+concedido; autenticar a una persona o conocer un cursor no concede ese acceso.
+Agregar lectores sin historial requiere epoch nuevo. Revocación bloquea grants
+antes de rotar y no borra contenido que ya se descargó. Si falta una clave, la
+recepción queda pendiente visible, sin tratarla como texto vacío ni llegada live.
+Claves y bearer permanecen en host/custodia DPAPI, fuera del renderer y del runner.
+
+Actions expone destino configurado (`target`/`publish`), estado local (`state`),
+historial paginado con scope de contenido (`history`) y recepción inmutable
+(`received`). Enviar confirma admisión local de cola, no recepción en otro equipo;
+la consulta de estado no transforma una observación local en ACK remoto.
+Contrato y scopes en [Actions](actions-and-scripting-api.md).
+
+## Sincronización SSE
+
+HTTP confirma cambios; el backend guarda estado, resultado idempotente y eventos
+mínimos en la misma transacción; SSE despierta reconciliación por cursor/snapshot.
+El listener vive por perfil, independiente de ventanas. La UI recibe invalidaciones
+saneadas y Library, selector y Settings actualizan sin perder borradores, selección
+o foco. Retiro conserva la conexión y copias locales y bloquea controles del recurso.
+
+El cursor de control se liga a persona/entorno/generación y se persiste después de
+aplicar el snapshot autorizado. Es independiente de delivery, historia y Windows.
+Snapshots tardíos de otra identidad/pausa no restauran config/grants/cursor.
+Denied cancela el stream y revoca acceso sin fallback; unsupported reconcilia a
+baja frecuencia. Replay revalida acceso y no expone metadata retirada.
+
+Los hints mínimos de head sólo despiertan el sync V1: no invalidan catálogo ni
+avanzan control water. El sync existente revalida contenido, acceso, leases y
+fences. Ticks de outbox/retención/fallback, receipts, `liveOnly` y opt-ins se
+conservan. Reducir polling requiere medición y regresiones propias.
+Contrato y matriz en [sse-sync-plan.md](../../specs/016-shared-clipboard/sse-sync-plan.md);
+cierre local en [aceptación SSE](../../specs/016-shared-clipboard/local-acceptance.md#aceptacion-sse-local-2026-10-02).
+
+## Fuentes y límites
+
+- [Spec](../../specs/016-shared-clipboard/spec.md) y
+  [plan](../../specs/016-shared-clipboard/plan.md): requisitos, arquitectura,
+  APIs vigentes, defaults concretados para el fixture y propuestas remotas.
+- [Implementación local](../../specs/016-shared-clipboard/local-implementation.md):
+  runtime, SQL, HTTP/cifrado y contratos de integración; conserva aprobación
+  específica de dependencias y límites históricos sin transferir permisos.
+- [N1](../../specs/016-shared-clipboard/n1-native-custody.md): matrices sintéticas
+  nativas/custodia. Correlacionar el writer después de `CloseClipboard`, bajo
+  nueva exclusión con owner/marker/sequence estable. Una window station tiene
+  su propio clipboard; otro desktop/carpeta no lo aísla. HWND/marker públicos
+  no autentican apps hostiles del mismo usuario.
+- [Actions](actions-and-scripting-api.md): grants de envío/recepción/historia,
+  consulta local de estado y límites del runner de confianza.
+- [Preflight](../../specs/016-shared-clipboard/research.md): procedencia de las
+  evaluaciones iniciales; no es el estado actual de implementación o distribución.
+
+El primer objetivo sigue siendo Trabajo ↔ Casa, sin compartir indiscriminadamente
+el historial ni pegar/enfocar ventanas por recibir. Backup puede reutilizar
+identidad/custodia/almacenamiento, pero necesita retención y recuperación propias.
+Drive, imágenes/HTML, publicación automática por tags y sincronización de
+ediciones/borrados/carpetas quedan fuera de este corte. Compartir por carpeta
+exacta sí pertenece al producto local implementado.
 
 ## Procedencia documental
 
-Metadata importada del principal el 2026-10-01; propuesta draft conservada en el cuerpo, sin nueva aceptación de producto ni permisos históricos transferidos. Referencias originales preservadas:
-
-```yaml
-id: shared-clipboard
-status: draft
-kind: decision-map
-summary: Arquitectura draft de canales compartidos, suscripciones y envío explícito scriptable entre equipos.
-triggers:
-  - clipboard compartido
-  - shared clipboard
-  - portapapeles compartido
-  - cloud clipboard
-  - suscripciones
-  - sincronizacion entre equipos
-  - backup cloud
-primary_refs:
-  - specs/016-shared-clipboard/spec.md
-  - specs/016-shared-clipboard/plan.md
-  - specs/016-shared-clipboard/research.md
-  - specs/016-shared-clipboard/local-implementation.md
-  - docs/tracks/041-shared-clipboard.md
-```
+Entrada importada del principal el 2026-10-01; propuesta inicial conservada en
+spec/plan/preflight. Actualizada al contrato local del 2026-10-02. Pruebas locales,
+resultados nativos, servicio remoto y artefactos de release tienen evidencias
+separadas; documentos y autorizaciones históricas no conceden permisos actuales.

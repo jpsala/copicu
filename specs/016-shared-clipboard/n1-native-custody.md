@@ -1,6 +1,6 @@
 # N1 nativo/custody: matrices A/B/C completas en harness
 
-Actualizado: 2026-10-01. **N1-A/B/C completos para las matrices sintéticas del harness: 15 Pure, 11 Clipboard y 6 Custody pasan.** JP autorizó después de N1-A orquestar la alternativa Windows Sandbox y tomar las decisiones técnicas sin supervisión; el permiso de este encargo incluye preparar, ejecutar y cerrar los guests propios con red/clipboard compartido desactivados. Resultado y repro Sandbox al final. Base: [research](research.md), [plan §5–7 y §9](plan.md), [estado/ownership](../../docs/tracks/041-shared-clipboard.md). Q1 `liveOnly`, Q2 texto plano y Q3 servicio privado siguen confirmadas. N1 no acredita integración shipping, E2EE ni entrega entre PCs; N1-A por sí solo nunca autorizó B/C.
+Actualizado: 2026-10-01. **N1-A/B/C completos para las matrices sintéticas del harness: 15 Pure, 11 Clipboard y 6 Custody pasan.** JP autorizó después de N1-A orquestar la alternativa Windows Sandbox y tomar las decisiones técnicas sin supervisión; el permiso de aquel encargo incluyó preparar, ejecutar y cerrar los guests propios con red/clipboard compartido desactivados. Resultado y repro Sandbox al final. Base: [research](research.md), [plan §5–7 y §9](plan.md), [estado/ownership](../../docs/tracks/041-shared-clipboard.md). Q1 `liveOnly` y Q2 texto plano se conservan; Q3 servicio privado describe ese corte y fue sustituida por espacios personales el 2026-10-02, según la [spec vigente](spec.md#decisiones-de-alcance-confirmadas-por-jp). N1 no acredita integración shipping, E2EE ni entrega entre PCs; N1-A por sí solo nunca autorizó B/C ni sus permisos se transfieren a nuevos runs.
 
 ## Resultado y frontera
 
@@ -12,14 +12,14 @@ L1 permanece tal como está: modelo puro incluido sólo bajo `cfg(test)` y 25 te
 
 | Archivo | Cambio delimitado |
 | --- | --- |
-| `src-tauri/src/bin/shared_clipboard_n1.rs` | Binario standalone; sin `copicu_lib::run`. Modos explícitos y sin operación por defecto; supervisor de sus propios helpers. |
+| `src-tauri/examples/shared_clipboard_n1.rs` | Binario standalone; sin `copicu_lib::run`. Modos explícitos y sin operación por defecto; supervisor de sus propios helpers. |
 | `src-tauri/src/shared_clipboard/n1/mod.rs` | Dispatch del harness y tests `n1_pure`; incluye el modelo L1 sin modificarlo. Ningún test ordinario llama Win32/DPAPI. |
 | `src-tauri/src/shared_clipboard/n1/clipboard.rs` | Owner oculto con message loop, reader/writer, observer nativo y fixtures producer/busy/delayed; checkpoints para carreras. |
 | `src-tauri/src/shared_clipboard/n1/custody.rs` | Protect/unprotect de buffers y binding protegido de fixtures; referencias opacas, sin Settings/JSON de secretos. |
 | `tests/manual/run-shared-clipboard-n1.ps1` | Wrapper focalizado: bootstrap GNU, offline/locked, permisos explícitos, directorios nuevos y cierre de recursos propios. No invoca el runner de suite completa. |
 | `src-tauri/Cargo.toml` | Binario con `required-features = ["shared-clipboard-n1"]`; feature vacía por defecto, flags de `windows` abajo. |
 
-Edición manual **autorizada/aplicada**: `[features]` con `shared-clipboard-n1 = ["windows/Win32_Graphics_Gdi", "windows/Win32_Security_Cryptography", "windows/Win32_System_JobObjects"]` y el `[[bin]]` anterior. Features actuales y versión `windows 0.62.2` preservadas; sin crates nuevos, HTTP/TLS/crypto E2EE ni `cargo add`. Gdi habilita la clase del owner, Cryptography DPAPI/CSPRNG y JobObjects contiene los procesos sintéticos bloqueables. Bindings compilados en Check/Build; futuras features/crates requieren presentar el delta antes de añadirlos.
+Edición manual **autorizada/aplicada**: `[features]` con `shared-clipboard-n1 = ["windows/Win32_Graphics_Gdi", "windows/Win32_Security_Cryptography", "windows/Win32_System_JobObjects"]` y el target opt-in anterior. Features actuales y versión `windows 0.62.2` preservadas; sin crates nuevos, HTTP/TLS/crypto E2EE ni `cargo add`. Gdi habilita la clase del owner, Cryptography DPAPI/CSPRNG y JobObjects contiene los procesos sintéticos bloqueables. Bindings compilados en Check/Build; futuras features/crates requieren presentar el delta antes de añadirlos.
 
 `Cargo.lock` se exige intacto con `--locked`; si la resolución requiere modificarlo o falta cache, informar y pedir otro permiso. No descargar. No editar `lib.rs`, `build.rs`, `package.json`, código L1, frontend, migraciones, `AGENTS.md` ni `evidencia/`. El wiring opt-in no cambia la app instalada ni requiere arrancar/reiniciar app/dev.
 
@@ -57,10 +57,10 @@ El wrapper fijará `CARGO_TARGET_DIR=C:/dev/copicu/src-tauri/target-codex-n1` s�
 Operaciones Cargo exactas previstas dentro de ese entorno:
 
 ```text
-cargo check --manifest-path src-tauri/Cargo.toml --offline --locked --bin shared-clipboard-n1 --features shared-clipboard-n1
-cargo build --manifest-path src-tauri/Cargo.toml --offline --locked --bin shared-clipboard-n1 --features shared-clipboard-n1
-cargo test --manifest-path src-tauri/Cargo.toml --offline --locked --bin shared-clipboard-n1 --features shared-clipboard-n1 n1_pure -- --list
-cargo test --manifest-path src-tauri/Cargo.toml --offline --locked --bin shared-clipboard-n1 --features shared-clipboard-n1 n1_pure -- --test-threads=1
+cargo check --manifest-path src-tauri/Cargo.toml --offline --locked --example shared-clipboard-n1 --features shared-clipboard-n1
+cargo build --manifest-path src-tauri/Cargo.toml --offline --locked --example shared-clipboard-n1 --features shared-clipboard-n1
+cargo test --manifest-path src-tauri/Cargo.toml --offline --locked --example shared-clipboard-n1 --features shared-clipboard-n1 n1_pure -- --list
+cargo test --manifest-path src-tauri/Cargo.toml --offline --locked --example shared-clipboard-n1 --features shared-clipboard-n1 n1_pure -- --test-threads=1
 ```
 
 Check/Build no ejecutan el harness; Cargo sí ejecuta build scripts locales/cacheados. Pure enumera primero, exige selección no vacía y reporta nombres/cantidad. B/C ejecutan el `.exe` construido en `target-codex-n1/debug` con modo y permiso equivalentes; sin `cargo run`, arranque Tauri, suite completa ni rerun automático. CLI sin permiso, argumentos inválidos o modo ausente falla **antes** de crear HWND, leer sequence, abrir clipboard o generar secretos.
@@ -112,7 +112,7 @@ N1 se acepta por matriz, sin ocultar casos pendientes. B requiere resultados Win
 
 ## Evidencia N1-A y siguiente permiso
 
-JP aprobó **únicamente N1-A** en respuesta a la solicitud concreta de este dossier. Ejecución directa en el checkout actual, sin nuevos agentes. [Binario](../../src-tauri/src/bin/shared_clipboard_n1.rs), [dispatch/tests](../../src-tauri/src/shared_clipboard/n1/mod.rs), [clipboard/supervisor](../../src-tauri/src/shared_clipboard/n1/clipboard.rs), [custody](../../src-tauri/src/shared_clipboard/n1/custody.rs) y [wrapper](../../tests/manual/run-shared-clipboard-n1.ps1) implementados dentro de la frontera aprobada. `lib.rs`, fuentes L1 y Cargo.lock preservados; nueva feature sólo opt-in, sin inicialización shared en la app ni necesidad de relanzar app/dev.
+JP aprobó **únicamente N1-A** en respuesta a la solicitud concreta de este dossier. Ejecución directa en el checkout actual, sin nuevos agentes. [Binario](../../src-tauri/examples/shared_clipboard_n1.rs), [dispatch/tests](../../src-tauri/src/shared_clipboard/n1/mod.rs), [clipboard/supervisor](../../src-tauri/src/shared_clipboard/n1/clipboard.rs), [custody](../../src-tauri/src/shared_clipboard/n1/custody.rs) y [wrapper](../../tests/manual/run-shared-clipboard-n1.ps1) implementados dentro de la frontera aprobada. `lib.rs`, fuentes L1 y Cargo.lock preservados; nueva feature sólo opt-in, sin inicialización shared en la app ni necesidad de relanzar app/dev.
 
 Checks propios: wrapper Check y Build offline/locked pasan en Rust 1.89.0 Windows GNU, target dedicado y bootstrap sólo en proceso hijo. Pure enumera y ejecuta **15 passed / 0 failed / 0 ignored / 25 filtered out**; los 25 L1 se compilan dentro del harness pero no se ejecutan por este filtro. Fixtures públicos deterministas en memoria, sin random secreto ni DPAPI/Win32. Rutas nativas están bajo `cfg(all(windows, not(test)))`: Pure no puede ejecutar ese backend incluso con flags válidos. Rustfmt focalizado y parser PowerShell pasan. No suite completa ni smoke Windows.
 
@@ -120,7 +120,7 @@ N1-A no ejecutó HWND/clipboard/Job helpers/DPAPI ni creó blobs/secretos/raíce
 
 ## Ejecución Sandbox comprobada (2026-10-01)
 
-Destino elegido bajo la delegación de JP: Windows Sandbox ya habilitado en este host Windows Pro build 26200, `wsb 0.8.107.0`. Dos scouts read-only revisaron paquete/fronteras y CLI; el coordinador escribió/ejecutó y contrastó resultados. [Track](../../docs/tracks/041-shared-clipboard.md#resultado-n1-bc-en-windows-sandbox-2026-10-01) conserva IDs de los dos guests propios y permisos del encargo.
+Destino elegido bajo la delegación de JP: Windows Sandbox ya habilitado en este host Windows Pro build 26200, `wsb 0.8.107.0`. Dos scouts read-only revisaron paquete/fronteras y CLI; el coordinador escribió/ejecutó y contrastó resultados. [Track](../../docs/tracks/041-shared-clipboard.md#resultado-n1-bc-en-windows-sandbox-2026-10-01) conserva el resultado y límites del corte; permisos y aislamiento de la ejecución se delimitan aquí, sin habilitar un rerun.
 
 - Paquete mínimo: exe existente (imports sólo DLL Windows/API sets), wrapper nativo, [runner guest](../../tests/manual/shared-clipboard-n1-sandbox-guest.ps1) y manifest SHA256. No Cargo, Rust, Node, fuente de producto, perfiles ni credenciales dentro del guest. La copia interna reproduce `C:/dev/copicu` porque el exe usa `CARGO_MANIFEST_DIR` compilado para el boundary de datos.
 - Config `.wsb`: `Networking`, `ClipboardRedirection`, `VGpu`, `AudioInput`, `VideoInput`, `PrinterRedirection` = `Disable`; sólo paquete de entrada mapeado `C:/N1Input`, `ReadOnly=true`. Comprobación guest de WDAGUtilityAccount, hashes, rechazo de escritura y ausencia de adapter Up antes de las matrices. `RemoteSigned` sólo en los procesos guest que ejecutan scripts locales; no política global.

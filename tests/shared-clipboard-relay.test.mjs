@@ -273,6 +273,6 @@ test("device and grant quotas rollback provisioning and preserve owner identitie
 }, { limits: { devices: 2, grants: 2 } }));
 
 test("quota defaults are explicit and invalid overrides fail before serving", async () => fixture(async (f) => {
-  expect(DEFAULT_LIMITS).toEqual({ publicationsPerChannel: 4096, payloadBytesPerChannel: 67108864, pendingLeases: 1024, reportsPerChannel: 16384, devices: 256, grants: 4096 });
+  expect(DEFAULT_LIMITS).toEqual({ publicationsPerChannel: 4096, payloadBytesPerChannel: 67108864, pendingLeases: 1024, reportsPerChannel: 16384, devices: 256, grants: 4096, controlEventsPerPerson: 1024 });
   for (const limits of [{ devices: 0 }, { pendingLeases: 1.5 }, { grants: Number.MAX_SAFE_INTEGER + 1 }, { unknown: 1 }]) expect(() => createRelay({ ...f.config, limits })).toThrow("invalid relay limits");
 }));

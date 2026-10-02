@@ -8,6 +8,34 @@ mod assistant_database;
 #[cfg(not(test))]
 mod assistant_operations;
 mod clipboard;
+#[cfg(feature = "shared-clipboard")]
+pub mod shared_native;
+#[cfg(all(feature = "shared-clipboard", feature = "shared-clipboard-n1"))]
+pub mod shared_product_fixture;
+
+pub(crate) fn shared_clipboard_sequence() -> Option<u32> {
+    #[cfg(feature = "shared-clipboard")]
+    { shared_native::sequence() }
+    #[cfg(not(feature = "shared-clipboard"))]
+    { None }
+}
+
+pub(crate) fn shared_snapshot_text(expected: u32) -> Result<String, String> {
+    #[cfg(feature = "shared-clipboard")]
+    { shared_native::snapshot(expected) }
+    #[cfg(not(feature = "shared-clipboard"))]
+    { let _ = expected; Err("Sharing is not available in this build".into()) }
+}
+
+static SHARED_ACTIVE_ITEM: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+#[tauri::command]
+#[cfg(not(test))]
+fn shared_clipboard_set_active_item(window: tauri::WebviewWindow, item_id: Option<i64>) -> Result<(), String> {
+    if window.label() != MAIN_WINDOW_LABEL { return Err("Only the picker can set its active item".into()); }
+    SHARED_ACTIVE_ITEM.store(item_id.filter(|id| *id > 0).unwrap_or(0), std::sync::atomic::Ordering::Release);
+    Ok(())
+}
 mod clipboard_probe;
 mod diagnostics;
 mod enrichment;
@@ -21,6 +49,10 @@ mod paste_queue;
 mod picker_session;
 mod scenario;
 mod script_editor;
+#[cfg(not(test))]
+mod shared_host;
+#[cfg(not(test))]
+mod shared_product_host;
 // Shared runtime is opt-in; normal builds do not initialize sharing.
 #[cfg(any(test, feature = "shared-clipboard"))]
 #[allow(dead_code)] // Candidate APIs are exercised by tests, not app startup.
@@ -122,6 +154,14 @@ const TRAY_EDIT_SCRIPTS_ID: &str = "edit-scripts";
 const TRAY_ASSISTANT_ID: &str = "assistant";
 #[cfg(not(test))]
 const TRAY_PAUSE_CAPTURE_ID: &str = "pause-capture";
+#[cfg(not(test))]
+const TRAY_PAUSE_SHARING_ID: &str = "pause-sharing";
+#[cfg(not(test))]
+const TRAY_PAUSE_SHARED_SEND_ID: &str = "pause-shared-send";
+#[cfg(not(test))]
+const TRAY_PAUSE_SHARED_RECEIVE_ID: &str = "pause-shared-receive";
+#[cfg(not(test))]
+const TRAY_RESUME_SHARED_ID: &str = "resume-shared-flows";
 #[cfg(not(test))]
 const TRAY_QUIT_ID: &str = "quit";
 #[cfg(not(test))]
@@ -2278,7 +2318,7 @@ async fn apply_metadata_selection_intent(
 #[cfg(not(test))]
 #[tauri::command]
 fn list_folders(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::FolderSummary>, String> {
-    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "list_folders")?;
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL, SETTINGS_WINDOW_LABEL], "list_folders")?;
     storage.list_folders()
 }
 #[cfg(not(test))]
@@ -2290,23 +2330,40 @@ fn root_item_count(window: tauri::WebviewWindow, storage: State<'_, storage::App
 
 #[cfg(not(test))]
 #[tauri::command]
-fn create_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, parent_id: Option<i64>, name: String) -> Result<storage::FolderSummary, String> {
+fn create_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, parent_id: Option<i64>, name: String) -> Result<storage::FolderSummary, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_folder")?;
-    storage.create_folder(parent_id, &name)
+    let folder = storage.create_folder(parent_id, &name)?;
+    let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
+    Ok(folder)
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn rename_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64, name: String) -> Result<storage::FolderSummary, String> {
+fn create_folder_path(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, path: String) -> Result<storage::FolderSummary, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "create_folder_path")?;
+    let folder = storage.create_folder_path(&path)?;
+    if let Err(error) = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true })) {
+        eprintln!("folder creation emit failed: {error}");
+    }
+    Ok(folder)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn rename_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, id: i64, name: String) -> Result<storage::FolderSummary, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "rename_folder")?;
-    storage.rename_folder(id, &name)
+    let folder = storage.rename_folder(id, &name)?;
+    let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
+    Ok(folder)
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn move_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64, parent_id: Option<i64>) -> Result<storage::FolderSummary, String> {
+fn move_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, id: i64, parent_id: Option<i64>) -> Result<storage::FolderSummary, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "move_folder")?;
-    storage.move_folder(id, parent_id)
+    let folder = storage.move_folder(id, parent_id)?;
+    let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
+    Ok(folder)
 }
 
 #[cfg(not(test))]
@@ -2318,16 +2375,23 @@ fn folder_delete_preview(window: tauri::WebviewWindow, storage: State<'_, storag
 
 #[cfg(not(test))]
 #[tauri::command]
-fn delete_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, id: i64, delete_clips: bool, delete_descendants: bool) -> Result<storage::FolderDeletePreview, String> {
+fn delete_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, id: i64, delete_clips: bool, delete_descendants: bool) -> Result<storage::FolderDeletePreview, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "delete_folder")?;
-    storage.delete_folder(id, delete_clips, delete_descendants)
+    let preview = storage.delete_folder(id, delete_clips, delete_descendants)?;
+    let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
+    Ok(preview)
 }
 
 #[cfg(not(test))]
 #[tauri::command]
-fn move_history_items_to_folder(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, item_ids: Vec<i64>, folder_id: Option<i64>) -> Result<usize, String> {
+fn move_history_items_to_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, item_ids: Vec<i64>, folder_id: Option<i64>, folder_path: Option<String>) -> Result<usize, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "move_history_items_to_folder")?;
-    storage.move_history_items_to_folder(item_ids, folder_id)
+    let changed = match folder_path {
+        Some(path) => storage.move_history_items_to_folder_path(item_ids, &path)?,
+        None => storage.move_history_items_to_folder(item_ids, folder_id)?,
+    };
+    let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
+    Ok(changed)
 }
 
 #[cfg(not(test))]
@@ -3927,6 +3991,27 @@ pub fn run() {
                 }
             }
             TRAY_QUIT_ID => app.exit(0),
+            TRAY_PAUSE_SHARING_ID => {
+                let app = app.clone();
+                thread::spawn(move || {
+                    let storage = app.state::<storage::AppStorage>();
+                    let message = match shared_host::set_paused(&storage, true) {
+                        Ok(_) => "Shared clipboard paused. Resume in Settings → Sharing.".to_string(),
+                        Err(error) => error,
+                    };
+                    emit_toast_on_main_thread(app.clone(), actions::ActionToast { title: Some("Sharing".into()), message, tone: actions::ToastTone::Info, duration_ms: Some(4500) }, "tray sharing pause");
+                });
+            }
+            TRAY_PAUSE_SHARED_SEND_ID | TRAY_PAUSE_SHARED_RECEIVE_ID | TRAY_RESUME_SHARED_ID => {
+                let app = app.clone();
+                let id = event.id().as_ref().to_owned();
+                thread::spawn(move || {
+                    let storage = app.state::<storage::AppStorage>();
+                    let (send,receive) = match id.as_str() { TRAY_PAUSE_SHARED_SEND_ID => (Some(true),None), TRAY_PAUSE_SHARED_RECEIVE_ID => (None,Some(true)), _ => (Some(false),Some(false)) };
+                    let message = match shared_host::set_device_flow_paused(&storage,send,receive) { Ok(_) => "Device sharing pause updated. Individual clipboard pauses remain in effect.".to_owned(), Err(e) => e };
+                    emit_toast_on_main_thread(app.clone(),actions::ActionToast{title:Some("Sharing".into()),message,tone:actions::ToastTone::Info,duration_ms:Some(4500)},"tray sharing flow");
+                });
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -3941,6 +4026,22 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            shared_clipboard_set_active_item,
+            shared_host::shared_clipboard_status,
+            shared_host::shared_clipboard_preview_enrollment,
+            shared_host::shared_clipboard_configure,
+            shared_host::shared_clipboard_update_channel,
+            shared_host::shared_clipboard_set_paused,
+            shared_host::shared_clipboard_set_hotkeys,
+            shared_host::shared_clipboard_receipt_text,
+            shared_host::shared_clipboard_copy_receipt,
+            shared_product_host::shared_clipboard_catalog,
+            shared_product_host::shared_clipboard_operation,
+            shared_product_host::shared_clipboard_connection,
+            shared_product_host::shared_clipboard_history,
+            shared_product_host::shared_clipboard_publish,
+            shared_product_host::shared_clipboard_history_action,
+            shared_product_host::shared_clipboard_action_target,
             open_assistant_window,
             assistant_quick_prompt,
             assistant::assistant_update_context,
@@ -4013,6 +4114,7 @@ pub fn run() {
             list_folders,
             root_item_count,
             create_folder,
+            create_folder_path,
             rename_folder,
             move_folder,
             folder_delete_preview,
@@ -4141,6 +4243,8 @@ pub fn run() {
             app.manage(active_scenario.clone());
             let previous_window = window_focus::PreviousWindow::default();
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                #[cfg(all(feature = "shared-clipboard", windows))]
+                if let Ok(handle) = window.hwnd() { shared_native::set_owner_window(handle.0 as isize); }
                 if let Err(error) = initialize_picker_window(&window) {
                     eprintln!("picker window configuration failed: {error}");
                 }
@@ -4184,10 +4288,15 @@ pub fn run() {
                 spawn_prewarm_metadata_window(app.handle().clone());
             }
             spawn_script_action_refresh(app.handle().clone(), storage);
+            shared_host::start(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Copicu");
+        .build(tauri::generate_context!())
+        .expect("error while building Copicu")
+        .run(|_, event| {
+            #[cfg(feature = "shared-clipboard")]
+            if matches!(event, tauri::RunEvent::Exit) { shared_clipboard::control_sync::stop(); }
+        });
 }
 
 #[cfg(not(test))]
@@ -4704,6 +4813,10 @@ fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> ta
         Some(ASSISTANT_SHORTCUT_LABEL),
     )?;
     let quit = MenuItem::with_id(app, TRAY_QUIT_ID, "Quit", true, None::<&str>)?;
+    let pause_sharing = MenuItem::with_id(app, TRAY_PAUSE_SHARING_ID, "Pause shared clipboard", cfg!(feature = "shared-clipboard"), None::<&str>)?;
+    let pause_shared_send = MenuItem::with_id(app, TRAY_PAUSE_SHARED_SEND_ID, "Pause shared sending on this device", cfg!(feature = "shared-clipboard"), None::<&str>)?;
+    let pause_shared_receive = MenuItem::with_id(app, TRAY_PAUSE_SHARED_RECEIVE_ID, "Pause shared reception on this device", cfg!(feature = "shared-clipboard"), None::<&str>)?;
+    let resume_shared = MenuItem::with_id(app, TRAY_RESUME_SHARED_ID, "Resume both directions on this device", cfg!(feature = "shared-clipboard"), None::<&str>)?;
     let primary_separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
@@ -4712,6 +4825,10 @@ fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> ta
             &settings,
             &assistant,
             &pause_capture,
+            &pause_sharing,
+            &pause_shared_send,
+            &pause_shared_receive,
+            &resume_shared,
             &edit_scripts,
             &primary_separator,
             &quit,
@@ -5721,8 +5838,10 @@ fn handle_global_shortcut<R: tauri::Runtime + 'static>(
         return;
     };
 
+    let clipboard_sequence = shared_clipboard_sequence();
+    let active_item = SHARED_ACTIVE_ITEM.load(std::sync::atomic::Ordering::Acquire);
     let app = app.clone();
-    thread::spawn(move || run_global_script_shortcut(app, shortcut_action));
+    thread::spawn(move || run_global_script_shortcut_with_sequence(app, shortcut_action, clipboard_sequence, (active_item > 0).then_some(active_item)));
 }
 
 #[cfg(not(test))]
@@ -6121,7 +6240,7 @@ fn refresh_global_shortcuts<R: tauri::Runtime>(
     let mut compound_registry = hotkeys::ShortcutRegistry::default();
     let mut compound_prefixes = HashMap::new();
     for action in actions {
-        if action.source != actions::ActionSource::Script
+        if (action.source != actions::ActionSource::Script && !matches!(action.id.as_str(), "builtin.sharedSendActive" | "builtin.sharedSendClipboard"))
             || !action.triggers.contains(&actions::Trigger::GlobalShortcut)
             || action
                 .diagnostics
@@ -6834,6 +6953,18 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     shortcut_action: GlobalScriptShortcutAction,
 ) {
+    let clipboard_sequence = shared_clipboard_sequence();
+    let active_item = SHARED_ACTIVE_ITEM.load(std::sync::atomic::Ordering::Acquire);
+    run_global_script_shortcut_with_sequence(app, shortcut_action, clipboard_sequence, (active_item > 0).then_some(active_item));
+}
+
+#[cfg(not(test))]
+fn run_global_script_shortcut_with_sequence<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    shortcut_action: GlobalScriptShortcutAction,
+    clipboard_sequence: Option<u32>,
+    active_item: Option<i64>,
+) {
     let storage = app.state::<storage::AppStorage>().inner().clone();
     let suppression = app
         .state::<clipboard::SelfWriteSuppression>()
@@ -6841,7 +6972,9 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
         .clone();
     let previous_window = app.state::<window_focus::PreviousWindow>().inner().clone();
     let window = app.get_webview_window(MAIN_WINDOW_LABEL);
-    let current_item_id = if shortcut_action.selection == actions::SelectionRequirement::Active {
+    let current_item_id = if shortcut_action.action_id == "builtin.sharedSendActive" {
+        active_item
+    } else if shortcut_action.selection == actions::SelectionRequirement::Active {
         match storage.list_recent() {
             Ok(items) => items.first().map(|item| item.id()),
             Err(error) => {
@@ -6855,7 +6988,7 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
     } else {
         None
     };
-    let result = actions::run_action(
+    let result = actions::run_action_with_clipboard_sequence(
         &app,
         window.as_ref(),
         &storage,
@@ -6871,6 +7004,7 @@ fn run_global_script_shortcut<R: tauri::Runtime>(
                 view: None,
             },
         },
+        clipboard_sequence,
     );
 
     eprintln!(

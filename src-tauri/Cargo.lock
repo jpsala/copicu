@@ -628,7 +628,7 @@ dependencies = [
 
 [[package]]
 name = "copicu"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "base64 0.22.1",
  "caseless",
@@ -641,6 +641,7 @@ dependencies = [
  "rusqlite",
  "rusqlite_migration",
  "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha2 0.10.9",

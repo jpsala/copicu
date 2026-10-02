@@ -69,6 +69,7 @@ Familias utiles:
 
 - `history.search`, `history.get`, `history.neighbor`, `history.create`, metadata/tags;
 - `clipboard.read/write` segun capability;
+- `sharedClipboard.channels/target/state/history/publish/received` cuando el build y el perfil habilitan sharing;
 - `picker.filter`, `picker.activate`;
 - `ui.toast`, `ui.alert`, `ui.confirm`, `ui.input`, `ui.markdownOutput`;
 - `enrichment.read/run`;
@@ -83,6 +84,79 @@ omitidos no se reconstruyen desde una lectura obsoleta.
 Si se agrega una API, actualizar `scripts/examples/copicu-action.d.ts`, el
 gateway y sus capability checks, catálogos consumidores, docs y pruebas
 observables de permisos/comportamiento. No pinnear listas de source como tests.
+
+### Publicación en canales compartidos
+
+`copicu.sharedClipboard.channels()` exige `shared:read` y devuelve sólo ID y
+nombre de canales publicables para los grants explícitos de esa acción.
+`publish({ channelId, text })` exige `shared:publish` y
+`shared:publish:<channelId>`; no admite wildcard. El host comprueba además que
+el perfil/canal están habilitados, conserva claves y credenciales, cifra y
+admite el texto en la cola durable limitada. El retorno
+`{ publicationId, state: "queued" }` confirma admisión local, no entrega remota.
+Cada llamada deliberada crea una publicación inmutable distinta; reintentos
+del host conservan su identidad. Scripts pueden transformar/generar texto o
+recorrer IDs seleccionados usando los permisos de lectura existentes.
+
+`target()` consulta el destino configurado para esa Action y revalida su grant;
+`publish({ text })` lo resuelve sin hardcodear un canal. `state()` devuelve observaciones
+locales de pausas, recursos y cola limitadas a los scopes del script, sin claves ni bearer;
+no consulta remoto ni certifica que otro equipo recibió o aplicó la publicación.
+Ambas consultas requieren `shared:read`. `history({ channelId, cursor })` exige
+además `shared:history:<channelId>`: una página de publicaciones cifradas,
+autenticadas y descifradas, desde la más antigua disponible, con cursor decimal
+opaco. No conecta, importa ni dispara efectos. Un transporte ocupado rechaza
+la consulta inmediatamente; no bloquea esperando otros requests. Está prohibida
+en Actions automáticas de recepción.
+
+Las built-ins `builtin.sharedSendActive` y `builtin.sharedSendClipboard`
+distinguen el clip activo de Copicu del clipboard actual de Windows. La primera
+usa `currentItemId`; la segunda exige un fence de secuencia de la invocación y
+rechaza entrada obsoleta. Ninguna usa el último clip del historial como proxy
+del clipboard de Windows. Ambas usan el canal de envío configurado en sharing
+y admiten hotkeys explícitos mediante el registro existente; no traen atajos
+habilitados por defecto.
+
+### Actions de recepción
+
+Una suscripción puede asociar y habilitar explícitamente un script local que
+declare `sharedReception`, entrada `none` y selección `none`, con el grant
+`shared:receive:<channelId>`. El host entrega identidad/procedencia en
+`ctx.sharedReception`; `copicu.sharedClipboard.received()` obtiene el texto
+inmutable de esa publicación, sin leer un ítem mutable del historial. El
+scheduler reclama cada ejecución de forma durable y conserva su resultado
+por separado de guardar/copiar; fallar no implica rollback de efectos admitidos.
+Cada llamada host revalida el binding, pausa y generación.
+
+En este corte, un receptor puede usar UI/log y publicación sólo cuando el
+binding autoriza un canal destino y el script declara tanto permisos normales
+de publicación como `shared:forward:<originChannelId>:<targetChannelId>`.
+No hay forwarding por defecto. Mutaciones y lecturas de historial/metadata,
+lecturas del clipboard actual, copias de ítems, picker, paste y foco se rechazan
+en recepciones para preservar procedencia y evitar ecos.
+
+El forwarding actual permite un solo salto: el host asigna una identidad firmada
+`forwarded_v1_*` y rechaza volver a reenviar esa publicación. Puede haber ramas
+explícitas a varios destinos autorizados; no se promete routing de varios saltos.
+
+Un receptor que declara `clipboard:write` puede producir una única salida
+`copicu.clipboard.writeText(text)` por publicación, cuando su suscripción
+habilita explícitamente `receiveActionWritesClipboard`. Este permiso es
+independiente de la salida built-in `updateClipboard`; sólo una de ambas puede
+ser el escritor automático del perfil. El host admite las operaciones buffered
+después del resultado exitoso del runner y revalida procedencia, permiso,
+generación, lease y secuencia anterior a la recepción; una nueva copia local,
+pausa o vencimiento omite la escritura. Reclama el sink durable antes del
+adapter nativo acotado y registra su resultado por separado del script.
+Los hashes de salida conservan procedencia remota para evitar republicación
+por reglas o watcher. Un script fallido no admite operaciones buffered; efectos
+host anteriores, como forwarding, siguen registrados y no se revierten.
+
+Contratos y evidencia local en [Shared Clipboard](shared-clipboard.md) y
+[aceptación local](../../specs/016-shared-clipboard/local-acceptance.md). Los
+ejemplos 034–036 cubren envío de seleccionados, inspección de recepción y salida
+transformada de una recepción. Son ejemplos de desarrollo; el instalador sólo
+distribuye la selección indicada en [Windows Installer](windows-installer.md#scripts-incluidos).
 
 ## Shortcuts
 

@@ -379,6 +379,7 @@ type MockMetadataItem = {
   title?: string | null;
   notes?: string | null;
   tags?: string | null;
+  folderId?: number | null;
 };
 
 type MetadataVisualRuntime = Window & {
@@ -1177,6 +1178,22 @@ async function mockTauriInvoke(
         apiKey: "",
       },
     };
+    const resolveFolderIntent = (intent: any): number | null | undefined => {
+      if (!intent || intent.op === "untouched") return undefined;
+      if (intent.op === "set") return intent.folderId;
+      const folders = (window as any).__copicuTestFolders;
+      let parentId: number | null = null;
+      for (const name of intent.path.replace(/^\//, "").replace(/\/$/, "").split("/")) {
+        let folder = folders.find((entry: any) => entry.parentId === parentId && entry.name.toLowerCase() === name.toLowerCase());
+        if (!folder) {
+          const parent = folders.find((entry: any) => entry.id === parentId);
+          folder = { id: Math.max(8, ...folders.map((entry: any) => entry.id)) + 1, parentId, name, path: parent ? `${parent.path}/${name}` : name, directItemCount: 0, descendantFolderCount: 0, subtreeItemCount: 0 };
+          folders.push(folder);
+        }
+        parentId = folder.id;
+      }
+      return parentId;
+    };
     const metadataSnapshot = (itemIds: number[], token = `snapshot-${itemIds.join("-")}`) => {
       const testWindow = window as MetadataVisualRuntime;
       const sourceItems: MockMetadataItem[] = testWindow.__copicuTestHistoryItems ?? items;
@@ -1220,6 +1237,11 @@ async function mockTauriInvoke(
         title: aggregateScalar("title"),
         notes: aggregateScalar("notes"),
         tags: aggregateValues(),
+        folder: {
+          state: selected.every((entry) => (entry.folderId ?? null) === (item?.folderId ?? null)) ? "same" : "mixed",
+          folderId: item?.folderId ?? null,
+          path: item?.folderId == null ? "/" : (window as any).__copicuTestFolders.find((entry: any) => entry.id === item.folderId)?.path ?? "/",
+        },
         singleItem: selected.length === 1 ? {
           contentPreview: item.text,
           contentKind: item.content_kind,
@@ -1259,6 +1281,10 @@ async function mockTauriInvoke(
     (window as any).__TAURI_INTERNALS__ = {
       invoke: async (cmd: string, args?: any) => {
         (window as any).__copicuTestInvocations.push({ cmd, args });
+        if (cmd === "list_actions" && (window as any).__copicuSharedTestActions) return structuredClone((window as any).__copicuSharedTestActions);
+        if (cmd.startsWith("shared_clipboard_") && (window as any).__copicuSharedTestInvoke) {
+          return (window as any).__copicuSharedTestInvoke(cmd, args);
+        }
         switch (cmd) {
           case "plugin:event|listen": {
             const handlers = eventHandlers.get(args.event) ?? [];
@@ -2145,6 +2171,7 @@ async function mockTauriInvoke(
             return metadataSnapshot(args.request.itemIds, `reload-${Date.now()}`);
           case "apply_metadata_selection_intent": {
             const intent = args.intent;
+            const chosenFolderId = resolveFolderIntent(intent.folder);
             const runtime = window as MetadataVisualRuntime;
             const sourceItems = runtime.__copicuTestHistoryItems ?? items;
             runtime.__copicuTestHistoryItems = sourceItems.map((item) => {
@@ -2160,6 +2187,7 @@ async function mockTauriInvoke(
                 ...(intent.title.op === "clear" ? { title: null } : {}),
                 ...(intent.notes.op === "replaceAll" ? { notes: intent.notes.value } : {}),
                 ...(intent.notes.op === "clearAll" ? { notes: null } : {}),
+                ...(chosenFolderId !== undefined ? { folderId: chosenFolderId } : {}),
               };
             });
             const nextSnapshot = metadataSnapshot(intent.itemIds, `saved-${Date.now()}`);
@@ -2229,8 +2257,10 @@ async function mockTauriInvoke(
             if (!normalizedText) {
               throw new Error("new item content cannot be empty");
             }
+            const chosenFolderId = resolveFolderIntent(request.folder);
             const existing = sourceItems.find((item: any) => item.text.trim() === normalizedText);
             if (existing) {
+              if (chosenFolderId !== undefined) existing.folderId = chosenFolderId;
               existing.notes = request.notes ?? existing.notes ?? null;
               const requestedTags = request.tags.map((tag: string) => `#${tag}`).join(" ");
               existing.tags = [existing.tags, requestedTags].filter(Boolean).join(" ") || null;
@@ -2262,6 +2292,7 @@ async function mockTauriInvoke(
               title: request.title ?? null,
               notes: request.notes ?? null,
               tags: request.tags.map((tag: string) => `#${tag}`).join(" ") || null,
+              folderId: chosenFolderId !== undefined ? chosenFolderId : (window as any).__copicuTestFolderDestination.folderId,
             };
             (window as any).__copicuTestHistoryItems = [nextItem, ...sourceItems];
             return { id: nextId, created: true };
@@ -2565,9 +2596,11 @@ async function mockTauriInvoke(
                   : entry);
             return preview;
           }
-          case "move_history_items_to_folder":
-            (window as any).__copicuTestHistoryItems = (window as any).__copicuTestHistoryItems.map((item: any) => args.itemIds.includes(item.id) ? { ...item, folderId: args.folderId } : item);
+          case "move_history_items_to_folder": {
+            const folderId = args.folderPath ? resolveFolderIntent({ op: "create", path: args.folderPath }) : args.folderId;
+            (window as any).__copicuTestHistoryItems = (window as any).__copicuTestHistoryItems.map((item: any) => args.itemIds.includes(item.id) ? { ...item, folderId } : item);
             return args.itemIds.length;
+          }
           default:
             throw new Error(`Unhandled mocked Tauri command: ${cmd}`);
         }
@@ -8856,7 +8889,8 @@ test("multi metadata inspector shows aggregate states and protects dirty work fr
   await titleInput.fill("Unified synthetic title");
   await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await page.getByRole("button", { name: "Set title on all" }).click();
-  await expect(page.getByText("Set title on 3 clips")).toBeVisible();
+  await expect(page.getByText("Set title on 3 clips · Tags unchanged")).toBeVisible();
+  await page.getByRole("button", { name: "Edit tags…", exact: true }).click();
   const allTag = page.getByRole("checkbox", { name: /#all/ });
   const someTag = page.getByRole("checkbox", { name: /#some/ });
   const noneTag = page.getByRole("checkbox", { name: /#Work none/ });
@@ -9294,7 +9328,7 @@ test("folder controls share the filter strip without adding a feed header", asyn
   const scope = page.getByRole("button", { name: "Switch folder, browsing All history" });
   await expect(scope).toBeVisible();
   await expect(page.locator(".folder-active-feed")).toHaveCount(0);
-  await expect(page.locator(".search-filter-strip .folder-scope-chip")).toBeVisible();
+  await expect(page.locator(".search-filter-strip").getByRole("button", { name: "Switch folder, browsing All history" })).toBeVisible();
   await page.getByRole("button", { name: "Hide folders" }).hover();
   await expect(page.getByRole("tooltip").locator(".shortcut-badge[aria-label='Ctrl+B']")).toBeVisible();
   await page.getByRole("button", { name: "Hide folders" }).click();
@@ -9528,8 +9562,11 @@ test("folder create, rename, and reparent keep full paths current", async ({ pag
   await page.getByRole("button", { name: "Actions for Archives" }).click();
   await page.getByRole("menuitem", { name: "Move folder" }).click();
   const move = page.getByRole("dialog", { name: "reparent folder" });
-  await expect(move.getByLabel("Destination")).toHaveValue("7");
-  await move.getByLabel("Destination").selectOption("root");
+  await move.getByRole("button", { name: "Destination /Projects", exact: true }).click();
+  const destinations = page.getByRole("dialog", { name: "Choose destination" });
+  await destinations.getByRole("combobox", { name: "Search folders" }).fill("/");
+  await destinations.locator('.folder-tree-name[title="/"]').click();
+  await destinations.getByRole("button", { name: "Choose folder", exact: true }).click();
   await move.getByRole("button", { name: "Move folder" }).click();
   await page.getByLabel("Search clipboard history").fill("/Arch");
   await expect(page.locator(".cm-tooltip-autocomplete").getByRole("option", { name: "Archives Folder path" })).toBeVisible();
@@ -9538,6 +9575,275 @@ test("folder create, rename, and reparent keep full paths current", async ({ pag
 async function sidebarWrites(page: Page) {
   return page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "set_picker_folder_sidebar_width"));
 }
+
+test("shared folder selector stages nested creation and Escape preserves editor focus", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: 7 }], null, { metadataItemIds: [501] });
+  await gotoShell(page, "/?window=metadata");
+  const trigger = page.getByRole("button", { name: "Folder /Projects", exact: true });
+  await trigger.click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  const search = panel.getByRole("combobox", { name: "Search folders" });
+  await expect(search).toBeFocused();
+  await search.fill("/Projects/References/Research");
+  await expect(panel.getByRole("treeitem")).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Create and choose", exact: true })).toHaveCount(0);
+  await search.press("Enter");
+  await expect(panel).toBeVisible();
+  await expect(trigger).toHaveText("/Projects");
+  await page.screenshot({ path: `.codex-run/folder-selector-${testInfo.project.name}.png` });
+  const bounds = (await panel.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await search.press("Escape");
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await search.fill("");
+  await panel.locator('.folder-tree-name[title="/Projects"]').click();
+  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  const name = panel.getByRole("textbox", { name: "Folder name", exact: true });
+  await name.fill("References/Research");
+  await expect(name).toBeFocused();
+  await expect(search).toBeDisabled();
+  await page.screenshot({ path: `.codex-run/folder-selector-new-${testInfo.project.name}.png` });
+  await panel.getByRole("button", { name: "Create and choose", exact: true }).click();
+  await expect(page.getByRole("button", { name: /Folder \/Projects\/References\/Research/ })).toBeFocused();
+  expect(await page.evaluate(() => (window as any).__copicuTestFolders.some((folder: any) => folder.name === "Research"))).toBe(false);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "create_folder_path" || call.cmd === "apply_metadata_selection_intent"))).toBe(false);
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await page.waitForFunction(() => (window as any).__copicuTestHistoryItems[0].folderId !== 7);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "apply_metadata_selection_intent").args.intent.folder)).toEqual({ op: "create", path: "/Projects/References/Research" });
+  expect(await page.evaluate(() => (window as any).__copicuTestFolders.filter((folder: any) => ["References", "Research"].includes(folder.name)).length)).toBe(2);
+});
+
+test("shared folder selector browses children and cancels mixed metadata creation without writes", async ({ page }) => {
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[0], id: 501, folderId: 7 },
+    { ...syntheticLongHistory[1], id: 502, folderId: null },
+  ], null, { metadataItemIds: [501, 502] });
+  await gotoShell(page, "/?window=metadata");
+  await page.locator(".folder-select-trigger").click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  await panel.getByRole("button", { name: "Expand Projects", exact: true }).click();
+  await expect(panel.getByRole("treeitem", { name: "Notes", exact: true })).toBeVisible();
+  await panel.locator('.folder-tree-name[title="/Projects"]').click();
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  await panel.getByRole("textbox", { name: "Folder name", exact: true }).fill("Canceled child");
+  await panel.getByRole("button", { name: /Create and choose/ }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__copicuTestFolders.some((folder: any) => folder.name === "Canceled child"))).toBe(false);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "create_folder_path" || call.cmd === "apply_metadata_selection_intent"))).toBe(false);
+});
+
+test("shared folder selector persists new clip folder intent and keeps staging atomic", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await page.getByLabel("Search clipboard history").press("Control+n");
+  const dialog = page.getByRole("dialog", { name: "Create new item", exact: true });
+  await dialog.getByRole("textbox", { name: "Content", exact: true }).fill("SYNTH_FOLDER_NEW_CLIP");
+  await dialog.locator(".folder-select-trigger").click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  const search = panel.getByRole("combobox", { name: "Search folders" });
+  await search.fill("Projects");
+  await panel.locator('.folder-tree-name[title="/Projects"]').click();
+  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  await panel.getByRole("textbox", { name: "Folder name", exact: true }).fill("Manual clips");
+  await panel.getByRole("textbox", { name: "Folder name", exact: true }).press("Enter");
+  expect(await page.evaluate(() => (window as any).__copicuTestFolders.some((folder: any) => folder.name === "Manual clips"))).toBe(false);
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "create_history_item").args.request.folder)).toEqual({ op: "create", path: "/Projects/Manual clips" });
+  expect(await page.evaluate(() => {
+    const runtime = window as any;
+    return runtime.__copicuTestHistoryItems.find((item: any) => item.text === "SYNTH_FOLDER_NEW_CLIP").folderId === runtime.__copicuTestFolders.find((folder: any) => folder.name === "Manual clips").id;
+  })).toBe(true);
+});
+
+test("shared folder selector chooses Root by keyboard without saving from its search field", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: 7 }], null, { metadataItemIds: [501] });
+  await gotoShell(page, "/?window=metadata");
+  await page.locator(".folder-select-trigger").click();
+  const search = page.getByRole("combobox", { name: "Search folders" });
+  await search.fill("/");
+  await search.press("Enter");
+  await expect(page.getByRole("button", { name: "Folder /", exact: true })).toBeFocused();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "apply_metadata_selection_intent"))).toBe(false);
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await page.waitForFunction(() => (window as any).__copicuTestHistoryItems[0].folderId === null);
+});
+
+test("shared folder selector tree expands current ancestors and restores expansion after filtering", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: 8 }], null, { metadataItemIds: [501] });
+  await gotoShell(page, "/?window=metadata");
+  const trigger = page.getByRole("button", { name: "Folder /Projects/Notes", exact: true });
+  await trigger.click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  const tree = panel.getByRole("tree", { name: "Folder destinations", exact: true });
+  const projects = tree.locator('.folder-tree-name[title="/Projects"]');
+  const notes = tree.locator('.folder-tree-name[title="/Projects/Notes"]');
+  await expect(projects).toHaveText("Projects");
+  await expect(projects).toHaveAttribute("aria-expanded", "true");
+  await expect(notes).toHaveText("Notes");
+  await expect(notes).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("navigation", { name: "Current folder" })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Collapse Projects", exact: true }).click();
+  await expect(notes).toHaveCount(0);
+  const search = panel.getByRole("combobox", { name: "Search folders" });
+  await search.fill("notes");
+  await expect(projects).toBeVisible();
+  await expect(notes).toBeVisible();
+  await expect(notes.locator("mark")).toHaveText("Notes");
+  await search.fill("");
+  await expect(projects).toHaveAttribute("aria-expanded", "false");
+  await expect(notes).toHaveCount(0);
+  await search.press("Escape");
+  await expect(trigger).toBeFocused();
+});
+
+test("shared folder selector search retains ancestors and requires explicit pointer confirmation", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: 7 }], null, { metadataItemIds: [501] });
+  await gotoShell(page, "/?window=metadata");
+  const trigger = page.getByRole("button", { name: "Folder /Projects", exact: true });
+  await trigger.click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  const search = panel.getByRole("combobox", { name: "Search folders" });
+  await search.fill("notes");
+  await expect(panel.getByRole("navigation", { name: "Current folder" })).toHaveCount(0);
+  const tree = panel.getByRole("tree", { name: "Folder destinations", exact: true });
+  const match = tree.locator('.folder-tree-name[title="/Projects/Notes"]');
+  await expect(tree.locator('.folder-tree-name[title="/"]')).toHaveText("/");
+  await expect(tree.locator('.folder-tree-name[title="/Projects"]')).toHaveText("Projects");
+  await expect(match).toHaveText("Notes");
+  await expect(match.locator("mark")).toHaveText("Notes");
+  await expect(tree.getByRole("treeitem")).toHaveCount(3);
+  await expect(panel.getByRole("button", { name: "Create and choose", exact: true })).toHaveCount(0);
+  await page.screenshot({ path: `.codex-run/folder-selector-search-${testInfo.project.name}.png` });
+  await match.click();
+  await expect(match).toHaveAttribute("aria-selected", "true");
+  await expect(panel).toBeVisible();
+  await expect(trigger).toHaveText("/Projects");
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await panel.getByRole("button", { name: "Choose folder", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Folder /Projects/Notes", exact: true })).toBeFocused();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "apply_metadata_selection_intent" || call.cmd === "create_folder_path"))).toBe(false);
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await page.waitForFunction(() => (window as any).__copicuTestHistoryItems[0].folderId === 8);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "apply_metadata_selection_intent").args.intent.folder)).toEqual({ op: "set", folderId: 8 });
+});
+
+test("shared folder selector inline creation validates duplicates and Escape restores query without writes", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: null }], null, { metadataItemIds: [501] });
+  await gotoShell(page, "/?window=metadata");
+  const trigger = page.getByRole("button", { name: "Folder /", exact: true });
+  await trigger.click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  const search = panel.getByRole("combobox", { name: "Search folders" });
+  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  const name = panel.getByRole("textbox", { name: "Folder name", exact: true });
+  const create = panel.getByRole("button", { name: "Create and choose", exact: true });
+  await expect(name).toBeVisible();
+  await expect(name).toBeFocused();
+  await expect(name).toHaveValue("");
+  await expect(create).toBeDisabled();
+  await expect(search).toBeDisabled();
+  await name.fill("Projects");
+  await expect(create).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Choose folder", exact: true })).toBeEnabled();
+  await expect(panel.getByRole("status")).toContainText(/already exists/i);
+  await panel.getByRole("button", { name: "Cancel new folder", exact: true }).click();
+  await expect(search).toBeFocused();
+  await expect(name).toHaveCount(0);
+  await search.fill("notes");
+  await panel.locator('.folder-tree-name[title="/Projects/Notes"]').click();
+  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  await expect(name).toHaveValue("");
+  await expect(search).toHaveValue("");
+  await expect(search).toBeDisabled();
+  await name.fill("Uncreated child/Nested");
+  await expect(create).toBeEnabled();
+  const parentAndInput = await name.evaluate((input) => {
+    const row = [...document.querySelectorAll('.folder-select-panel .folder-tree-entry')].find((entry) => entry.nextElementSibling?.contains(input));
+    return row?.querySelector('.folder-tree-name')?.getAttribute("title");
+  });
+  expect(parentAndInput).toBe("/Projects/Notes");
+  await name.fill("/Absolute path");
+  await expect(create).toBeDisabled();
+  await expect(panel.getByRole("status")).toContainText(/relative path/i);
+  await name.press("Escape");
+  await expect(panel).toBeVisible();
+  await expect(name).toHaveCount(0);
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue("notes");
+  await search.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "create_folder_path" || call.cmd === "apply_metadata_selection_intent"))).toBe(false);
+});
+
+test("shared folder selector confirms existing tree candidates with double click or Enter", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: 7 }], null, { metadataItemIds: [501] });
+  await gotoShell(page, "/?window=metadata");
+  await page.locator(".folder-select-trigger").click();
+  const panel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  const search = panel.getByRole("combobox", { name: "Search folders" });
+  await search.fill("notes");
+  await panel.locator('.folder-tree-name[title="/Projects/Notes"]').dblclick();
+  await expect(page.getByRole("button", { name: "Folder /Projects/Notes", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Folder /Projects/Notes", exact: true }).click();
+  const projects = panel.locator('.folder-tree-name[title="/Projects"]');
+  await projects.click();
+  await projects.press("Enter");
+  await expect(page.getByRole("button", { name: "Folder /Projects", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+});
+
+test("shared folder selector new item dialog covers the folder sidebar for pointer interaction", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 620 });
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await revealFolderTree(page);
+  await expect(page.getByRole("tree", { name: "History folders" })).toBeVisible();
+  await page.getByLabel("Search clipboard history").press("Control+n");
+  const dialog = page.getByRole("dialog", { name: "Create new item", exact: true });
+  await expect(dialog).toBeVisible();
+  const pointerHits = await page.locator('.folder-tree.is-open [data-folder-row="7"]').evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const point = { x: bounds.left + Math.min(24, bounds.width / 2), y: bounds.top + bounds.height / 2 };
+    const hit = document.elementFromPoint(point.x, point.y);
+    return { coveredByDialog: Boolean(hit?.closest(".edit-backdrop")), sidebarReceivesPointer: Boolean(hit?.closest(".folder-tree")) };
+  });
+  expect(pointerHits).toEqual({ coveredByDialog: true, sidebarReceivesPointer: false });
+  const content = dialog.getByRole("textbox", { name: "Content", exact: true });
+  await content.click();
+  await expect(content).toBeFocused();
+  await dialog.locator(".folder-select-trigger").click();
+  await expect(page.getByRole("dialog", { name: "Choose folder", exact: true }).getByRole("combobox", { name: "Search folders" })).toBeFocused();
+});
+
+test("shared folder selector moves clips to a new path from the existing destination dialog", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[0], id: 501, folderId: 7 }]);
+  await gotoShell(page);
+  await page.locator(".feed-item").first().hover();
+  await page.getByRole("button", { name: "Open item actions" }).first().click();
+  await page.getByRole("menuitem", { name: "Move clip to folder…" }).click();
+  const move = page.getByRole("dialog", { name: "moveItems folder", exact: true });
+  await move.locator(".folder-select-trigger").click();
+  const search = page.getByRole("combobox", { name: "Search folders" });
+  await expect(search).toBeFocused();
+  await search.fill("Projects");
+  const panel = page.getByRole("dialog", { name: "Choose destination", exact: true });
+  await panel.locator('.folder-tree-name[title="/Projects"]').click();
+  await panel.getByRole("button", { name: "New folder", exact: true }).click();
+  await panel.getByRole("textbox", { name: "Folder name", exact: true }).fill("Moved clips");
+  await panel.getByRole("button", { name: "Create and choose", exact: true }).click();
+  await expect(move).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuTestFolders.some((folder: any) => folder.name === "Moved clips"))).toBe(false);
+  await move.getByRole("button", { name: "Move clips", exact: true }).click();
+  await expect(move).toBeHidden();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "move_history_items_to_folder").args.folderPath)).toBe("/Projects/Moved clips");
+});
 
 async function openResizableSidebar(page: Page) {
   await page.setViewportSize({ width: 1000, height: 620 });
@@ -9640,6 +9946,8 @@ test("folder context menu anchors to pointer, ellipsis and keyboard in viewport 
     expect(Math.abs(bounds.y - (anchor.y + anchor.height))).toBeLessThanOrEqual(1);
     expect(await menu.evaluate((node) => node.parentElement === document.body)).toBe(true);
     await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await menu.press("ArrowDown");
+    await expect(menu.getByRole("menuitem", { name: "Connect shared clipboard…" })).toBeFocused();
     await menu.press("ArrowDown");
     await expect(menu.getByRole("menuitem", { name: "Rename folder" })).toBeFocused();
     await menu.press("Escape");
@@ -9773,4 +10081,374 @@ test("sidebar resize pointer bounds, keyboard repeat, failed save and unmount re
     await page.getByLabel("Search clipboard history").focus();
     await page.keyboard.up("ArrowLeft");
   }
+});
+
+test("multi metadata folder-only save preserves individual tags and makes unchanged tags explicit", async ({ page }, testInfo) => {
+  const selection = [
+    { ...syntheticLongHistory[0], id: 9811, title: null, notes: null, tags: "#work #review", folderId: null },
+    { ...syntheticLongHistory[1], id: 9812, title: null, notes: null, tags: "#personal", folderId: 7 },
+    { ...syntheticLongHistory[2], id: 9813, title: null, notes: null, tags: null, folderId: null },
+  ];
+  await mockTauriInvoke(page, selection, null, { metadataItemIds: [9811, 9812, 9813] });
+  await gotoShell(page, "/?window=metadata");
+  const tagSection = page.getByRole("region", { name: "Tags", exact: true });
+  await expect(tagSection.getByText("Keep each clip’s tags")).toBeVisible();
+  await expect(tagSection.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Add tags" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+
+  await tagSection.getByRole("button", { name: "Edit tags…" }).click();
+  await expect(page.getByRole("textbox", { name: "Add tags" })).toBeFocused();
+  await expect(tagSection.getByRole("checkbox", { name: /#review/ })).toHaveAttribute("aria-checked", "mixed");
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeDisabled();
+  await tagSection.getByRole("button", { name: "Keep tags unchanged", exact: true }).click();
+  await expect(tagSection.getByRole("checkbox")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Folder Mixed folders", exact: true }).click();
+  const folderPanel = page.getByRole("dialog", { name: "Choose folder", exact: true });
+  await folderPanel.locator('.folder-tree-name[title="/Projects"]').click();
+  await folderPanel.getByRole("button", { name: "Choose folder", exact: true }).click();
+  await expect(page.locator(".metadata-change-summary")).toHaveText("Move 3 clips to selected folder · Tags unchanged");
+  await page.screenshot({ path: `.codex-run/metadata-tags-preserved-${testInfo.project.name}.png` });
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await page.waitForFunction(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "apply_metadata_selection_intent"));
+  const result = await page.evaluate(() => ({
+    intent: (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "apply_metadata_selection_intent").args.intent,
+    items: (window as any).__copicuTestHistoryItems.map((item: any) => ({ id: item.id, tags: item.tags, folderId: item.folderId })),
+  }));
+  expect(result.intent.tags).toEqual([]);
+  expect(result.intent.folder).toEqual({ op: "set", folderId: 7 });
+  expect(result.items).toEqual(selection.map(item => ({ id: item.id, tags: item.tags, folderId: 7 })));
+  await expect(tagSection.getByText("Keep each clip’s tags")).toBeVisible();
+});
+
+async function mockSharedClipboard(page: Page, delayFirstRead = false, receiverWriter = false) {
+  await page.addInitScript(({ delayed, withWriter }) => {
+    const runtime = window as any;
+    runtime.__copicuSharedSnapshot = {
+      available: true, configured: true, paused: false, environment: "synthetic-local", deviceId: "synthetic-home", endpoint: "http://127.0.0.1:18799",
+      sendActiveShortcut: null, sendClipboardShortcut: null,
+      channels: [{ id: "synthetic-channel", name: "Synthetic channel", canPublish: true, defaultSendChannel: false, receiveEnabled: false, publishFolderEnabled: false, publishFolderId: null, saveToFolder: false, receiveFolderId: null, updateClipboard: false, receiveActionEnabled: false, receiveActionWritesClipboard: false, receiveActionId: null, receiveActionForwardChannelIds: [] }],
+      outbox: [], receipts: [
+        { subscriptionId: "synthetic-sub", publicationId: "synthetic-work-publication", channelId: "synthetic-channel", sequence: "18446744073709551615", delivery: "recovery", acquisition: "ready", historyOutcome: "skipped", localItemId: null, originDeviceId: "synthetic-work", expiresAtUnixMs: "4102444800000" },
+        { subscriptionId: "synthetic-sub", publicationId: "synthetic-live-publication", channelId: "synthetic-channel", sequence: "18446744073709551614", delivery: "live", acquisition: "ready", historyOutcome: "applied", localItemId: 100, originDeviceId: "synthetic-other", expiresAtUnixMs: "4102444800000" },
+        { subscriptionId: "synthetic-sub", publicationId: "synthetic-expired-publication", channelId: "synthetic-channel", sequence: "18446744073709551613", delivery: "recovery", acquisition: "expired", historyOutcome: "skipped", localItemId: null, originDeviceId: "synthetic-expired-device", expiresAtUnixMs: "1" },
+      ],
+    };
+    if (withWriter) runtime.__copicuSharedTestActions = [{ id: "synthetic-receiver-action", title: "Synthetic uppercase reception", description: "Synthetic transformed output", source: "script", builtin: false, script: { path: "C:/synthetic/reception.ts", fileName: "reception.ts", sourceHash: "synthetic" }, triggers: ["sharedReception"], input: { source: "none", selection: "none", kinds: null, mime: null, query: null }, capabilities: ["shared:receive:synthetic-channel", "clipboard:write"], diagnostics: [], logging: null }];
+    runtime.__copicuSharedReads = [];
+    runtime.__copicuSharedTestInvoke = async (cmd: string, args: any) => {
+      switch (cmd) {
+        case "shared_clipboard_status": return structuredClone(runtime.__copicuSharedSnapshot);
+        case "shared_clipboard_update_channel": runtime.__copicuSharedSnapshot.channels = [structuredClone(args.policy)]; return structuredClone(runtime.__copicuSharedSnapshot);
+        case "shared_clipboard_set_paused": runtime.__copicuSharedSnapshot.paused = args.paused; return structuredClone(runtime.__copicuSharedSnapshot);
+        case "shared_clipboard_set_hotkeys": runtime.__copicuSharedSnapshot.sendActiveShortcut = args.sendActiveShortcut; runtime.__copicuSharedSnapshot.sendClipboardShortcut = args.sendClipboardShortcut; return structuredClone(runtime.__copicuSharedSnapshot);
+        case "shared_clipboard_copy_receipt": return null;
+        case "shared_clipboard_receipt_text": {
+          runtime.__copicuSharedReads.push({ subscriptionId: args.subscriptionId, publicationId: args.publicationId });
+          if (args.publicationId === "synthetic-work-publication") {
+            if (delayed) return new Promise<string>(resolve => { runtime.__copicuSharedResolveFirstRead = () => resolve("COPICU_SYNTH_RECOVERY_TEXT"); });
+            return "COPICU_SYNTH_RECOVERY_TEXT\nOriginal immutable publication.";
+          }
+          if (args.publicationId === "synthetic-live-publication") return "COPICU_SYNTH_LIVE_TEXT\nOriginal live publication.";
+          throw new Error("Synthetic reception unavailable");
+        }
+        default: throw new Error(`Unhandled synthetic shared command: ${cmd}`);
+      }
+    };
+  }, { delayed: delayFirstRead, withWriter: receiverWriter });
+}
+
+async function mockSharedProduct(page: Page) {
+  await mockSharedClipboard(page);
+  await page.addInitScript(() => {
+    const runtime = window as any;
+    const previous = runtime.__copicuSharedTestInvoke;
+    runtime.__copicuSharedSnapshot.connections = [];
+    runtime.__copicuSharedSnapshot.generalSendScope = "unfiled";
+    runtime.__copicuSharedSnapshot.sendPaused = false;
+    runtime.__copicuSharedSnapshot.receivePaused = false;
+    runtime.__copicuProductCatalog = {person:{id:"person_a",name:"Synthetic Alex"},mode:"synthetic",people:[{id:"person_a",name:"Synthetic Alex"},{id:"person_b",name:"Synthetic Blair"}],resources:[
+      {id:"synthetic-channel",name:"Synthetic clipboard",ownerId:"person_a",ownerName:"Synthetic Alex",permission:"owner",revision:"1",keyState:"ready",retentionHours:24,participants:[{id:"person_a",name:"Synthetic Alex",permission:"owner"}],invites:[]},
+      {id:"synthetic-reader",name:"Shared research",ownerId:"person_b",ownerName:"Synthetic Blair",permission:"read",revision:"2",keyState:"ready",retentionHours:24},
+    ]};
+    runtime.__copicuProductOperations = [];
+    const results = new Map();
+    runtime.__copicuSharedTestInvoke = async (cmd: string,args: any) => {
+      if(cmd === "shared_clipboard_catalog") return structuredClone(runtime.__copicuProductCatalog);
+      if(cmd === "shared_clipboard_operation") {
+        runtime.__copicuProductOperations.push(structuredClone(args.input));
+        if(args.input.kind === "rename" && runtime.__copicuProductConflictRename) {runtime.__copicuProductConflictRename=false;throw new Error("Shared resource changed; refresh before retrying");}
+        if(results.has(args.input.operationId)) return structuredClone(results.get(args.input.operationId));
+        if(args.input.kind === "create") {
+          const resource = {id:"created_synthetic",name:args.input.name,ownerId:"person_a",ownerName:"Synthetic Alex",permission:"owner",revision:"1",keyState:"ready",retentionHours:24};
+          runtime.__copicuProductCatalog.resources.push(resource);
+          const result={resource};results.set(args.input.operationId,result);
+          if(runtime.__copicuProductLoseCreate) {runtime.__copicuProductLoseCreate=false;throw new Error("Synthetic response lost. Retry this operation.");}
+          return result;
+        }
+        return {};
+      }
+      if(cmd === "shared_clipboard_connection") {
+        const s=runtime.__copicuSharedSnapshot;
+        if(args.action === "connect") {s.connections=s.connections.filter((c:any)=>c.id!==args.input.id);s.connections.push(args.input);}
+        if(args.action === "disconnect") s.connections=s.connections.filter((c:any)=>c.id!==args.input.id);
+        if(args.action === "scope") s.generalSendScope=args.input.scope;
+        if(args.action === "pause") {if(args.input.sendPaused!==null)s.sendPaused=args.input.sendPaused;if(args.input.receivePaused!==null)s.receivePaused=args.input.receivePaused;}
+        return structuredClone(s);
+      }
+      if(cmd === "shared_clipboard_history") return {entries:[{publicationId:"prior_synthetic",channelId:args.channelId,sequence:"7",originDeviceId:"Synthetic peer",expiresAtUnixMs:"4102444800000",text:"COPICU_SYNTH_PRIOR_AUTHORIZED_HISTORY",status:"ready"}],before:null,head:"7",floor:"1"};
+      if(cmd === "shared_clipboard_history_action") return args.action === "save" ? {itemId:123,folderId:null,alreadyExists:true} : {outcome:"applied"};
+      return previous(cmd,args);
+    };
+  });
+}
+
+test("shared product remote invalidation preserves draft focus and selection, then shows removal",async({page})=>{
+  await mockTauriInvoke(page);await mockSharedProduct(page);await gotoShell(page);await waitForDefaultHistoryReady(page);
+  await page.getByRole("button",{name:"Shared clipboards",exact:true}).click();
+  const library=page.getByRole("dialog",{name:"Shared clipboards"});
+  await library.getByText("Manage access and clipboard",{exact:true}).click();
+  const name=library.getByLabel("New name",{exact:true});await name.fill("Synthetic preserved draft");
+  await page.evaluate(async()=>{const w=window as any;w.__copicuProductCatalog.resources[0].name="Synthetic renamed remotely";w.__copicuProductCatalog.resources[0].revision="2";await w.__copicuTestEmitEvent("shared-catalog-invalidated",{state:"live"});});
+  await expect(library.getByRole("heading",{name:"Synthetic renamed remotely",exact:true})).toBeVisible();
+  await expect(name).toHaveValue("Synthetic preserved draft");await expect(name).toBeFocused();
+  await expect(library.getByText(/This clipboard changed remotely/)).toBeVisible();
+  await page.evaluate(()=>(window as any).__copicuProductConflictRename=true);
+  await library.getByRole("button",{name:"Rename clipboard",exact:true}).click();
+  await expect(library.getByRole("alert")).toContainText("changed; refresh");
+  const operations=await page.evaluate(()=>(window as any).__copicuProductOperations);
+  expect(operations[0].expectedRevision).toBe("1");
+  await expect(name).toHaveValue("Synthetic preserved draft");
+  await library.getByRole("button",{name:"Keep draft after reviewing current name",exact:true}).click();
+  await library.getByRole("button",{name:"Rename clipboard",exact:true}).click();
+  await expect(name).toHaveValue("");
+  const reviewed=await page.evaluate(()=>(window as any).__copicuProductOperations);
+  expect(reviewed[1].expectedRevision).toBe("2");expect(reviewed[1].operationId).not.toBe(reviewed[0].operationId);
+  await page.evaluate(async()=>{const w=window as any;w.__copicuProductCatalog.resources=w.__copicuProductCatalog.resources.filter((r:any)=>r.id!=="synthetic-channel");await w.__copicuTestEmitEvent("shared-catalog-invalidated",{state:"live"});});
+  await expect(library.getByText(/This clipboard was removed or your access was revoked/)).toBeVisible();
+  await expect(library.getByRole("button",{name:"View available history",exact:true})).toHaveCount(0);
+});
+
+test("shared product Settings removal preserves drafts and retained connection without enabling effects", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page); await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const sharing = page.locator(".shared-clipboard-settings");
+  const receive = sharing.getByRole("checkbox", { name: "Receive publications", exact: true });
+  await receive.uncheck();
+  const shortcut = sharing.getByLabel("Send active Copicu clip", { exact: true });
+  await shortcut.fill("Ctrl+Alt+Y");
+  await page.evaluate(async () => {
+    const w = window as any, s = w.__copicuSharedSnapshot;
+    s.connections = [{ id: "general", channelId: s.channels[0].id, kind: "general", folderId: null, direction: "both" }];
+    s.channels[0].name = "Synthetic retained clipboard";
+    s.channels[0].canPublish = false; s.channels[0].receiveEnabled = false;
+    s.unavailableChannelIds = [s.channels[0].id];
+    await w.__copicuTestEmitEvent("shared-catalog-invalidated", { state: "live" });
+  });
+  await expect(sharing.getByText(/This clipboard was removed or your access was revoked/)).toBeVisible();
+  await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("Synthetic retained clipboard");
+  await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("cannot send or receive");
+  await expect(sharing.getByLabel("Channel", { exact: true })).toHaveValue("Synthetic retained clipboard · Unavailable");
+  await expect(receive).toBeDisabled(); await expect(receive).not.toBeChecked();
+  await expect(sharing.getByRole("button", { name: "Save channel settings", exact: true })).toBeDisabled();
+  await expect(shortcut).toHaveValue("Ctrl+Alt+Y"); await expect(shortcut).toBeFocused();
+  const state = await page.evaluate(() => ({ connections: (window as any).__copicuSharedSnapshot.connections, saved: (window as any).__copicuSharedSavedPolicies, operations: (window as any).__copicuProductOperations }));
+  expect(state.connections).toHaveLength(1); expect(state.saved ?? []).toHaveLength(0); expect(state.operations).toHaveLength(0);
+  await page.screenshot({ path: `.codex-run/shared-settings-removal-${testInfo.project.name}.png` });
+});
+
+test("shared product connect general is keyboard accessible and cancel never creates",async({page},testInfo)=>{
+  await mockTauriInvoke(page);await mockSharedProduct(page);await gotoShell(page);await waitForDefaultHistoryReady(page);
+  await page.getByRole("button",{name:"Connect shared clipboard",exact:true}).click();
+  const dialog=page.getByRole("dialog",{name:"Connect shared clipboard"});
+  await expect(dialog.getByText("All history · General connection",{exact:true})).toBeVisible();
+  await dialog.getByLabel("Find shared clipboard").fill("Synthetic");
+  await dialog.getByLabel("Find shared clipboard").press("ArrowDown");
+  await expect(dialog.getByRole("option",{name:/Synthetic clipboard/})).toBeFocused();
+  await dialog.getByRole("button",{name:"Connect clipboard",exact:true}).click();
+  await expect(dialog).not.toBeVisible();
+  const connections=await page.evaluate(()=>(window as any).__copicuSharedSnapshot.connections);
+  expect(connections).toEqual([expect.objectContaining({kind:"general",folderId:null,direction:"receive",channelId:"synthetic-channel"})]);
+  await page.getByRole("button",{name:"Connect shared clipboard",exact:true}).click();
+  await dialog.getByRole("button",{name:"Create shared clipboard…",exact:true}).click();
+  await dialog.getByLabel("New clipboard name").fill("Cancelled synthetic draft");
+  await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).__copicuProductOperations)).toEqual([]);
+  await page.getByRole("button",{name:"Shared clipboards",exact:true}).click();
+  const library=page.getByRole("dialog",{name:"Shared clipboards"});
+  await expect(library.getByText("Synthetic clipboard",{exact:true}).last()).toBeVisible();
+  await page.screenshot({path:testInfo.outputPath("shared-product-library.png")});
+});
+
+test("shared product lost create retries immutable intent and history has only explicit effects",async({page},testInfo)=>{
+  await mockTauriInvoke(page);await mockSharedProduct(page);await gotoShell(page);await waitForDefaultHistoryReady(page);
+  await page.evaluate(()=>(window as any).__copicuProductLoseCreate=true);
+  await page.getByRole("button",{name:"Connect shared clipboard",exact:true}).click();
+  const connect=page.getByRole("dialog",{name:"Connect shared clipboard"});
+  await connect.getByRole("button",{name:"Create shared clipboard…",exact:true}).click();
+  await connect.getByLabel("New clipboard name").fill("Synthetic retry clipboard");
+  await connect.getByRole("button",{name:"Create and connect",exact:true}).click();
+  await expect(connect.getByRole("alert")).toContainText("response lost");
+  await connect.getByRole("button",{name:"Create and connect",exact:true}).click();
+  await expect(connect).not.toBeVisible();
+  const operations=await page.evaluate(()=>(window as any).__copicuProductOperations);
+  expect(operations).toHaveLength(2);expect(operations[0]).toEqual(operations[1]);
+  await page.getByRole("button",{name:"Shared clipboards",exact:true}).click();
+  const library=page.getByRole("dialog",{name:"Shared clipboards"});
+  await library.getByRole("button",{name:/Synthetic clipboard Mine/}).click();
+  await library.getByRole("button",{name:"View available history",exact:true}).click();
+  await expect(library.getByText("COPICU_SYNTH_PRIOR_AUTHORIZED_HISTORY",{exact:true})).toBeVisible();
+  const effects=await page.evaluate(()=>(window as any).__copicuTestInvocations.filter((call:any)=>["shared_clipboard_history_action","shared_clipboard_copy_receipt","create_history_item"].includes(call.cmd)));
+  expect(effects).toEqual([]);
+  await library.getByRole("button",{name:"Save in folder",exact:true}).click();
+  await expect(library.getByRole("status")).toContainText("Already exists in Root");
+  await page.screenshot({path:testInfo.outputPath("shared-product-history.png")});
+  await library.getByRole("button",{name:"Close",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Shared clipboards",exact:true})).toBeFocused();
+});
+
+test("shared product folder selector preserves exact context and chosen direction",async({page},testInfo)=>{
+  await mockTauriInvoke(page);await mockSharedProduct(page);await gotoShell(page);await waitForDefaultHistoryReady(page);
+  await revealFolderTree(page);
+  await page.getByRole("button",{name:"Actions for Projects",exact:true}).click();
+  await page.getByRole("menuitem",{name:"Connect shared clipboard…",exact:true}).click();
+  const dialog=page.getByRole("dialog",{name:"Connect shared clipboard"});
+  await expect(dialog.getByText("Projects · Exact folder",{exact:true})).toBeVisible();
+  await dialog.getByRole("option",{name:/Synthetic clipboard/}).click();
+  await dialog.getByLabel("Direction",{exact:true}).click();
+  await page.getByRole("option",{name:"Send and receive",exact:true}).click();
+  await expect(dialog.getByLabel("Direction",{exact:true})).toHaveValue("Send and receive");
+  await page.screenshot({path:testInfo.outputPath("shared-product-folder-selector.png")});
+  await dialog.getByRole("button",{name:"Connect clipboard",exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).__copicuSharedSnapshot.connections)).toEqual([expect.objectContaining({id:"folder_7",kind:"folder",folderId:7,direction:"both"})]);
+});
+
+test("shared clipboard previews immutable recovered text only on selection and copies manually", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page);
+  await mockSharedClipboard(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  await page.getByRole("button", { name: "Shared clipboard", exact: true }).click();
+  const feed = page.getByTestId("shared-clipboard-feed");
+  await expect(feed.getByRole("option")).toHaveCount(3);
+  expect(await page.evaluate(() => (window as any).__copicuSharedReads)).toEqual([]);
+  await feed.getByRole("option").filter({ hasText: "From synthetic-work" }).click();
+  await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_RECOVERY_TEXT");
+  await expect(feed.getByText("This publication is immutable.", { exact: false })).toBeVisible();
+  await expect(feed.getByText("Recovered and delayed text stays available", { exact: false })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuSharedReads)).toEqual([{ subscriptionId: "synthetic-sub", publicationId: "synthetic-work-publication" }]);
+  await feed.getByRole("button", { name: "Copy text", exact: true }).click();
+  await expect(feed.getByRole("status")).toContainText("Received text copied to Windows clipboard.");
+  const copies = await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "shared_clipboard_copy_receipt"));
+  expect(copies).toHaveLength(1);
+  expect(copies[0].args).toEqual({ subscriptionId: "synthetic-sub", publicationId: "synthetic-work-publication" });
+  await page.screenshot({ path: `.codex-run/shared-reception-${testInfo.project.name}.png` });
+  await feed.getByRole("button", { name: "Return to local history", exact: true }).click();
+  await expect(feed).toHaveCount(0);
+  await expect(page.getByText("COPICU_SYNTH_RECOVERY_TEXT", { exact: false })).toHaveCount(0);
+});
+
+test("shared clipboard keyboard selection rejects stale previews and keeps expired metadata", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await mockSharedClipboard(page, true);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  await page.getByRole("button", { name: "Shared clipboard", exact: true }).click();
+  const feed = page.getByTestId("shared-clipboard-feed");
+  const recovered = feed.getByRole("option").filter({ hasText: "From synthetic-work" });
+  await recovered.click();
+  await expect(feed.getByRole("status")).toContainText("Reading received text…");
+  await recovered.press("ArrowDown");
+  await expect(feed.getByRole("option").filter({ hasText: "From synthetic-other" })).toBeFocused();
+  await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_LIVE_TEXT");
+  await page.evaluate(() => (window as any).__copicuSharedResolveFirstRead());
+  await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_LIVE_TEXT");
+  await expect(feed.getByText("COPICU_SYNTH_RECOVERY_TEXT", { exact: false })).toHaveCount(0);
+  await feed.getByRole("option").filter({ hasText: "From synthetic-expired-device" }).click();
+  await expect(feed.getByRole("button", { name: "Copy text", exact: true })).toBeDisabled();
+  await expect(feed.getByText("Text is unavailable or expired.", { exact: false })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuSharedReads)).toHaveLength(2);
+  await feed.getByLabel("Filter receptions by channel or device").fill("no such device");
+  await expect(feed.getByText("No channels or devices match this filter.")).toBeVisible();
+});
+
+test("shared clipboard settings keep folder reception Windows and send shortcuts independent", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page);
+  await mockSharedClipboard(page);
+  await gotoShell(page, "/?window=settings");
+  await expect(page.getByLabel("Search settings")).toBeVisible();
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const sharing = page.locator(".shared-clipboard-settings");
+  await expect(sharing.getByText("Sharing enabled", { exact: true })).toBeVisible();
+  await expect(sharing.locator("form")).toHaveCount(0);
+  await sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true }).check();
+  await sharing.getByRole("checkbox", { name: "Save received text in Copicu", exact: true }).check();
+  await expect(sharing.getByRole("checkbox", { name: "Receive publications", exact: true })).not.toBeChecked();
+  await expect(sharing.getByRole("checkbox", { name: "Update Windows clipboard on live arrivals", exact: true })).not.toBeChecked();
+  await expect(sharing.getByRole("button", { name: "Publication folder /", exact: true })).toBeVisible();
+  await expect(sharing.getByRole("button", { name: "Reception folder /", exact: true })).toBeVisible();
+  await sharing.getByRole("button", { name: "Save channel settings", exact: true }).click();
+  const configured = await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0]);
+  expect(configured.publishFolderEnabled).toBe(true); expect(configured.publishFolderId).toBeNull();
+  expect(configured.saveToFolder).toBe(true); expect(configured.receiveFolderId).toBeNull();
+  expect(configured.receiveEnabled).toBe(false); expect(configured.updateClipboard).toBe(false);
+  await sharing.getByLabel("Send active Copicu clip", { exact: true }).fill("F8");
+  await sharing.getByLabel("Send Windows clipboard", { exact: true }).fill("Ctrl+Alt+Y");
+  const generalSaves = await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => ["update_settings", "close_settings_window"].includes(call.cmd)).length);
+  await sharing.getByLabel("Send active Copicu clip", { exact: true }).press("Enter");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => ["update_settings", "close_settings_window"].includes(call.cmd)).length)).toBe(generalSaves);
+  await sharing.getByRole("button", { name: "Save shortcuts", exact: true }).click();
+  const shortcuts = await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "shared_clipboard_set_hotkeys"));
+  expect(shortcuts.args).toEqual({ sendActiveShortcut: "F8", sendClipboardShortcut: "Ctrl+Alt+Y" });
+  await sharing.getByLabel("Send active Copicu clip", { exact: true }).fill("F9");
+  await sharing.getByLabel("Send active Copicu clip", { exact: true }).press("Control+Enter");
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuSharedSnapshot.sendActiveShortcut)).toBe("F9");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => ["update_settings", "close_settings_window"].includes(call.cmd)).length)).toBe(generalSaves);
+  await sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true }).uncheck();
+  await sharing.getByRole("button", { name: "View receptions", exact: true }).click();
+  const feed = page.getByTestId("shared-clipboard-feed");
+  await expect(feed.getByRole("option")).toHaveCount(3);
+  await feed.getByRole("option").filter({ hasText: "From synthetic-work" }).click();
+  await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_RECOVERY_TEXT");
+  await feed.getByRole("button", { name: "Back to Sharing settings", exact: true }).click();
+  await expect(feed).toHaveCount(0);
+  await expect(sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true })).not.toBeChecked();
+  await expect(sharing.getByText("Not saved", { exact: true })).toBeVisible();
+  await sharing.getByRole("button", { name: "Pause sharing", exact: true }).click();
+  await expect(sharing.getByText("Sharing paused", { exact: true })).toBeVisible();
+  await expect(sharing.getByRole("button", { name: "Resume sharing", exact: true })).toBeVisible();
+  await page.screenshot({ path: `.codex-run/shared-settings-${testInfo.project.name}.png` });
+});
+
+test("shared clipboard reception action writer requires an explicit mutually exclusive output", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await mockSharedClipboard(page, false, true);
+  await gotoShell(page, "/?window=settings");
+  await expect(page.getByLabel("Search settings")).toBeVisible();
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const sharing = page.locator(".shared-clipboard-settings");
+  const originalWriter = sharing.getByRole("checkbox", { name: "Update Windows clipboard on live arrivals", exact: true });
+  await originalWriter.check();
+  await sharing.getByRole("checkbox", { name: "Run a local action on live arrivals", exact: true }).check();
+  await sharing.getByLabel("Reception action", { exact: true }).click();
+  await page.getByRole("option", { name: "Synthetic uppercase reception", exact: true }).click();
+  const actionWriter = sharing.getByRole("checkbox", { name: "Allow reception action to update Windows clipboard", exact: true });
+  await expect(actionWriter).not.toBeChecked();
+  await expect(actionWriter).toBeDisabled();
+  await originalWriter.uncheck();
+  await expect(actionWriter).toBeEnabled();
+  await actionWriter.check();
+  await expect(originalWriter).toBeDisabled();
+  await sharing.getByRole("button", { name: "Save channel settings", exact: true }).click();
+  const configured = await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0]);
+  expect(configured.receiveActionEnabled).toBe(true);
+  expect(configured.receiveActionId).toBe("synthetic-receiver-action");
+  expect(configured.receiveActionWritesClipboard).toBe(true);
+  expect(configured.updateClipboard).toBe(false);
+  await sharing.getByRole("checkbox", { name: "Run a local action on live arrivals", exact: true }).uncheck();
+  await expect(actionWriter).toHaveCount(0);
+  await expect(originalWriter).toBeEnabled();
+  await sharing.getByRole("button", { name: "Save channel settings", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0].receiveActionWritesClipboard)).toBe(false);
 });

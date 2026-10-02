@@ -273,6 +273,8 @@ pub struct CreateHistoryItemRequest {
     #[serde(default)]
     pub tags: Vec<String>,
     pub mime_primary: Option<String>,
+    #[serde(default)]
+    pub folder: Option<MetadataFolderIntent>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -409,7 +411,24 @@ pub struct MetadataSelectionSnapshot {
     pub title: ScalarAggregate,
     pub notes: ScalarAggregate,
     pub tags: Vec<SetValueAggregate>,
+    pub folder: MetadataFolderAggregate,
     pub single_item: Option<MetadataSingleItem>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataFolderAggregate {
+    pub state: ScalarAggregateState,
+    pub folder_id: Option<i64>,
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum MetadataFolderIntent {
+    Untouched,
+    Set { #[serde(rename = "folderId")] folder_id: Option<i64> },
+    Create { path: String },
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -462,6 +481,8 @@ pub struct MetadataSelectionIntent {
     pub notes: NotesIntent,
     #[serde(default)]
     pub tags: Vec<SetValueIntent>,
+    #[serde(default)]
+    pub folder: Option<MetadataFolderIntent>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -1362,6 +1383,21 @@ fn default_paste_next_shortcut() -> String {
 }
 
 impl AppStorage {
+    /// Only committed local ingress calls this hook; shared imports bypass it.
+    /// Queue failures are surfaced by Sharing without losing a local capture.
+    #[cfg(feature = "shared-clipboard")]
+    fn notify_shared_folder_ingress(&self, item_id: i64, new_ingress: bool) {
+        if let Ok(item) = self.get_item(item_id) {
+            if let Err(reason) = crate::shared_clipboard::runtime::publish_folder_ingress(
+                self, item.folder_id, item_id, new_ingress,
+            ) {
+                let _ = crate::shared_clipboard::runtime::record_error(self, &reason);
+            }
+        }
+    }
+
+    #[cfg(not(feature = "shared-clipboard"))]
+    fn notify_shared_folder_ingress(&self, _item_id: i64, _new_ingress: bool) {}
     pub fn open(app_data_dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(app_data_dir).map_err(|error| {
             format!(
@@ -1684,7 +1720,7 @@ impl AppStorage {
         let text_char_count = text.chars().count() as i64;
         let line_count = text.lines().count().max(1) as i64;
         let domain = first_url_domain(text);
-        let (item_id, prune_outcome, projection_changed, feedback) = {
+        let (item_id, prune_outcome, projection_changed, feedback, created) = {
             let mut conn = self
                 .conn
                 .lock()
@@ -1747,7 +1783,7 @@ impl AppStorage {
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard text capture: {error}"))?;
-            (item_id, prune_outcome, projection_changed, feedback)
+            (item_id, prune_outcome, projection_changed, feedback, existing_id.is_none())
         };
 
         if projection_changed || prune_outcome.removed_items > 0 {
@@ -1755,6 +1791,7 @@ impl AppStorage {
         }
         self.record_capture_folder_feedback(feedback);
         self.remove_blob_paths(prune_outcome.blob_paths);
+        if created { self.notify_shared_folder_ingress(item_id, true); }
         Ok(item_id)
     }
 
@@ -1834,6 +1871,7 @@ impl AppStorage {
         &self,
         request: CreateHistoryItemRequest,
     ) -> Result<CreateHistoryItemResult, String> {
+        let folder_specified = matches!(request.folder, Some(MetadataFolderIntent::Set { .. } | MetadataFolderIntent::Create { .. }));
         let text = normalize_text_for_storage(&request.text);
         if text.is_empty() {
             return Err("new item content cannot be empty".to_string());
@@ -1860,7 +1898,7 @@ impl AppStorage {
             ..CaptureContext::default()
         };
         let now = now_unix_ms();
-        let (result, prune_outcome, projection_changed, feedback) = {
+        let (result, prune_outcome, projection_changed, feedback, folder_changed) = {
             let conn = self
                 .conn
                 .lock()
@@ -1868,7 +1906,11 @@ impl AppStorage {
             let conn = conn
                 .unchecked_transaction()
                 .map_err(|error| format!("failed to begin manual item creation: {error}"))?;
-            let destination = self.capture_folder_destination()?;
+            let requested_destination = resolve_metadata_folder_intent(&conn, request.folder.as_ref())?;
+            let destination = match requested_destination {
+                Some(folder_id) => folder_id,
+                None => self.capture_folder_destination()?,
+            };
 
             let existing = conn
                 .query_row(
@@ -1909,7 +1951,11 @@ impl AppStorage {
                 )
                 .map_err(|error| format!("failed to update existing manual item: {error}"))?;
                 sync_legacy_tags_for_item(&conn, existing_id)?;
-                let projection_changed =
+                let folder_changed = if requested_destination.is_some() {
+                    conn.execute("UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2 AND folder_id IS NOT ?1", params![destination, existing_id])
+                        .map_err(|error| format!("failed to set manual item folder: {error}"))? > 0
+                } else { false };
+                let projection_changed = folder_changed ||
                     before_projection != item_projection_signature(&conn, existing_id)?;
 
                 let context_pruned = record_capture_event(
@@ -1938,6 +1984,7 @@ impl AppStorage {
                     prune_outcome,
                     projection_changed,
                     feedback,
+                    folder_changed,
                 )
             } else {
                 conn.execute(
@@ -1988,15 +2035,17 @@ impl AppStorage {
                     prune_outcome,
                     false,
                     None,
+                    false,
                 )
             }
         };
 
-        if projection_changed || prune_outcome.removed_items > 0 {
+        if folder_specified || projection_changed || prune_outcome.removed_items > 0 {
             self.bump_mutation_epoch();
         }
         self.record_capture_folder_feedback(feedback);
         self.remove_blob_paths(prune_outcome.blob_paths);
+        if result.created || folder_changed { self.notify_shared_folder_ingress(result.id, result.created); }
         Ok(result)
     }
 
@@ -2826,11 +2875,22 @@ impl AppStorage {
         }
 
         let mut changed_items = BTreeSet::new();
+        let mut folder_changed_items = BTreeSet::new();
         let mut tag_changed_items = BTreeSet::new();
         let mut content_changed = false;
         let mut title_changed_count = 0;
         let mut notes_changed_count = 0;
         let mut tag_relation_changes = 0;
+
+        if let Some(folder_id) = resolve_metadata_folder_intent(&transaction, intent.folder.as_ref())? {
+            for item_id in &item_ids {
+                let changed = transaction.execute(
+                    "UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2 AND folder_id IS NOT ?1",
+                    params![folder_id, item_id],
+                ).map_err(|error| format!("failed to update selection folder: {error}"))?;
+                if changed > 0 { changed_items.insert(*item_id); folder_changed_items.insert(*item_id); }
+            }
+        }
 
         if let Some(content) = &intent.content {
             if item_ids.len() != 1 {
@@ -2973,6 +3033,8 @@ impl AppStorage {
         transaction
             .commit()
             .map_err(|error| format!("failed to commit metadata selection update: {error}"))?;
+        drop(conn);
+        for item_id in folder_changed_items { self.notify_shared_folder_ingress(item_id, false); }
         if !changed_items.is_empty() {
             self.bump_mutation_epoch();
         }
@@ -4028,6 +4090,80 @@ struct MetadataFingerprintProjection<'a> {
     item_ids: &'a [i64],
     scalars: &'a [(i64, Option<String>, Option<String>)],
     tags: &'a [(i64, String, String, Option<String>)],
+    folders: &'a [(i64, Option<i64>, String)],
+}
+
+/// Resolve every segment in one transaction, reusing existing siblings with SQLite's
+/// case-insensitive name semantics. Names are literal (including '.' and '..').
+fn resolve_folder_path_from_conn(conn: &Connection, path: &str) -> Result<i64, String> {
+    if path.chars().any(char::is_control) {
+        return Err("folder name must be a non-empty path segment without slash or control characters".into());
+    }
+    let path = path.trim().strip_prefix('/').unwrap_or(path.trim());
+    let path = path.strip_suffix('/').unwrap_or(path);
+    let segments = path.split('/').map(folders::folder_name).collect::<Result<Vec<_>, _>>()?;
+    let mut parent_id = None;
+    for name in segments {
+        let existing = conn.query_row(
+            "SELECT id FROM folders WHERE parent_id IS ?1 AND name = ?2 COLLATE NOCASE",
+            params![parent_id, name], |row| row.get::<_, i64>(0),
+        ).optional().map_err(|error| format!("failed to resolve folder path: {error}"))?;
+        parent_id = Some(match existing {
+            Some(id) => id,
+            None => {
+                conn.execute("INSERT INTO folders(parent_id, name) VALUES (?1, ?2)", params![parent_id, name])
+                    .map_err(|error| format!("failed to create folder path: {error}"))?;
+                conn.last_insert_rowid()
+            }
+        });
+    }
+    parent_id.ok_or_else(|| "folder path must contain at least one folder".to_string())
+}
+
+fn resolve_metadata_folder_intent(conn: &Connection, intent: Option<&MetadataFolderIntent>) -> Result<Option<Option<i64>>, String> {
+    match intent {
+        None | Some(MetadataFolderIntent::Untouched) => Ok(None),
+        Some(MetadataFolderIntent::Set { folder_id }) => {
+            folders::validate_parent(conn, *folder_id)?;
+            Ok(Some(*folder_id))
+        }
+        Some(MetadataFolderIntent::Create { path }) => Ok(Some(Some(resolve_folder_path_from_conn(conn, path)?))),
+    }
+}
+
+impl AppStorage {
+    pub fn create_folder_path(&self, path: &str) -> Result<FolderSummary, String> {
+        let mut conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
+        let transaction = conn.transaction().map_err(|error| format!("failed to begin folder creation: {error}"))?;
+        let id = resolve_folder_path_from_conn(&transaction, path)?;
+        let folder = folders::summaries(&transaction)?.into_iter().find(|folder| folder.id == id).ok_or("new folder not found")?;
+        transaction.commit().map_err(|error| format!("failed to commit folder creation: {error}"))?;
+        self.bump_mutation_epoch();
+        Ok(folder)
+    }
+
+    pub fn move_history_items_to_folder_path(&self, item_ids: Vec<i64>, path: &str) -> Result<usize, String> {
+        let mut conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
+        let transaction = conn.transaction().map_err(|error| format!("failed to begin folder move: {error}"))?;
+        let folder_id = resolve_folder_path_from_conn(&transaction, path)?;
+        let mut changed = 0;
+        let mut moved_items = Vec::new();
+        for item_id in item_ids.into_iter().collect::<BTreeSet<_>>() {
+            let moved = transaction.execute(
+                "UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2 AND folder_id IS NOT ?1",
+                params![folder_id, item_id],
+            ).map_err(|error| format!("failed to move clipboard item to folder path: {error}"))?;
+            changed += moved;
+            if moved > 0 { moved_items.push(item_id); }
+        }
+        // An empty or deleted selection must not leave a newly created destination.
+        if changed == 0 { return Ok(0); }
+        transaction.commit().map_err(|error| format!("failed to commit folder move: {error}"))?;
+        drop(conn);
+        for item_id in moved_items { self.notify_shared_folder_ingress(item_id, false); }
+        self.bump_mutation_epoch();
+        Ok(changed)
+    }
 }
 
 #[derive(Default)]
@@ -4177,8 +4313,25 @@ fn metadata_selection_snapshot_from_conn(
     let placeholders = vec!["?"; item_ids.len()].join(",");
     let mut scalars = Vec::with_capacity(item_ids.len());
     let mut content = Vec::with_capacity(item_ids.len());
+    let mut folder_projection = Vec::with_capacity(item_ids.len());
+    // Read only selected folders and their ancestors; folder summaries also count
+    // all clipboard items, which is unnecessary for an editable snapshot.
+    let mut ancestors = conn.prepare(&format!(
+        "WITH RECURSIVE ancestry(id, parent_id, name) AS (
+            SELECT f.id, f.parent_id, f.name FROM folders f
+            JOIN clipboard_items i ON i.folder_id = f.id WHERE i.id IN ({placeholders})
+            UNION SELECT f.id, f.parent_id, f.name FROM folders f
+            JOIN ancestry a ON f.id = a.parent_id
+         ) SELECT id, parent_id, name FROM ancestry"
+    )).map_err(|error| format!("failed to prepare metadata folder paths: {error}"))?;
+    let folder_ancestors = ancestors.query_map(params_from_iter(item_ids.iter()), |row| {
+        Ok((row.get::<_, i64>(0)?, (row.get::<_, Option<i64>>(1)?, row.get::<_, String>(2)?)))
+    }).map_err(|error| format!("failed to query metadata folder paths: {error}"))?
+        .collect::<Result<BTreeMap<_, _>, _>>()
+        .map_err(|error| format!("failed to read metadata folder path: {error}"))?;
+    let mut folder_paths: BTreeMap<i64, String> = BTreeMap::new();
     let item_sql = format!(
-        "SELECT id, title, notes, content_kind, text
+        "SELECT id, title, notes, content_kind, text, folder_id
          FROM clipboard_items
          WHERE id IN ({placeholders})
          ORDER BY id ASC"
@@ -4194,6 +4347,7 @@ fn metadata_selection_snapshot_from_conn(
                 row.get::<_, Option<String>>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, Option<i64>>(5)?,
             ))
         })
         .map_err(|error| format!("failed to query metadata selection items: {error}"))?
@@ -4208,9 +4362,30 @@ fn metadata_selection_snapshot_from_conn(
             .unwrap_or_default();
         return Err(format!("clipboard item not found: {missing}"));
     }
-    for (item_id, title, notes, content_kind, text) in item_rows {
+    for (item_id, title, notes, content_kind, text, folder_id) in item_rows {
         scalars.push((item_id, title, notes));
         content.push((item_id, content_kind, text));
+        let path = match folder_id {
+            Some(id) => {
+                if let Some(path) = folder_paths.get(&id) { path.clone() } else {
+                    let mut parent = Some(id);
+                    let mut segments = Vec::new();
+                    let mut visited = BTreeSet::new();
+                    while let Some(ancestor_id) = parent {
+                        if !visited.insert(ancestor_id) { return Err("folder ancestry cycle".into()); }
+                        let (parent_id, name) = folder_ancestors.get(&ancestor_id).ok_or("clipboard item folder not found")?;
+                        segments.push(name.as_str());
+                        parent = *parent_id;
+                    }
+                    segments.reverse();
+                    let path = segments.join("/");
+                    folder_paths.insert(id, path.clone());
+                    path
+                }
+            },
+            None => "/".to_string(),
+        };
+        folder_projection.push((item_id, folder_id, path));
     }
 
     let mut tag_builders = BTreeMap::new();
@@ -4277,6 +4452,7 @@ fn metadata_selection_snapshot_from_conn(
         item_ids,
         scalars: &scalars,
         tags: &tag_projection,
+        folders: &folder_projection,
     })
     .map_err(|error| format!("failed to serialize metadata snapshot projection: {error}"))?;
     let snapshot_token = hash_text(
@@ -4308,6 +4484,11 @@ fn metadata_selection_snapshot_from_conn(
         title: scalar_aggregate(&title_values),
         notes: scalar_aggregate(&notes_values),
         tags: finish_set_aggregates(tag_builders, item_ids.len()),
+        folder: if folder_projection.iter().all(|(_, id, _)| *id == folder_projection[0].1) {
+            MetadataFolderAggregate { state: ScalarAggregateState::Same, folder_id: folder_projection[0].1, path: Some(folder_projection[0].2.clone()) }
+        } else {
+            MetadataFolderAggregate { state: ScalarAggregateState::Mixed, folder_id: None, path: None }
+        },
         single_item,
     })
 }
@@ -5271,7 +5452,7 @@ fn escape_like(query: &str) -> String {
         .replace('_', "\\_")
 }
 
-fn normalize_text_for_storage(text: &str) -> String {
+pub(crate) fn normalize_text_for_storage(text: &str) -> String {
     text.replace("\r\n", "\n").trim().to_string()
 }
 
@@ -5730,7 +5911,121 @@ mod tests {
             title: ScalarIntent::Untouched,
             notes: NotesIntent::Untouched,
             tags: Vec::new(),
+            folder: None,
         }
+    }
+
+    #[test]
+    fn metadata_folder_selection_stages_creation_and_applies_one_destination() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "first folder clip");
+        insert_test_text_item(&storage, 2, 10_002, "second folder clip");
+        let existing = storage.create_folder(None, "Existing").unwrap();
+        storage.move_history_items_to_folder(vec![2], Some(existing.id)).unwrap();
+        let snapshot = storage.get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1, 2] }).unwrap();
+        assert_eq!(snapshot.folder.state, ScalarAggregateState::Mixed);
+        assert_eq!(snapshot.folder.path, None);
+        let mut canceled = untouched_metadata_intent(vec![1, 2], snapshot.snapshot_token.clone());
+        canceled.folder = Some(MetadataFolderIntent::Create { path: "/Work/Research".into() });
+        drop(canceled);
+        assert_eq!(storage.list_folders().unwrap().len(), 1);
+        let mut intent = untouched_metadata_intent(vec![1, 2], snapshot.snapshot_token);
+        intent.folder = Some(MetadataFolderIntent::Create { path: "/Work/Research".into() });
+        intent.title = ScalarIntent::Set { value: "Shared title".into() };
+        let result = storage.apply_metadata_selection_intent(intent).unwrap();
+        assert_eq!(result.changed_item_count, 2);
+        assert_eq!(result.snapshot.folder.state, ScalarAggregateState::Same);
+        assert_eq!(result.snapshot.folder.path.as_deref(), Some("Work/Research"));
+        assert_eq!(storage.list_folders().unwrap().len(), 3);
+        let mut root = untouched_metadata_intent(vec![1, 2], result.snapshot.snapshot_token);
+        root.folder = Some(MetadataFolderIntent::Set { folder_id: None });
+        let root = storage.apply_metadata_selection_intent(root).unwrap();
+        assert_eq!(root.snapshot.folder.folder_id, None);
+        assert_eq!(root.snapshot.folder.path.as_deref(), Some("/"));
+    }
+
+    #[test]
+    fn metadata_folder_snapshot_detects_moves_and_path_changes_before_creation() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "stale folder clip");
+        let snapshot = storage.get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] }).unwrap();
+        let folder = storage.create_folder(None, "Before").unwrap();
+        storage.move_history_items_to_folder(vec![1], Some(folder.id)).unwrap();
+        let mut stale = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        stale.folder = Some(MetadataFolderIntent::Create { path: "/Should/NotExist".into() });
+        assert!(storage.apply_metadata_selection_intent(stale).unwrap_err().contains(METADATA_SNAPSHOT_STALE));
+        assert_eq!(storage.list_folders().unwrap().len(), 1);
+        let snapshot = storage.get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] }).unwrap();
+        storage.rename_folder(folder.id, "After").unwrap();
+        assert!(storage.apply_metadata_selection_intent(untouched_metadata_intent(vec![1], snapshot.snapshot_token)).unwrap_err().contains(METADATA_SNAPSHOT_STALE));
+    }
+
+    #[test]
+    fn folder_path_creation_validates_and_reuses_existing_siblings() {
+        let storage = test_storage_with_migrations();
+        let folder = storage.create_folder_path("/Work/Research/").unwrap();
+        assert_eq!(folder.path, "Work/Research");
+        assert_eq!(storage.create_folder_path("work/research").unwrap().id, folder.id);
+        assert_eq!(storage.list_folders().unwrap().len(), 2);
+        for path in ["/", "", "Good//Bad", "Good/\nBad", "Good/   /Bad", "Good\n"] {
+            assert!(storage.create_folder_path(path).is_err(), "invalid path: {path:?}");
+        }
+        assert_eq!(storage.list_folders().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn folder_path_move_rolls_back_created_segments_on_move_failure() {
+        let storage = test_storage_with_migrations();
+        assert_eq!(storage.move_history_items_to_folder_path(Vec::new(), "/Empty/Target").unwrap(), 0);
+        assert_eq!(storage.move_history_items_to_folder_path(vec![12345], "/Missing/Target").unwrap(), 0);
+        assert!(storage.list_folders().unwrap().is_empty());
+        insert_test_text_item(&storage, 1, 10_001, "move rollback clip");
+        storage.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_move_folder BEFORE UPDATE OF folder_id ON clipboard_items BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;").unwrap();
+        assert!(storage.move_history_items_to_folder_path(vec![1], "/Moving/Target").is_err());
+        assert!(storage.list_folders().unwrap().is_empty());
+        assert_eq!(storage.get_item(1).unwrap().folder_id, None);
+        storage.conn.lock().unwrap().execute_batch("DROP TRIGGER fail_move_folder;").unwrap();
+        assert_eq!(storage.move_history_items_to_folder_path(vec![1, 1], "/Moving/Target").unwrap(), 1);
+        assert_eq!(storage.list_folders().unwrap().len(), 2);
+        assert!(storage.get_item(1).unwrap().folder_id.is_some());
+    }
+
+    #[test]
+    fn metadata_folder_creation_rolls_back_with_other_metadata_failures() {
+        let storage = test_storage_with_migrations();
+        insert_test_text_item(&storage, 1, 10_001, "rollback folder clip");
+        let snapshot = storage.get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] }).unwrap();
+        storage.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_folder_metadata BEFORE UPDATE OF title ON clipboard_items BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;").unwrap();
+        let mut intent = untouched_metadata_intent(vec![1], snapshot.snapshot_token.clone());
+        intent.folder = Some(MetadataFolderIntent::Create { path: "/Atomic/Nested".into() });
+        intent.title = ScalarIntent::Set { value: "Failure".into() };
+        assert!(storage.apply_metadata_selection_intent(intent).is_err());
+        assert!(storage.list_folders().unwrap().is_empty());
+        assert_eq!(storage.get_metadata_selection_snapshot(MetadataSelectionRequest { item_ids: vec![1] }).unwrap(), snapshot);
+        let mut missing = untouched_metadata_intent(vec![1], snapshot.snapshot_token);
+        missing.folder = Some(MetadataFolderIntent::Set { folder_id: Some(12345) });
+        assert!(storage.apply_metadata_selection_intent(missing).is_err());
+    }
+
+    #[test]
+    fn manual_item_folder_selection_commits_and_rolls_back_atomically() {
+        let storage = test_storage_with_migrations();
+        let request = |text: &str, path: &str| CreateHistoryItemRequest {
+            text: text.into(), title: None, notes: None, tags: Vec::new(), mime_primary: None,
+            folder: Some(MetadataFolderIntent::Create { path: path.into() }),
+        };
+        let first = storage.create_text_item(request("manual chosen folder", "/Manual/Chosen")).unwrap();
+        let chosen = storage.list_folders().unwrap().into_iter().find(|folder| folder.path == "Manual/Chosen").unwrap();
+        assert_eq!(storage.get_item(first.id).unwrap().folder_id, Some(chosen.id));
+        let duplicate = storage.create_text_item(CreateHistoryItemRequest {
+            text: "manual chosen folder".into(), title: None, notes: None, tags: Vec::new(), mime_primary: None,
+            folder: Some(MetadataFolderIntent::Set { folder_id: None }),
+        }).unwrap();
+        assert_eq!(first.id, duplicate.id);
+        assert_eq!(storage.get_item(first.id).unwrap().folder_id, None);
+        storage.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_manual_folder BEFORE INSERT ON clipboard_items BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;").unwrap();
+        assert!(storage.create_text_item(request("failed manual clip", "/Rollback/New")).is_err());
+        assert_eq!(storage.list_folders().unwrap().len(), 2);
     }
 
     #[test]
@@ -6090,6 +6385,7 @@ mod tests {
     fn reliability_create_dedupe_tags_and_notes_have_distinct_authority() {
         let storage = test_storage_with_migrations();
         let request = |tags: Option<&str>| CreateHistoryItemRequest {
+            folder: None,
             text: "synthetic manual".into(),
             title: None,
             notes: Some("#unassigned".into()),
@@ -6160,6 +6456,7 @@ mod tests {
         let storage = test_storage_with_migrations();
         let id = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: "original".into(),
                 title: None,
                 notes: None,
@@ -6199,6 +6496,7 @@ mod tests {
         for text in ["original", "new item"] {
             assert!(storage
                 .create_text_item(CreateHistoryItemRequest {
+                    folder: None,
                     text: text.into(),
                     title: Some("changed".into()),
                     notes: None,
@@ -7633,6 +7931,7 @@ mod tests {
         for _ in 0..3 {
             let result = storage
                 .create_text_item(CreateHistoryItemRequest {
+                    folder: None,
                     text: text.into(),
                     title: None,
                     notes: None,
@@ -7724,6 +8023,7 @@ mod tests {
 
         let result = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: "  Manual note  ".to_string(),
                 title: None,
                 notes: Some("#manual from keyboard".to_string()),
@@ -7748,6 +8048,7 @@ mod tests {
 
         let first = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: "Manual note".to_string(),
                 title: None,
                 notes: Some("#first".to_string()),
@@ -7757,6 +8058,7 @@ mod tests {
             .expect("first manual item should be created");
         let second = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: " Manual note ".to_string(),
                 title: Some("Manual".to_string()),
                 notes: Some("#second".to_string()),
@@ -10539,6 +10841,7 @@ mod tests {
 
         let recapture = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: "epoch edited".to_string(),
                 title: Some("recapture".to_string()),
                 notes: None,
@@ -10555,6 +10858,7 @@ mod tests {
 
         let inert_recapture = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: "epoch edited".to_string(),
                 title: None,
                 notes: None,
@@ -10583,6 +10887,7 @@ mod tests {
         let storage = test_storage_with_migrations();
         let created = storage
             .create_text_item(CreateHistoryItemRequest {
+                folder: None,
                 text: "before external edit".to_string(),
                 title: Some("Pinned note".to_string()),
                 notes: Some("Keep these notes".to_string()),

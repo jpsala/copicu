@@ -18,6 +18,16 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 Release público stable/latest: [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1), desde `6b1ad8b8099578ee84e8332fd9a54e0b043c1763`. Instalador, firma Tauri y manifest descargados/verificados; SHA256 vigente en `README.md`. CI del corte pasó. El mismo NSIS se instaló localmente y el ejecutable instalado pasó smoke WebView2 con perfil sintético separado: resize pointer/keyboard, menús, overlay/clamp, hide/reopen y preferencia tras reinicio. UI por CDP después de foreground por hotkey nativo; no certifica OS-pointer, C0 de type global ni matriz de paste. Perfil normal conservado y app instalada relanzada. Cierre/evidencia: [`040-resizable-folder-sidebar`](../tracks/040-resizable-folder-sidebar.md); notas: [`v0.5.1`](../releases/v0.5.1.md). Firma updater no equivale a Authenticode.
 
+Candidata `v0.5.2-rc.1`, core app/Cargo/NSIS `0.5.2`: paquete firmado y payload
+exacto verificados localmente, con sharing/SSE, carpetas/metadata y SDK. Estado,
+hashes y pruebas en [aceptación de la candidata](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02);
+notas en [v0.5.2-rc.1](../releases/v0.5.2-rc.1.md). JP autorizó publicación RC y
+actualización local. El mismo NSIS ya se instaló con `/S /UPDATE`: exe `0.5.2`
+idéntico al payload y smoke sintético comprobados en
+[aceptación instalada](../../specs/016-shared-clipboard/local-acceptance.md#smoke-instalado-v052-rc1-2026-10-02).
+Publicación y CI aún pendientes de evidencia. La RC conserva la selección
+stable/latest del updater y no debe sustituir ese canal por inferencia.
+
 ## Decision Actual
 
 Usar **NSIS** como instalador Windows principal para Copicu.
@@ -105,7 +115,24 @@ Los logs informativos de startup, clipboard watcher, foco anterior y shortcuts d
 
 ## Binarios Dev
 
-No dejar herramientas de benchmark bajo `src-tauri/src/bin` si no deben distribuirse. Tauri enumera binarios Cargo y puede empaquetarlos. Para herramientas locales usar `src-tauri/examples/` y wrappers dev como `npm run perf:history`.
+No dejar herramientas de benchmark/fixtures bajo `src-tauri/src/bin` si no deben distribuirse. Tauri puede encontrarlas físicamente aunque Cargo tenga `autobins = false`; no alcanza cambiar sólo la declaración del target. Para herramientas locales usar `src-tauri/examples/` y wrappers dev como `npm run perf:history`.
+
+El catálogo Cargo shipping tiene únicamente `copicu` como binario; los harnesses
+`shared-clipboard-n1` y `shared-clipboard-product` son examples opt-in con
+`required-features`. Comprobar esa separación y el contenido del NSIS en el corte
+que se va a distribuir. Un build debug o un instalador local anterior no acredita
+el NSIS de una continuación de código posterior.
+
+### Reinstalar el mismo número de versión
+
+Para una instalación existente, NSIS necesita `/S /UPDATE` para reemplazar de
+forma fiable un build local con la misma versión. `/S` solo puede salir con 0
+conservando el exe anterior. `install:current` añade `/UPDATE` si existe el exe;
+en una instalación inicial usa `/S`, conservando la preparación de WebView2.
+Verificar el ejecutable instalado, además del exit code. El bundler puede dejar
+el marcador `UNK` en el output Cargo y `NSS` en el instalado, así que sus hashes
+completos difieren por tres bytes. Repro y evidencia local en
+[aceptación de sharing](../../specs/016-shared-clipboard/local-acceptance.md).
 
 ## Updater
 
@@ -185,6 +212,11 @@ El instalador NSIS distribuye una seleccion minima de scripts utiles:
 - `copicu-action.d.ts`, necesario para tipos/autocomplete al editarlos.
 
 El hook copia estos archivos a `$DOCUMENTS\Copicu\Scripts` solo cuando cada destino no existe. Una actualizacion nunca sobrescribe scripts modificados por el usuario y el uninstall no los borra. Los demas archivos bajo `scripts/examples/` son fixtures y contratos de desarrollo, no contenido instalado.
+
+El paquete incluye los runners de scripts/assistant, `assistant-tools.json`, tipos
+y runtime TypeScript necesarios para Actions. El perfil, historial, enrollment,
+credenciales y claves de sharing permanecen fuera de los recursos del instalador.
+Instalar la capacidad no configura un servicio ni habilita efectos automáticos.
 
 ## Launch On Windows Startup
 

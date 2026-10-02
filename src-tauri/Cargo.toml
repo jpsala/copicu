@@ -1,6 +1,6 @@
 [package]
 name = "copicu"
-version = "0.5.1"
+version = "0.5.2"
 description = "A local keyboard-first clipboard manager inspired by CopyQ."
 authors = ["JP"]
 edition = "2021"
@@ -8,6 +8,7 @@ default-run = "copicu"
 autobins = false
 
 [features]
+default = ["shared-clipboard"]
 shared-clipboard-n1 = [
   "windows/Win32_Graphics_Gdi",
   "windows/Win32_Security_Cryptography",
@@ -19,7 +20,9 @@ shared-clipboard = [
   "dep:hpke",
   "dep:reqwest",
   "dep:rustls",
-  "windows/Win32_Security_Cryptography"
+  "dep:rustls-platform-verifier",
+  "windows/Win32_Security_Cryptography",
+  "windows/Win32_System_JobObjects"
 ]
 
 [lib]
@@ -30,10 +33,15 @@ crate-type = ["rlib"]
 name = "copicu"
 path = "src/main.rs"
 
-[[bin]]
+[[example]]
 name = "shared-clipboard-n1"
-path = "src/bin/shared_clipboard_n1.rs"
+path = "examples/shared_clipboard_n1.rs"
 required-features = ["shared-clipboard-n1"]
+
+[[example]]
+name = "shared-clipboard-product"
+path = "examples/shared_clipboard_product.rs"
+required-features = ["shared-clipboard-n1", "shared-clipboard"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
@@ -70,6 +78,7 @@ ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["fas
 hpke = { version = "=0.14.1", default-features = false, features = ["alloc", "x25519", "chacha"], optional = true }
 reqwest = { version = "=0.13.4", default-features = false, features = ["json", "blocking", "rustls-no-provider"], optional = true }
 rustls = { version = "=0.23.40", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+rustls-platform-verifier = { version = "=0.7.0", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

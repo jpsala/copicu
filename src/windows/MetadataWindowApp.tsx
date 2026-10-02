@@ -4,6 +4,7 @@ import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   ApplyMetadataSelectionIntentResult,
+  FolderSummary,
   MetadataSelectionIntent,
   MetadataSelectionPayload,
   MetadataSelectionSnapshot,
@@ -17,6 +18,7 @@ import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 
 const METADATA_OPEN_EVENT = "copicu://metadata/open";
 const SETTINGS_UPDATED_EVENT = "copicu://settings/updated";
+const HISTORY_CHANGED_EVENT = "copicu://history/changed";
 
 const METADATA_SELECTION_CANCELLED_EVENT = "copicu://metadata/selection-cancelled";
 function pendingMetadataEditor() {
@@ -39,9 +41,14 @@ function listTags() {
   return invoke<TagSummary[]>("list_tags");
 }
 
+function listFolders() {
+  return invoke<FolderSummary[]>("list_folders");
+}
+
 export function MetadataWindowApp() {
   const [payload, setPayload] = useState<MetadataSelectionPayload | null>(null);
   const [availableTags, setAvailableTags] = useState<TagSummary[]>([]);
+  const [availableFolders, setAvailableFolders] = useState<FolderSummary[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<AppSettings["appearance"]>(DEFAULT_SETTINGS.appearance);
   const [closeRequestSignal, setCloseRequestSignal] = useState(0);
@@ -59,6 +66,18 @@ export function MetadataWindowApp() {
   useEffect(() => {
     let active = true;
     let settingsRevision = 0;
+    let organizerRevision = 0;
+    const refreshOrganizers = () => {
+      const revision = ++organizerRevision;
+      return Promise.all([listTags(), listFolders()]).then(([tags, folders]) => {
+        if (!active || revision !== organizerRevision) return;
+        setAvailableTags(tags);
+        setAvailableFolders(folders);
+        setLoadError(null);
+      }).catch((error) => {
+        if (active && revision === organizerRevision) setLoadError(String(error));
+      });
+    };
     const unlistenSettings = listen<AppSettings>(SETTINGS_UPDATED_EVENT, (event) => {
       if (!active) return;
       settingsRevision += 1;
@@ -69,19 +88,17 @@ export function MetadataWindowApp() {
         const revisionAtRequest = settingsRevision;
         return Promise.all([
           pendingMetadataEditor(),
-          listTags(),
+          refreshOrganizers(),
           invoke<AppSettings>("get_settings"),
-        ]).then(([initialPayload, tags, settings]) => ({
+        ]).then(([initialPayload, , settings]) => ({
           initialPayload,
-          tags,
           settings,
           revisionAtRequest,
         }));
       })
-      .then(({ initialPayload, tags, settings, revisionAtRequest }) => {
+      .then(({ initialPayload, settings, revisionAtRequest }) => {
         if (!active) return;
         setPayload(initialPayload);
-        setAvailableTags(tags);
         if (settingsRevision === revisionAtRequest) {
           setAppearance(settings.appearance);
         }
@@ -94,13 +111,12 @@ export function MetadataWindowApp() {
       (event: Event<MetadataSelectionPayload>) => {
         if (!active) return;
         setPayload(event.payload);
-        void listTags().then((tags) => {
-          if (active) setAvailableTags(tags);
-        }).catch((error) => {
-          if (active) setLoadError(String(error));
-        });
+        void refreshOrganizers();
       },
     );
+    const unlistenHistory = listen(HISTORY_CHANGED_EVENT, () => {
+      if (active) void refreshOrganizers();
+    });
     const unlistenClose = getCurrentWindow().onCloseRequested((event) => {
       event.preventDefault();
       if (dirtyRef.current) setCloseRequestSignal((current) => current + 1);
@@ -110,6 +126,7 @@ export function MetadataWindowApp() {
       active = false;
       void unlistenSettings.then((unlisten) => unlisten());
       void unlistenOpen.then((unlisten) => unlisten());
+      void unlistenHistory.then((unlisten) => unlisten());
       void unlistenClose.then((unlisten) => unlisten());
     };
   }, [closeWindow]);
@@ -139,11 +156,13 @@ export function MetadataWindowApp() {
   return (
     <CustomWindowFrame variant="utility" title="Metadata" controls={["minimize", "maximize", "close"]}>
       <main className="metadata-window-app" aria-label="Metadata inspector">
+        {payload && loadError ? <UiAlert color="red" variant="light">{loadError}</UiAlert> : null}
         {payload ? (
           <MetadataInspector
             payload={payload}
             variant={payload.snapshot.itemCount === 1 ? "existing-single" : "existing-multi"}
             availableTags={availableTags}
+            availableFolders={availableFolders}
             closeRequestSignal={closeRequestSignal}
             onDirtyChange={(dirty) => { dirtyRef.current = dirty; }}
             onIntentChange={(intent) => { activeSelectionRef.current = intent.itemIds; }}

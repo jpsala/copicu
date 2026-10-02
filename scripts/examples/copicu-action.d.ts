@@ -4,6 +4,7 @@ type Trigger =
   | "localShortcut"
   | "globalShortcut"
   | "clipboardChange"
+  | "sharedReception"
   | "tray"
   | "cli"
   | "devRun";
@@ -24,6 +25,10 @@ type ActionCapability =
   | "history:write-metadata" | "history:promote" | "history:delete"
   | "metadata:read-tags" | "metadata:edit-active"
   | "clipboard:read" | "clipboard:write"
+  | "shared:read" | "shared:publish" | `shared:publish:${string}`
+  | `shared:history:${string}`
+  | `shared:receive:${string}`
+  | `shared:forward:${string}:${string}`
   | "ui:toast" | "ui:notify" | "ui:alert" | "ui:confirm" | "ui:input" | "ui:markdown-output"
   | "ai:summarize" | "log:write" | "enrichment:run" | "enrichment:read"
   | "commands:run" | "picker:open" | "picker:filter" | "picker:activate"
@@ -77,6 +82,8 @@ type ActionContext = {
   /** @deprecated Prefer activeItemId for CopyQ-style current/active item scripts. */
   currentItemId?: string;
   selectedItemIds: string[];
+  /** Host-authored provenance for an explicitly associated, enabled reception action. No text is exposed here. */
+  sharedReception?: { channelId: string; publicationId: string; originDeviceId: string; generation: number };
   view?: {
     query: string;
     visibleItemIds: string[];
@@ -264,8 +271,30 @@ declare const copicu: {
   };
   clipboard: {
     read(): Promise<{ text?: string }>;
+    /** In reception actions, requires explicit subscription writer authorization; one buffered text output, applied after successful run with native sequence/lease guards. */
     writeText(text: string): Promise<void>;
     writeItem(id: string): Promise<void>;
+  };
+  sharedClipboard: {
+    /** Requires shared:receive:<channelId> and a live authorized reception invocation. Immutable source text; never mutable history. */
+    received(): Promise<{ text: string }>;
+    /** Requires shared:read. Only channels explicitly granted by shared:publish:<channelId> are listed. */
+    channels(): Promise<Array<{ id: string; name: string }>>;
+    /** Host-configured destination for this Action, with the same explicit publish scope. Requires shared:read. */
+    target(): Promise<string | null>;
+    /** Local observations only. Does not fetch remote content; includes only explicitly scoped channels. Requires shared:read. */
+    state(): Promise<{ sendPaused: boolean; receivePaused: boolean; resources: Array<{ id: string; name: string; canPublish: boolean; sendPaused: boolean; receivePaused: boolean }>; publications: Array<{ publicationId: string; channelId: string; state: string; commitAmbiguous: boolean }> }>;
+    /** Explicit read, one bounded page oldest first; requires shared:read AND shared:history:<channelId>. Busy transport rejects immediately. Never imports, subscribes or runs effects. */
+    history(options: { channelId: string; cursor?: string | null }): Promise<{ entries: Array<{ publicationId: string; channelId: string; sequence: string; originDeviceId: string; expiresAtUnixMs: string; status: string; text?: string }>; before: string | null; head: string; floor: string }>;
+    /**
+     * Requires shared:publish AND shared:publish:<channelId>.
+     * Admits plain text to the host-owned durable queue; does not confirm remote delivery.
+     * The host owns encryption, credentials, retries and limits. Repeating this call creates
+     * a new immutable publication; use the returned ID to identify this admission.
+     * Use history.get/selection.items with history:read-content for existing items,
+     * or clipboard.read with clipboard:read for the current Windows clipboard.
+     */
+    publish(options: { channelId?: string; text: string }): Promise<{ publicationId: string; state: "queued" }>;
   };
   ai: {
     respondMarkdown(options: AiRespondMarkdownOptions): Promise<string>;

@@ -11,8 +11,9 @@ use reqwest::{
     redirect::Policy,
     Url,
 };
+use rustls_platform_verifier::BuilderVerifierExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{io::Read, sync::OnceLock, time::Duration};
+use std::{io::Read, sync::Arc, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -26,6 +27,7 @@ pub(crate) enum Error {
     Quota,
     Rejected,
     Unavailable,
+    Unsupported,
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -92,7 +94,7 @@ pub(crate) struct Acceptance {
     pub(crate) accepted_at_unix_ms: String,
     pub(crate) expires_at_unix_ms: String,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LeaseProof {
     pub(crate) lease_id: String,
@@ -305,7 +307,7 @@ impl RelayClient {
             Duration::from_secs(12),
         )
     }
-    fn with_timeout(
+    pub(super) fn with_timeout(
         endpoint: &str,
         environment: &str,
         device: &str,
@@ -313,6 +315,19 @@ impl RelayClient {
         allow_loopback_fixture: bool,
         timeout: Duration,
     ) -> Result<Self> {
+        let (endpoint, headers, tls) = Self::settings(endpoint, environment, device, token, allow_loopback_fixture)?;
+        let client = Client::builder()
+            .default_headers(headers)
+            .redirect(Policy::none())
+            .no_proxy()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(timeout)
+            .tls_backend_preconfigured(tls)
+            .build()
+            .map_err(|_| Error::Unavailable)?;
+        Ok(Self { endpoint, environment: environment.into(), device: device.into(), client })
+    }
+    fn settings(endpoint: &str, environment: &str, device: &str, token: &str, allow_loopback_fixture: bool) -> Result<(Url, HeaderMap, rustls::ClientConfig)> {
         id(environment)?;
         id(device)?;
         let endpoint = Url::parse(endpoint).map_err(|_| Error::InvalidEndpoint)?;
@@ -336,37 +351,29 @@ impl RelayClient {
         {
             return Err(Error::InvalidInput);
         }
-        static PROVIDER: OnceLock<std::result::Result<(), ()>> = OnceLock::new();
-        // Process-local provider selection, before building a TLS client. A
-        // competing provider is an explicit error, never a silent fallback.
-        PROVIDER
-            .get_or_init(|| {
-                rustls::crypto::ring::default_provider()
-                    .install_default()
-                    .map_err(|_| ())
-            })
-            .as_ref()
-            .map_err(|_| Error::Unavailable)?;
+        // Select this client's provider explicitly. Another subsystem may have
+        // installed a process default; that is not an enrollment failure.
+        let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|_| Error::Unavailable)?
+        .with_platform_verifier()
+        .map_err(|_| Error::Unavailable)?
+        .with_no_client_auth();
         let mut authorization =
             HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| Error::InvalidInput)?;
         authorization.set_sensitive(true);
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, authorization);
-        let client = Client::builder()
-            .default_headers(headers)
-            .redirect(Policy::none())
-            .no_proxy()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(timeout)
-            .tls_backend_rustls()
-            .build()
-            .map_err(|_| Error::Unavailable)?;
-        Ok(Self {
-            endpoint,
-            environment: environment.into(),
-            device: device.into(),
-            client,
-        })
+        Ok((endpoint, headers, tls))
+    }
+    pub(super) fn event_client(endpoint: &str, environment: &str, device: &str, token: &str, allow_loopback_fixture: bool) -> Result<(Url, reqwest::Client)> {
+        let (endpoint, headers, tls) = Self::settings(endpoint, environment, device, token, allow_loopback_fixture)?;
+        let client = reqwest::Client::builder().default_headers(headers).redirect(Policy::none()).no_proxy()
+            .connect_timeout(Duration::from_secs(2)).read_timeout(Duration::from_secs(12))
+            .tls_backend_preconfigured(tls).build().map_err(|_| Error::Unavailable)?;
+        Ok((endpoint, client))
     }
     fn channel_url(&self, channel: &str, operation: &str) -> Result<Url> {
         id(channel)?;
@@ -374,11 +381,51 @@ impl RelayClient {
             .join(&format!("v1/channels/{channel}/{operation}"))
             .map_err(|_| Error::InvalidEndpoint)
     }
+    /// Same authenticated, bounded client; callers cannot redirect credentials
+    /// to an external URL or escape the versioned control-plane prefix.
+    pub(super) fn request_control(
+        &self,
+        method: &str,
+        path: &str,
+        input: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        if !path.starts_with("/v2/")
+            || path.contains("..")
+            || path.contains('#')
+            || path.contains('\\')
+        {
+            return Err(Error::InvalidInput);
+        }
+        let method = match method {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "DELETE" => reqwest::Method::DELETE,
+            "PATCH" => reqwest::Method::PATCH,
+            _ => return Err(Error::InvalidInput),
+        };
+        let url = self
+            .endpoint
+            .join(path)
+            .map_err(|_| Error::InvalidEndpoint)?;
+        if url.origin() != self.endpoint.origin() {
+            return Err(Error::InvalidEndpoint);
+        }
+        let mut request = self.client.request(method, url);
+        if let Some(input) = input {
+            let body = serde_json::to_vec(input).map_err(|_| Error::InvalidInput)?;
+            if body.len() > MAX_ENVELOPE_JSON_BYTES {
+                return Err(Error::TooLarge);
+            }
+            request = request.header(CONTENT_TYPE, "application/json").body(body);
+        }
+        self.send(request)
+    }
     fn send<T: DeserializeOwned>(&self, request: RequestBuilder) -> Result<T> {
         let response = request.send().map_err(|_| Error::Unavailable)?;
         match response.status().as_u16() {
             200..=299 => {}
             401 | 403 => return Err(Error::Denied),
+            404 | 405 | 501 => return Err(Error::Unsupported),
             409 => return Err(Error::Conflict),
             410 => return Err(Error::Expired),
             413 => return Err(Error::TooLarge),
@@ -703,4 +750,25 @@ mod tests {
         page.gap.as_mut().unwrap().last_lost = "1".into();
         assert_eq!(page.validate("env", "chan", 1), Err(Error::InvalidResponse));
     }
+}
+#[cfg(test)]
+#[test]
+fn client_provider_is_independent_from_process_default() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    assert!(RelayClient::new(
+        "https://example.com/",
+        "env",
+        "dev",
+        "synthetic-transport-token-000000000000",
+        false
+    )
+    .is_ok());
+    assert!(RelayClient::new(
+        "http://127.0.0.1/",
+        "env",
+        "dev",
+        "synthetic-transport-token-000000000000",
+        true
+    )
+    .is_ok());
 }

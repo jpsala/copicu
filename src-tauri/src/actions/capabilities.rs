@@ -10,9 +10,23 @@ pub(super) fn unsupported_script_capabilities(action: &ActionDefinition) -> Vec<
 }
 
 fn supported_script_capability(capability: &str) -> bool {
+    if let Some(route) = capability.strip_prefix("shared:forward:") {
+        return route
+            .split_once(':')
+            .is_some_and(|(origin, target)| valid_channel_id(origin) && valid_channel_id(target));
+    }
+    if let Some(channel) = capability
+        .strip_prefix("shared:publish:")
+        .or_else(|| capability.strip_prefix("shared:receive:"))
+        .or_else(|| capability.strip_prefix("shared:history:"))
+    {
+        return valid_channel_id(channel);
+    }
     matches!(
         capability,
         "history:read-content"
+            | "shared:read"
+            | "shared:publish"
             | "history:search"
             | "history:create"
             | "history:write-metadata"
@@ -44,6 +58,14 @@ fn supported_script_capability(capability: &str) -> bool {
     )
 }
 
+fn valid_channel_id(channel: &str) -> bool {
+    !channel.is_empty()
+        && channel.len() <= 128
+        && channel
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
 fn required_script_host_capabilities(method: &str) -> Option<&'static [&'static str]> {
     match method {
         "history.search" => Some(&["history:search"]),
@@ -57,6 +79,12 @@ fn required_script_host_capabilities(method: &str) -> Option<&'static [&'static 
         "metadata.listTags" => Some(&["metadata:read-tags"]),
         "metadata.editActive" => Some(&["metadata:edit-active"]),
         "clipboard.read" => Some(&["clipboard:read"]),
+        "sharedClipboard.channels" => Some(&["shared:read"]),
+        "sharedClipboard.target" => Some(&["shared:read"]),
+        "sharedClipboard.state" => Some(&["shared:read"]),
+        "sharedClipboard.history" => Some(&["shared:read"]),
+        "sharedClipboard.publish" => Some(&["shared:publish"]),
+        "sharedClipboard.received" => Some(&[]),
         "ui.alert" => Some(&["ui:alert"]),
         "ui.confirm" => Some(&["ui:confirm"]),
         "ui.input" => Some(&["ui:input"]),
@@ -67,6 +95,37 @@ fn required_script_host_capabilities(method: &str) -> Option<&'static [&'static 
         "commands.run" => Some(&["commands:run"]),
         _ => None,
     }
+}
+
+pub(super) fn validate_shared_channel_capability(
+    action: &ActionDefinition,
+    channel_id: &str,
+) -> Result<(), String> {
+    let grant = format!("shared:publish:{channel_id}");
+    if !supported_script_capability(&grant) || !script_has_capability(action, &grant) {
+        return Err(
+            "sharedClipboard.publish requires an explicit channel publish capability".to_string(),
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn validate_shared_forward_capability(
+    action: &ActionDefinition,
+    origin: &str,
+    target: &str,
+) -> Result<(), String> {
+    if origin == target {
+        return Err("a reception action cannot forward to its own source channel".to_string());
+    }
+    let grant = format!("shared:forward:{origin}:{target}");
+    if !supported_script_capability(&grant) || !script_has_capability(action, &grant) {
+        return Err(
+            "reception forwarding requires an explicit origin and target channel capability"
+                .to_string(),
+        );
+    }
+    validate_shared_channel_capability(action, target)
 }
 
 pub(super) fn validate_script_host_capabilities(

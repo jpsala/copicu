@@ -1,0 +1,126 @@
+# Portapapeles compartidos: plan y ejecución
+
+## Continuación: sincronización SSE (2026-10-02)
+
+JP confirmó SSE y pidió nueva sesión supervisada. Fuente de implementación:
+[sse-sync-plan.md](sse-sync-plan.md). Evidencia actual en
+[aceptación SSE local](local-acceptance.md#aceptacion-sse-local-2026-10-02).
+
+- [x] S1 Fijar schema/cursor por audiencia y snapshot-watermark consistente;
+  tests de transacción, idempotencia, replay/live y permisos.
+- [x] S2 Persistir eventos de control junto al cambio y exponer changes/SSE en
+  relay sintético; heartbeat, revocación, límites, gap/reset y shutdown.
+- [x] S3 Host por perfil: transporte dedicado, cache/cursor durable, cancelación,
+  backoff/fallback y revalidación de identidad sin bloquear operaciones actuales.
+- [x] S4 Invalidación Tauri en biblioteca/selector/Settings; preservar borradores,
+  selección/foco y mostrar conflicto/retiro/offline.
+- [x] S5 Aceptación real entre perfiles, abiertos/ocultos, con reconnect/restart,
+  permisos y Computer Use; documentar evidencia y repetir checks pertinentes.
+- [x] S6 Avisos de head de publicaciones despiertan sync V1 sin alterar leases,
+  pausa/retención/dedupe ni provocar efectos por replay de control.
+
+S1–S6 cerrados localmente en la continuación del 2026-10-02. S3–S5: 13 casos
+de lifecycle por modo (denied en catálogo o SSE), ocho de superficies reales y
+retiro nativo en Library/selector/Settings. Snapshot retenido rechaza identidad/
+pausa tardías; denied cancela el stream, unsupported mantiene fallback acotado y
+restart reconcilia con picker oculto. Settings conserva conexión/borrador/selección
+y explicita retiro. S6: avisos de head transaccionales, lectura autorizada, wake
+acotado del sync V1; diez casos shipping y regresiones de replay/burst/pausa/sin
+eco/backfill. Rust 70 + 37, Bun 31, diez visuales y build/restart normales pasan.
+
+Próximo corte: preparar servicio/destino remoto revisable y aceptación en dos PCs
+cuando JP lo pida. No reducir ticks ni ampliar efectos por estos resultados.
+Antes de retomar, comprobar checkout/WIP, fuentes, ownership y procesos/perfiles;
+la supervisión anterior permanece `PAUSED`. Instalación, commit/push, deploy y
+datos reales necesitan autorización actual. Evidencia y límites en la aceptación
+SSE enlazada arriba; no sumar repeticiones como casos distintos.
+
+## Revisión vigente (2026-10-02)
+
+Implementación local completada y validada en el build normal. JP autorizó
+Sol 6.1 high, supervisión y hasta dos agentes. Contrato en [spec.md](spec.md), arquitectura
+en [plan.md](plan.md), UX en [folder-first-design.md](folder-first-design.md) y
+evidencia pública en [sharing-patterns.md](sharing-patterns.md).
+La evidencia nueva está en [local-implementation.md](local-implementation.md#corte-de-producto-local-2026-10-02).
+Instalación local posterior autorizada y matriz instalada ↔ dev con Computer Use:
+[local-acceptance.md](local-acceptance.md), 39 casos de host real más recorridos nativos.
+Las pruebas locales no acreditan proveedor humano, deploy ni aceptación en dos PCs.
+
+- [x] Confirmar espacio propio por persona y flujo desde carpeta.
+- [x] Confirmar consulta de historial disponible sin importación automática.
+- [x] Incorporar conexión general y pausa por dirección; JP pidió alcance cambiable en Settings.
+- [x] Contrastar Syncthing, Dropbox, Signal, ntfy, Slack y Universal Clipboard.
+- [x] Replantear entidades, operaciones, SDK, riesgos y recorrido básico.
+- [x] Separar recomendaciones/defaults de decisiones confirmadas y ampliaciones.
+
+## Diseño técnico previo a código
+
+- [ ] Definir proveedor/contrato de identidad, vinculación de equipos y recuperación
+  E2EE; login no concede claves por sí solo. No hacer login ni instalar por planificación.
+- [x] Cerrar estados y contratos locales de catálogo, intents idempotentes, invitaciones,
+  permisos históricos, cambios de audiencia, rotación, salida y eliminación.
+- [x] Fijar retención/cuotas del servicio sintético, compatibilidad wire y conservación de manifests,
+  claims, idempotencia y rangos de consulta histórica.
+- [x] Precisar causalidad de forwarding: un salto firmado, rechazo de loops y ramas explícitas;
+  límites asignados por host, privacidad de rutas y compatibilidad de clientes.
+- [x] Especificar migración de ChannelPolicy a suscripción + conexiones y
+  parámetros de destino de Action sin romper contratos/scopes existentes.
+- [x] Precisar alcance general sin carpeta/Todo, dedupe de conexiones coincidentes,
+  pausas de equipo/recurso por dirección, cola previa, in-flight y fences de reanudación.
+
+## Implementación autorizada, en orden
+
+Pedido vigente del 2026-10-02: implementación local y pruebas sintéticas.
+Cada bloque usa contratos del anterior; cerrar los pendientes técnicos antes de
+su implementación. Instalación, commit/push, deploy y datos reales mantienen
+autorizaciones específicas.
+
+- [x] Dominio/persistencia sintéticos de personas, recursos y dispositivos; acceso
+  por defecto denegado, catálogo/CRUD e intents recuperables.
+- [x] Vinculación sintética/invitación/rotación y tests de composición criptográfica.
+  Cliente TLS explícito probado con otro provider global; provisioning del build
+  normal comprobado desde comandos del host Settings sobre un fixture nuevo.
+- [x] Conexiones y cursores separados de entrega/consulta histórica; migración de
+  perfiles, dedupe, varios emisores y conflicto visible de destino receptor.
+- [x] Conexión general, setting de alcance y pausas persistentes de envío/recepción
+  en host/cola/SDK, con prueba de independencia, restart y ausencia de backfill.
+- [x] Selector con creación diferida, carpeta conectada, administración, historial,
+  envío explícito y permisos/estados reales; teclado y narrow picker.
+- [x] Destino configurable de Action, catálogo/estado/historial SDK y forwarding acotado;
+  regresiones de APIs y scripts existentes.
+- [x] Aceptación integrada local con dos personas sintéticas, tres equipos y carreras
+  de creación/acceso/historial/eliminación/loops; conservar evidencia nativa previa,
+  sin presentarla como una nueva ejecución.
+- [x] Build normal offline/locked y reinicio de dev aislada; walkthrough real desde
+  All history y carpeta, envío aceptado, consulta sin efectos, guardado/dedupe y
+  pausas independientes. Captura/updater apagados; instalada preservada.
+- [ ] Preparar servicio/deploy revisables y obtener sus permisos específicos;
+  probar dos PCs y latencia real con alcance de datos explícito.
+
+## Corte local implementado
+
+Pedido del corte anterior: implementación local y pruebas sintéticas en Sol 6.1 high,
+con cortes paralelos. Sin instalación, publicación, deploy ni datos reales.
+
+- [x] Runtime: configuración durable opt-in, custodia privada, huella de provisioning
+  local confirmada, cola cifrada, reintentos, recepción y reportes sobre C1/D1/T1.
+- [x] Carpetas: ingreso local en carpeta exacta para creación/captura nueva y
+  movimientos efectivos; activar no hace backfill, editar/tagear no publica,
+  subcarpetas requieren regla propia y contenido remoto nunca se reenvía solo.
+- [x] Actions/SDK: distinguir ítem activo de clipboard Windows; scopes por canal,
+  texto generado/transformado y publicación seleccionada con cola administrada.
+- [x] Nativo: snapshot cercado por sequence, writer con procedencia, pausa y
+  generación revalidadas; recovery/deferred/self no escribe automáticamente.
+- [x] UI: Sharing en Settings, reglas independientes, feed de recepciones,
+  copia manual, errores/cola/pausa accesibles y selector de carpetas existente.
+- [x] Validación: tests de integración HTTP/SQLite/cifrado y regresiones tags/
+  carpetas/Actions, build, reload dev y prueba visual con datos sintéticos.
+- [x] Cierre: documentar evidencia local y límites reales de enrollment remoto,
+  dos PCs, servicio desplegado y automatización que aún no esté integrada.
+
+Gates remotos separados de la implementación local:
+
+- [ ] Proveedor OAuth/OIDC, vinculación humana de dispositivos, recuperación E2EE
+  y aceptación remota de invitaciones. Revocación/rotación locales ya tienen controles.
+- [ ] Servicio privado desplegado con HTTPS/DNS y alcance/costos aprobados.
+- [ ] Aceptación en dos PCs, latencia real, lock/suspend y crash nativo.

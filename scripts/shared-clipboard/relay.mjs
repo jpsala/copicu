@@ -2,12 +2,14 @@
 // input, never an HTTP enrollment or an assertion supplied by a desktop client.
 import { Database } from "bun:sqlite";
 import { createHash, createPublicKey, randomBytes, sign, timingSafeEqual, verify } from "node:crypto";
+import { createControl } from './control.mjs';
+export { controlSigningBytes } from './control.mjs';
 
 export const MAX_BODY = 2_000_000;
 export const MAX_CIPHERTEXT = 1024 * 1024 + 16 * 1024;
 // Local fixture candidates, not production capacity claims. Reducing a limit
 // rejects new records; it never evicts identities, receipts or retained rows.
-export const DEFAULT_LIMITS = Object.freeze({ publicationsPerChannel: 4096, payloadBytesPerChannel: 64 * 1024 * 1024, pendingLeases: 1024, reportsPerChannel: 16384, devices: 256, grants: 4096 });
+export const DEFAULT_LIMITS = Object.freeze({ publicationsPerChannel: 4096, payloadBytesPerChannel: 64 * 1024 * 1024, pendingLeases: 1024, reportsPerChannel: 16384, devices: 256, grants: 4096, controlEventsPerPerson: 1024 });
 const U64_MAX = (1n << 64n) - 1n;
 const PUB_DOMAIN = Buffer.from("Copicu.shared.publication.v1\0");
 const LEASE_DOMAIN = Buffer.from("Copicu.shared.lease.v1\0");
@@ -127,7 +129,7 @@ const response = (value, status = 200) => new Response(JSON.stringify(value), { 
  * dbPath belongs to a newly-created fixture directory (same path for restart).
  * This constructor is a local owner's provisioning surface, not enrollment.
  */
-export function createRelay({ dbPath, environment, devices = [], channels = [], leaseSigner, now = () => BigInt(Date.now()), faults = {}, limits: overrides = {} }) {
+export function createRelay({ dbPath, environment, devices = [], channels = [], persons = [], leaseSigner, now = () => BigInt(Date.now()), faults = {}, limits: overrides = {} }) {
   opaque(environment);
   if (!leaseSigner || leaseSigner.asymmetricKeyType !== "ed25519") throw new Error("Ed25519 lease signer required");
   if (!overrides || typeof overrides !== "object" || Array.isArray(overrides) || Object.keys(overrides).some((key) => !Object.hasOwn(DEFAULT_LIMITS, key))) throw new Error("invalid relay limits");
@@ -184,7 +186,7 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       }
     })();
   } catch (error) { db.close(); throw error; }
-  const waiters = new Set(); let stopped = false;
+  const waiters = new Set(); let stopped = false; let control = null;
   function clock() { const value = now(); if (typeof value !== "bigint" || value <= 0n || value > U64_MAX) throw new Error("invalid fixture clock"); return value; }
   function auth(request) {
     const header = request.headers.get("authorization");
@@ -198,6 +200,8 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
   function grant(device, channel, permission) {
     const row = query("SELECT g.*,c.head,c.key_epoch AS current_epoch,d.revoked FROM relay_grants g JOIN relay_channels c ON c.id=g.channel JOIN relay_devices d ON d.id=g.device WHERE g.device=? AND g.channel=?").get(device, channel);
     if (!row || row.revoked || !row[`can_${permission}`] || !Buffer.from(row.key_epoch).equals(Buffer.from(row.current_epoch))) deny(403, "forbidden");
+    const membership = control?.authorize(device,channel,permission);
+    if (membership) row.history_floor = membership.history_floor;
     return row;
   }
   function notify(channel = null) { for (const waiter of [...waiters]) if (!channel || waiter.channel === channel) waiter.finish(); }
@@ -244,17 +248,21 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       query("INSERT INTO relay_publications VALUES (?,?,?,?,?,?,?,?,?,?)").run(value.publication_id, channel, device, sequence, be64(ordinal), be64(at), be64(expiry), digest, json, leaseProof);
       query("INSERT INTO relay_ordinals VALUES (?,?,?) ON CONFLICT(device,channel) DO UPDATE SET last=excluded.last").run(device, channel, be64(ordinal));
       query("UPDATE relay_channels SET head=? WHERE id=?").run(sequence, channel);
-      return ack({ id: value.publication_id, sequence, accepted: be64(at), expires: be64(expiry) });
+      control.events.publication(channel, head + 1n);
+      const result = ack({ id: value.publication_id, sequence, accepted: be64(at), expires: be64(expiry) });
+      if (faults.beforePublishCommit?.(result)) deny(503, "publication_rollback");
+      return result;
     })();
   }
   function sync(device, channel, url) {
-    const cursor = counter(url.searchParams.get("cursor") ?? "0", true);
+    let cursor = counter(url.searchParams.get("cursor") ?? "0", true);
     const limitText = url.searchParams.get("limit") ?? "50";
     const limitValue = counter(limitText); if (limitValue > 50n) deny(400, "invalid_limit");
     prune();
     return transaction(() => {
       const allowed = grant(device, channel, "read"); const head = from64(allowed.head);
       if (cursor > head) deny(409, "future_cursor");
+      if (allowed.history_floor && cursor < from64(allowed.history_floor)-1n) cursor=from64(allowed.history_floor)-1n;
       const first = query("SELECT sequence FROM relay_publications WHERE channel=? AND envelope IS NOT NULL ORDER BY sequence LIMIT 1").get(channel);
       const firstSequence = first ? from64(first.sequence) : head === U64_MAX ? head : head + 1n;
       const next = query("SELECT sequence FROM relay_publications WHERE channel=? AND envelope IS NOT NULL AND sequence>? ORDER BY sequence LIMIT 1").get(channel, be64(cursor));
@@ -317,13 +325,17 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       const previous = query("SELECT digest FROM relay_reports WHERE device=? AND channel=? AND id=?").get(device, channel, value.attempt_id);
       if (previous && !timingSafeEqual(Buffer.from(previous.digest), digest)) deny(409, "report_conflict");
       if (previous) return { attempt_id: value.attempt_id, status: "ack" };
-      const publication = query("SELECT channel FROM relay_publications WHERE id=?").get(value.publication_id);
+      const publication = query("SELECT channel,sequence FROM relay_publications WHERE id=?").get(value.publication_id);
       if (!publication || publication.channel !== channel) deny(403, "forbidden");
+      const allowed=grant(device,channel,'report');
+      if (allowed.history_floor && from64(publication.sequence)<from64(allowed.history_floor)) deny(403,'forbidden');
       if (query("SELECT count(*) AS count FROM relay_reports WHERE channel=?").get(channel).count >= limits.reportsPerChannel) deny(429, "report_capacity");
       query("INSERT INTO relay_reports VALUES (?,?,?,?,?,?,?)").run(device, channel, value.attempt_id, digest, value.publication_id, value.sink, value.outcome);
       return { attempt_id: value.attempt_id, status: "ack" };
     })();
   }
+  try { control = createControl({query,transaction,environment,persons,devices,channels,deny,opaque,counter,be64,from64,base64,publicKey,clock,notify,limits,maxBody:MAX_BODY}); }
+  catch(error) {db.close(true); throw error;}
   // Keep the outer server cap finite but above the protocol cap so ordinary
   // over-limit requests reach our bounded reader and receive a stable 413.
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_BODY * 2, idleTimeout: 15,
@@ -331,9 +343,23 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       try {
         if (stopped) deny(503, "stopped");
         const url = new URL(request.url); let device = auth(request);
+        if (url.pathname === '/v2/catalog' && request.method === 'GET') return response(control.catalog(device));
+        if (url.pathname === '/v2/changes' && request.method === 'GET') return response(control.events.changes(device, url));
+        if (url.pathname === '/v2/events' && request.method === 'GET') return control.events.stream(device, url, request);
+        if (url.pathname === '/v2/operations' && request.method === 'POST') {
+          const input=await body(request); device=auth(request);
+          if(faults.beforeControl?.(input)) deny(503,'response_unavailable');
+          const result=control.operation(device,input);
+          if(faults.afterControlCommit?.(result)) deny(503,'response_lost');
+          return response(result);
+        }
+        const historyRoute=/^\/v2\/resources\/([A-Za-z0-9_-]{1,128})\/history$/.exec(url.pathname);
+        if(historyRoute && request.method==='GET') {prune(); return response(control.history(device,historyRoute[1],url));}
+        const entryRoute=/^\/v2\/resources\/([A-Za-z0-9_-]{1,128})\/history\/([A-Za-z0-9_-]{1,128})$/.exec(url.pathname);
+        if(entryRoute && request.method==='GET') {prune(); return response(control.historicalEntry(device,entryRoute[1],entryRoute[2]));}
         if (url.pathname === "/v1/channels" && request.method === "GET") {
           const rows = query("SELECT g.channel AS id,c.key_epoch FROM relay_grants g JOIN relay_channels c ON c.id=g.channel WHERE g.device=? AND g.key_epoch=c.key_epoch AND (g.can_read=1 OR g.can_publish=1) ORDER BY g.channel").all(device);
-          return response({ channels: rows.map((row) => ({ id: row.id, key_epoch: from64(row.key_epoch).toString() })) });
+          return response({ channels: rows.filter(row=>{try {control.authorize(device,row.id,'read'); return true;} catch{return false;}}).map((row) => ({ id: row.id, key_epoch: from64(row.key_epoch).toString() })) });
         }
         const route = /^\/v1\/channels\/([A-Za-z0-9_-]{1,128})\/(publish|sync|watch|lease|report)$/.exec(url.pathname);
         if (!route) deny(404, "not_found");
@@ -343,7 +369,7 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
           grant(device, channel, method === "report" ? "report" : "publish");
           const input = await body(request); device = auth(request); // Revoke while reading wins.
           const result = method === "publish" ? publish(device, channel, input) : method === "lease" ? lease(device, channel, input) : report(device, channel, input);
-          if (method === "publish") { notify(channel); if (faults.afterPublishCommit?.(result)) deny(503, "response_lost"); }
+          if (method === "publish") { notify(channel); control.events.wake(); if (faults.afterPublishCommit?.(result)) deny(503, "response_lost"); }
           return response(result);
         }
         deny(405, "method_not_allowed");
@@ -353,10 +379,10 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
   return {
     url: server.url.toString().replace(/\/$/, ""),
     issuerPublicKey: issuerPublicKey.toString("base64"),
-    revokeDevice(device) { query("UPDATE relay_devices SET revoked=1 WHERE id=?").run(opaque(device)); notify(); },
+    revokeDevice(device) { transaction(() => { control.events.deviceChanged(opaque(device)); query("UPDATE relay_devices SET revoked=1 WHERE id=?").run(device); })(); notify(); control.events.wake(); },
     setChannelEpoch(channel, epoch) { transaction(() => { const old = query("SELECT key_epoch FROM relay_channels WHERE id=?").get(opaque(channel)); const value = counter(epoch); if (!old || value <= from64(old.key_epoch)) deny(409, "invalid_epoch_transition"); query("UPDATE relay_channels SET key_epoch=? WHERE id=?").run(be64(value), channel); })(); notify(channel); },
     approveGrant(device, channel, epoch) { transaction(() => { const current = query("SELECT key_epoch FROM relay_channels WHERE id=?").get(opaque(channel)); const value = be64(counter(epoch)); if (!current || !value.equals(Buffer.from(current.key_epoch))) deny(409, "stale_epoch"); query("UPDATE relay_grants SET key_epoch=? WHERE device=? AND channel=?").run(value, opaque(device), channel); })(); notify(channel); },
     prune,
-    async stop() { if (stopped) return; stopped = true; notify(); await server.stop(true); db.clearQueryCache(); db.close(true); }
+    async stop() { if (stopped) return; stopped = true; notify(); control.events.stop(); await server.stop(true); db.clearQueryCache(); db.close(true); }
   };
 }

@@ -1,22 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.mjs";
-import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.mjs";
-import Ellipsis from "lucide-react/dist/esm/icons/ellipsis.mjs";
-import Folder from "lucide-react/dist/esm/icons/folder.mjs";
-import FolderOpen from "lucide-react/dist/esm/icons/folder-open.mjs";
-import History from "lucide-react/dist/esm/icons/history.mjs";
 import Plus from "lucide-react/dist/esm/icons/plus.mjs";
 import PanelLeftClose from "lucide-react/dist/esm/icons/panel-left-close.mjs";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { FolderSummary, FolderScope, FolderDeletePreview } from "../shared/contracts";
+import { FolderNavigator } from "./FolderNavigator";
+import { FolderSelect, type FolderChoice } from "./FolderSelect";
+import { rankFolderResults } from "./folderModel";
 import { ShortcutBadge } from "./ShortcutBadge";
 import { UiTooltip } from "./controls";
 
 export const folderScopeQuery = (scope: FolderScope) => scope.kind === "all" ? "" : scope.kind === "root" ? "folder:/" : `folder-id:${scope.folderId}`;
 export const folderScopeLabel = (scope: FolderScope, folders: FolderSummary[]) => scope.kind === "all" ? "All history" : scope.kind === "root" ? "/" : folders.find((folder) => folder.id === scope.folderId)?.path ?? "Folder";
 
-export function FolderWorkspace({ folders, reload, scope, onScopeChange, destination, destinationArmed, onDestinationChange, selectedItemIds, draggedItemIdsRef, moveRequest, onMoveRequestDone, onMoved, onError, deleteDefaults, narrow, treeOpen, onTreeOpenChange, treeRef, switcher, onSwitcherChange, rootItemCount }: {
+export function FolderWorkspace({ folders, reload, scope, onScopeChange, destination, destinationArmed, onDestinationChange, selectedItemIds, draggedItemIdsRef, moveRequest, onMoveRequestDone, onMoved, onError, deleteDefaults, narrow, treeOpen, onTreeOpenChange, treeRef, switcher, onSwitcherChange, rootItemCount, onConnectShared }: {
   folders: FolderSummary[];
   reload: () => Promise<void>;
   scope: FolderScope;
@@ -38,6 +35,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
   switcher: boolean;
   onSwitcherChange: (open: boolean) => void;
   rootItemCount: number | null;
+  onConnectShared?: (scope: FolderScope) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set([0]));
   const [menu, setMenu] = useState<number | null | "all" | undefined>();
@@ -45,7 +43,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
   const [dialog, setDialog] = useState<{ action: "create" | "rename" | "reparent" | "delete" | "moveItems"; id: number | null } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [parentId, setParentId] = useState<number | null>(null);
+  const [destinationChoice, setDestinationChoice] = useState<FolderChoice>({ kind: "existing", folderId: null });
   const [deleteClips, setDeleteClips] = useState(false);
   const [deleteDescendants, setDeleteDescendants] = useState(false);
   const [preview, setPreview] = useState<FolderDeletePreview | null>(null);
@@ -57,7 +55,6 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
   const menuRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const sorted = useMemo(() => [...folders].sort((a, b) => a.path.localeCompare(b.path, undefined, { sensitivity: "base" })), [folders]);
-  const children = (id: number | null) => sorted.filter((folder) => folder.parentId === id);
   const currentId = scope.kind === "folder" ? scope.folderId : null;
   const destinationName = destination === null ? "/" : folders.find((folder) => folder.id === destination)?.path ?? "/";
   const moveItemIds = moveRequest?.itemIds ?? selectedItemIds;
@@ -75,7 +72,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
     if (target && !target.closest(".folder-context-menu")) returnFocus.current = target;
     setMenu(undefined);
     setName(action === "rename" ? folders.find((folder) => folder.id === id)?.name ?? "" : "");
-    setParentId(action === "reparent" ? folders.find((folder) => folder.id === id)?.parentId ?? null : action === "create" ? id : null);
+    setDestinationChoice({ kind: "existing", folderId: action === "reparent" ? folders.find((folder) => folder.id === id)?.parentId ?? null : null });
     setDeleteClips(deleteDefaults.clips);
     setDeleteDescendants(deleteDefaults.descendants);
     setPreview(null);
@@ -155,7 +152,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
         setExpanded((previous) => new Set(previous).add(dialog.id ?? 0));
       }
       if (dialog.action === "rename") await invoke("rename_folder", { id: dialog.id, name: name.trim() });
-      if (dialog.action === "reparent") await invoke("move_folder", { id: dialog.id, parentId });
+      if (dialog.action === "reparent" && destinationChoice.kind === "existing") await invoke("move_folder", { id: dialog.id, parentId: destinationChoice.folderId });
       if (dialog.action === "delete") {
         await invoke("delete_folder", { id: dialog.id, deleteClips, deleteDescendants });
         const deleted = folders.find((f) => f.id === dialog.id);
@@ -163,7 +160,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
         if (destination === dialog.id || (deleteDescendants && folders.some((f) => f.id === destination && f.path.startsWith(`${folders.find((x) => x.id === dialog.id)?.path}/`)))) await onDestinationChange(null);
       }
       if (dialog.action === "moveItems") {
-        await invoke<number>("move_history_items_to_folder", { itemIds: moveItemIds, folderId: parentId });
+        await invoke<number>("move_history_items_to_folder", { itemIds: moveItemIds, folderId: destinationChoice.kind === "existing" ? destinationChoice.folderId : null, folderPath: destinationChoice.kind === "create" ? destinationChoice.path : null });
         await onMoved();
       }
       await reload();
@@ -171,18 +168,6 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
     } catch (error) { onError(String(error)); }
     finally { setBusy(false); }
   };
-  const treeRows: Array<{ id: number | null | "all"; label: string; count: number | null; depth: number; children: boolean }> = [
-    { id: "all", label: "All history", count: null, depth: 0, children: false },
-    { id: null, label: "/", count: rootItemCount, depth: 0, children: children(null).length > 0 },
-  ];
-  const collect = (id: number | null, depth: number) => {
-    for (const folder of children(id)) {
-      const hasChildren = children(folder.id).length > 0;
-      treeRows.push({ id: folder.id, label: folder.name, count: folder.directItemCount, depth, children: hasChildren });
-      if (expanded.has(folder.id)) collect(folder.id, depth + 1);
-    }
-  };
-  if (expanded.has(0)) collect(null, 1);
   const select = (id: number | null | "all", closeNarrow = true) => {
     onScopeChange(id === "all" ? { kind: "all" } : id === null ? { kind: "root" } : { kind: "folder", folderId: id });
     onSwitcherChange(false);
@@ -193,59 +178,11 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
     setMenuAnchor({ x, y });
     setMenu(id);
   };
-  const onTreeKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!(event.target instanceof HTMLElement) || event.target.getAttribute("role") !== "treeitem") return;
-    const focused = event.target;
-    const index = treeRows.findIndex((row) => String(row.id) === focused.dataset.folderRow);
-    if (index < 0) return;
-    const row = treeRows[index];
-    const focusRow = (target: typeof row) => {
-      select(target.id, false);
-      treeRef.current?.querySelector<HTMLElement>(`[data-folder-row="${target.id}"]`)?.focus();
-    };
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      focusRow(treeRows[Math.max(0, Math.min(treeRows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]);
-    } else if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      const expansionId = row.id === null ? 0 : row.id;
-      if (typeof expansionId === "number" && row.children && expanded.has(expansionId)) {
-        setExpanded((prev) => { const next = new Set(prev); next.delete(expansionId); return next; });
-      } else if (typeof row.id === "number") {
-        const parentId = folders.find((folder) => folder.id === row.id)?.parentId ?? null;
-        focusRow(treeRows.find((candidate) => candidate.id === parentId) ?? treeRows[1]);
-      }
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      const expansionId = row.id === null ? 0 : row.id;
-      if (typeof expansionId === "number" && row.children && !expanded.has(expansionId)) {
-        setExpanded((prev) => new Set(prev).add(expansionId));
-      } else {
-        const next = treeRows[index + 1];
-        if (row.children && next?.depth > row.depth) focusRow(next);
-        else document.querySelector<HTMLElement>(".history-feed-scroll")?.focus();
-      }
-    } else if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      focusRow(event.key === "Home" ? treeRows[0] : treeRows[treeRows.length - 1]);
-    } else if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      select(row.id);
-    } else if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
-      event.preventDefault();
-      const bounds = focused.getBoundingClientRect();
-      openMenu(row.id, focused, bounds.left + 24, bounds.bottom);
-    } else if (event.key === "Tab" && !event.shiftKey) {
-      event.preventDefault();
-      document.querySelector<HTMLElement>(".history-feed-scroll")?.focus();
-    }
-  };
-  const destinations = sorted.filter((f) => dialog?.action !== "reparent" || (f.id !== dialog.id && !f.path.startsWith(`${folders.find((x) => x.id === dialog.id)?.path}/`)));
+  const excludedDestinations = dialog?.action === "reparent" ? sorted.filter((f) => f.id === dialog.id || f.path.startsWith(`${folders.find((x) => x.id === dialog.id)?.path}/`)).map((f) => f.id) : [];
   const switchResults: Array<{ id: number | null | "all"; path: string }> = ([
     { id: "all", path: "All history" },
-    { id: null, path: "/" },
-    ...sorted,
-  ] satisfies Array<{ id: number | null | "all"; path: string }>).filter((folder) => folder.path.toLocaleLowerCase().includes(switchQuery.toLocaleLowerCase()));
+    ...rankFolderResults(folders, switchQuery),
+  ] satisfies Array<{ id: number | null | "all"; path: string }>).filter((folder) => folder.id !== "all" || folder.path.toLocaleLowerCase().includes(switchQuery.toLocaleLowerCase()));
   const activeSwitchIndex = Math.min(switchIndex, Math.max(0, switchResults.length - 1));
   useEffect(() => {
     if (switcher) document.getElementById(`folder-switch-option-${activeSwitchIndex}`)?.scrollIntoView({ block: "nearest" });
@@ -259,7 +196,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   };
   return <>
-    <aside id="folder-tree" className={`folder-tree${treeOpen ? " is-open" : ""}`} aria-label="Folders" ref={treeRef} onKeyDown={onTreeKey}>
+    <aside id="folder-tree" className={`folder-tree${treeOpen ? " is-open" : ""}`} aria-label="Folders" ref={treeRef}>
       <div className="folder-tree-heading">
         <span>Folders</span>
         <div className="folder-tree-heading-actions">
@@ -269,25 +206,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
           </UiTooltip>
         </div>
       </div>
-      <div className="folder-tree-list" role="tree" aria-label="History folders">
-        {treeRows.map((row) => {
-          const selected = row.id === "all" ? scope.kind === "all" : row.id === null ? scope.kind === "root" : scope.kind === "folder" && scope.folderId === row.id;
-          const expansionId = typeof row.id === "number" ? row.id : 0;
-          const open = expanded.has(expansionId);
-          return <div key={String(row.id)} data-folder-drop-id={row.id === "all" ? undefined : row.id === null ? "root" : row.id} className={`folder-tree-entry${dropTarget === (row.id === null ? "root" : String(row.id)) ? " is-drop-target" : ""}`} style={{ paddingInlineStart: `${row.depth * 10 + 4}px` }} onContextMenu={(event) => {
-            event.preventDefault();
-            const target = event.currentTarget.querySelector<HTMLElement>('[role="treeitem"]');
-            if (target) openMenu(row.id, target, event.clientX, event.clientY);
-          }}>
-            {row.children ? <button type="button" className="folder-expand" aria-label={`${open ? "Collapse" : "Expand"} ${row.label}`} onClick={() => setExpanded((prev) => { const next = new Set(prev); if (next.has(expansionId)) next.delete(expansionId); else next.add(expansionId); return next; })}>{open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}</button> : <span className="folder-expand" />}
-            <button type="button" role="treeitem" aria-level={row.depth + 1} aria-expanded={row.children ? open : undefined} aria-selected={selected} tabIndex={selected ? 0 : -1} data-folder-row={String(row.id)} className="folder-tree-name" title={row.id === "all" ? row.label : row.id === null ? "/" : folders.find((folder) => folder.id === row.id)?.path} onClick={() => select(row.id)}>
-              {row.id === "all" ? <History size={15} aria-hidden="true" /> : open ? <FolderOpen size={15} aria-hidden="true" /> : <Folder size={15} aria-hidden="true" />}
-              <span className="folder-tree-label">{row.label}</span>{dropTarget === (row.id === null ? "root" : String(row.id)) ? <span className="folder-drop-hint">Move {draggedItemIdsRef.current?.length}</span> : row.count !== null && <span className="folder-tree-count">{row.count}</span>}
-            </button>
-            {row.id !== "all" && <button type="button" className="folder-more" aria-label={`Actions for ${row.label}`} aria-haspopup="menu" onClick={(event) => { const bounds = event.currentTarget.getBoundingClientRect(); openMenu(row.id, event.currentTarget, bounds.left, bounds.bottom); }}><Ellipsis size={16} aria-hidden="true" /></button>}
-          </div>;
-        })}
-      </div>
+      <FolderNavigator folders={folders} scope={scope} expanded={expanded} setExpanded={setExpanded} rootItemCount={rootItemCount} treeRef={treeRef} dropTarget={dropTarget} draggedItemCount={draggedItemIdsRef.current?.length} select={select} openMenu={openMenu} onExit={() => document.querySelector<HTMLElement>(".history-feed-scroll")?.focus()} />
       <div className="folder-capture">
         <span>Captures → {destinationName}{destinationArmed ? " (armed)" : " (default)"}</span>
         <button type="button" disabled={scope.kind === "all" || (destinationArmed && destination === currentId)} onClick={() => void onDestinationChange(currentId, true).catch((e) => onError(String(e)))}>Arm {scope.kind === "root" ? "/" : "folder"}</button>
@@ -303,6 +222,7 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
         }
       }}>
         <button role="menuitem" onClick={(event) => openDialog("create", menu === "all" ? null : menu, event.currentTarget)}>New {menu === "all" ? "root " : "child "}folder</button>
+        {onConnectShared && <button role="menuitem" onClick={() => { const target: FolderScope = menu === "all" ? { kind: "all" } : menu === null ? { kind: "root" } : { kind: "folder", folderId: menu }; setMenu(undefined); onConnectShared(target); }}>Connect shared clipboard…</button>}
         {typeof menu === "number" && <><button role="menuitem" onClick={(event) => openDialog("rename", menu, event.currentTarget)}>Rename folder</button><button role="menuitem" onClick={(event) => openDialog("reparent", menu, event.currentTarget)}>Move folder</button><button role="menuitem" onClick={(event) => openDialog("delete", menu, event.currentTarget)}>Delete folder…</button></>}
         <button role="menuitem" onClick={close}>Close menu</button>
       </div>, document.body)}
@@ -342,9 +262,9 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
           ? `Move ${moveItemIds.length} clip${moveItemIds.length === 1 ? "" : "s"}`
           : `${dialog.action === "delete" ? "Delete" : dialog.action === "reparent" ? "Move" : dialog.action === "create" ? "New" : "Rename"} folder`}</h2>
       {(dialog.action === "create" || dialog.action === "rename") && <label>Name<input aria-label="Folder name" value={name} onChange={(event) => setName(event.target.value)} maxLength={160} /></label>}
-      {(dialog.action === "reparent" || dialog.action === "moveItems") && <label>Destination<select value={parentId ?? "root"} onChange={(event) => setParentId(event.target.value === "root" ? null : Number(event.target.value))}><option value="root">/</option>{destinations.map((f) => <option key={f.id} value={f.id}>{f.path}</option>)}</select></label>}
+      {(dialog.action === "reparent" || dialog.action === "moveItems") && <FolderSelect label="Destination" folders={folders} value={destinationChoice} onChange={setDestinationChoice} excludeIds={excludedDestinations} allowCreate={dialog.action === "moveItems"} disabled={busy} />}
       {dialog.action === "delete" && (preview ? <><p>{preview.directItemCount} direct clips; {preview.descendantFolderCount} descendant folders; {preview.subtreeItemCount} clips in subtree.</p><label><input type="checkbox" checked={deleteClips} onChange={(event) => setDeleteClips(event.target.checked)} /> Delete clips {deleteDescendants ? "in the entire subtree" : "directly in this folder"} ({deleteDescendants ? preview.subtreeItemCount : preview.directItemCount}) instead of moving them to /</label><label><input type="checkbox" checked={deleteDescendants} onChange={(event) => setDeleteDescendants(event.target.checked)} /> Delete {preview.descendantFolderCount} descendant folders instead of reparenting them</label><p>{deleteDescendants ? "The whole subtree is removed." : "Child folders move to this folder’s parent; their clips stay in place."} {deleteClips ? "Selected clips are permanently deleted." : "Affected clips are moved to /."}</p></> : <p>Loading exact counts…</p>)}
-      {dialog.action === "moveItems" && parentId === null && <p>Unmarked clips outside Inbox become eligible for automatic retention on the next pruning pass.</p>}
+      {dialog.action === "moveItems" && destinationChoice.kind === "existing" && destinationChoice.folderId === null && <p>Unmarked clips outside Inbox become eligible for automatic retention on the next pruning pass.</p>}
       <div className="folder-dialog-actions"><button type="button" disabled={busy} onClick={close}>Cancel</button><button type="button" disabled={busy || (dialog.action === "delete" && !preview) || ((dialog.action === "create" || dialog.action === "rename") && !name.trim())} onClick={() => void run()}>{busy ? "Working…" : dialog.action === "delete" ? "Delete folder" : dialog.action === "moveItems" ? "Move clips" : dialog.action === "reparent" ? "Move folder" : dialog.action === "rename" ? "Rename folder" : "Create folder"}</button></div></div></div>}
   </>;
 }

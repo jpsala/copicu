@@ -4,6 +4,7 @@ import Minus from "lucide-react/dist/esm/icons/minus.mjs";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.mjs";
 import type {
   ApplyMetadataSelectionIntentResult,
+  FolderSummary,
   MetadataNotesIntent,
   MetadataSelectionIntent,
   MetadataSelectionPayload,
@@ -14,6 +15,7 @@ import type {
 } from "../shared/contracts";
 import { UiAlert, UiBadge, UiButton, UiSelect, UiTextInput, UiTextarea } from "./controls";
 import { EditableTokenCombobox } from "./EditableTokenCombobox";
+import { FolderSelect, type FolderChoice } from "./FolderSelect";
 import {
   createMetadataInspectorState,
   metadataInspectorReducer,
@@ -27,6 +29,7 @@ export type MetadataInspectorProps = {
   payload: MetadataSelectionPayload;
   variant: "existing-single" | "existing-multi" | "create";
   availableTags?: TagSummary[];
+  availableFolders?: FolderSummary[];
   closeRequestSignal?: number;
   showFooter?: boolean;
   embedded?: boolean;
@@ -39,7 +42,7 @@ export type MetadataInspectorProps = {
   onDirtyChange?: (dirty: boolean) => void;
 };
 
-export function createEmptyMetadataSnapshot(): MetadataSelectionSnapshot {
+export function createEmptyMetadataSnapshot(folderId: number | null = null, path = "/"): MetadataSelectionSnapshot {
   return {
     itemIds: [],
     itemCount: 1,
@@ -47,6 +50,7 @@ export function createEmptyMetadataSnapshot(): MetadataSelectionSnapshot {
     title: { state: "empty", value: null, populatedCount: 0 },
     notes: { state: "empty", value: null, populatedCount: 0 },
     tags: [],
+    folder: { state: "same", folderId, path },
     singleItem: null,
   };
 }
@@ -214,12 +218,24 @@ function MetadataSetSection({
   allowCreate: boolean;
   dispatch: Dispatch<Parameters<typeof metadataInspectorReducer>[1]>;
 }) {
+  const [editing, setEditing] = useState(Boolean(autoFocus));
+  useEffect(() => setEditing(Boolean(autoFocus)), [autoFocus, values]);
   const tokens = multi ? [] : effectiveSingleValues(values, intents, Math.max(values[0]?.totalCount ?? 1, 1));
   const availableCandidates = useMemo(() => {
     const selected = new Set(tokens.map((token) => metadataValueKey(token.key)));
     return candidates.filter((candidate) => !selected.has(metadataValueKey(candidate.key)) && currentIntent(intents, candidate.key) !== "add");
   }, [candidates, intents, tokens]);
   const getCandidates = useCallback((query: string) => rankCandidates(availableCandidates, query), [availableCandidates]);
+
+  if (multi && !editing && intents.length === 0) {
+    return <section className="metadata-section" aria-label={label}>
+      <span className="metadata-field-label">{label}</span>
+      <div className="metadata-tags-preserved">
+        <span>Keep each clip’s tags</span>
+        <UiButton type="button" size="compact-xs" variant="subtle" onClick={() => setEditing(true)}>Edit tags…</UiButton>
+      </div>
+    </section>;
+  }
 
   return (
     <section className="metadata-section" aria-label={label}>
@@ -231,7 +247,7 @@ function MetadataSetSection({
         getLabel={(value) => value.label}
         getCandidates={getCandidates}
         allowCreate={allowCreate}
-        autoFocus={autoFocus}
+        autoFocus={autoFocus || (multi && editing)}
         renderToken={(value) => (
           <>
             {`#${value.label.replace(/^#/, "")}`}
@@ -255,7 +271,11 @@ function MetadataSetSection({
           intent: { key: value.key, op: currentIntent(intents, value.key) === "add" ? "untouched" : "remove" },
         })}
       />
-      {multi ? <SetValueRows label={label} field={field} values={candidates} intents={intents} dispatch={dispatch} /> : (
+      {multi ? <>
+        <p className="metadata-tags-explanation">Only tags you explicitly add or remove will change.</p>
+        <SetValueRows label={label} field={field} values={candidates} intents={intents} dispatch={dispatch} />
+        {intents.length === 0 && <UiButton type="button" size="compact-xs" variant="subtle" onClick={() => setEditing(false)}>Keep tags unchanged</UiButton>}
+      </> : (
         <SetValueRows
           label={label}
           field={field}
@@ -272,6 +292,7 @@ export function MetadataInspector({
   payload,
   variant,
   availableTags = [],
+  availableFolders = [],
   closeRequestSignal = 0,
   showFooter = true,
   embedded = false,
@@ -299,6 +320,13 @@ export function MetadataInspector({
   const multi = effectiveVariant === "existing-multi";
   const intent = useMemo(() => metadataSelectionIntent(state), [state]);
   const allTagCandidates = useMemo(() => tagCandidates(snapshot, availableTags), [availableTags, snapshot]);
+  const folderChoice: FolderChoice | null = state.folder.op === "create"
+    ? { kind: "create", path: state.folder.path }
+    : state.folder.op === "set"
+      ? { kind: "existing", folderId: state.folder.folderId }
+      : snapshot.folder?.state === "mixed"
+        ? null
+        : { kind: "existing", folderId: snapshot.folder?.folderId ?? null };
 
   useEffect(() => dispatch({ type: "receivePayload", payload }), [payload]);
   useEffect(() => onIntentChange?.(intent, state), [intent, onIntentChange, state]);
@@ -435,6 +463,30 @@ export function MetadataInspector({
           </details>
         ) : null}
 
+        <section className="metadata-section" aria-label="Folder destination">
+          <FolderSelect
+            label="Folder"
+            folders={availableFolders}
+            value={folderChoice}
+            placeholder="Mixed folders"
+            disabled={state.saveState === "saving"}
+            onChange={(choice) => dispatch({
+              type: "stageFolder",
+              intent: choice.kind === "create"
+                ? { op: "create", path: choice.path }
+                : { op: "set", folderId: choice.folderId },
+            })}
+          />
+          {state.folder.op !== "untouched" ? (
+            <div className="metadata-inline-actions">
+              <UiBadge size="xs" variant="light">{state.folder.op === "create" ? "Will create on save" : "Will move on save"}</UiBadge>
+              <UiButton type="button" size="compact-xs" variant="subtle" disabled={state.saveState === "saving"} onClick={() => dispatch({ type: "stageFolder", intent: { op: "untouched" } })}>Undo folder change</UiButton>
+            </div>
+          ) : multi && snapshot.folder?.state === "mixed" ? (
+            <div className="metadata-aggregate-status">Clips stay in their current folders until you choose a destination.</div>
+          ) : null}
+        </section>
+
         <section className="metadata-section metadata-scalar-section">
           <label className="metadata-field-label" htmlFor="metadata-title">Title</label>
           {multi ? (
@@ -522,6 +574,7 @@ export function MetadataInspector({
         </section>
 
         <MetadataSetSection
+          key={`${snapshot.snapshotToken}:${snapshot.itemIds.join(",")}`}
           label="Tags"
           field="tags"
           values={snapshot.tags}

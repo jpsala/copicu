@@ -4,6 +4,31 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.2-rc.1] - 2026-10-02
+
+### Added
+
+- Opt-in shared clipboards with explicit folder/general connections, independent
+  send/receive pauses, shared history and capability-scoped Actions APIs.
+- SSE catalog/access updates and publication hints with reconnect reconciliation,
+  retaining live-only delivery, leases, receipts and explicit native effects.
+- A shared searchable folder tree in metadata, content/new-clip editors and move
+  dialogs, with ancestor-preserving filtering and transactional folder creation.
+  [Candidate notes](docs/releases/v0.5.2-rc.1.md).
+
+### Fixed
+
+- Reject stale sharing snapshots after identity/pause changes; cancel denied
+  streams and preserve connections/drafts when resources become unavailable.
+- Preserve each clip's tags when moving mixed selections.
+- Exclude synthetic development executables from Windows distribution and
+  replace a same-version installation when its helper is explicitly invoked.
+
+### Development
+
+- Add a release skill coordinating documentation, GitHub preparation and
+  build/checks in parallel, with one owner for integration and external effects.
+
 ## [0.5.1] - 2026-09-30
 
 ### Added

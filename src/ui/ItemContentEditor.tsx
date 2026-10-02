@@ -13,6 +13,7 @@ import {
   type EditorSettings,
 } from "../shared/settings";
 import type {
+  FolderSummary,
   MetadataSelectionIntent,
   MetadataSelectionPayload,
   TagSummary,
@@ -34,6 +35,7 @@ type ItemContentEditorProps = {
   settings: EditorSettings;
   metadataPayload: MetadataSelectionPayload;
   availableTags: TagSummary[];
+  availableFolders?: FolderSummary[];
   saving?: boolean;
   onChange: (value: string) => void;
   onCancel: () => void;
@@ -48,6 +50,7 @@ export function ItemContentEditor({
   settings,
   metadataPayload,
   availableTags,
+  availableFolders = [],
   saving = false,
   onChange,
   onCancel,
@@ -199,12 +202,13 @@ export function ItemContentEditor({
         <aside className="item-content-editor-pane is-metadata" aria-label="Metadata editor">
           <div className="item-editor-pane-header">
             <strong>Metadata</strong>
-            <span>Title, notes and tags</span>
+            <span>Folder, title, notes and tags</span>
           </div>
           <MetadataInspector
             payload={metadataPayload}
             variant="existing-single"
             availableTags={availableTags}
+            availableFolders={availableFolders}
             embedded
             guardDirtyOnCancel={false}
             showFooter={false}

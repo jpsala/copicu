@@ -92,8 +92,39 @@ pub fn builtin_actions() -> Vec<ActionDefinition> {
     builtin::builtin_actions()
 }
 
+pub(crate) fn shared_script_reads_clipboard(action: &ActionDefinition) -> bool {
+    action
+        .capabilities
+        .iter()
+        .any(|capability| capability == "shared:publish")
+        && action
+            .capabilities
+            .iter()
+            .any(|capability| capability == "clipboard:read")
+}
+
 pub fn list_actions(storage: &crate::storage::AppStorage) -> Result<Vec<ActionDefinition>, String> {
     let mut actions = builtin_actions();
+    #[cfg(feature = "shared-clipboard")]
+    {
+        let configured = crate::shared_clipboard::runtime::snapshot(storage)?.configured;
+        if configured {
+            for (action_id, shortcut) in
+                crate::shared_clipboard::runtime::configured_hotkeys(storage)?
+            {
+                if let Some(action) = actions.iter_mut().find(|action| action.id == action_id) {
+                    action.shortcut = normalize_shortcut_string(Some(&shortcut));
+                }
+            }
+        } else {
+            actions.retain(|action| {
+                !matches!(
+                    action.id.as_str(),
+                    builtin::SHARED_SEND_ACTIVE_ID | builtin::SHARED_SEND_CLIPBOARD_ID
+                )
+            });
+        }
+    }
     actions.extend(storage.list_cached_script_actions()?);
     Ok(actions)
 }
@@ -198,6 +229,50 @@ pub fn run_action<R: Runtime + 'static>(
     previous_window: &crate::window_focus::PreviousWindow,
     request: RunActionRequest,
 ) -> ActionRunResult {
+    let sequence = if request.action_id == builtin::SHARED_SEND_CLIPBOARD_ID
+        || (request.context.trigger == Trigger::GlobalShortcut
+            && find_script_action(storage, &request.action_id)
+                .ok()
+                .flatten()
+                .is_some_and(|action| shared_script_reads_clipboard(&action)))
+    {
+        #[cfg(feature = "shared-clipboard")]
+        {
+            if crate::shared_clipboard::runtime::publish_channels(storage).is_ok() {
+                crate::shared_clipboard_sequence()
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "shared-clipboard"))]
+        {
+            None
+        }
+    } else {
+        None
+    };
+    run_action_with_clipboard_sequence(
+        app,
+        window,
+        storage,
+        suppression,
+        previous_window,
+        request,
+        sequence,
+    )
+}
+
+/// Global-shortcut dispatch supplies the sequence sampled at key press, before spawning a worker.
+#[cfg(not(test))]
+pub fn run_action_with_clipboard_sequence<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    window: Option<&WebviewWindow<R>>,
+    storage: &crate::storage::AppStorage,
+    suppression: &crate::clipboard::SelfWriteSuppression,
+    previous_window: &crate::window_focus::PreviousWindow,
+    request: RunActionRequest,
+    clipboard_sequence: Option<u32>,
+) -> ActionRunResult {
     let started_at = now_unix_ms();
     crate::diag_log(
         "script.action.start",
@@ -253,7 +328,25 @@ pub fn run_action<R: Runtime + 'static>(
             effects: Vec::new(),
             verification: None,
         }),
-        _ => run_script_action(app, window, storage, suppression, previous_window, &request),
+        builtin::SHARED_SEND_ACTIVE_ID | builtin::SHARED_SEND_CLIPBOARD_ID => {
+            shared_publish_builtin(storage, &request, clipboard_sequence).map(|message| {
+                ScriptOrBuiltinRun {
+                    message,
+                    toasts: Vec::new(),
+                    effects: Vec::new(),
+                    verification: None,
+                }
+            })
+        }
+        _ => run_script_action(
+            app,
+            window,
+            storage,
+            suppression,
+            previous_window,
+            &request,
+            clipboard_sequence,
+        ),
     };
     let finished_at = now_unix_ms();
 
@@ -320,6 +413,144 @@ pub fn run_action<R: Runtime + 'static>(
 }
 
 #[cfg(not(test))]
+fn shared_publish_builtin(
+    storage: &crate::storage::AppStorage,
+    request: &RunActionRequest,
+    clipboard_sequence: Option<u32>,
+) -> Result<String, String> {
+    #[cfg(feature = "shared-clipboard")]
+    {
+        // Resolve authorization before reading any clipboard content.
+        let channel_id = crate::shared_clipboard::runtime::default_publish_channel(storage)?;
+        let (text, source) = if request.action_id == builtin::SHARED_SEND_ACTIVE_ID {
+            let item_id = request
+                .context
+                .current_item_id
+                .ok_or_else(|| "an active Copicu clip is required".to_string())?;
+            let item = storage.get_item(item_id)?;
+            if item.content_kind() != "text" {
+                return Err("shared channels accept plain text clips only".to_string());
+            }
+            (item.text().to_string(), "builtinActive")
+        } else {
+            let sequence = clipboard_sequence
+                .ok_or_else(|| "clipboard invocation sequence is unavailable".to_string())?;
+            (crate::shared_snapshot_text(sequence)?, "builtinClipboard")
+        };
+        crate::shared_clipboard::runtime::publish_text(storage, &channel_id, &text, source)?;
+        Ok("Queued text for shared channel".to_string())
+    }
+    #[cfg(not(feature = "shared-clipboard"))]
+    {
+        let _ = (storage, request, clipboard_sequence);
+        Err("shared clipboard is unavailable in this build".to_string())
+    }
+}
+
+#[cfg(not(test))]
+fn script_shared_channels(
+    storage: &crate::storage::AppStorage,
+    action: &ActionDefinition,
+) -> Result<serde_json::Value, String> {
+    #[cfg(feature = "shared-clipboard")]
+    {
+        let channels = crate::shared_clipboard::runtime::publish_channels(storage)?;
+        let channels = channels
+            .as_array()
+            .ok_or_else(|| "invalid host channel list".to_string())?;
+        Ok(json!(channels
+            .iter()
+            .filter(|channel| channel["id"].as_str().is_some_and(|id| {
+                capabilities::validate_shared_channel_capability(action, id).is_ok()
+            }))
+            .cloned()
+            .collect::<Vec<_>>()))
+    }
+    #[cfg(not(feature = "shared-clipboard"))]
+    {
+        let _ = (storage, action);
+        Err("shared clipboard is unavailable in this build".to_string())
+    }
+}
+
+#[cfg(not(test))]
+fn script_shared_publish(
+    storage: &crate::storage::AppStorage,
+    action: &ActionDefinition,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Publish {
+        channel_id: String,
+        text: String,
+    }
+    let payload: Publish = serde_json::from_value(payload)
+        .map_err(|_| "invalid sharedClipboard.publish payload".to_string())?;
+    capabilities::validate_shared_channel_capability(action, &payload.channel_id)?;
+    #[cfg(feature = "shared-clipboard")]
+    {
+        crate::shared_clipboard::runtime::publish_text(
+            storage,
+            &payload.channel_id,
+            &payload.text,
+            &format!("script:{}", action.id),
+        )
+    }
+    #[cfg(not(feature = "shared-clipboard"))]
+    {
+        let _ = (storage, payload.text);
+        Err("shared clipboard is unavailable in this build".to_string())
+    }
+}
+
+#[cfg(not(test))]
+pub(crate) fn validate_shared_publish_destination(storage: &crate::storage::AppStorage, action_id: &str, channel_id: &str) -> Result<(), String> {
+    let action = find_script_action(storage,action_id)?.ok_or("Choose an available script Action")?;
+    capabilities::validate_script_host_capabilities(&action,"sharedClipboard.publish")?;
+    capabilities::validate_shared_channel_capability(&action,channel_id)
+}
+
+#[cfg(not(test))]
+fn script_shared_target(storage: &crate::storage::AppStorage, action: &ActionDefinition) -> Result<serde_json::Value, String> {
+    #[cfg(feature="shared-clipboard")]
+    {
+        let target = crate::shared_clipboard::runtime::action_target(storage,&action.id)?;
+        if let Some(ref id) = target { capabilities::validate_shared_channel_capability(action,id)?; }
+        Ok(json!(target))
+    }
+    #[cfg(not(feature="shared-clipboard"))]
+    { let _ = (storage,action); Err("sharing is unavailable".into()) }
+}
+
+#[cfg(not(test))]
+fn script_shared_state(storage: &crate::storage::AppStorage, action: &ActionDefinition) -> Result<serde_json::Value, String> {
+    #[cfg(feature="shared-clipboard")]
+    {
+        let snapshot = crate::shared_clipboard::runtime::snapshot(storage)?;
+        let permitted = |id:&str| capabilities::validate_shared_channel_capability(action,id).is_ok() || action.capabilities.iter().any(|c| c == &format!("shared:receive:{id}"));
+        Ok(json!({"sendPaused":snapshot.send_paused,"receivePaused":snapshot.receive_paused,
+            "resources":snapshot.channels.iter().filter(|c| permitted(&c.id)).map(|c| json!({"id":c.id,"name":c.name,"canPublish":c.can_publish,"sendPaused":snapshot.send_paused || c.send_paused,"receivePaused":snapshot.receive_paused || c.receive_paused})).collect::<Vec<_>>(),
+            "publications":snapshot.outbox.iter().filter(|p| p["channelId"].as_str().is_some_and(permitted)).collect::<Vec<_>>() }))
+    }
+    #[cfg(not(feature="shared-clipboard"))]
+    { let _ = (storage,action); Err("sharing is unavailable".into()) }
+}
+
+#[cfg(not(test))]
+fn script_shared_history(storage: &crate::storage::AppStorage, action: &ActionDefinition, payload: serde_json::Value) -> Result<serde_json::Value,String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all="camelCase",deny_unknown_fields)]
+    struct Query { channel_id:String, cursor:Option<String> }
+    let input:Query=serde_json::from_value(payload).map_err(|_| "Invalid shared history query")?;
+    if !action.capabilities.contains(&format!("shared:history:{}",input.channel_id)) {return Err("Shared history requires an explicit channel content scope".into());}
+    #[cfg(feature="shared-clipboard")]
+    { crate::shared_clipboard::runtime::history_page(storage,&input.channel_id,input.cursor.as_deref()) }
+    #[cfg(not(feature="shared-clipboard"))]
+    { let _=(storage,input); Err("Sharing is unavailable".into()) }
+}
+
+#[cfg(not(test))]
 struct ScriptOrBuiltinRun {
     message: String,
     toasts: Vec<ActionToast>,
@@ -335,6 +566,7 @@ fn run_script_action<R: Runtime + 'static>(
     suppression: &crate::clipboard::SelfWriteSuppression,
     previous_window: &crate::window_focus::PreviousWindow,
     request: &RunActionRequest,
+    clipboard_sequence: Option<u32>,
 ) -> Result<ScriptOrBuiltinRun, String> {
     let action = find_script_action(storage, &request.action_id)?
         .ok_or_else(|| format!("unknown action: {}", request.action_id))?;
@@ -376,7 +608,7 @@ fn run_script_action<R: Runtime + 'static>(
         return Err(format!("script file not found: {}", action_file.display()));
     }
 
-    run_script_action_definition(
+    run_script_action_definition_with_reception(
         app,
         window,
         storage,
@@ -385,6 +617,8 @@ fn run_script_action<R: Runtime + 'static>(
         action,
         action_file,
         request.context.clone(),
+        None,
+        clipboard_sequence,
     )
 }
 
@@ -483,6 +717,33 @@ fn run_script_action_definition<R: Runtime + 'static>(
     action_file: PathBuf,
     context: ActionContext,
 ) -> Result<ScriptOrBuiltinRun, String> {
+    run_script_action_definition_with_reception(
+        app,
+        window,
+        storage,
+        suppression,
+        previous_window,
+        action,
+        action_file,
+        context,
+        None,
+        None,
+    )
+}
+
+#[cfg(not(test))]
+fn run_script_action_definition_with_reception<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    window: Option<&WebviewWindow<R>>,
+    storage: &crate::storage::AppStorage,
+    suppression: &crate::clipboard::SelfWriteSuppression,
+    previous_window: &crate::window_focus::PreviousWindow,
+    action: ActionDefinition,
+    action_file: PathBuf,
+    context: ActionContext,
+    shared_reception: Option<SharedReceptionContext>,
+    clipboard_sequence: Option<u32>,
+) -> Result<ScriptOrBuiltinRun, String> {
     let paste_target = previous_window.snapshot_target();
     if !unsupported_script_capabilities(&action).is_empty() {
         return Err(format!(
@@ -502,15 +763,62 @@ fn run_script_action_definition<R: Runtime + 'static>(
         action,
         context,
         selection_items,
+        shared_reception,
+        clipboard_sequence,
     };
     let runner_result =
         run_node_script_runner(app, window, storage, previous_window, &runner_request)?;
     let mut toasts = Vec::new();
     let mut effects = Vec::new();
 
+    if let Some(reception) = &runner_request.shared_reception {
+        validate_reception_invocation(storage, &runner_request.action, reception)?;
+        // Deferred outputs have not been admitted yet. A failed script can have
+        // earlier host effects, but its buffered native outputs remain untouched.
+        if runner_result.status == "failed" {
+            return Err(runner_result.message);
+        }
+        validate_reception_output_plan(
+            runner_request
+                .action
+                .capabilities
+                .iter()
+                .any(|capability| capability == "clipboard:write"),
+            runner_result
+                .raw_operations
+                .iter()
+                .map(|operation| match operation {
+                    ScriptOperation::ClipboardWriteText { .. } => {
+                        ReceptionOutputKind::ClipboardText
+                    }
+                    ScriptOperation::UiToast { .. }
+                    | ScriptOperation::UiNotify { .. }
+                    | ScriptOperation::UiMarkdownOutput { .. } => ReceptionOutputKind::Ui,
+                    _ => ReceptionOutputKind::Unsupported,
+                }),
+        )?;
+    }
+
     for operation in runner_result.raw_operations {
         match operation {
             ScriptOperation::ClipboardWriteText { text } => {
+                if let Some(reception) = &runner_request.shared_reception {
+                    #[cfg(feature = "shared-clipboard")]
+                    {
+                        crate::shared_host::write_reception_action_clipboard(
+                            storage,
+                            &runner_request.action.id,
+                            reception,
+                            &text,
+                        )?;
+                        continue;
+                    }
+                    #[cfg(not(feature = "shared-clipboard"))]
+                    {
+                        let _ = reception;
+                        return Err("shared clipboard is unavailable in this build".to_string());
+                    }
+                }
                 let hash = crate::storage::hash_text(&text);
                 suppression.suppress_hash(hash.clone());
                 app.clipboard().write_text(text).map_err(|error| {
@@ -991,6 +1299,233 @@ struct ScriptRunnerRequest {
     action: ActionDefinition,
     context: ActionContext,
     selection_items: Vec<ScriptSelectionItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shared_reception: Option<SharedReceptionContext>,
+    #[serde(skip)]
+    clipboard_sequence: Option<u32>,
+}
+
+#[cfg(not(test))]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedReceptionContext {
+    pub channel_id: String,
+    pub publication_id: String,
+    pub origin_device_id: String,
+    pub generation: u64,
+    #[serde(skip)]
+    pub text: String,
+    #[serde(skip)]
+    pub subscription_id: String,
+    #[serde(skip)]
+    pub expected_sequence: Option<u32>,
+    #[serde(skip)]
+    pub lease_expires_at_unix_ms: u64,
+    #[serde(skip)]
+    pub lease_started: Instant,
+    #[serde(skip)]
+    pub lease_duration_ms: u64,
+}
+
+#[cfg(not(test))]
+pub fn validate_shared_reception_binding(
+    storage: &crate::storage::AppStorage,
+    action_id: &str,
+    channel_id: &str,
+) -> Result<(), String> {
+    let action = find_script_action(storage, action_id)?
+        .ok_or_else(|| "reception action is unavailable".to_string())?;
+    validate_reception_definition(&action, channel_id)
+}
+
+#[cfg(not(test))]
+pub fn shared_reception_action_writes_clipboard(
+    storage: &crate::storage::AppStorage,
+    action_id: &str,
+) -> Result<bool, String> {
+    let action = find_script_action(storage, action_id)?
+        .ok_or_else(|| "reception action is unavailable".to_string())?;
+    Ok(action
+        .capabilities
+        .iter()
+        .any(|capability| capability == "clipboard:write"))
+}
+
+#[derive(Clone, Copy)]
+enum ReceptionOutputKind {
+    ClipboardText,
+    Ui,
+    Unsupported,
+}
+
+fn reception_is_live(
+    wall_time_ms: Option<u128>,
+    expires_at_ms: u64,
+    elapsed_ms: u128,
+    duration_ms: u64,
+) -> bool {
+    wall_time_ms.is_some_and(|now| now < u128::from(expires_at_ms))
+        && elapsed_ms < u128::from(duration_ms)
+}
+
+fn validate_reception_output_plan(
+    has_clipboard_capability: bool,
+    operations: impl Iterator<Item = ReceptionOutputKind>,
+) -> Result<(), String> {
+    let mut writes = 0;
+    for operation in operations {
+        match operation {
+            ReceptionOutputKind::ClipboardText => {
+                if !has_clipboard_capability { return Err("reception clipboard output requires clipboard:write capability".to_string()); }
+                writes += 1;
+                if writes > 1 { return Err("a reception Action can admit only one Windows clipboard output".to_string()); }
+            },
+            ReceptionOutputKind::Ui => {},
+            ReceptionOutputKind::Unsupported => return Err("reception actions cannot execute history item copies, picker, paste or window operations".to_string()),
+        }
+    }
+    Ok(())
+}
+
+fn validate_reception_definition(
+    action: &ActionDefinition,
+    channel_id: &str,
+) -> Result<(), String> {
+    if !action.triggers.contains(&Trigger::SharedReception)
+        || action
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        || !unsupported_script_capabilities(action).is_empty()
+    {
+        return Err("reception action must declare sharedReception and have no errors".to_string());
+    }
+    if !action
+        .capabilities
+        .contains(&format!("shared:receive:{channel_id}"))
+    {
+        return Err("reception action requires an explicit channel receive capability".to_string());
+    }
+    if action
+        .capabilities
+        .iter()
+        .any(|capability| matches!(capability.as_str(), "input:paste" | "picker:activate"))
+    {
+        return Err("reception scripts cannot paste or activate picker items".to_string());
+    }
+    if action.input.source != ActionInputSource::None
+        || action.input.selection != SelectionRequirement::None
+    {
+        return Err("reception actions must use input source none and selection none".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn validate_reception_invocation(
+    storage: &crate::storage::AppStorage,
+    action: &ActionDefinition,
+    reception: &SharedReceptionContext,
+) -> Result<(), String> {
+    validate_reception_definition(action, &reception.channel_id)?;
+    if !reception_is_live(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|now| now.as_millis()),
+        reception.lease_expires_at_unix_ms,
+        reception.lease_started.elapsed().as_millis(),
+        reception.lease_duration_ms,
+    ) {
+        return Err("reception Action is no longer live".to_string());
+    }
+    #[cfg(feature = "shared-clipboard")]
+    {
+        crate::shared_clipboard::runtime::validate_reception_action(
+            storage,
+            &reception.channel_id,
+            &reception.publication_id,
+            reception.generation,
+            &action.id,
+        )
+    }
+    #[cfg(not(feature = "shared-clipboard"))]
+    {
+        let _ = storage;
+        Err("shared clipboard is unavailable in this build".to_string())
+    }
+}
+
+/// The scheduler must claim the action once durably before calling and persist the result afterward.
+#[cfg(not(test))]
+pub fn run_shared_reception_action<R: Runtime + 'static>(
+    app: &AppHandle<R>,
+    storage: &crate::storage::AppStorage,
+    suppression: &crate::clipboard::SelfWriteSuppression,
+    previous_window: &crate::window_focus::PreviousWindow,
+    action_id: &str,
+    reception: SharedReceptionContext,
+) -> ActionRunResult {
+    let started_at = now_unix_ms();
+    let result = (|| {
+        let action = find_script_action(storage, action_id)?
+            .ok_or_else(|| "reception action is unavailable".to_string())?;
+        validate_reception_invocation(storage, &action, &reception)?;
+        let script = action
+            .script
+            .as_ref()
+            .ok_or_else(|| "reception requires a local script action".to_string())?;
+        let action_file = PathBuf::from(&script.path);
+        run_script_action_definition_with_reception(
+            app,
+            None,
+            storage,
+            suppression,
+            previous_window,
+            action,
+            action_file,
+            ActionContext {
+                trigger: Trigger::SharedReception,
+                shortcut: None,
+                current_item_id: None,
+                selected_item_ids: Vec::new(),
+                view: None,
+            },
+            Some(reception),
+            None,
+        )
+    })();
+    let (status, message, toasts, effects, verification) = match result {
+        Ok(run) => (
+            ActionRunStatus::Completed,
+            run.message,
+            run.toasts,
+            run.effects,
+            run.verification,
+        ),
+        Err(error) => (ActionRunStatus::Failed, error, Vec::new(), Vec::new(), None),
+    };
+    let finished_at = now_unix_ms();
+    let failed = status == ActionRunStatus::Failed;
+    let _ = storage.insert_action_run(crate::storage::NewActionRun {
+        action_id: action_id.to_string(),
+        trigger: "sharedReception".to_string(),
+        status: if failed { "failed" } else { "completed" }.to_string(),
+        started_at_unix_ms: started_at,
+        finished_at_unix_ms: finished_at,
+        duration_ms: finished_at.saturating_sub(started_at),
+        input_summary_json: "{}".to_string(),
+        error_class: failed.then(|| "SharedReceptionActionError".to_string()),
+        error_message: failed.then(|| redact_error(&message)),
+    });
+    ActionRunResult {
+        action_id: action_id.to_string(),
+        status,
+        message,
+        toasts,
+        effects,
+        verification,
+    }
 }
 
 #[cfg(not(test))]
@@ -1300,8 +1835,40 @@ fn handle_script_host_call<R: Runtime + 'static>(
     previous_window: &crate::window_focus::PreviousWindow,
     action: &ActionDefinition,
     call: &ScriptHostCall,
+    reception: Option<&SharedReceptionContext>,
+    clipboard_sequence: Option<u32>,
+    shared_clipboard_fence_required: bool,
 ) -> String {
     let result = validate_script_host_capabilities(action, call.method.as_str()).and_then(|()| {
+        if call.method == "clipboard.read" && shared_clipboard_fence_required {
+            let sequence = clipboard_sequence.ok_or_else(|| "clipboard invocation sequence is unavailable".to_string())?;
+            #[cfg(feature = "shared-clipboard")]
+            { crate::shared_clipboard::runtime::publish_channels(storage)?;
+                return crate::shared_snapshot_text(sequence).map(|text| json!({ "text": text })); }
+            #[cfg(not(feature = "shared-clipboard"))]
+            { let _ = sequence; return Err("shared clipboard is unavailable in this build".to_string()); }
+        }
+        if let Some(reception) = reception {
+            validate_reception_invocation(storage, action, reception)?;
+            if call.method == "sharedClipboard.received" { return Ok(json!({ "text": reception.text })); }
+            if call.method == "sharedClipboard.publish" {
+                let target = call.payload["channelId"].as_str().ok_or_else(|| "invalid forwarding target channel".to_string())?;
+                capabilities::validate_shared_forward_capability(action, &reception.channel_id, target)?;
+                let text = call.payload["text"].as_str().ok_or_else(|| "invalid forwarding plain text".to_string())?;
+                if call.payload.as_object().is_none_or(|payload| payload.len() != 2) {
+                    return Err("invalid sharedClipboard.publish payload".to_string());
+                }
+                #[cfg(feature = "shared-clipboard")]
+                { return crate::shared_clipboard::runtime::publish_reception_text(storage, &reception.channel_id, &reception.publication_id, target, reception.generation, &action.id, text); }
+                #[cfg(not(feature = "shared-clipboard"))]
+                { let _ = text; return Err("shared clipboard is unavailable in this build".to_string()); }
+            }
+            if !matches!(call.method.as_str(), "sharedClipboard.channels" | "sharedClipboard.target" | "sharedClipboard.state" | "ui.alert" | "ui.confirm" | "ui.input") {
+                return Err("reception actions cannot mutate history, publish or access unrelated host content in this build".to_string());
+            }
+        } else if call.method == "sharedClipboard.received" {
+            return Err("sharedClipboard.received requires a reception invocation".to_string());
+        }
         dispatch_script_host_call(app, window, storage, previous_window, action, call)
     });
 
@@ -1488,6 +2055,7 @@ pub(crate) fn script_history_create(
     let payload: HistoryCreatePayload = serde_json::from_value(payload)
         .map_err(|error| format!("invalid history.create payload: {error}"))?;
     let result = storage.create_text_item(crate::storage::CreateHistoryItemRequest {
+        folder: None,
         text: payload.text,
         title: payload.title,
         notes: payload.notes,
@@ -1865,6 +2433,10 @@ fn run_node_script_runner<R: Runtime>(
                     previous_window,
                     &request.action,
                     &call,
+                    request.shared_reception.as_ref(),
+                    request.clipboard_sequence,
+                    request.context.trigger == Trigger::GlobalShortcut
+                        && shared_script_reads_clipboard(&request.action),
                 );
                 writeln!(stdin, "{}", response)
                     .map_err(|error| format!("failed to write script host response: {error}"))?;
@@ -2042,7 +2614,7 @@ mod tests {
         let ids: Vec<_> = actions.iter().map(|action| action.id.as_str()).collect();
 
         assert_eq!(
-            ids,
+            &ids[..5],
             vec![
                 PASTE_PLAIN_ID,
                 JOIN_SELECTED_ID,
@@ -2050,6 +2622,7 @@ mod tests {
                 QUEUE_SELECTED_BOTTOM_TO_TOP_ID,
                 CLEAR_PASTE_QUEUE_ID,
             ]
+            .as_slice()
         );
         assert!(actions.iter().all(|action| action.builtin));
     }
@@ -2222,7 +2795,15 @@ mod tests {
             .expect("script folder setting should persist");
 
         let cached_before_refresh = list_actions(&storage).expect("cached actions should list");
-        assert_eq!(cached_before_refresh.len(), builtin_actions().len());
+        assert!(cached_before_refresh.iter().all(|action| action.builtin));
+        assert!(cached_before_refresh
+            .iter()
+            .any(|action| action.id == PASTE_PLAIN_ID));
+        #[cfg(feature = "shared-clipboard")]
+        assert!(!cached_before_refresh.iter().any(|action| matches!(
+            action.id.as_str(),
+            builtin::SHARED_SEND_ACTIVE_ID | builtin::SHARED_SEND_CLIPBOARD_ID
+        )));
         assert!(!cached_before_refresh
             .iter()
             .any(|action| action.id == "examples.cacheOnly"));
@@ -2352,6 +2933,113 @@ mod tests {
         assert!(validate_script_host_capabilities(&action, "history.create").is_err());
         action.capabilities.push("history:create".to_string());
         assert!(validate_script_host_capabilities(&action, "history.create").is_ok());
+    }
+
+    #[test]
+    fn sharing_requires_method_and_specific_channel_grants() {
+        let mut action = test_script_action("examples.share", "", SelectionRequirement::None);
+        assert!(validate_script_host_capabilities(&action, "sharedClipboard.publish").is_err());
+        assert!(validate_script_host_capabilities(&action, "sharedClipboard.channels").is_err());
+        action.capabilities = vec!["shared:publish".to_string(), "shared:read".to_string()];
+        assert!(validate_script_host_capabilities(&action, "sharedClipboard.publish").is_ok());
+        assert!(validate_script_host_capabilities(&action, "sharedClipboard.channels").is_ok());
+        assert!(capabilities::validate_shared_channel_capability(&action, "home").is_err());
+        action.capabilities.push("shared:publish:home".to_string());
+        assert!(unsupported_script_capabilities(&action).is_empty());
+        assert!(capabilities::validate_shared_channel_capability(&action, "home").is_ok());
+        assert!(capabilities::validate_shared_channel_capability(&action, "work").is_err());
+        action.capabilities.push("shared:publish:*".to_string());
+        assert!(capabilities::validate_shared_channel_capability(&action, "*").is_err());
+        assert_eq!(
+            unsupported_script_capabilities(&action),
+            vec!["shared:publish:*".to_string()]
+        );
+    }
+
+    #[test]
+    fn reception_binding_requires_explicit_scope_and_allows_guarded_text_writer() {
+        let mut action = test_script_action("examples.receive", "", SelectionRequirement::None);
+        action.triggers = vec![Trigger::SharedReception];
+        assert!(validate_reception_definition(&action, "home").is_err());
+        action.capabilities = vec!["shared:receive:home".to_string()];
+        assert!(validate_reception_definition(&action, "home").is_ok());
+        assert!(validate_reception_definition(&action, "work").is_err());
+        action.capabilities.push("clipboard:write".to_string());
+        assert!(validate_reception_definition(&action, "home").is_ok());
+        action.capabilities.push("input:paste".to_string());
+        assert!(validate_reception_definition(&action, "home")
+            .unwrap_err()
+            .contains("cannot paste"));
+    }
+
+    #[test]
+    fn reception_output_plan_rejects_multiple_or_undeclared_writes_before_admission() {
+        use ReceptionOutputKind::*;
+        assert!(validate_reception_output_plan(true, [Ui, ClipboardText, Ui].into_iter()).is_ok());
+        assert!(validate_reception_output_plan(false, [Ui].into_iter()).is_ok());
+        assert!(validate_reception_output_plan(false, [ClipboardText].into_iter()).is_err());
+        assert!(
+            validate_reception_output_plan(true, [ClipboardText, ClipboardText].into_iter())
+                .is_err()
+        );
+        assert!(
+            validate_reception_output_plan(true, [ClipboardText, Unsupported].into_iter()).is_err()
+        );
+    }
+
+    #[test]
+    fn reception_action_freshness_requires_wall_and_monotonic_budget() {
+        assert!(reception_is_live(Some(99), 100, 9, 10));
+        assert!(!reception_is_live(Some(100), 100, 9, 10));
+        assert!(
+            !reception_is_live(Some(1), 100, 10, 10),
+            "clock rollback cannot extend the monotonic lease"
+        );
+        assert!(!reception_is_live(None, 100, 0, 10));
+        assert!(!reception_is_live(Some(99), 100, 0, 0));
+    }
+
+    #[test]
+    fn reception_forwarding_requires_route_and_target_grants_without_wildcards() {
+        let mut action = test_script_action("examples.forward", "", SelectionRequirement::None);
+        action.capabilities = vec![
+            "shared:publish".to_string(),
+            "shared:publish:work".to_string(),
+        ];
+        assert!(capabilities::validate_shared_forward_capability(&action, "home", "work").is_err());
+        action
+            .capabilities
+            .push("shared:forward:home:work".to_string());
+        assert!(unsupported_script_capabilities(&action).is_empty());
+        assert!(capabilities::validate_shared_forward_capability(&action, "home", "work").is_ok());
+        assert!(capabilities::validate_shared_forward_capability(&action, "work", "home").is_err());
+        assert!(capabilities::validate_shared_forward_capability(&action, "*", "work").is_err());
+        action
+            .capabilities
+            .push("shared:forward:work:work".to_string());
+        assert!(capabilities::validate_shared_forward_capability(&action, "work", "work").is_err());
+    }
+
+    #[cfg(feature = "shared-clipboard")]
+    #[test]
+    fn shared_builtins_distinguish_active_clip_and_windows_clipboard() {
+        let actions = builtin_actions();
+        let active = actions
+            .iter()
+            .find(|action| action.id == builtin::SHARED_SEND_ACTIVE_ID)
+            .unwrap();
+        let clipboard = actions
+            .iter()
+            .find(|action| action.id == builtin::SHARED_SEND_CLIPBOARD_ID)
+            .unwrap();
+        assert_eq!(active.input.selection, SelectionRequirement::Active);
+        assert_eq!(active.input.source, ActionInputSource::PickerSelection);
+        assert_eq!(clipboard.input.source, ActionInputSource::Clipboard);
+        assert!(active.triggers.contains(&Trigger::GlobalShortcut));
+        assert!(clipboard
+            .capabilities
+            .contains(&"clipboard:read".to_string()));
+        assert!(!active.capabilities.contains(&"clipboard:read".to_string()));
     }
 
     #[test]

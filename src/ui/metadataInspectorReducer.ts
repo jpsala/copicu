@@ -1,4 +1,5 @@
 import type {
+  MetadataFolderIntent,
   MetadataNotesIntent,
   MetadataScalarIntent,
   MetadataSelectionIntent,
@@ -17,6 +18,7 @@ export type MetadataInspectorState = {
   focusTarget: MetadataSelectionPayload["focusTarget"];
   title: MetadataScalarIntent;
   notes: MetadataNotesIntent;
+  folder: MetadataFolderIntent;
   tags: MetadataSetValueIntent[];
   dirty: boolean;
   pendingNoticeHidden: boolean;
@@ -28,13 +30,14 @@ export type MetadataInspectorState = {
   undoStack: MetadataInspectorIntentSnapshot[];
 };
 
-type MetadataInspectorIntentSnapshot = Pick<MetadataInspectorState, "title" | "notes" | "tags">;
+type MetadataInspectorIntentSnapshot = Pick<MetadataInspectorState, "title" | "notes" | "tags" | "folder">;
 
 export type MetadataInspectorAction =
   | { type: "receivePayload"; payload: MetadataSelectionPayload }
   | { type: "replacePayload"; payload: MetadataSelectionPayload }
   | { type: "stageTitle"; intent: MetadataScalarIntent }
   | { type: "stageNotes"; intent: MetadataNotesIntent }
+  | { type: "stageFolder"; intent: MetadataFolderIntent }
   | { type: "stageSetValue"; field: "tags"; intent: MetadataSetValueIntent }
   | { type: "undoLast" }
   | { type: "saveStarted" }
@@ -57,6 +60,7 @@ function intentSnapshot(state: MetadataInspectorState): MetadataInspectorIntentS
   return {
     title: state.title,
     notes: state.notes,
+    folder: state.folder,
     tags: state.tags,
   };
 }
@@ -78,6 +82,7 @@ function sameSelection(left: number[], right: number[]) {
 function withDerivedState(state: MetadataInspectorState): MetadataInspectorState {
   const dirty = state.title.op !== "untouched"
     || state.notes.op !== "untouched"
+    || state.folder.op !== "untouched"
     || state.tags.length > 0;
   return { ...state, dirty, summary: metadataChangeSummary(state) };
 }
@@ -89,6 +94,7 @@ export function createMetadataInspectorState(payload: MetadataSelectionPayload):
     focusTarget: payload.focusTarget,
     title: untouchedTitle,
     notes: untouchedNotes,
+    folder: { op: "untouched" },
     tags: [],
     dirty: false,
     summary: "No changes",
@@ -143,6 +149,14 @@ export function metadataInspectorReducer(
       return stage(state, { title: action.intent });
     case "stageNotes":
       return stage(state, { notes: action.intent });
+    case "stageFolder": {
+      const base = state.baseSnapshot.folder;
+      const folder = action.intent.op === "set" && base?.state === "same" && base.folderId === action.intent.folderId
+        ? { op: "untouched" as const }
+        : action.intent;
+      if (JSON.stringify(folder) === JSON.stringify(state.folder)) return state;
+      return stage(state, { folder });
+    }
     case "stageSetValue":
       return stage(state, { tags: setValueIntent(state.tags, action.intent) });
     case "undoLast": {
@@ -191,6 +205,7 @@ export function metadataSelectionIntent(state: MetadataInspectorState): Metadata
     expectedSnapshotToken: state.baseSnapshot.snapshotToken,
     title: state.title,
     notes: state.notes,
+    folder: state.folder,
     tags: state.tags,
   };
 }
@@ -226,7 +241,7 @@ function setSummary(
 
 export function metadataChangeSummary(state: Pick<
   MetadataInspectorState,
-  "baseSnapshot" | "title" | "notes" | "tags"
+  "baseSnapshot" | "title" | "notes" | "tags" | "folder"
 >): string {
   const changes: string[] = [];
   const { baseSnapshot: snapshot } = state;
@@ -235,6 +250,9 @@ export function metadataChangeSummary(state: Pick<
   if (state.notes.op === "appendToEach") changes.push(`Append notes to ${clipCount(snapshot.itemCount)}`);
   if (state.notes.op === "replaceAll") changes.push(`Replace notes on ${clipCount(snapshot.itemCount)}`);
   if (state.notes.op === "clearAll") changes.push(`Clear notes on ${clipCount(snapshot.notes.populatedCount)}`);
+  if (state.folder.op === "set") changes.push(`Move ${clipCount(snapshot.itemCount)} to ${state.folder.folderId === null ? "/" : "selected folder"}`);
+  if (state.folder.op === "create") changes.push(`Create ${state.folder.path} and move ${clipCount(snapshot.itemCount)}`);
   for (const intent of state.tags) changes.push(setSummary(snapshot, intent));
+  if (changes.length > 0 && snapshot.itemCount > 1 && state.tags.length === 0) changes.push("Tags unchanged");
   return changes.length > 0 ? changes.join(" · ") : "No changes";
 }

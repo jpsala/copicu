@@ -50,6 +50,21 @@ Copicu can execute ready scripts manually from Settings with the `Run` button wh
 - `copicu.commands.run("picker.open", params)`;
 - `copicu.window.rememberPrevious/focusPrevious`;
 - `copicu.input.paste`.
+- `copicu.sharedClipboard.channels/publish/received` in sharing-enabled builds and profiles, with explicit channel capabilities.
+
+Shared clipboard examples `034-publish-selected-to-shared-channel.ts` and
+`035-inspect-shared-reception.ts` use the placeholder `example_channel`.
+Replace it in both the declared capabilities and publication target with an
+enrolled channel ID. Neither enables a shortcut, folder policy or subscription.
+The publication example confirms queue admission only; the reception example
+requires an explicit enabled subscription binding and never writes the Windows
+clipboard. Do not put enrollment credentials or keys into scripts.
+
+`036-write-transformed-shared-reception.ts` produces one uppercase text output
+through the guarded reception writer. It requires its own explicit subscription
+permission, **Allow Action to update Windows clipboard**, with the built-in
+Windows output disabled. Local copies during the script, pauses, lease expiry
+and failed runs prevent deferred clipboard writes. No example enables itself.
 
 The dev mock runner is still useful for fast shape checks and for examples that need APIs not implemented by the real bridge yet, such as URL opening:
 

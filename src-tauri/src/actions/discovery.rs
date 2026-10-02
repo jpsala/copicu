@@ -564,6 +564,7 @@ fn parse_trigger(value: &str) -> Option<Trigger> {
         "tray" => Some(Trigger::Tray),
         "cli" => Some(Trigger::Cli),
         "devRun" => Some(Trigger::DevRun),
+        "sharedReception" => Some(Trigger::SharedReception),
         _ => None,
     }
 }

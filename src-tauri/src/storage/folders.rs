@@ -40,12 +40,12 @@ fn folder_exists(conn: &Connection, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_parent(conn: &Connection, parent_id: Option<i64>) -> Result<(), String> {
+pub(super) fn validate_parent(conn: &Connection, parent_id: Option<i64>) -> Result<(), String> {
     if let Some(id) = parent_id { folder_exists(conn, id)?; }
     Ok(())
 }
 
-fn folder_name(name: &str) -> Result<&str, String> {
+pub(super) fn folder_name(name: &str) -> Result<&str, String> {
     if name.chars().any(char::is_control) {
         return Err("folder name must be a non-empty path segment without slash or control characters".into());
     }
@@ -56,7 +56,7 @@ fn folder_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-fn summaries(conn: &Connection) -> Result<Vec<FolderSummary>, String> {
+pub(super) fn summaries(conn: &Connection) -> Result<Vec<FolderSummary>, String> {
     let mut statement = conn.prepare("SELECT f.id, f.parent_id, f.name, COUNT(i.id) FROM folders f LEFT JOIN clipboard_items i ON i.folder_id = f.id GROUP BY f.id ORDER BY f.id").map_err(db)?;
     let rows = statement.query_map([], |row| Ok(FolderSummary {
         id: row.get(0)?, parent_id: row.get(1)?, name: row.get(2)?, path: String::new(),
@@ -199,10 +199,15 @@ impl AppStorage {
         let tx = conn.transaction().map_err(db)?;
         validate_parent(&tx, folder_id)?;
         let mut changed = 0;
+        let mut moved_items = Vec::new();
         for id in item_ids.into_iter().collect::<HashSet<_>>() {
-            changed += tx.execute("UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2 AND folder_id IS NOT ?1", params![folder_id, id]).map_err(db)?;
+            let moved = tx.execute("UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2 AND folder_id IS NOT ?1", params![folder_id, id]).map_err(db)?;
+            changed += moved;
+            if moved > 0 { moved_items.push(id); }
         }
         tx.commit().map_err(db)?;
+        drop(conn);
+        for item_id in moved_items { self.notify_shared_folder_ingress(item_id, false); }
         if changed > 0 { self.bump_mutation_epoch(); }
         Ok(changed)
     }

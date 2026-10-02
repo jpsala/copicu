@@ -35,6 +35,13 @@ pub(super) fn dispatch_script_host_call<R: Runtime + 'static>(
         "metadata.listTags" => script_metadata_list_tags(storage),
         "metadata.editActive" => script_metadata_edit_active(app, storage, call.payload.clone()),
         "clipboard.read" => script_clipboard_read(app),
+        "sharedClipboard.channels" => super::script_shared_channels(storage, action),
+        "sharedClipboard.target" => super::script_shared_target(storage, action),
+        "sharedClipboard.state" => super::script_shared_state(storage, action),
+        "sharedClipboard.history" => super::script_shared_history(storage, action, call.payload.clone()),
+        "sharedClipboard.publish" => {
+            super::script_shared_publish(storage, action, call.payload.clone())
+        }
         "ui.alert" => script_ui_alert(app, call.payload.clone()),
         "ui.confirm" => script_ui_confirm(app, call.payload.clone()),
         "ui.input" => script_ui_input(app, call.payload.clone()),

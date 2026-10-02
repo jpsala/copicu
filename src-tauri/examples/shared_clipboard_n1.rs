@@ -1,5 +1,5 @@
 //! Explicitly opt-in N1 harness. Never starts Tauri or accesses a Copicu profile.
-#[path = "../shared_clipboard/n1/mod.rs"]
+#[path = "../src/shared_clipboard/n1/mod.rs"]
 mod n1;
 
 fn main() {

@@ -901,7 +901,19 @@ INSERT INTO shared_runtime_version VALUES(1,1);
 CREATE TABLE shared_grants(environment TEXT NOT NULL,channel TEXT NOT NULL,origin TEXT NOT NULL,public_key BLOB NOT NULL CHECK(length(public_key)=32),epoch BLOB NOT NULL CHECK(length(epoch)=8),revision BLOB NOT NULL CHECK(length(revision)=8),authorized INTEGER NOT NULL CHECK(authorized IN(0,1)),PRIMARY KEY(environment,channel,origin));
 CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origin TEXT NOT NULL,epoch BLOB NOT NULL CHECK(length(epoch)=8),ordinal BLOB NOT NULL CHECK(length(ordinal)=8),PRIMARY KEY(environment,channel,origin,epoch));
 "#;
+    const PRODUCT_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS shared_product_config(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL,last_error TEXT);
+CREATE TABLE IF NOT EXISTS shared_remote_provenance(hash TEXT PRIMARY KEY,item_id INTEGER);
+CREATE TABLE IF NOT EXISTS shared_network_status(id INTEGER PRIMARY KEY CHECK(id=1),last_error TEXT);
+CREATE TABLE IF NOT EXISTS shared_effect_notes(attempt TEXT PRIMARY KEY,reason TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS shared_receipt_origins(subscription TEXT NOT NULL,publication TEXT NOT NULL,origin TEXT NOT NULL,PRIMARY KEY(subscription,publication));
+CREATE TABLE IF NOT EXISTS shared_outbox_history(publication TEXT PRIMARY KEY,environment TEXT NOT NULL,channel TEXT NOT NULL,device TEXT NOT NULL,ordinal BLOB NOT NULL,state TEXT NOT NULL,commit_ambiguous INTEGER NOT NULL,server_sequence BLOB);
+"#;
     /// Host-owned objects, deliberately no serde or runner permission fields.
+    const CONTROL_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS shared_control_cache(identity TEXT PRIMARY KEY,person TEXT NOT NULL,generation TEXT NOT NULL,cursor BLOB NOT NULL CHECK(length(cursor)=8),json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id=1),state TEXT NOT NULL);
+"#;
     pub(crate) struct Subscribe {
         pub(crate) id: String,
         pub(crate) environment: String,
@@ -949,6 +961,23 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
     fn timestamp(value: u64) -> Result<i64> {
         i64::try_from(value).map_err(|_| Error::Invalid)
     }
+    fn product_origin(conn: &Connection, sid: &str, publication: &str, origin: &str) -> Result<()> {
+        let product: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_receipt_origins')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(db)?;
+        if product {
+            conn.execute(
+                "INSERT OR IGNORE INTO shared_receipt_origins VALUES(?1,?2,?3)",
+                params![sid, publication, origin],
+            )
+            .map_err(db)?;
+        }
+        Ok(())
+    }
     fn serialized(text: &VerifiedText) -> Result<Vec<u8>> {
         if text.text().len() > MAX_TEXT_BYTES {
             return Err(Error::Limit);
@@ -958,9 +987,28 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
         Ok(bytes)
     }
     fn current_grant(conn: &Connection, text: &VerifiedText, now: i64) -> Result<()> {
+        pinned_grant(conn, text, now, false)
+    }
+    // Only explicit historical imports can use a previously granted epoch.
+    // Caller must also reopen its protected historical key and revalidate the
+    // authorized range. Live admission retains exact current-epoch matching.
+    fn pinned_grant(
+        conn: &Connection,
+        text: &VerifiedText,
+        now: i64,
+        historical: bool,
+    ) -> Result<()> {
         let e = text.envelope();
         let (key,epoch,active):(Vec<u8>,Vec<u8>,bool)=conn.query_row("SELECT public_key,epoch,authorized FROM shared_grants WHERE environment=?1 AND channel=?2 AND origin=?3",params![e.environment,e.channel_id,e.device_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(db)?.ok_or(Error::Grant)?;
-        if !active || number(epoch)? != wire::counter(&e.key_epoch).map_err(|_| Error::Invalid)? {
+        let stored_epoch = number(epoch)?;
+        let publication_epoch = wire::counter(&e.key_epoch).map_err(|_| Error::Invalid)?;
+        if !active
+            || if historical {
+                publication_epoch > stored_epoch
+            } else {
+                stored_epoch != publication_epoch
+            }
+        {
             return Err(Error::Grant);
         }
         let key: [u8; 32] = key.try_into().map_err(|_| Error::Grant)?;
@@ -1087,6 +1135,30 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
             self.storage
                 .shared_policy(sid, matches!(policy, Policy::ReceiveMetadata), head)?;
             self.fence(sid)
+        }
+        /// Explicit connection/reception resume: discard delivery for the old
+        /// range, preserving manual historical access and old receipts.
+        pub(crate) fn resume_at_head(&self, sid: &str, head: u64) -> Result<PageFence> {
+            tx(self.storage, |conn| {
+                let (cursor, bootstrap, generation): (Vec<u8>, Vec<u8>, Vec<u8>) = conn
+                    .query_row(
+                        "SELECT cursor,bootstrap,generation FROM shared_subscriptions WHERE id=?1",
+                        [sid],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()
+                    .map_err(db)?
+                    .ok_or(Error::Missing)?;
+                if head < number(cursor)?.max(number(bootstrap)?) {
+                    return Err(Error::StaleCursor);
+                }
+                let generation = number(generation)?.checked_add(1).ok_or(Error::Exhausted)?;
+                conn.execute("UPDATE shared_subscriptions SET enabled=1,cursor=?2,bootstrap=?2,generation=?3 WHERE id=?1",params![sid,counter(head),counter(generation)]).map_err(db)?;
+                Ok(PageFence {
+                    cursor: head,
+                    generation,
+                })
+            })
         }
         pub(crate) fn set_grant(&self, grant: Grant) -> Result<()> {
             for value in [&grant.environment, &grant.channel, &grant.origin] {
@@ -1244,6 +1316,7 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
                         }
                     };
                     conn.execute("INSERT INTO shared_receipts(subscription,publication,sequence,generation,envelope,ciphertext,acquisition,delivery,self_origin,expires_at,authenticated) VALUES(?1,?2,?3,?4,?5,NULL,'ready',?6,?7,?8,1)",params![sid,e.publication_id,counter(last),counter(fence.generation),body,delivery,e.device_id==device,timestamp(wire::counter(&e.expires_at_unix_ms).map_err(|_|Error::Invalid)?)?]).map_err(|_|Error::Conflict)?;
+                    product_origin(conn, sid, &e.publication_id, &e.device_id)?;
                     conn.execute("INSERT INTO shared_replay VALUES(?1,?2,?3,?4,?5) ON CONFLICT(environment,channel,origin,epoch) DO UPDATE SET ordinal=excluded.ordinal",params![env,channel,e.device_id,counter(epoch),counter(ordinal)]).map_err(db)?;
                 }
                 conn.execute(
@@ -1282,7 +1355,7 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
                     return Err(Error::Grant);
                 }
                 current_grant(conn, text, now)?;
-                let (stored,sequence,generation,authenticated,acquisition,delivery,history,item,reason):(Option<Vec<u8>>,Vec<u8>,Vec<u8>,bool,String,String,String,Option<i64>,Option<String>)=conn.query_row("SELECT envelope,sequence,generation,authenticated,acquisition,delivery,history_outcome,local_item_id,history_reason FROM shared_receipts WHERE subscription=?1 AND publication=?2",params![sid,e.publication_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?))).optional().map_err(db)?.ok_or(Error::Missing)?;
+                let (stored,sequence,generation,authenticated,acquisition,_delivery,history,item,reason):(Option<Vec<u8>>,Vec<u8>,Vec<u8>,bool,String,String,String,Option<i64>,Option<String>)=conn.query_row("SELECT envelope,sequence,generation,authenticated,acquisition,delivery,history_outcome,local_item_id,history_reason FROM shared_receipts WHERE subscription=?1 AND publication=?2",params![sid,e.publication_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?))).optional().map_err(db)?.ok_or(Error::Missing)?;
                 if stored.as_deref() != Some(body.as_slice())
                     || !authenticated
                     || acquisition != "ready"
@@ -1312,7 +1385,7 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
                         |r| Ok((r.get(0)?, r.get(1)?)),
                     )
                     .map_err(db)?;
-                if !enabled || !history_enabled || delivery != "live" || history != "pending" {
+                if !enabled || !history_enabled || history != "pending" {
                     return Err(Error::Ineligible);
                 }
                 let high:Option<Vec<u8>>=conn.query_row("SELECT sequence FROM shared_effect_water WHERE subscription=?1 AND sink='history'",[sid],|r|r.get(0)).optional().map_err(db)?;
@@ -1424,6 +1497,686 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
                 conn.execute("UPDATE shared_attempts SET report='ack' WHERE id=?1 AND subscription=?2 AND report='pending'",params![attempt,sid]).map_err(db)?;
                 Ok(())
             })
+        }
+        pub(crate) fn profile_dir(&self) -> &std::path::Path {
+            &self.storage.app_data_dir
+        }
+        pub(crate) fn storage_ref(&self) -> &AppStorage {
+            self.storage
+        }
+        pub(crate) fn folder_exists(&self, folder: i64) -> Result<bool> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM folders WHERE id=?1)",
+                [folder],
+                |r| r.get(0),
+            )
+            .map_err(db)
+        }
+        pub(crate) fn config_json(storage: &AppStorage) -> Result<Option<String>> {
+            let conn = storage.conn.lock().map_err(|_| Error::Storage)?;
+            let exists: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_product_config')",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(db)?;
+            if !exists {
+                return Ok(None);
+            }
+            conn.query_row(
+                "SELECT json FROM shared_product_config WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db)
+        }
+        pub(crate) fn save_config(&self, json: &str) -> Result<()> {
+            if json.len() > 65536 {
+                return Err(Error::Limit);
+            }
+            tx(self.storage, |conn| {
+                conn.execute_batch(PRODUCT_SCHEMA).map_err(db)?;
+                conn.execute("INSERT INTO shared_product_config(id,json) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json",[json]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn save_connection_transition(
+            &self,
+            json: &str,
+            changes: &[(String, bool, Option<i64>)],
+        ) -> Result<()> {
+            self.save_transition_with_heads(json, changes, &[])
+        }
+        pub(crate) fn save_transition_with_heads(
+            &self,
+            json: &str,
+            changes: &[(String, bool, Option<i64>)],
+            heads: &[(String, u64)],
+        ) -> Result<()> {
+            if json.len() > 65536 {
+                return Err(Error::Limit);
+            }
+            tx(self.storage, |conn| {
+                for (sid, history, folder) in changes {
+                    if let Some(folder) = folder {
+                        if !conn
+                            .query_row(
+                                "SELECT EXISTS(SELECT 1 FROM folders WHERE id=?1)",
+                                [folder],
+                                |r| r.get::<_, bool>(0),
+                            )
+                            .map_err(db)?
+                        {
+                            return Err(Error::Missing);
+                        }
+                    }
+                    let (generation,cursor,bootstrap):(Vec<u8>,Vec<u8>,Vec<u8>)=conn.query_row("SELECT generation,cursor,bootstrap FROM shared_subscriptions WHERE id=?1",[sid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(db)?.ok_or(Error::Missing)?;
+                    let generation = number(generation)?.checked_add(1).ok_or(Error::Exhausted)?;
+                    let head = number(cursor)?.max(number(bootstrap)?);
+                    conn.execute("UPDATE shared_subscriptions SET enabled=0,generation=?2,bootstrap=?3,history_enabled=?4,folder_id=?5 WHERE id=?1",params![sid,counter(generation),counter(head),history,folder]).map_err(db)?;
+                }
+                for (sid, head) in heads {
+                    let (cursor, bootstrap): (Vec<u8>, Vec<u8>) = conn
+                        .query_row(
+                            "SELECT cursor,bootstrap FROM shared_subscriptions WHERE id=?1",
+                            [sid],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
+                        .optional()
+                        .map_err(db)?
+                        .ok_or(Error::Missing)?;
+                    if *head < number(cursor)?.max(number(bootstrap)?) {
+                        return Err(Error::StaleCursor);
+                    }
+                    conn.execute("UPDATE shared_subscriptions SET enabled=1,cursor=?2,bootstrap=?2 WHERE id=?1",params![sid,counter(*head)]).map_err(db)?;
+                }
+                conn.execute("INSERT INTO shared_product_config(id,json) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json",[json]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn ensure_product_schema(&self) -> Result<()> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.execute_batch(PRODUCT_SCHEMA).map_err(db)
+        }
+        pub(crate) fn control_cache(&self, identity: &str) -> Result<Option<String>> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            let exists: bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_control_cache')",[],|r|r.get(0)).map_err(db)?;
+            if !exists {return Ok(None);}
+            conn.query_row("SELECT json FROM shared_control_cache WHERE identity=?1", [identity], |r| r.get(0)).optional().map_err(db)
+        }
+        pub(crate) fn save_control_cache(&self, identity: &str, person: &str, generation: &str, cursor: u64, json: &str) -> Result<()> {
+            if json.len() > MAX_BYTES { return Err(Error::Limit); }
+            tx(self.storage, |conn| {
+                conn.execute_batch(CONTROL_SCHEMA).map_err(db)?;
+                conn.execute("INSERT INTO shared_control_cache VALUES(?1,?2,?3,?4,?5) ON CONFLICT(identity) DO UPDATE SET person=excluded.person,generation=excluded.generation,cursor=excluded.cursor,json=excluded.json", params![identity,person,generation,counter(cursor),json]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn control_status(&self, state: Option<&str>) -> Result<String> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            let exists: bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_control_status')",[],|r|r.get(0)).map_err(db)?;
+            if !exists && (state.is_none() || state==Some("off")) {return Ok("off".into());}
+            conn.execute_batch(CONTROL_SCHEMA).map_err(db)?;
+            if let Some(state) = state {
+                if !["connecting","live","offline","unsupported","denied","off"].contains(&state) { return Err(Error::Invalid); }
+                conn.execute("INSERT INTO shared_control_status VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET state=excluded.state", [state]).map_err(db)?;
+            }
+            Ok(conn.query_row("SELECT state FROM shared_control_status WHERE id=1", [], |r| r.get(0)).optional().map_err(db)?.unwrap_or_else(|| "connecting".into()))
+        }
+        pub(crate) fn record_error(&self, error: Option<&str>) -> Result<()> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.execute(
+                "UPDATE shared_product_config SET last_error=?1 WHERE id=1",
+                [error],
+            )
+            .map_err(db)?;
+            Ok(())
+        }
+        pub(crate) fn record_network_error(&self, error: Option<&str>) -> Result<()> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.execute("INSERT INTO shared_network_status(id,last_error) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET last_error=excluded.last_error",[error]).map_err(db)?;
+            Ok(())
+        }
+        pub(crate) fn bootstrap_head(&self, sid: &str) -> Result<u64> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            let (cursor, bootstrap): (Vec<u8>, Vec<u8>) = conn
+                .query_row(
+                    "SELECT cursor,bootstrap FROM shared_subscriptions WHERE id=?1",
+                    [sid],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .map_err(db)?;
+            Ok(number(cursor)?.max(number(bootstrap)?))
+        }
+        pub(crate) fn summaries(
+            &self,
+        ) -> Result<(
+            Vec<serde_json::Value>,
+            Vec<serde_json::Value>,
+            Option<String>,
+        )> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            let out = {
+                // Ordinals are scoped to a channel/device. Compare local row
+                // insertion order here so a busy channel cannot hide new ones.
+                let mut q=conn.prepare("SELECT publication,channel,state,commit_ambiguous,1 AS active,rowid AS local_order FROM shared_outbox UNION ALL SELECT publication,channel,state,commit_ambiguous,0 AS active,rowid AS local_order FROM shared_outbox_history ORDER BY active DESC,local_order DESC LIMIT 100").map_err(db)?;
+                let rows=q.query_map([],|r|Ok(serde_json::json!({"publicationId":r.get::<_,String>(0)?,"channelId":r.get::<_,String>(1)?,"state":r.get::<_,String>(2)?,"commitAmbiguous":r.get::<_,bool>(3)?}))).map_err(db)?.collect::<std::result::Result<Vec<_>,_>>().map_err(db)?;
+                rows
+            };
+            let receipts = {
+                let mut q=conn.prepare("SELECT r.subscription,r.publication,s.channel,r.sequence,r.delivery,r.acquisition,r.history_outcome,r.local_item_id,r.envelope,r.expires_at FROM shared_receipts r JOIN shared_subscriptions s ON s.id=r.subscription ORDER BY r.rowid DESC LIMIT 100").map_err(db)?;
+                let rows = q
+                    .query_map([], |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                            r.get::<_, Vec<u8>>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, String>(5)?,
+                            r.get::<_, String>(6)?,
+                            r.get::<_, Option<i64>>(7)?,
+                            r.get::<_, Option<Vec<u8>>>(8)?,
+                            r.get::<_, i64>(9)?,
+                        ))
+                    })
+                    .map_err(db)?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(db)?;
+                let mut values = Vec::new();
+                for (
+                    sid,
+                    publication,
+                    channel,
+                    sequence,
+                    delivery,
+                    acquisition,
+                    history,
+                    item,
+                    envelope,
+                    expiry,
+                ) in rows
+                {
+                    let body_origin = envelope
+                        .and_then(|b| serde_json::from_slice::<wire::Envelope>(&b).ok())
+                        .map(|e| e.device_id)
+                        .unwrap_or_default();
+                    let origin=conn.query_row("SELECT origin FROM shared_receipt_origins WHERE subscription=?1 AND publication=?2",params![sid,publication],|r|r.get::<_,String>(0)).optional().map_err(db)?.unwrap_or(body_origin);
+                    let sink_outcome = |sink: &str| -> Result<Option<String>> {
+                        conn.query_row("SELECT outcome FROM shared_attempts WHERE subscription=?1 AND publication=?2 AND sink=?3 ORDER BY rowid DESC LIMIT 1",params![sid,publication,sink],|r|r.get(0)).optional().map_err(db)
+                    };
+                    values.push(serde_json::json!({"subscriptionId":sid,"publicationId":publication,"channelId":channel,"sequence":number(sequence)?.to_string(),"delivery":delivery,"acquisition":acquisition,"historyOutcome":history,"localItemId":item,"originDeviceId":origin,"expiresAtUnixMs":expiry.to_string(),"clipboardOutcome":sink_outcome("clipboard")?,"actionOutcome":sink_outcome("action")?}));
+                }
+                values
+            };
+            let error = conn
+                .query_row(
+                    "SELECT last_error FROM shared_product_config WHERE id=1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(db)?
+                .flatten();
+            let network_error: Option<String> = conn
+                .query_row(
+                    "SELECT last_error FROM shared_network_status WHERE id=1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(db)?
+                .flatten();
+            Ok((out, receipts, error.or(network_error)))
+        }
+        pub(crate) fn history_policy(
+            &self,
+            sid: &str,
+            enabled: bool,
+            folder: Option<i64>,
+        ) -> Result<()> {
+            if folder.is_some_and(|f| f <= 0) {
+                return Err(Error::Invalid);
+            }
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            if let Some(folder) = folder {
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM folders WHERE id=?1)",
+                        [folder],
+                        |r| r.get(0),
+                    )
+                    .map_err(db)?;
+                if !exists {
+                    return Err(Error::MissingFolder);
+                }
+            }
+            if conn
+                .execute(
+                    "UPDATE shared_subscriptions SET history_enabled=?2,folder_id=?3 WHERE id=?1",
+                    params![sid, enabled, folder],
+                )
+                .map_err(db)?
+                == 0
+            {
+                return Err(Error::Missing);
+            }
+            Ok(())
+        }
+        pub(crate) fn reserve(
+            &self,
+            publication: &str,
+            environment: &str,
+            channel: &str,
+            device: &str,
+        ) -> Result<u64> {
+            {
+                let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+                let table:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_outbox_history')",[],|r|r.get(0)).map_err(db)?;
+                if table {
+                    let archived:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_outbox_history WHERE publication=?1)",[publication],|r|r.get(0)).map_err(db)?;
+                    if archived {
+                        return Err(Error::Expired);
+                    }
+                }
+            }
+            Ok(self
+                .storage
+                .shared_reserve(
+                    publication,
+                    &Scope {
+                        environment: environment.into(),
+                        channel: channel.into(),
+                        device: device.into(),
+                    },
+                )?
+                .ordinal)
+        }
+        pub(crate) fn queue(&self, envelope: &wire::Envelope, now: u64) -> Result<()> {
+            envelope.validate_shape().map_err(|_| Error::Invalid)?;
+            let ordinal = wire::counter(&envelope.origin_ordinal).map_err(|_| Error::Invalid)?;
+            let reservation = Reservation {
+                publication: envelope.publication_id.clone(),
+                scope: Scope {
+                    environment: envelope.environment.clone(),
+                    channel: envelope.channel_id.clone(),
+                    device: envelope.device_id.clone(),
+                },
+                ordinal,
+            };
+            self.storage.shared_queue(
+                &reservation,
+                &serde_json::to_vec(envelope).map_err(|_| Error::Invalid)?,
+                &envelope.ciphertext,
+                timestamp(
+                    wire::counter(&envelope.expires_at_unix_ms).map_err(|_| Error::Invalid)?,
+                )?,
+                timestamp(now)?,
+            )
+        }
+        pub(crate) fn abandon_preparing(&self, publication: &str) -> Result<()> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.execute("UPDATE shared_outbox SET state='cancelled' WHERE publication=?1 AND state='preparing'",[publication]).map_err(db)?;
+            Ok(())
+        }
+        /// No executor exists at product startup yet, so abandoned preparation
+        /// reservations are safe to cancel. Ciphertext queued retries survive.
+        pub(crate) fn recover_startup(&self) -> Result<()> {
+            tx(self.storage, |conn| {
+                conn.execute(
+                    "UPDATE shared_outbox SET state='cancelled' WHERE state='preparing'",
+                    [],
+                )
+                .map_err(db)?;
+                conn.execute("UPDATE shared_attempts SET outcome='uncertain',report='pending' WHERE outcome='claimed'",[]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn queued(
+            &self,
+            environment: &str,
+            channel: &str,
+            device: &str,
+            now: u64,
+        ) -> Result<Option<wire::Envelope>> {
+            let scope = Scope {
+                environment: environment.into(),
+                channel: channel.into(),
+                device: device.into(),
+            };
+            let Some(r) = self.storage.shared_next_queued(&scope, timestamp(now)?)? else {
+                return Ok(None);
+            };
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            let body: Vec<u8> = conn
+                .query_row(
+                    "SELECT envelope FROM shared_outbox WHERE publication=?1",
+                    [r.publication],
+                    |r| r.get(0),
+                )
+                .map_err(db)?;
+            Ok(Some(
+                serde_json::from_slice(&body).map_err(|_| Error::Invalid)?,
+            ))
+        }
+        pub(crate) fn accepted(&self, publication: &str, sequence: u64) -> Result<()> {
+            self.storage.shared_accept(publication, sequence)
+        }
+        pub(crate) fn reject_queued(&self, publication: &str) -> Result<()> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.execute("UPDATE shared_outbox SET state='rejected' WHERE publication=?1 AND state='preparing'",[publication]).map_err(db)?;
+            // The legacy schema retains immutable bytes for queued final rows.
+            conn.execute("UPDATE shared_outbox SET state='rejected',commit_ambiguous=1 WHERE publication=?1 AND state='queued'",[publication]).map_err(db)?;
+            Ok(())
+        }
+        pub(crate) fn gap(
+            &self,
+            sid: &str,
+            gap_id: &str,
+            fence: PageFence,
+            last_lost: u64,
+            head: u64,
+        ) -> Result<PageFence> {
+            self.storage.shared_retention_gap(
+                sid,
+                gap_id,
+                fence,
+                last_lost.checked_add(1).ok_or(Error::Exhausted)?,
+                head,
+            )
+        }
+        pub(crate) fn admit_unavailable(
+            &self,
+            sid: &str,
+            fence: PageFence,
+            sequence: u64,
+            envelope: &wire::Envelope,
+            pending_key: bool,
+            now: u64,
+        ) -> Result<PageFence> {
+            let body = serde_json::to_vec(envelope).map_err(|_| Error::Invalid)?;
+            opaque(&body)?;
+            let expiry = timestamp(
+                wire::counter(&envelope.expires_at_unix_ms).map_err(|_| Error::Invalid)?,
+            )?;
+            tx(self.storage, |conn| {
+                let (env, channel, device, _, _) = subscription(conn, sid, fence)?;
+                if env != envelope.environment
+                    || channel != envelope.channel_id
+                    || sequence != fence.cursor.checked_add(1).ok_or(Error::Exhausted)?
+                {
+                    return Err(Error::Invalid);
+                }
+                let acquisition = if expiry <= timestamp(now)? {
+                    "expired"
+                } else if pending_key {
+                    "pendingKey"
+                } else {
+                    "rejected"
+                };
+                conn.execute("INSERT INTO shared_receipts(subscription,publication,sequence,generation,envelope,acquisition,delivery,self_origin,expires_at,authenticated) VALUES(?1,?2,?3,?4,?5,?6,'recovery',?7,?8,0)",params![sid,envelope.publication_id,counter(sequence),counter(fence.generation),body,acquisition,envelope.device_id==device,expiry]).map_err(|_|Error::Conflict)?;
+                product_origin(conn, sid, &envelope.publication_id, &envelope.device_id)?;
+                conn.execute(
+                    "UPDATE shared_subscriptions SET cursor=?2 WHERE id=?1",
+                    params![sid, counter(sequence)],
+                )
+                .map_err(db)?;
+                Ok(PageFence {
+                    cursor: sequence,
+                    generation: fence.generation,
+                })
+            })
+        }
+        pub(crate) fn receipt_envelope(
+            &self,
+            sid: &str,
+            publication: &str,
+        ) -> Result<wire::Envelope> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            let body:Vec<u8>=conn.query_row("SELECT envelope FROM shared_receipts WHERE subscription=?1 AND publication=?2 AND authenticated=1 AND acquisition='ready'",params![sid,publication],|r|r.get(0)).optional().map_err(db)?.ok_or(Error::Missing)?;
+            serde_json::from_slice(&body).map_err(|_| Error::Invalid)
+        }
+        pub(crate) fn provenance(&self, text: &str, item: Option<i64>) -> Result<()> {
+            let hash = hash_text(&normalize_text_for_storage(text));
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=COALESCE(excluded.item_id,shared_remote_provenance.item_id)",params![hash,item]).map_err(db)?;
+            Ok(())
+        }
+        /// Explicit user import, independent from delivery cursors, capture and
+        /// automatic Actions. Dedupe preserves an existing item's metadata.
+        pub(crate) fn import_manual(
+            &self,
+            text: &VerifiedText,
+            folder: Option<i64>,
+            now: u64,
+        ) -> Result<serde_json::Value> {
+            let now = timestamp(now)?;
+            let normalized = normalize_text_for_storage(text.text());
+            if normalized.is_empty() {
+                return Err(Error::Invalid);
+            }
+            let hash = hash_text(&normalized);
+            tx(self.storage, |conn| {
+                pinned_grant(conn, text, now, true)?;
+                if let Some(folder) = folder {
+                    if folder <= 0
+                        || !conn
+                            .query_row(
+                                "SELECT EXISTS(SELECT 1 FROM folders WHERE id=?1)",
+                                [folder],
+                                |r| r.get::<_, bool>(0),
+                            )
+                            .map_err(db)?
+                    {
+                        return Err(Error::Missing);
+                    }
+                }
+                let existing: Option<(i64, Option<i64>)> = conn
+                    .query_row(
+                        "SELECT id,folder_id FROM clipboard_items WHERE normalized_hash=?1",
+                        [&hash],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .optional()
+                    .map_err(db)?;
+                let (item, destination) = if let Some(existing) = existing {
+                    existing
+                } else {
+                    conn.execute("INSERT INTO clipboard_items(content_kind,text,normalized_hash,created_at_unix_ms,last_used_at_unix_ms,last_copied_at_unix_ms,copy_count,mime_primary,folder_id) VALUES('text',?1,?2,?3,?3,NULL,0,'text/plain',?4)",params![text.text(),hash,now,folder]).map_err(db)?;
+                    (conn.last_insert_rowid(), folder)
+                };
+                conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=excluded.item_id",params![hash,item]).map_err(db)?;
+                if existing.is_none() {
+                    prune_history_from_conn(conn).map_err(|_| Error::Storage)?;
+                }
+                Ok(
+                    serde_json::json!({"itemId":item,"folderId":destination,"alreadyExists":existing.is_some()}),
+                )
+            })
+        }
+        pub(crate) fn is_remote(&self, item: Option<i64>, text: &str) -> Result<bool> {
+            let hash = hash_text(&normalize_text_for_storage(text));
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_remote_provenance WHERE hash=?1 OR (item_id=?2 AND ?2 IS NOT NULL))",params![hash,item],|r|r.get(0)).map_err(db)
+        }
+        pub(crate) fn claim_clipboard(
+            &self,
+            sid: &str,
+            publication: &str,
+            fence: PageFence,
+            text: &VerifiedText,
+            attempt: &str,
+            now: u64,
+        ) -> Result<()> {
+            id(attempt)?;
+            let body = serialized(text)?;
+            tx(self.storage, |conn| {
+                let (_, _, _, enabled, _) = subscription(conn, sid, fence)?;
+                if !enabled || text.envelope().publication_id != publication {
+                    return Err(Error::Ineligible);
+                }
+                current_grant(conn, text, timestamp(now)?)?;
+                let stored:Option<Vec<u8>>=conn.query_row("SELECT envelope FROM shared_receipts WHERE subscription=?1 AND publication=?2 AND authenticated=1 AND acquisition='ready' AND self_origin=0 AND delivery='live' AND generation=?3 AND sequence> (SELECT bootstrap FROM shared_subscriptions WHERE id=?1)",params![sid,publication,counter(fence.generation)],|r|r.get(0)).optional().map_err(db)?;
+                if stored.as_deref() != Some(body.as_slice()) {
+                    return Err(Error::Ineligible);
+                }
+                let active:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_attempts WHERE sink='clipboard' AND outcome='claimed')",[],|r|r.get(0)).map_err(db)?;
+                if active {
+                    return Err(Error::Ineligible);
+                }
+                let sequence:Vec<u8>=conn.query_row("SELECT sequence FROM shared_receipts WHERE subscription=?1 AND publication=?2",params![sid,publication],|r|r.get(0)).map_err(db)?;
+                let latest:Vec<u8>=conn.query_row("SELECT MAX(sequence) FROM shared_receipts WHERE subscription=?1 AND generation=?2 AND authenticated=1 AND acquisition='ready' AND self_origin=0 AND delivery='live' AND expires_at>?3",params![sid,counter(fence.generation),timestamp(now)?],|r|r.get(0)).map_err(db)?;
+                if sequence != latest {
+                    return Err(Error::Ineligible);
+                }
+                let water:Option<Vec<u8>>=conn.query_row("SELECT sequence FROM shared_effect_water WHERE subscription=?1 AND sink='clipboard'",[sid],|r|r.get(0)).optional().map_err(db)?;
+                if water.is_some_and(|w| sequence <= w) {
+                    return Err(Error::Ineligible);
+                }
+                conn.execute("INSERT INTO shared_attempts(id,subscription,publication,generation,sink,manual,outcome,report) VALUES(?1,?2,?3,?4,'clipboard',0,'claimed','none')",params![attempt,sid,publication,counter(fence.generation)]).map_err(|_|Error::Conflict)?;
+                conn.execute("INSERT INTO shared_effect_water VALUES(?1,'clipboard',?2) ON CONFLICT(subscription,sink) DO UPDATE SET sequence=excluded.sequence",params![sid,sequence]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn finish_clipboard(
+            &self,
+            sid: &str,
+            attempt: &str,
+            outcome: &str,
+        ) -> Result<()> {
+            let outcome = match outcome {
+                "applied" => Outcome::Applied,
+                "failed" => Outcome::Failed,
+                "uncertain" => Outcome::Uncertain,
+                "skipped" => Outcome::Skipped,
+                _ => return Err(Error::Invalid),
+            };
+            self.storage.shared_finish(sid, attempt, outcome)
+        }
+        pub(crate) fn claim_action(
+            &self,
+            sid: &str,
+            publication: &str,
+            generation: u64,
+            attempt: &str,
+            now: u64,
+        ) -> Result<()> {
+            id(attempt)?;
+            tx(self.storage, |conn| {
+                let (fence_generation, enabled, bootstrap): (Vec<u8>, bool, Vec<u8>) = conn
+                    .query_row(
+                        "SELECT generation,enabled,bootstrap FROM shared_subscriptions WHERE id=?1",
+                        [sid],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .map_err(db)?;
+                if !enabled || number(fence_generation)? != generation {
+                    return Err(Error::Ineligible);
+                }
+                let sequence:Option<Vec<u8>>=conn.query_row("SELECT sequence FROM shared_receipts WHERE subscription=?1 AND publication=?2 AND generation=?3 AND authenticated=1 AND acquisition='ready' AND self_origin=0 AND delivery='live' AND expires_at>?4",params![sid,publication,counter(generation),timestamp(now)?],|r|r.get(0)).optional().map_err(db)?;
+                if sequence.as_ref().is_none_or(|s| s <= &bootstrap) {
+                    return Err(Error::Ineligible);
+                }
+                // Claimed action rows are queued intentions. The host owns one
+                // serial executor and revalidates every host operation.
+                conn.execute("INSERT INTO shared_attempts(id,subscription,publication,generation,sink,manual,outcome,report) VALUES(?1,?2,?3,?4,'action',0,'claimed','none')",params![attempt,sid,publication,counter(generation)]).map_err(|_|Error::Conflict)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn claim_manual_clipboard(
+            &self,
+            sid: &str,
+            publication: &str,
+            text: &VerifiedText,
+            attempt: &str,
+            now: u64,
+        ) -> Result<()> {
+            id(attempt)?;
+            let body = serialized(text)?;
+            tx(self.storage, |conn| {
+                current_grant(conn, text, timestamp(now)?)?;
+                let (stored,generation):(Vec<u8>,Vec<u8>)=conn.query_row("SELECT r.envelope,s.generation FROM shared_receipts r JOIN shared_subscriptions s ON s.id=r.subscription WHERE r.subscription=?1 AND r.publication=?2 AND r.authenticated=1 AND r.acquisition='ready' AND r.expires_at>?3",params![sid,publication,timestamp(now)?],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(db)?.ok_or(Error::Ineligible)?;
+                if stored != body {
+                    return Err(Error::Ineligible);
+                }
+                let active:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_attempts WHERE sink='clipboard' AND outcome='claimed')",[],|r|r.get(0)).map_err(db)?;
+                if active {
+                    return Err(Error::Ineligible);
+                }
+                conn.execute("INSERT INTO shared_attempts(id,subscription,publication,generation,sink,manual,outcome,report) VALUES(?1,?2,?3,?4,'clipboard',1,'claimed','none')",params![attempt,sid,publication,generation]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn skip_effect(
+            &self,
+            sid: &str,
+            publication: &str,
+            generation: u64,
+            attempt: &str,
+            sink: &str,
+            reason: &str,
+        ) -> Result<()> {
+            id(attempt)?;
+            if !matches!(sink, "clipboard" | "action") || reason.len() > 128 {
+                return Err(Error::Invalid);
+            }
+            tx(self.storage, |conn| {
+                let eligible:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_receipts WHERE subscription=?1 AND publication=?2 AND authenticated=1)",params![sid,publication],|r|r.get(0)).map_err(db)?;
+                if !eligible {
+                    return Err(Error::Ineligible);
+                }
+                conn.execute("INSERT OR IGNORE INTO shared_attempts(id,subscription,publication,generation,sink,manual,outcome,report) VALUES(?1,?2,?3,?4,?5,0,'skipped','pending')",params![attempt,sid,publication,counter(generation),sink]).map_err(db)?;
+                conn.execute("INSERT INTO shared_effect_notes(attempt,reason) SELECT id,?2 FROM shared_attempts WHERE id=?1",params![attempt,reason]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn prune_product(&self, now: u64) -> Result<()> {
+            let now = timestamp(now)?;
+            tx(self.storage, |conn| {
+                let rows = {
+                    let mut statement=conn.prepare("SELECT r.subscription,r.publication,r.envelope FROM shared_receipts r WHERE r.envelope IS NOT NULL AND NOT EXISTS(SELECT 1 FROM shared_receipt_origins o WHERE o.subscription=r.subscription AND o.publication=r.publication)").map_err(db)?;
+                    let rows = statement
+                        .query_map([], |r| {
+                            Ok((
+                                r.get::<_, String>(0)?,
+                                r.get::<_, String>(1)?,
+                                r.get::<_, Vec<u8>>(2)?,
+                            ))
+                        })
+                        .map_err(db)?
+                        .collect::<std::result::Result<Vec<_>, _>>()
+                        .map_err(db)?;
+                    rows
+                };
+                for (sid, publication, body) in rows {
+                    let envelope: wire::Envelope =
+                        serde_json::from_slice(&body).map_err(|_| Error::Invalid)?;
+                    product_origin(conn, &sid, &publication, &envelope.device_id)?;
+                }
+                conn.execute("UPDATE shared_outbox SET state='expired',commit_ambiguous=1 WHERE state='queued' AND expires_at<=?1",[now]).map_err(db)?;
+                conn.execute("INSERT OR IGNORE INTO shared_outbox_history SELECT publication,environment,channel,device,ordinal,state,commit_ambiguous,server_sequence FROM shared_outbox WHERE state IN ('accepted','expired','cancelled','rejected') AND (expires_at<=?1 OR expires_at IS NULL) LIMIT 1000",[now]).map_err(db)?;
+                conn.execute("DELETE FROM shared_outbox WHERE publication IN (SELECT publication FROM shared_outbox_history)",[]).map_err(db)?;
+                Ok(())
+            })?;
+            let subscriptions = {
+                let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+                let mut statement = conn
+                    .prepare("SELECT id FROM shared_subscriptions")
+                    .map_err(db)?;
+                let rows = statement
+                    .query_map([], |r| r.get::<_, String>(0))
+                    .map_err(db)?
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(db)?;
+                rows
+            };
+            for sid in subscriptions {
+                self.storage.shared_prune_receipts(&sid, now, 100)?;
+            }
+            Ok(())
         }
     }
 }
@@ -2644,6 +3397,21 @@ mod tests {
             .unwrap()
         }
         #[test]
+        fn control_cache_is_opt_in_identity_scoped_and_separate_from_delivery_water() {
+            let f=fresh();let store=RuntimeStore::init(f.storage()).unwrap();
+            store.ensure_product_schema().unwrap();
+            assert_eq!(store.control_status(None).unwrap(),"off");
+            assert_eq!(store.control_status(Some("off")).unwrap(),"off");
+            assert!(store.control_cache("identity-A").unwrap().is_none());
+            assert_eq!(scalar::<i64>(f.storage(),"SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'shared_control_%'"),0);
+            store.save_control_cache("identity-A","person-A","generation-A",9007199254740993,"{}").unwrap();
+            assert_eq!(store.control_cache("identity-A").unwrap().as_deref(),Some("{}"));
+            assert!(store.control_cache("identity-B").unwrap().is_none());
+            assert_eq!(scalar::<i64>(f.storage(),"SELECT COUNT(*) FROM shared_receipts"),0);
+            assert_eq!(scalar::<i64>(f.storage(),"SELECT COUNT(*) FROM shared_attempts"),0);
+            assert_eq!(number(scalar(f.storage(),"SELECT cursor FROM shared_control_cache")).unwrap(),9007199254740993);
+        }
+        #[test]
         fn runtime_initialization_is_explicit_idempotent_versioned_and_fail_closed() {
             let f = fresh();
             let store = RuntimeStore::init(f.storage()).unwrap();
@@ -2663,6 +3431,37 @@ mod tests {
             assert!(matches!(
                 RuntimeStore::init(old.storage()),
                 Err(Error::Version)
+            ));
+        }
+        #[test]
+        fn manual_history_import_preserves_delivery_cursor_dedupe_and_provenance() {
+            let f = fresh();
+            let (signer, key) = keys();
+            setup_auth(f.storage(), &signer, None);
+            let store = RuntimeStore::init(f.storage()).unwrap();
+            store.ensure_product_schema().unwrap();
+            store.policy("auth", Policy::Paused, 0).unwrap();
+            let before = store.fence("auth").unwrap();
+            let text = verified(&signer, &key, "manual-only", 1, 1000);
+            let first = store.import_manual(&text, None, 2).unwrap();
+            assert_eq!(first["alreadyExists"], false);
+            assert!(store
+                .is_remote(first["itemId"].as_i64(), text.text())
+                .unwrap());
+            let second = store.import_manual(&text, None, 3).unwrap();
+            assert_eq!(first["itemId"], second["itemId"]);
+            assert_eq!(second["alreadyExists"], true);
+            assert_eq!(store.fence("auth").unwrap(), before);
+            assert!(matches!(
+                store.import_manual(&text, None, 1000),
+                Err(Error::Expired)
+            ));
+            store
+                .revoke_grant("test", "channel-A", "remote-B", 2)
+                .unwrap();
+            assert!(matches!(
+                store.import_manual(&text, None, 4),
+                Err(Error::Grant)
             ));
         }
         #[test]
@@ -2941,6 +3740,23 @@ mod tests {
                 Err(Error::Ineligible)
             ));
         }
+        #[test]
+        fn summary_does_not_compare_ordinals_from_different_channels() {
+            let f = fresh();
+            let store = RuntimeStore::init(f.storage()).unwrap();
+            store.ensure_product_schema().unwrap();
+            for i in 0..105 {
+                let id = format!("synthetic_old_{i}");
+                store.reserve(&id, "test", "busy_channel", "device_A").unwrap();
+                store.abandon_preparing(&id).unwrap();
+            }
+            assert_eq!(store.reserve("synthetic_new", "test", "new_channel", "device_A").unwrap(), 1);
+            let (rows, _, _) = store.summaries().unwrap();
+            assert_eq!(rows.len(), 100);
+            assert_eq!(rows[0]["publicationId"], "synthetic_new");
+            assert_eq!(rows[0]["channelId"], "new_channel");
+        }
+
         #[test]
         fn aggregate_page_budget_rolls_back_before_mutex_commit() {
             let f = fresh();

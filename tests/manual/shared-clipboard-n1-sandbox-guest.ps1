@@ -37,8 +37,8 @@ try {
         throw 'Guest package hash mismatch'
       }
     }
-    $null = New-Item -ItemType Directory -Path "$n1GuestRoot\tests\manual", "$n1GuestRoot\src-tauri\target-codex-n1\debug", $n1Results
-    Copy-Item -LiteralPath "$n1Input\shared-clipboard-n1.exe" -Destination "$n1GuestRoot\src-tauri\target-codex-n1\debug\shared-clipboard-n1.exe"
+    $null = New-Item -ItemType Directory -Path "$n1GuestRoot\tests\manual", "$n1GuestRoot\src-tauri\target-codex-n1\debug\examples", $n1Results
+    Copy-Item -LiteralPath "$n1Input\shared-clipboard-n1.exe" -Destination "$n1GuestRoot\src-tauri\target-codex-n1\debug\examples\shared-clipboard-n1.exe"
     Copy-Item -LiteralPath "$n1Input\run-shared-clipboard-n1.ps1" -Destination "$n1GuestRoot\tests\manual\run-shared-clipboard-n1.ps1"
     Set-Content -LiteralPath "$n1Results\owner" -Value $RunId -NoNewline
     exit 0

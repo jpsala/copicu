@@ -105,6 +105,21 @@ Copicu is early-stage, but the core is functional:
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
 
+### v0.5.2 candidate
+
+The [v0.5.2-rc.1 candidate notes](docs/releases/v0.5.2-rc.1.md) cover opt-in
+shared clipboards and a common folder selector across the picker and editors.
+These features are validated locally with synthetic profiles; the hosted
+service, human account setup and testing between two physical PCs remain pending.
+The stable release above remains v0.5.1.
+
+From a folder or All history, use **Connect shared clipboard** to select or
+create a resource and choose sending, receiving or both. Sharing requires
+explicit provisioning and connections. Sending and receiving pause independently;
+opening shared history does not import clips or write the Windows clipboard.
+See the [user guide](docs/user/README.md#shared-clipboards-in-the-v052-candidate)
+for the candidate workflow.
+
 ## Core Flows
 
 ### 1. Search, Filter, And Paste
@@ -154,6 +169,11 @@ Deleting a folder always opens a confirmation with exact counts and independent 
 ### 3. Optional Assistant And Metadata
 
 `F2` opens the unified content and metadata editor; save commits both together. `Shift+F2` opens metadata-only editing, including explicit batch operations for mixed selections. Capture context stays separate and read-only rather than becoming your editable title or notes.
+
+The candidate uses the same searchable folder tree in metadata, the content
+editor, new clips and move dialogs. Filtering keeps matching ancestors visible;
+inline folder creation is prepared until Save or Move, together with the clip
+changes. Cancel leaves no new folders, and a move preserves each clip's tags.
 
 `Ctrl+I` or an `ai:` request opens the standalone assistant with picker context. The assistant is a prototype for conversation, local history/image search, read-only SQL and product operations such as metadata edits, creation, export and trusted scripts. **YOLO is its default mode and skips per-operation approval; switch to Confirm to review exact write/export/execution arguments.** It does not run in idle and has no universal undo. Deterministic search remains local; optional AI requests use your configured provider. Review selected-content disclosure before sending. Richer automation and an Explorer-style history table remain proposed, not implemented.
 

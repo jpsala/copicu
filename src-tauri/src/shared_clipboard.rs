@@ -12,6 +12,14 @@ pub(crate) mod enrollment;
 mod integration;
 #[cfg(feature = "shared-clipboard")]
 pub(crate) mod transport;
+#[cfg(feature = "shared-clipboard")]
+pub(crate) mod config;
+#[cfg(feature = "shared-clipboard")]
+pub(crate) mod runtime;
+#[cfg(feature = "shared-clipboard")]
+pub(crate) mod product;
+#[cfg(feature = "shared-clipboard")]
+pub(crate) mod control_sync;
 #[cfg(any(test, feature = "shared-clipboard"))]
 pub(crate) mod wire;
 

@@ -86,6 +86,8 @@ import { CustomWindowFrame } from "../ui/window/CustomWindowFrame";
 import { ToastStack } from "../ui/ToastStack";
 import { SavedHistoryViews } from "./SavedHistoryViews";
 import { Scenarios } from "./Scenarios";
+import { SharedClipboardSettings } from "../ui/SharedClipboardSettings";
+import { SharedClipboardFeed } from "../ui/SharedClipboardFeed";
 import { checkDownloadInstallAndRelaunch, checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
 
 
@@ -1754,6 +1756,7 @@ type SettingsPanelProps = {
 
 type SettingSection =
   | "general"
+  | "sharing"
   | "hotkeys"
   | "picker"
   | "history"
@@ -1843,6 +1846,7 @@ function SettingsPanel({
   onSave,
 }: SettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<SettingSection>(initialSettingsSection);
+  const [sharingFeedOpen, setSharingFeedOpen] = useState(false);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visible = (section: SettingSection, label: string, description: string) =>
     normalizedQuery.length === 0 ||
@@ -1948,6 +1952,7 @@ function SettingsPanel({
     )
     .join(" ");
   const settingSections: SettingSectionDefinition[] = [
+    { id: "sharing", label: "Sharing", description: "Channels, folders and receptions" },
     {
       id: "general",
       label: "General",
@@ -2126,6 +2131,10 @@ function SettingsPanel({
           </Tabs.List>
 
           <div className="settings-list">
+            {displayedSections.some((section) => section.id === "sharing") ? <>
+              <div hidden={sharingFeedOpen}><SharedClipboardSettings onViewReceptions={() => setSharingFeedOpen(true)} /></div>
+              {sharingFeedOpen ? <div className="shared-settings-feed"><SharedClipboardFeed onClose={() => setSharingFeedOpen(false)} closeLabel="Back to Sharing settings" /></div> : null}
+            </> : null}
             {displayedSections.some((section) => section.id === "general") ? (
               <SettingsSection title="General" description="Core app behavior and entry points.">
                 {visible("general", "Clipboard capture", "Pause monitoring new clipboard changes without changing the clipboard") ? (
@@ -3089,7 +3098,7 @@ function SettingsPanel({
         {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
         <div className="settings-footer">
           <p className="settings-save-note">
-            Appearance saves automatically. Save and Cancel apply to all other preferences.
+            Appearance saves automatically. Sharing has its own save buttons. Save and Cancel apply to the remaining preferences.
           </p>
           <div className="settings-buttons">
             <UiButton type="button" variant="default" onClick={onCancel}>
@@ -4121,7 +4130,9 @@ function unsupportedCapabilities(action: ActionDefinition) {
   if (action.source !== "script") {
     return [];
   }
-  return action.capabilities.filter((capability) => !SUPPORTED_SCRIPT_CAPABILITIES.has(capability));
+  return action.capabilities.filter((capability) => !SUPPORTED_SCRIPT_CAPABILITIES.has(capability)
+    && !["shared:read", "shared:publish"].includes(capability)
+    && !/^shared:(?:publish|receive|forward):[A-Za-z0-9_.:-]+$/.test(capability));
 }
 
 function actionMatchesSelection(action: ActionDefinition, items: HistoryItem[]) {

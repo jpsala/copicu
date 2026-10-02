@@ -31,6 +31,13 @@ struct Fixture {
 }
 impl Fixture {
     fn new(owner: &DeviceSigner, receiver: &DeviceSigner) -> (Self, String, [u8; 32]) {
+        Self::with_receiver_publish(owner, receiver, false)
+    }
+    fn with_receiver_publish(
+        owner: &DeviceSigner,
+        receiver: &DeviceSigner,
+        receiver_publish: bool,
+    ) -> (Self, String, [u8; 32]) {
         let parent = std::env::temp_dir();
         let name = format!(
             "copicu-c1-interop-{}-{}",
@@ -73,7 +80,7 @@ impl Fixture {
             "channels":[{"id":"test_channel","key_epoch":"1"}],
             "devices":[
               {"id":"owner","token":OWNER_TOKEN,"public_key":STANDARD.encode(owner.public()),"grants":[{"channel_id":"test_channel","key_epoch":"1","publish":true,"read":true,"report":true}]},
-              {"id":"receiver","token":RECEIVER_TOKEN,"public_key":STANDARD.encode(receiver.public()),"grants":[{"channel_id":"test_channel","key_epoch":"1","publish":false,"read":true,"report":true}]}
+              {"id":"receiver","token":RECEIVER_TOKEN,"public_key":STANDARD.encode(receiver.public()),"grants":[{"channel_id":"test_channel","key_epoch":"1","publish":receiver_publish,"read":true,"report":true}]}
             ]}));
         let ready = fixture.receive();
         let url = ready["url"].as_str().unwrap().to_string();
@@ -152,6 +159,481 @@ fn publication(id: &str, ordinal: u64, lease: &str, expiry: u64) -> Envelope {
         ciphertext: vec![],
         signature: vec![],
     }
+}
+#[test]
+fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
+    let _runtime = super::runtime::TEST_RUNTIME.lock().unwrap();
+    use super::{config::ConfigureInput, runtime};
+    use crate::storage::{CreateHistoryItemRequest, MetadataFolderIntent};
+    let owner = DeviceSigner::generate(&mut SystemEntropy).unwrap();
+    let receiver = DeviceSigner::generate(&mut SystemEntropy).unwrap();
+    let channel = ChannelKey::generate(
+        "test_env".into(),
+        "test_channel".into(),
+        1,
+        &mut SystemEntropy,
+    )
+    .unwrap();
+    let (fixture, url, issuer) = Fixture::with_receiver_publish(&owner, &receiver, true);
+    let owner_storage = AppStorage::open(&fixture.root.join("owner_profile")).unwrap();
+    let receiver_storage = AppStorage::open(&fixture.root.join("receiver_profile")).unwrap();
+    let enroll = |storage: &AppStorage,
+                  device: &str,
+                  signer: &DeviceSigner,
+                  token: &str,
+                  publish: bool| {
+        let bundle = fixture.root.join(format!("{device}_enrollment.json"));
+        let seed = signer.export_secret();
+        let value = json!({"version":1,"environment":"test_env","deviceId":device,"endpoint":url,"allowLoopback":true,"bearer":token,"signingSeed":STANDARD.encode(&seed.0),"issuerPublicKey":STANDARD.encode(issuer),"channels":[{"id":"test_channel","name":"Synthetic channel","epoch":1,"canPublish":publish,"key":STANDARD.encode(channel.secret()),"grants":[{"deviceId":"owner","publicKey":STANDARD.encode(owner.public()),"revision":1},{"deviceId":"receiver","publicKey":STANDARD.encode(receiver.public()),"revision":1}]}]});
+        fs::write(&bundle, serde_json::to_vec(&value).unwrap()).unwrap();
+        let path = bundle.to_str().unwrap();
+        let preview = runtime::enrollment_preview(storage, path).unwrap();
+        assert!(runtime::configure(
+            storage,
+            ConfigureInput {
+                bundle_path: path.into(),
+                confirmed_fingerprint: "wrong".into()
+            }
+        )
+        .is_err());
+        runtime::configure(
+            storage,
+            ConfigureInput {
+                bundle_path: path.into(),
+                confirmed_fingerprint: preview.fingerprint,
+            },
+        )
+        .unwrap()
+    };
+    let owner_status = enroll(&owner_storage, "owner", &owner, OWNER_TOKEN, true);
+    let receiver_status = enroll(
+        &receiver_storage,
+        "receiver",
+        &receiver,
+        RECEIVER_TOKEN,
+        true,
+    );
+    assert!(owner_status.receipts.is_empty());
+    assert!(receiver_status.receipts.is_empty());
+    let existing = receiver_storage
+        .create_text_item(CreateHistoryItemRequest {
+            text: "synthetic product shared text".into(),
+            title: Some("Preserved local title".into()),
+            notes: None,
+            tags: vec!["local".into()],
+            mime_primary: None,
+            folder: Some(MetadataFolderIntent::Create {
+                path: "Local originals".into(),
+            }),
+        })
+        .unwrap();
+    let mut receive = receiver_status.channels[0].clone();
+    receive.receive_enabled = true;
+    receive.save_to_folder = true;
+    receive.update_clipboard = true;
+    runtime::update_channel(&receiver_storage, receive).unwrap();
+    let connection = super::config::ConnectionInput {
+        id: "legacy_receive_test_channel".into(),
+        channel_id: "test_channel".into(),
+        kind: "folder".into(),
+        folder_id: None,
+        direction: "receive".into(),
+        move_reception: false,
+    };
+    let head = runtime::prepare_connection_head(&receiver_storage, &connection).unwrap();
+    runtime::connect_with_head(&receiver_storage, connection, head).unwrap();
+    assert!(runtime::poll_once(&owner_storage)
+        .unwrap()
+        .effects
+        .is_empty());
+    // Publish before the first receiver poll: connection already committed its head.
+    let published = runtime::publish_text(
+        &owner_storage,
+        "test_channel",
+        "synthetic product shared text",
+        "syntheticTest",
+    )
+    .unwrap();
+    assert_eq!(published["state"], "queued");
+    runtime::poll_once(&owner_storage).unwrap();
+    let result = runtime::poll_once(&receiver_storage).unwrap();
+    assert!(result.history_changed);
+    assert_eq!(result.effects.len(), 1);
+    let effect = &result.effects[0];
+    assert_eq!(effect.text, "synthetic product shared text");
+    let status = runtime::snapshot(&receiver_storage).unwrap();
+    assert_eq!(status.receipts.len(), 1);
+    assert_eq!(status.receipts[0]["localItemId"], existing.id);
+    assert_eq!(
+        receiver_storage.get_item_tags(existing.id).unwrap(),
+        vec!["local"]
+    );
+    assert!(runtime::is_remote_item_or_text(
+        &receiver_storage,
+        Some(existing.id),
+        effect.text.as_str()
+    )
+    .unwrap());
+    assert_eq!(
+        runtime::publish_folder_ingress(&receiver_storage, None, existing.id, false).unwrap(),
+        0
+    );
+    assert_eq!(
+        runtime::receipt_text(
+            &receiver_storage,
+            &effect.subscription_id,
+            &effect.publication_id
+        )
+        .unwrap(),
+        effect.text
+    );
+    let attempt = runtime::claim_clipboard(&receiver_storage, effect).unwrap();
+    assert!(runtime::claim_clipboard(&receiver_storage, effect).is_err());
+    runtime::finish_clipboard(
+        &receiver_storage,
+        &effect.subscription_id,
+        &attempt,
+        "skipped",
+    )
+    .unwrap();
+    assert!(runtime::claim_clipboard(&receiver_storage, effect).is_err());
+    let manual = runtime::claim_manual_clipboard(
+        &receiver_storage,
+        &effect.subscription_id,
+        &effect.publication_id,
+    )
+    .unwrap();
+    runtime::finish_clipboard(
+        &receiver_storage,
+        &effect.subscription_id,
+        &manual,
+        "applied",
+    )
+    .unwrap();
+    runtime::set_paused(&receiver_storage, true).unwrap();
+    assert!(runtime::claim_clipboard(&receiver_storage, effect).is_err());
+    runtime::publish_text(
+        &owner_storage,
+        "test_channel",
+        "synthetic paused recovery text",
+        "syntheticTest",
+    )
+    .unwrap();
+    runtime::poll_once(&owner_storage).unwrap();
+    let heads = runtime::prepare_receive_resume(&receiver_storage, None, Some(false)).unwrap();
+    // This publication is after the prepared boundary and before local commit.
+    runtime::publish_text(
+        &owner_storage,
+        "test_channel",
+        "synthetic fresh after resume",
+        "syntheticTest",
+    )
+    .unwrap();
+    runtime::poll_once(&owner_storage).unwrap();
+    runtime::set_flow_paused_with_heads(&receiver_storage, None, Some(false), Some(false), heads)
+        .unwrap();
+    let fresh = runtime::poll_once(&receiver_storage).unwrap();
+    assert!(fresh.history_changed);
+    assert_eq!(fresh.effects.len(), 1);
+    assert_eq!(fresh.effects[0].text, "synthetic fresh after resume");
+    assert_eq!(
+        runtime::snapshot(&receiver_storage).unwrap().receipts.len(),
+        2
+    );
+    for pending in &fresh.effects {
+        if pending.update_clipboard {
+            let attempt = runtime::claim_clipboard(&receiver_storage, pending).unwrap();
+            runtime::finish_clipboard(
+                &receiver_storage,
+                &pending.subscription_id,
+                &attempt,
+                "skipped",
+            )
+            .unwrap();
+        }
+    }
+    runtime::poll_once(&receiver_storage).unwrap(); // Complete metadata reports before retention.
+    assert_eq!(
+        runtime::snapshot(&owner_storage)
+            .unwrap()
+            .outbox
+            .iter()
+            .filter(|p| p["state"] == "accepted")
+            .count(),
+        3
+    );
+    assert!(runtime::configure(
+        &owner_storage,
+        ConfigureInput {
+            bundle_path: "C:/nope".into(),
+            confirmed_fingerprint: "nope".into()
+        }
+    )
+    .is_err());
+    let before = runtime::snapshot(&owner_storage).unwrap().outbox.len();
+    let make = |storage: &AppStorage, text: &str, folder: Option<MetadataFolderIntent>| {
+        storage
+            .create_text_item(CreateHistoryItemRequest {
+                text: text.into(),
+                title: None,
+                notes: None,
+                tags: vec!["synthetic".into()],
+                mime_primary: None,
+                folder,
+            })
+            .unwrap()
+    };
+    let existing_local = make(&owner_storage, "synthetic previous content", None);
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before
+    );
+    let mut publishing = runtime::snapshot(&owner_storage).unwrap().channels[0].clone();
+    publishing.publish_folder_enabled = true;
+    publishing.publish_folder_id = None;
+    runtime::update_channel(&owner_storage, publishing).unwrap();
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before,
+        "Connecting Root must not publish prior content"
+    );
+    let new_root = make(&owner_storage, "synthetic new root content", None);
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before + 1
+    );
+    owner_storage
+        .update_item_metadata(crate::storage::UpdateItemMetadataRequest {
+            id: new_root.id,
+            title: Some("Synthetic title edit".into()),
+            notes: None,
+            tags: vec!["changed".into()],
+        })
+        .unwrap();
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before + 1,
+        "Tag or title edits are not folder ingress"
+    );
+    let child = make(
+        &owner_storage,
+        "synthetic child content",
+        Some(MetadataFolderIntent::Create {
+            path: "Child".into(),
+        }),
+    );
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before + 1,
+        "Root publishing excludes descendants"
+    );
+    assert_eq!(
+        owner_storage
+            .move_history_items_to_folder(vec![child.id, child.id], None)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before + 2,
+        "Batch ingress sends each actually moved clip once"
+    );
+    assert_eq!(
+        owner_storage
+            .move_history_items_to_folder(vec![child.id], None)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before + 2
+    );
+    assert_eq!(
+        make(&owner_storage, "synthetic previous content", None).id,
+        existing_local.id
+    );
+    assert_eq!(
+        runtime::snapshot(&owner_storage).unwrap().outbox.len(),
+        before + 2,
+        "Existing dedupe does not create ingress"
+    );
+    let mut receive_publish = runtime::snapshot(&receiver_storage).unwrap().channels[0].clone();
+    receive_publish.publish_folder_enabled = true;
+    receive_publish.publish_folder_id = None;
+    runtime::update_channel(&receiver_storage, receive_publish).unwrap();
+    receiver_storage
+        .move_history_items_to_folder(vec![existing.id], None)
+        .unwrap();
+    assert!(
+        runtime::snapshot(&receiver_storage)
+            .unwrap()
+            .outbox
+            .is_empty(),
+        "Moving a remote-origin clip must not echo"
+    );
+    assert!(
+        runtime::validate_reception_writer(
+            &receiver_storage,
+            "test_channel",
+            &effect.publication_id,
+            effect.generation,
+            "synthetic_writer"
+        )
+        .is_err(),
+        "Receiving Actions cannot write by default"
+    );
+    let mut writer_policy = runtime::snapshot(&receiver_storage).unwrap().channels[0].clone();
+    writer_policy.receive_action_enabled = true;
+    writer_policy.receive_action_id = Some("synthetic_writer".into());
+    writer_policy.receive_action_writes_clipboard = true;
+    assert!(
+        runtime::update_channel(&receiver_storage, writer_policy.clone()).is_err(),
+        "A built-in and Action writer cannot coexist on a channel"
+    );
+    writer_policy.update_clipboard = false;
+    runtime::update_channel(&receiver_storage, writer_policy.clone()).unwrap();
+    assert!(
+        runtime::claim_reception_action_clipboard(
+            &receiver_storage,
+            "test_channel",
+            &effect.publication_id,
+            effect.generation,
+            "synthetic_writer",
+            &effect.text,
+            "synthetic-transformed-output",
+            effect.lease_expires_at_unix_ms,
+            effect.lease_started,
+            effect.lease_duration_ms
+        )
+        .is_err(),
+        "Changing writer policy invalidates prior reception generations"
+    );
+    runtime::poll_once(&receiver_storage).unwrap(); // Set the new recovery barrier.
+    runtime::poll_once(&owner_storage).unwrap(); // Drain the two queued new clips.
+    let action_reception = runtime::poll_once(&receiver_storage).unwrap();
+    assert_eq!(action_reception.effects.len(), 2);
+    assert!(runtime::claim_clipboard(&receiver_storage, &action_reception.effects[0]).is_err());
+    let action_effect = action_reception.effects.last().unwrap();
+    assert!(!action_effect.update_clipboard);
+    let transformed = "synthetic-transformed-script-output";
+    let writer_attempt = runtime::claim_reception_action_clipboard(
+        &receiver_storage,
+        "test_channel",
+        &action_effect.publication_id,
+        action_effect.generation,
+        "synthetic_writer",
+        &action_effect.text,
+        transformed,
+        action_effect.lease_expires_at_unix_ms,
+        action_effect.lease_started,
+        action_effect.lease_duration_ms,
+    )
+    .unwrap();
+    assert!(
+        runtime::is_remote_item_or_text(&receiver_storage, None, transformed).unwrap(),
+        "Transformed output keeps remote provenance before native mutation"
+    );
+    assert!(
+        runtime::claim_reception_action_clipboard(
+            &receiver_storage,
+            "test_channel",
+            &action_effect.publication_id,
+            action_effect.generation,
+            "synthetic_writer",
+            &action_effect.text,
+            transformed,
+            action_effect.lease_expires_at_unix_ms,
+            action_effect.lease_started,
+            action_effect.lease_duration_ms
+        )
+        .is_err(),
+        "An automatic script output cannot claim Windows twice"
+    );
+    runtime::finish_clipboard(
+        &receiver_storage,
+        &action_effect.subscription_id,
+        &writer_attempt,
+        "skipped",
+    )
+    .unwrap();
+    writer_policy.receive_action_enabled = false;
+    runtime::update_channel(&receiver_storage, writer_policy).unwrap();
+    assert!(
+        runtime::validate_reception_writer(
+            &receiver_storage,
+            "test_channel",
+            &action_effect.publication_id,
+            action_effect.generation,
+            "synthetic_writer"
+        )
+        .is_err(),
+        "Disabling the bound Action immediately revokes writer authorization"
+    );
+    runtime::poll_once(&receiver_storage).unwrap(); // Commit the changed-policy head.
+    runtime::poll_once(&receiver_storage).unwrap(); // Acknowledge settled effects' metadata.
+    let accepted_before_prune = runtime::snapshot(&owner_storage)
+        .unwrap()
+        .outbox
+        .iter()
+        .filter(|p| p["state"] == "accepted")
+        .count();
+    let expired_time = now() + 86_400_001;
+    let owner_store = RuntimeStore::init(&owner_storage).unwrap();
+    owner_store.prune_product(expired_time).unwrap();
+    assert!(owner_store
+        .queued("test_env", "test_channel", "owner", expired_time)
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        owner_store
+            .reserve(
+                published["publicationId"].as_str().unwrap(),
+                "test_env",
+                "test_channel",
+                "owner"
+            )
+            .err(),
+        Some(crate::storage::shared::Error::Expired)
+    );
+    assert_eq!(
+        runtime::snapshot(&owner_storage)
+            .unwrap()
+            .outbox
+            .iter()
+            .filter(|p| p["state"] == "accepted")
+            .count(),
+        accepted_before_prune,
+        "Payload pruning preserves accepted publication metadata"
+    );
+    let receiver_store = RuntimeStore::init(&receiver_storage).unwrap();
+    receiver_store.prune_product(expired_time).unwrap();
+    assert!(
+        receiver_store
+            .receipt_envelope(&effect.subscription_id, &effect.publication_id)
+            .is_err(),
+        "Expired encrypted receipt payload is removed"
+    );
+    let expired_status = runtime::snapshot(&receiver_storage).unwrap();
+    assert!(expired_status
+        .receipts
+        .iter()
+        .all(|r| r["acquisition"] == "expired"));
+    assert!(
+        expired_status
+            .receipts
+            .iter()
+            .all(|r| r["originDeviceId"] == "owner"),
+        "Origin metadata survives encrypted payload removal"
+    );
+    assert!(
+        runtime::is_remote_item_or_text(&receiver_storage, Some(existing.id), effect.text.as_str())
+            .unwrap(),
+        "Payload pruning does not clear provenance of an existing local item"
+    );
+    // Drop SQLite/vault handles before the fixture performs guarded cleanup.
+    drop(receiver_storage);
+    drop(owner_storage);
+    drop(fixture);
 }
 #[test]
 fn encrypted_http_roundtrip_enrollment_watch_retry_report_revocation() {

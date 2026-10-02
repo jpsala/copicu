@@ -137,6 +137,7 @@ fn manual_creation_uses_destination_and_dedupe_preserves_prior_folder() {
     let storage = storage();
     let folder = storage.create_folder(None, "Manual").unwrap();
     let request = || crate::storage::CreateHistoryItemRequest {
+        folder: None,
         text: "manual clip".into(), title: None, notes: None, tags: vec!["Scenario/Tag".into()], mime_primary: None,
     };
     storage.set_capture_folder_destination(Some(folder.id), true).unwrap();

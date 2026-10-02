@@ -8,9 +8,12 @@ pub(super) const JOIN_SELECTED_ID: &str = "builtin.joinSelected";
 pub(super) const OPEN_URL_ID: &str = "builtin.openUrl";
 pub(super) const QUEUE_SELECTED_BOTTOM_TO_TOP_ID: &str = "builtin.queueSelectedBottomToTop";
 pub(super) const CLEAR_PASTE_QUEUE_ID: &str = "builtin.clearPasteQueue";
+pub(super) const SHARED_SEND_ACTIVE_ID: &str = "builtin.sharedSendActive";
+pub(super) const SHARED_SEND_CLIPBOARD_ID: &str = "builtin.sharedSendClipboard";
 
 pub(super) fn builtin_actions() -> Vec<ActionDefinition> {
-    vec![
+    #[allow(unused_mut)]
+    let mut actions = vec![
         ActionDefinition {
             id: PASTE_PLAIN_ID.to_string(),
             title: "Paste plain".to_string(),
@@ -123,7 +126,63 @@ pub(super) fn builtin_actions() -> Vec<ActionDefinition> {
             diagnostics: Vec::new(),
             logging: None,
         },
-    ]
+    ];
+    #[cfg(feature = "shared-clipboard")]
+    actions.extend([
+        shared_publish_action(
+            SHARED_SEND_ACTIVE_ID,
+            "Send active clip to shared channel",
+            "Send the active Copicu text clip to the configured channel.",
+            ActionInputSource::PickerSelection,
+            SelectionRequirement::Active,
+            "history:read-content",
+        ),
+        shared_publish_action(
+            SHARED_SEND_CLIPBOARD_ID,
+            "Send Windows clipboard to shared channel",
+            "Send the Windows clipboard captured at invocation to the configured channel.",
+            ActionInputSource::Clipboard,
+            SelectionRequirement::Optional,
+            "clipboard:read",
+        ),
+    ]);
+    actions
+}
+
+#[cfg(feature = "shared-clipboard")]
+fn shared_publish_action(
+    id: &str,
+    title: &str,
+    description: &str,
+    source: ActionInputSource,
+    selection: SelectionRequirement,
+    read_capability: &str,
+) -> ActionDefinition {
+    ActionDefinition {
+        id: id.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
+        shortcut: None,
+        triggers: vec![
+            Trigger::ItemMenu,
+            Trigger::CommandPalette,
+            Trigger::LocalShortcut,
+            Trigger::GlobalShortcut,
+        ],
+        input: ActionInput {
+            source,
+            selection,
+            kinds: Some(vec![ClipKind::Text]),
+            mime: Some(vec!["text/plain".to_string()]),
+            query: None,
+        },
+        capabilities: vec![read_capability.to_string(), "shared:publish".to_string()],
+        builtin: true,
+        source: ActionSource::Builtin,
+        script: None,
+        diagnostics: Vec::new(),
+        logging: None,
+    }
 }
 
 #[cfg(not(test))]

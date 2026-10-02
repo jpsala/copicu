@@ -13,6 +13,7 @@ function snapshot(token = "snapshot-1", itemIds = [11, 12, 13]): MetadataSelecti
     snapshotToken: token,
     title: { state: "mixed", value: null, populatedCount: 2 },
     notes: { state: "mixed", value: null, populatedCount: 2 },
+    folder: { state: "mixed", folderId: null, path: null },
     tags: [
       { key: "work", label: "Work", presence: "all", presentCount: 3, totalCount: 3, sources: [{ source: "manual", count: 3, confidenceMin: null, confidenceMax: null }] },
       { key: "review", label: "Review", presence: "some", presentCount: 2, totalCount: 3, sources: [{ source: "scenario", count: 2, confidenceMin: 0.8, confidenceMax: 0.9 }] },
@@ -27,6 +28,65 @@ function payload(token = "snapshot-1", itemIds = [11, 12, 13]): MetadataSelectio
 }
 
 describe("metadata inspector reducer", () => {
+  test("mixed folders stay untouched unless an explicit destination is chosen", () => {
+    const initial = createMetadataInspectorState(payload());
+    expect(metadataSelectionIntent(initial).folder).toEqual({ op: "untouched" });
+    expect(initial.dirty).toBe(false);
+
+    const changed = metadataInspectorReducer(initial, { type: "stageFolder", intent: { op: "set", folderId: 7 } });
+    expect(changed.dirty).toBe(true);
+    expect(changed.summary).toBe("Move 3 clips to selected folder · Tags unchanged");
+    expect(metadataSelectionIntent(changed).folder).toEqual({ op: "set", folderId: 7 });
+    expect(metadataSelectionIntent(changed).tags).toEqual([]);
+    expect(changed.baseSnapshot.tags).toEqual(initial.baseSnapshot.tags);
+    expect(changed.selection).toEqual([11, 12, 13]);
+  });
+
+  test("Root is an explicit destination, and choosing the original folder cancels a staged move", () => {
+    const basePayload = payload();
+    basePayload.snapshot.folder = { state: "same", folderId: 7, path: "Work" };
+    const initial = createMetadataInspectorState(basePayload);
+    const root = metadataInspectorReducer(initial, { type: "stageFolder", intent: { op: "set", folderId: null } });
+    expect(metadataSelectionIntent(root).folder).toEqual({ op: "set", folderId: null });
+    expect(root.summary).toBe("Move 3 clips to / · Tags unchanged");
+    const restored = metadataInspectorReducer(root, { type: "stageFolder", intent: { op: "set", folderId: 7 } });
+    expect(restored.folder).toEqual({ op: "untouched" });
+    expect(restored.dirty).toBe(false);
+  });
+
+  test("nested folder creation participates in undo, cancel and snapshot conflicts", () => {
+    const initial = createMetadataInspectorState(payload());
+    const created = metadataInspectorReducer(initial, { type: "stageFolder", intent: { op: "create", path: "/Work/Copicu/References" } });
+    expect(created.summary).toBe("Create /Work/Copicu/References and move 3 clips · Tags unchanged");
+    expect(metadataSelectionIntent(created)).toMatchObject({
+      expectedSnapshotToken: "snapshot-1",
+      folder: { op: "create", path: "/Work/Copicu/References" },
+    });
+    const stale = metadataInspectorReducer(created, { type: "saveFailed", error: "METADATA_SNAPSHOT_STALE" });
+    expect(stale.folder).toEqual(created.folder);
+    expect(stale.saveState).toBe("stale");
+    const undone = metadataInspectorReducer(created, { type: "undoLast" });
+    expect(undone.folder).toEqual({ op: "untouched" });
+    expect(undone.dirty).toBe(false);
+    const discarded = metadataInspectorReducer(created, { type: "replacePayload", payload: payload("snapshot-2") });
+    expect(discarded.folder).toEqual({ op: "untouched" });
+    expect(discarded.dirty).toBe(false);
+    expect(initial.baseSnapshot.folder).toEqual({ state: "mixed", folderId: null, path: null });
+  });
+
+  test("saving consumes staged folder creation and rebases to the persisted destination", () => {
+    const created = metadataInspectorReducer(createMetadataInspectorState(payload()), {
+      type: "stageFolder", intent: { op: "create", path: "/Work/New" },
+    });
+    const savedSnapshot = snapshot("saved");
+    savedSnapshot.folder = { state: "same", folderId: 8, path: "Work/New" };
+    const saved = metadataInspectorReducer(created, { type: "saveSucceeded", snapshot: savedSnapshot });
+    expect(saved.folder).toEqual({ op: "untouched" });
+    expect(saved.baseSnapshot.folder?.folderId).toBe(8);
+    expect(saved.dirty).toBe(false);
+    expect(saved.undoStack).toEqual([]);
+  });
+
   test("stages all/some/none set operations with exact affected counts", () => {
     let state = createMetadataInspectorState(payload());
     state = metadataInspectorReducer(state, { type: "stageSetValue", field: "tags", intent: { key: "work", op: "remove" } });
@@ -55,7 +115,7 @@ describe("metadata inspector reducer", () => {
     expect(undone.selection).toEqual([11, 12, 13]);
     expect(undone.title).toEqual({ op: "set", value: "Shared title" });
     expect(undone.notes).toEqual({ op: "untouched" });
-    expect(undone.summary).toBe("Set title on 3 clips");
+    expect(undone.summary).toBe("Set title on 3 clips · Tags unchanged");
   });
 
   test("keeps a new selection pending while dirty and opens it after a successful save", () => {

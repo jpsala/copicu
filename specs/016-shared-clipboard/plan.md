@@ -1,352 +1,467 @@
-# Arquitectura propuesta: clipboard compartido
+# Plan de producto y arquitectura: portapapeles compartidos
 
-Status: draft técnico sin sharing runtime. Actualizado: 2026-10-01. N1 nativo sintético: 11 Clipboard y 6 DPAPI pasan en Sandbox. C1/T1 opt-in incorpora XChaCha20Poly1305/Ed25519/HPKE/DPAPI y relay local, con vectores e interop HTTP/SQLite real; D1 se integra explícitamente sobre fixtures. Alcance Q1–Q3 confirmado por JP en [`spec.md`](spec.md): `liveOnly`, texto plano y servicio privado. Cinco dependencias aprobadas con «avancemos» y ejecutadas; proveedor/deploy, enrollment humano/durable, runtime/nativo y dos PCs no se acreditan con ese permiso. Resultados actuales y límites en [implementación local](local-implementation.md).
+Estado: producto local y SSE S1–S6 validados; servicio remoto y aceptación en
+dos PCs pendientes. Fecha: 2026-10-02.
+Origen: pedido de JP de replantear el plan, explorar analogías de colaboración
+y mantener uso transparente, sencillo y extensible por scripts.
+Confirmado: espacio propio por persona; seleccionar/crear desde carpetas;
+enviar/recibir/ambas; consultar historial disponible sin importarlo automáticamente.
+Ampliación: conexión general desde All Clipboard y pausas independientes de envío
+y recepción. JP pidió que el alcance general se pueda cambiar en Settings.
+Q1 `liveOnly` y Q2 texto plano siguen vigentes.
 
-## 1. Recomendación y fronteras
+Ampliación confirmada por JP: avisos SSE para que creación/modificación/acceso
+se reflejen en los otros clientes autorizados. Contrato y orden de continuación
+en [sse-sync-plan.md](sse-sync-plan.md): HTTP confirma, SSE avisa y pull
+reconcilia con cursor durable; primero catálogo, luego avisos de publicaciones.
+La evidencia comprobada y los gates abiertos están en
+[aceptación SSE local](local-acceptance.md#aceptacion-sse-local-2026-10-02).
+S1–S6 cerrados localmente: identidad/pausa tardías, denied/unsupported, retiro en
+Settings y superficies abiertas/ocultas tienen evidencia shipping. Los hints
+transaccionales de publicaciones despiertan el sync V1 existente sin avanzar
+control water ni habilitar efectos. Ticks, leases, receipts, `liveOnly` y opt-ins
+se conservan; reducir polling requiere medición y regresiones nuevas.
 
-Construir un dominio pequeño de **publicaciones inmutables + suscripciones locales**, con un servicio de relay cifrado. Primer vertical con alcance confirmado: texto entre los equipos de JP en servicio privado, publicación explícita por Actions/hotkey y recepción configurable con salida built-in al clipboard, `liveOnly`. No crear una réplica de SQLite, un bus universal de automatizaciones ni un framework de proveedores.
+El [diseño de interacción](folder-first-design.md) describe recorridos y estados;
+[sharing-patterns.md](sharing-patterns.md) documenta analogías y alternativas.
+[local-implementation.md](local-implementation.md) acredita el corte existente.
+[protocol-notes.md](protocol-notes.md) conserva los detalles técnicos anteriores
+para consulta puntual; no se lee como contrato actual del SDK.
 
-- **Canal** es destino lógico remoto. **Carpeta** es ubicación local. **Suscripción** conecta ambos sin equipararlos.
-- Publicación contiene un snapshot, no una referencia viva al clip del emisor. Editar un clip no modifica lo publicado.
-- Recepción pertenece a la suscripción y puede existir sin un clip local asociado. La deduplicación de clips no deduplica publicaciones.
-- Importar a historial y escribir Windows son salidas independientes. La escritura built-in no usa `picker.activate`, foco anterior ni paste.
-- Backup futuro usa otro contrato: snapshots/versiones/restore, no la retención ni el replay del canal.
+## Contratos del corte local (2026-10-02)
 
-```text
-Atajo / menú / script local
-  -> snapshot de entrada + autorización
-  -> publicación durable cifrada en outbox
-  -> worker de transporte
-  -> relay: objetos cifrados + orden/idempotencia por canal
-  -> recuperación por cursor / aviso en vivo
-  -> recepción durable + procedencia
-  -> salidas independientes:
-       guardar en historial local
-       escribir clipboard con guards
-       ejecutar acción local asociada, si está habilitada
-```
+- Identidad: el fixture provisiona personas y equipos autenticados aislados;
+  el bearer identifica un equipo, nunca una persona elegida por el renderer.
+  OAuth/OIDC humano y recuperación externa permanecen gates de proveedor.
+- Control plane V2 separado del stream V1: intents con ID persistido, revisión
+  esperada y digest inmutable. Reintento devuelve el mismo resultado; conflicto
+  de payload/revisión no crea otro recurso. Catálogo sólo autorizado, lifecycle
+  checked también por publish/sync/lease/report. Claves nunca en claro en relay.
+- Epochs anteriores sólo se leen dentro del rango concedido. Incorporar persona
+  sin historial exige epoch nuevo; revocación bloquea grants antes de rotar.
+  Una rotación pendiente bloquea publicar y no reinterpreta outbox ambiguo.
+- Retención inicial local conserva 24 horas y cuotas existentes verificadas;
+  siete días sigue propuesta pendiente de validación, no default silencioso.
+- Conexiones persistidas por ID: `general` o carpeta exacta (Root = null),
+  dirección `send`, `receive`, `both`. Un receptor por canal/perfil; trasladarlo
+  exige intención explícita. Migración conserva policies previas sin backfill.
+- Scope general `unfiled`/`all`: sólo ingresos nuevos, no movimientos. Coincidencia
+  con carpeta al mismo canal se colapsa antes de admitir; remoto queda excluido.
+- Pausas persistidas global/canal, envío y recepción independientes. Pausa de
+  envío frena admisión y nuevos dispatches; in-flight conserva resultado real.
+  Reanudar recepción fija head nuevo antes de admitir; consulta manual separada
+  no mueve cursor de entrega ni ejecuta efectos. Generaciones invalidan trabajo.
+- Forwarding conserva scopes y allowlists actuales. Puentes múltiples requieren
+  causalidad autenticada versionada; no añadir ruta renderer ni debilitar V1.
+  Hasta cerrar ese wire, rechazar forwarding automático de origen ya reenviado.
 
-Con sharing apagado no se inicia transporte ni se lee clipboard para este dominio. Cuando se habilita, los workers viven en el host Rust y no dependen de una ventana React visible.
+Estos contratos describen el fixture local implementado. Estado operativo,
+evidencia y próximo paso en el [track](../../docs/tracks/041-shared-clipboard.md);
+no heredar permisos ni ownership de los cortes anteriores.
 
-## 2. Lo que permite y lo que limita el repo actual
+## 1. Recomendación y motivos
 
-| Evidencia local | Consecuencia de diseño |
+Un portapapeles compartido es un recurso privado con publicaciones de texto,
+historial disponible y participantes. Se puede consultar y usar por Actions
+sin carpeta. Una conexión local decide cómo una carpeta envía y recibe de él.
+Cada equipo decide sus efectos de Windows y automatizaciones.
+
+El uso habitual requiere elegir recurso y dirección, con una descripción del
+resultado. La capacidad adicional aparece en administración, envío explícito y
+Actions, sin sumar campos al recorrido básico. Se mantienen identidades estables;
+renombrar carpetas o recursos no rompe los destinos.
+
+Decisiones propuestas, distintas de los requisitos ya confirmados:
+
+- Vista compartida del historial, sin duplicarlo por defecto en el historial local.
+- Un recurso por carpeta inicialmente; varias carpetas pueden enviar al mismo
+  recurso. Un único destino automático de recepción por recurso y perfil.
+- Recepción como selección inicial del control; enviar exige elección explícita.
+- Invitaciones privadas con aceptación y aprobación del propietario.
+- Historial previo para una persona nueva sólo cuando el propietario lo concede;
+  los equipos nuevos de la misma persona conservan su acceso ya concedido.
+- Conservar publicaciones siete días como valor inicial a validar, con límites
+  visibles y cambios aplicables a futuras publicaciones. La configuración local
+  actual expira publicaciones a las 24 horas; ampliar exige cambiar validaciones.
+- Identidad de persona mediante autenticación estándar; vinculación de claves de
+  equipo mediante dispositivo ya aprobado o recuperación explícita. Un login
+  recuperado por sí solo no recupera automáticamente claves E2EE.
+
+## 2. Modelo y fronteras
+
+| Entidad | Responsabilidad |
 | --- | --- |
-| `docs/topics/actions-and-scripting-api.md`, `src-tauri/src/actions/model.rs` | Reusar Actions, shortcuts, discovery y host capabilities. Ampliar contratos explícitos; no usar SQL/Tauri arbitrario como SDK. |
-| `src-tauri/src/lib.rs::run_global_script_shortcut` | `selection: active` resuelve un clip reciente del historial, no garantiza el clipboard actual. No sirve como entrada del comando de envío. |
-| `src-tauri/src/actions.rs::script_clipboard_read` | La API actual lee texto al momento del host call. Tras arrancar Node puede ser demasiado tarde; no prometer snapshot de atajo con ese wrapper. |
-| `src-tauri/src/actions/input.rs`, `actions.rs::run_clipboard_change_actions` | `input.source: clipboard` está ligado al item capturado en ese trigger. No cambiar silenciosamente su semántica para todos los scripts existentes. |
-| `src-tauri/src/actions.rs::run_script_action_definition` | Escrituras de scripts se aplican desde operaciones retornadas por Node, incluso antes de evaluar `status: failed` (líneas 511–600). Un `publish()` que devuelve "en cola" necesita host call con commit local, no una operación diferida que mienta sobre persistencia. Fallo del script no prueba ausencia de efectos. |
-| `src-tauri/src/actions.rs::run_node_script_runner`, líneas 1830–1870 | El timeout se comprueba alrededor del loop, no durante `handle_script_host_call` síncrono. El nuevo gateway debe acotar su propio trabajo; el timeout de Node no cancela un host call bloqueado. |
-| `src-tauri/src/clipboard.rs::PostCaptureProcessor` | Capturas normales disparan enrichment y `clipboardChange`. Importación remota debe tener su ruta/procedencia y no pasar automáticamente por ese pipeline. |
-| `src-tauri/src/clipboard.rs::SelfWriteSuppression` | Suppression actual es hash + ventana temporal; no prueba origen remoto ni protege por sí sola contra loops o una recopia externa del mismo texto. |
-| `specs/014-folders/spec.md`, `storage.rs::insert_text_with_scenario` | Dedupe global conserva carpeta. Inserción ordinaria usa destino armado y cuenta captura local; importación remota necesita una operación de dominio que no invente esos efectos. |
-| `src-tauri/src/storage.rs`, `storage/schema.rs`, `storage/folders.rs` | Reusar AppStorage, transacciones/migrations y validación de carpetas. No una DB local paralela sólo para sharing. |
-| `src-tauri/Cargo.toml` | No hay librería declarada de HTTP/WebSocket, AEAD/firma/custody genérica. `sha2` y `base64` no implementan E2EE. Selección/adición requiere el gate de dependencias. |
-| `docs/topics/ui-surface-architecture.md` | Configuración durable en Settings; picker conserva acciones rápidas y estado compacto. No nueva shell ni web dashboard obligatorio. |
+| Persona y espacio propio | Poseer recursos y gestionar sus dispositivos. Un espacio por persona inicialmente; sin organizaciones ni jerarquías de equipos. |
+| Dispositivo | Identidad criptográfica y credencial propias; revocable sin eliminar a la persona. |
+| Portapapeles / canal | Recurso remoto con propietario, participantes, permisos, retención y revisión de acceso. |
+| Participación | Autorización de persona: leer, publicar, administrar; rango histórico concedido. |
+| Suscripción local | Una por canal/perfil: cursor durable, feed, pausa y estado de recepción. |
+| Conexión de carpeta | ID propio, carpeta exacta, canal, dirección y revisión aceptada de audiencia; varias salidas de envío, una entrada automática por canal/perfil. |
+| Conexión general | ID propio y canal, dirección, alcance de envío configurable en Settings; recepción sin carpeta usa Root explícito. Sigue activa independientemente de la vista abierta. |
+| Estado de flujo | Pausa de envío y pausa de recepción separadas, por canal en este perfil y para todo el equipo; persistentes y aplicadas por el host. |
+| Publicación | Texto inmutable, autor/dispositivo, secuencia, expiración y procedencia. |
+| Recepción y efectos | Registro durable; importar a carpeta, escribir Windows y ejecutar Action tienen resultados independientes. |
+| Intento de administración | ID idempotente y estado durable de creación, invitación o eliminación; permite resolver respuestas perdidas. |
 
-La revisión es del checkout local. No se abrió historial productivo, `.env`, claves ni sesiones personales; no se hizo probe de infraestructura viva.
+Enviar/recibir es una decisión local dentro de permisos remotos. Elegir Enviar
+no convierte a una persona en participante sin permiso de lectura. Inicialmente
+se ofrecen propietario, lector y colaborador; un buzón con publicación sin
+lectura requiere otro análisis de claves y queda como ampliación.
 
-## 3. Servicio y proveedor
+No se sincronizan rutas, tags, títulos locales, ediciones ni borrados de clips.
+Una carpeta conectada sigue siendo local. All history no es carpeta destino;
+Root sólo puede conectarse explícitamente y muestra el alcance de captura.
 
-### Candidato preferido, no cerrado: Cloudflare
+### Conexión general y Settings
 
-Infra documenta R2/D1 para Foundry y Workers/Durable Objects para Fixvox. Fuentes centrales:
+All Clipboard es la entrada de compartir en la vista general, hoy All history;
+es un contexto del perfil, no otra carpeta ni el clipboard de Windows. Permite
+elegir/crear recurso y dirección sin seleccionar una carpeta. Los controles
+exponen un único recurso general inicialmente, además de las conexiones de carpetas.
 
-- `C:/dev/infra/docs/runbooks/cloud-services.md` (2026-09-18).
-- `C:/dev/infra/docs/INVENTORY.md` (2026-09-02).
-- `C:/dev/infra/AGENTS.md`: autoridad, separación de recursos y gates externos.
+Settings → Sharing → Alcance del envío general tiene dos opciones:
 
-Propuesta de wiring:
+- Todo Copicu: ingresos locales nuevos de cualquier carpeta, incluido Root.
+- Sólo textos sin carpeta: ingresos locales nuevos en Root.
 
-- Worker como fachada HTTPS autenticada: vinculación, publicación, recuperación y receipts.
-- Candidato de texto V1: Durable Object con SQLite por canal, secuencia/membresía/grants/idempotencia/envelope/ciphertext en el mismo almacenamiento transaccional. No usar KV eventualmente consistente como árbitro de orden. El [preflight](research.md) contrasta capacidad y costo documentados, no una cuenta desplegada.
-- R2 **propio de Copicu**, privado, sólo si formatos/tamaños futuros justifican objetos externos. No es requisito del vertical de texto ni recurso autorizado; imágenes/backups mantienen políticas separadas.
-- Almacenamiento durable de dispositivos/vinculaciones con un coordinador de owner pequeño o D1 **sólo si** la complejidad de cuentas lo justifica. No añadir ambos por reflejo.
-- Comunicación push sirve como aviso; cursor HTTP es autoridad para recuperar. WebSocket con hibernación es candidato, no requisito para aprobar la spec; fallback de polling acotado en redes laborales.
+JP confirmó que sea configurable; valor inicial propuesto: sólo sin carpeta,
+con envío general deshabilitado hasta elegir recurso/dirección. La pantalla de
+conexión refleja el ajuste y enlaza a él; ampliar alcance muestra las carpetas y
+audiencia incluidas. El ajuste afecta la conexión general, no elimina reglas
+propias de otras carpetas. Ni conectar ni cambiar alcance publica contenido previo.
 
-En el candidato de store único, admitir ciphertext/envelope inmutables e índice/sequence en una transacción corta; ack sólo tras commit y sin I/O externo dentro de ella. Si un adapter usa objetos externos, publicar primero el objeto completo cifrado **inmutable** y después commit del índice/sequence. Un retry conflictivo nunca puede sobrescribir el objeto referenciado por un commit anterior: usar identidad inmutable del objeto, vinculada a los bytes cifrados y al envelope canónico. Avisar/confirmar sólo tras commit, con referencia íntegra y existente. Cleanup debe coordinarse con finalización/commit: una carga no es eliminable sólo porque aún no aparece en el índice; no borrar objetos referenciados o en finalización. El mecanismo concreto y sus fallos son gate del adapter, no una transacción R2/índice supuesta.
+El envío general responde a ingresos locales elegibles, conserva exclusión de
+origen remoto y dedupe actual; no es una nueva regla de cada evento de Windows.
+Mover un clip ya existente entre carpetas no crea un ingreso al perfil general.
+Las reglas exactas de carpeta sí conservan sus movimientos de entrada actuales.
+Si conexión general y carpeta apuntan al mismo canal, el host publica una sola
+vez para ese ingreso. Destinos distintos son fan-out explícito, visible al configurar.
+Navegar, filtrar All history o cerrar el picker no cambia el alcance ni suspende
+una conexión; esa tarea la realizan los controles de pausa.
 
-El orden/idempotencia se resuelve por publicación, no por nombre visible o timestamp del emisor. Tras autorización, resolver un ID ya aceptado antes de comprobar ordinal/expiry: mismo ID, envelope inmutable y ciphertext devuelve su commit original; cualquier diferencia falla como conflicto sin mutar ese commit/objeto. Los commits nuevos requieren ordinal y expiración válidos. Contrastar también un almacenamiento transaccional único para texto si satisface límites/costo: R2 no es requisito del dominio ni elección aprobada.
+Recibir en general mantiene feed y, con recepción/guardado habilitados, guarda
+lo nuevo sin carpeta en Root, sin usar el destino de captura armado. Si ese canal
+ya recibe en otra carpeta, mostrar el destino y permitir trasladarlo explícitamente;
+mantener un solo destino automático por canal/perfil. Actualizar Windows sigue
+siendo una opción aparte, apagada por defecto.
 
-Revalidar antes de elegir: binding/plan de cuenta, límites y costo de objetos, requests, almacenamiento, conexiones/hibernación, alarmas/cleanup y permisos de deploy. El preflight cita límites/pricing públicos y cálculos sintéticos; no se verificaron cuenta, costo real ni recursos disponibles. No reutilizar bases, OAuth clients, secrets, buckets ni namespaces de Fixvox/Foundry.
+### Pausas por dirección
 
-### Alternativas
+Dos niveles simples: el recurso en este equipo y todo el equipo. La pausa del
+recurso se aplica a todas sus conexiones locales y llamadas SDK; evita que una
+regla general eluda la pausa que se abrió desde una carpeta. La pausa de equipo
+domina todas las de recurso. Cada nivel tiene Envío y Recepción independientes;
+editar la dirección del vínculo sigue siendo una operación distinta de pausarla.
 
-- **VPS/Coolify + servicio dedicado + SQLite/objetos:** viable si simplifica el equipo operativo. Más cuidado con disco, TLS/ingress, backup del relay y concurrencia; no meter payloads de Copicu en datos de Constelaciones.
-- **Google Drive:** destino futuro de backup/export cifrado; no primer transporte de baja latencia. Integración Drive no aparece documentada en Infra. Un directorio de snapshots sincronizado por el cliente de Drive evita OAuth propio inicialmente, pero nunca sincronizar `copicu.sqlite3` activa ni WAL/blobs mutables.
-- **P2P/LAN/Tailscale:** no requerido para Trabajo ↔ Casa; agrega disponibilidad simultánea, discovery/red corporativa y NAT. No implementar como fallback especulativo.
+Pausar envío bloquea nuevas admisiones de publicaciones manuales, automáticas y
+SDK para ese alcance y detiene nuevos despachos de la cola. Lo copiado/creado
+durante la pausa permanece local y no se acumula para compartir al reanudar.
+Los envíos ya admitidos se conservan como retenidos: Reanudar envío muestra cuántos
+pendientes volverán a despacharse, con su antigüedad/expiración. Si todavía hay una
+pausa de equipo, reanudar un recurso no la anula. Intentos ya iniciados pueden
+terminar aceptados o ambiguos; no prometer retirar lo que el servidor ya recibió.
 
-Mantener un contrato de relay versionado y un adapter concreto + fixture fake para tests. No una interfaz de plugins/clouds desplegable ni múltiples providers antes de probar el vertical.
+Pausar recepción detiene descarga/seguimiento automáticos e invalida importaciones,
+Windows y Actions pendientes para el canal. Publicar puede seguir habilitado;
+control/acks de envíos ya admitidos no son recepción automática de contenido.
+La consulta/copia manual de historial sigue disponible como intención explícita.
+Al reanudar se establece un head/fence nuevo: no importar automáticamente lo del
+intervalo pausado ni ejecutar sus efectos. Ese contenido puede consultarse dentro
+de retención. Distinguir esta pausa deliberada de recuperación tras fallo de red,
+que conserva el contrato de la suscripción previa y nunca genera efectos live.
 
-## 4. Modelo local y remoto
+Persistir sendPaused/receivePaused y generaciones/fences independientes. El host
+comprueba pausa antes de admitir/despachar/publicar y antes de cada efecto receptor;
+scripts y hotkeys no la eluden. No guardar sólo un toggle React ni suspender por
+ocultar ventana. El botón de tray Pausar todo activa ambas direcciones; reanudar
+todo no borra pausas individuales. La pausa afecta este equipo, no a otros participantes.
 
-Nombres de tablas/tipos tentativos; documentan invariants, no migrations listas para ejecutar.
+## 3. Tres momentos diferentes
 
-| Entidad | Identidad y campos principales | Invariant |
-| --- | --- | --- |
-| `SharedDevice` | ID aleatorio por perfil/instalación, claves públicas verificadas, referencias a secretos, grants/revocación | No hostname ni DB row ID como identidad. Dev y instalada no se vinculan por herencia. |
-| `SharedChannel` | ID opaco, etiqueta local/cifrada, membership/key epoch, endpoint de entorno | Renombrar no cambia destino; URL/ID no son autorización. |
-| `SharedSubscription` | ID local, channel ID, enabled, generation, history sink/folder ID, clipboard sink, resume policy, action binding | Una por canal/perfil inicialmente. Cambiar/pause/remove incrementa generation e invalida efectos pendientes. |
-| `SharedOutbox` | publication ID, channel ID, origin ordinal, ciphertext inmutable, tiempos, expiración, estado/intentos | Commit local antes de `queued`; retry usa mismo ID y ciphertext. |
-| `SharedReceipt` | subscription ID + publication ID, server sequence, acquisition state, ciphertext/snapshot nullable, received time, live/recovery, sink outcomes, local item ID nullable | Unique por suscripción/publicación. `pendingFetch / pendingKey / ready / rejected / expired` distingue recuperación pendiente de rechazo definitivo; snapshot independiente del clip mutable. |
-| `SharedCursor` | channel/subscription ID, high-water sequence, retention gap | Avanza en transacción con la persistencia de recepciones, no por recibir un aviso. |
-| `SharedEffectAttempt` | receipt/sink, attempt ID, generation, estado/motivo y report pending/ack | Historial, clipboard y script tienen resultados separados; no una falsa transacción de tres efectos. Reenvío de report metadata-only no reejecuta el efecto. |
+| Momento | Comportamiento |
+| --- | --- |
+| Consultar historial autorizado | Leer páginas disponibles en la vista compartida; copiar o guardar por decisión explícita. Sin importar, ejecutar Actions ni escribir Windows automáticamente. |
+| Llegada nueva elegible | Registrar recepción; guardar en carpeta si el vínculo lo pide; aplicar sólo efectos automáticos configurados y válidos. |
+| Recuperación o entrega demorada | Registrar y mostrar con su procedencia; puede guardarse según la recepción ya configurada. No se convierte en llegada live ni dispara Windows o Action automáticamente. |
 
-Remote index contiene IDs, sequence, origin ordinal/epoch, recepción/expiración, tamaños y referencia a objeto cifrado. Texto, etiqueta de canal, contenido hash, metadata privada y keys no se guardan en claro en el servicio. Metadata de tráfico/IDs/tamaños sigue siendo visible: E2EE no promete anonimato.
+Consultar páginas antiguas tiene un cursor distinto del cursor de entrega. Leer
+historial no adelanta ni reinicia el procesamiento de nuevas llegadas. Al conectar
+una carpeta, la entrada automática comienza desde un head acordado con el servicio;
+la vista histórica puede retroceder dentro de permisos y retención.
 
-MVP de formatos: UTF-8 `text/plain`, sin archivos/rutas implícitos. Dentro del payload cifrado: versión, tipo, contenido y digest de integridad si corresponde. La huella normalizada local sirve para dedupe local; no se sube en claro para "optimizar".
+Verificación de una página histórica valida firma, ciphertext, claves/epoch y
+autorización histórica, sin admitir otro efecto ni alterar el high-water de replay.
+No reutilizar un guard de replay de llegada nueva como filtro que oculta historial
+legítimo. Mantener manifests de acceso históricos verificables, cache acotada y
+estados Sin clave/Expirado; leer metadata no acredita descifrado disponible.
 
-### Contrato de relay V1 tentativo
+La antigüedad para escritura automática se determina por los guards de frescura
+existentes, no por la duración del archivo remoto. Poder leer durante siete días
+no da siete días para escribir Windows automáticamente. Copiar manualmente una
+publicación válida crea una intención nueva; jamás renueva su elegibilidad live.
 
-Contrato semántico común al relay real y fake; no endpoints productivos existentes:
+## 4. Experiencia de producto
 
-| Operación | Entrada / salida | Guarda |
-| --- | --- | --- |
-| `enroll` / `approveDevice` | Invitación única, identidad pública del equipo y aprobación verificable | Scope privado, expiry y uso único; nunca credencial admin embebida en desktop |
-| `listChannels` | Canales/grants autorizados, sin contenido/keys en claro | Credencial de dispositivo activa y entorno exacto |
-| `publish` | Envelope firmado + objeto cifrado -> publication ID, sequence, acceptedAt y expiresAt | Auth/membership/epoch, byte limits, idempotencia antes de ordinal; commit antes de ack |
-| `sync` | Channel + cursor + limit -> página ordenada, head, retention floor y next cursor | Sin saltar páginas; un gap de retención es dato explícito, no entrega fingida |
-| `content` | Channel/publication ID -> objeto cifrado íntegro | Auth y grants actuales; no bucket público ni credenciales R2 en desktop |
-| `watch` | Channel/head -> aviso de nuevo head + heartbeat | Canal autenticado; perder aviso se recupera por `sync`; no payloads en frames |
-| `reportEffect` | Receipt firmado por receptor con publication/sink/outcome | Sólo outcomes propios, idempotente por attempt; no recibos que contengan clipboard |
-| `revokeDevice` | Dispositivo + transición de grants/key epoch | Autoridad owner verificada; no un script ni un mero ID como permiso |
+La carpeta ofrece Conectar portapapeles…; el selector permite buscar, elegir o
+preparar creación. El draft se confirma con Conectar o Crear y conectar. Cancelar
+antes de confirmar no crea recursos. La descripción muestra carpeta, destino,
+dirección, participantes y ausencia de envío del contenido anterior.
 
-Envelope incluye protocol version, publication/channel/device IDs, origin ordinal, key epoch, expiración/freshness proof, descripción de ciphertext/nonce y firma. La codificación canónica, algoritmos y pruebas son gate criptográfico, no se inventan al implementar el transporte. No validar membership sólo por un dato firmado con la clave simétrica del canal.
+Desde cualquier clip: Enviar a… con el mismo selector, sin conectar carpeta.
+Se distingue enviar selección de enviar el portapapeles de Windows. Para repetir
+un envío frecuente puede asociarse un atajo o Action con destino estable.
 
-IDs opacos aleatorios se serializan como strings. Sequence/ordinal usan enteros positivos sin pérdida de precisión: decimal string en wire/SDK y tipo validado en cada host, no `number` flotante para comparar un contador de 64 bits. Sequence nativa de Windows es otro espacio y sólo se compara por igualdad dentro de una tentativa acotada.
+Portapapeles compartidos permite consultar y administrar recursos propios y
+recibidos, ver conexiones de este equipo, retención, permisos y participantes.
+Abrir uno muestra publicaciones autorizadas y su procedencia. Los recursos
+personales empiezan accesibles sólo para sus equipos; invitar es una acción separada.
 
-Errores tipados mínimos: `unauthorized`, `revoked`, `wrongEpoch`, `expired`, `conflictingPublication`, `staleOrdinal`, `overLimit`, `retentionGap`, `unsupportedVersion` y `temporarilyUnavailable`. El adaptador traduce HTTP al dominio; errors no incluyen payloads/keys. Credenciales nunca se ponen en query strings o URLs logueables. Endpoints/grants/canonical schema se fijan antes de generar cliente/servidor.
+La carpeta muestra una indicación compacta: recurso, dirección y estado accesible.
+No se construye un árbol remoto paralelo ni una pantalla SaaS. Reusar componentes,
+tokens y patrones de FolderSelect/FolderNavigator; búsqueda de recursos es plana,
+con propietario para distinguir nombres iguales.
 
-### Estados
+Windows y Actions aparecen en Automatización de este equipo, con efectos apagados
+por defecto. La administración global muestra dónde opera una automatización; no
+se copia su configuración a otro equipo al iniciar sesión.
 
-- Outbox: `queued -> uploading -> accepted`; errores retryables conservan `queued` con diagnóstico/backoff. `expired`, `cancelled`, `rejected` son finales visibles. Una cancelación con commit remoto ambiguo se informa como tal, no garantiza retractar lo aceptado.
-- Receipt: `stored` y resultados independientes por sink: `pending / applied / skipped / failed / uncertain`. `stored` no significa Windows actualizado.
-- Script: `not_configured / pending / started / completed / failed / interrupted`; efectos arbitrarios no se reintentan automáticamente.
-- Clipboard: claim durable antes del intento; éxito/fracaso registrados después. Crash entre ambos => `uncertain`, sin reproducción automática al reiniciar. Reintento manual explícito es otra tentativa sobre esa recepción.
+## 5. Identidad, acceso e invitaciones
 
-## 5. Entrada de publicación y APIs Actions
+Separar autenticación de persona, credencial de dispositivo y claves de contenido.
+Propuesta: usar autenticación estándar en navegador del sistema, con OAuth/OIDC y
+PKCE S256 cuando se seleccione proveedor. RFC 8252/7636 son referencias en
+[sharing-patterns.md](sharing-patterns.md). No implementar contraseñas propias
+ni escoger proveedor por disponibilidad accidental de credenciales existentes.
 
-### Snapshot del atajo
+Tras autenticarse, el host crea la identidad del equipo y la protege localmente.
+Vincular otra PC requiere aprobación de un equipo existente o recuperación de
+claves con consentimiento. Mostrar nombre de equipo, estado y retiro de acceso.
+Copicu vuelve al draft de conexión original después del primer acceso.
 
-Añadir un input explícito, tentativamente `clipboardSnapshot`, sin redefinir `clipboard` existente. Trigger soportado inicialmente: global shortcut y acciones manuales que pidan snapshot. El host construye el contexto; el caller no inyecta snapshot IDs arbitrarios.
+Invitar: elegir permiso, alcance histórico y generar link de solicitud con uso
+acotado, expiración y revocación. Abrirlo muestra propietario/recurso/permisos,
+autentica a la persona y pide aceptar. La aceptación no instala una carpeta ni
+activa automatizaciones. El propietario verifica/aprueba la identidad receptora;
+la distribución protegida de claves es una fase explícita, con estado pendiente.
 
-1. Al despachar el atajo, registrar generación/sequence nativa esperada y encolar en un worker acotado. Handler no lee payload, abre ventanas, arranca red/Node ni toma locks largos.
-2. El reader abre clipboard con retry acotado, revalida sequence al leer y produce snapshot coherente, o devuelve `staleInput / clipboardBusy / unsupportedKind`.
-3. No leer otro contenido después de arrancar Node ni sustituir por item activo. No se puede recuperar una versión pasada del clipboard sólo con su sequence.
-4. Token opaco del snapshot ligado al run/perfil, con expiry y tamaño máximo. Payload queda host-side; al runner sólo llega ID/tipo/tamaño hasta pedir contenido con permiso.
-5. `publish` consume/copia ese snapshot al outbox. Terminar el run elimina el snapshot efímero, nunca la publicación encolada.
+Un link no contiene claves maestras ni tokens de dispositivo ni es acceso público
+al contenido. Copiarlo desde Copicu utiliza una escritura protegida que no ingresa
+al historial ni a reglas de publicación de carpetas. Verificar también su manejo
+en logs, navegación y diagnósticos. Los links se tratan como material sensible.
 
-El delayed rendering de Windows puede bloquear una lectura nativa aunque se limite el retry de `OpenClipboard`; no afirmar cancelación dura de `GetClipboardData`. Worker bounded, watchdog/invalidation y feedback evitan bloquear UI y crecimiento de threads; smoke nativo de delayed rendering es gate para afirmar latencia fiable.
+Personas nuevas reciben historial anterior sólo si fue concedido. Si se concede
+sólo lo futuro, crear epoch nuevo y no envolver claves previas para esa persona.
+Si se comparte historial disponible, distribuir únicamente epochs necesarios y
+autorizados. La composición exacta de estas operaciones y su recuperación se
+especifica y prueba antes del código de vinculación; HPKE unitario no la acredita.
 
-### Contrato público tentativo V1
+Al ampliar audiencia, los emisores automáticos quedan pendientes de revisar ese
+nuevo alcance; el propietario puede aceptar el impacto propio en el mismo diálogo.
+Agregar un equipo ya aprobado de la misma persona no amplía audiencia. Reducir
+permisos invalida efectos y grants aunque el equipo no haya visto la UI todavía.
+
+## 6. Persistencia, catálogo y servicio
+
+Primero ampliar el servicio sintético existente con un modelo transaccional de
+personas, espacios, dispositivos, recursos, participaciones, invitaciones e
+intentos idempotentes. Mantener separado el transporte de publicaciones existente.
+Reusar SQLite local/AppStorage y su migración explícita; no crear otra DB desktop.
+
+Familias de operaciones y garantías del contrato. La implementación local V1/V2
+y su evidencia están en [local-implementation.md](local-implementation.md);
+esta tabla no define endpoints de un proveedor remoto desplegado:
+
+| Operación | Garantía necesaria |
+| --- | --- |
+| Catalogar y consultar recurso | Sólo recursos autorizados; respuesta con revisión y capabilities; caché distingue estado observado de autorización actual. |
+| Crear/renombrar recurso | Propietario autenticado, IDs opacos, idempotencia y metadata del recurso cifrada/firmada donde corresponda. |
+| Solicitar/aceptar/aprobar invitación | Uso/expiración/acceso comprobados; identidad y permisos ligados al consentimiento; estado recuperable. |
+| Agregar/revocar dispositivo o persona | Grants y revisiones monótonos, key epochs coordinados, operaciones concurrentes resueltas explícitamente. |
+| Publicar/sync/watch/report | Contratos actuales de commit, orden, lease, firma, replay y efectos preservados. |
+| Consultar historial | Páginas autorizadas desde un rango permitido, floor de retención y snapshot de head; sin efectos locales implícitos. |
+| Salir/eliminar | Owner y participante diferenciados; transición durable que bloquea nuevo uso antes de purgar. |
+
+Cada creación tiene operation ID persistido antes de red. Ante respuesta perdida
+se consulta ese intento; nunca se crea otro recurso como fallback. Create and connect
+no es una transacción distribuida: si servidor creó y falló el guardado local,
+mostrar Creado; falta conectar y permitir reintentar o abrir el recurso creado.
+No eliminarlo silenciosamente ni presentarlo como operación que nunca ocurrió.
+
+Publicaciones se aceptan sólo tras commit durable y validación de dispositivo,
+persona, participación, epoch, firma, límites y estado del recurso. No confiar en
+folderId ni membresía remitida por React. Contadores de 64 bits siguen como strings.
+Push sólo anuncia head; cursor/sync y consulta idempotente resuelven pérdidas.
+
+Servidor conserva ciphertext y metadata operativa mínima. E2EE no oculta IDs,
+tamaños, tráfico ni relaciones de acceso al servicio; no copiar esa promesa de Signal.
+Nombres/metadata del recurso requieren un diseño de cifrado/firmas consistente
+con el catálogo y preview de invitación. El servidor no posee claves de texto.
+
+Contratos y tests implementados primero con SQLite sintético. Para producción,
+Cloudflare sigue como candidato del preflight; un único store transaccional para
+el control inicial reduce coordinación distribuida. La asignación a DO/D1 se
+decide con atomicidad de invitaciones/participación y límites reales verificados.
+Sin R2 para el primer formato ni credenciales de otros productos como bootstrap.
+
+## 7. Conexiones, dedupe y automatización
+
+Separar ChannelPolicy actual en autorización remota, suscripción y conexiones.
+Una migración conserva reglas existentes por IDs; no vincula automáticamente
+instalada/dev ni cambia destinos. Suscripción mantiene feed independiente de carpeta.
+
+Varias carpetas emisoras pueden apuntar al mismo recurso; cada ingreso local
+produce como máximo una publicación por canal para esa operación. Crear/capturar
+clip nuevo y movimiento efectivo conservan reglas exactas actuales: sin backfill,
+descendientes, edición/tags ni eco de importaciones. Enviar existentes es selección
+manual o Action explícita, con resumen de cantidad y destinatarios.
+
+El único destino de recepción por canal/perfil evita dos importaciones que pelean
+con la deduplicación global. Elegir otro muestra dónde está conectado y permite
+trasladar esa entrada, conservando otras salidas de envío. El modelo admite futuro
+fan-out, pero no lo promete sin resolver clip único y metadata por carpeta.
+
+Feed siempre conserva la publicación visible aun cuando el clip ya existe en otra
+carpeta. Importar automáticamente no mueve ni modifica ese clip. Guardar manualmente
+muestra esa coincidencia y permite abrirlo o moverlo con consentimiento explícito.
+
+Conservar worker fuera de locks de UI/admisión, cola acotada, escrituras nativas
+cercadas por sequence, lease y generación, barrera de pausa y procedencia durable.
+Sólo un escritor Windows por perfil; built-in y Action escritora se excluyen.
+Una Action de recepción corre en el equipo indicado, no una sola vez por persona.
+Pausas independientes accesibles desde tray invalidan las operaciones de su dirección;
+Pausar todo detiene envío y recepción de este equipo. No reinicia pausas por recurso.
+
+## 8. SDK y capacidad adicional
+
+Conservar el SDK real: `copicu.sharedClipboard.channels()`, `publish({channelId,text})`
+y `received()`, y sus scopes del host. No reemplazarlo por el viejo borrador
+`copicu.shared.*` ni romper scripts para limpiar nombres.
+
+Capacidades locales implementadas:
+
+- Destino por Action persistido en host; `target()` lo revalida y `publish({ text })`
+  lo resuelve sin editar IDs en el script. Exige los grants de publicación explícitos.
+- `state()` consulta pausas/recursos y outbox locales dentro de los scopes del
+  script; no consulta remoto ni acredita recepción de otros equipos.
+- `history({ channelId, cursor })` consulta una página autorizada, más antigua
+  primero, con `shared:read` y `shared:history:<channelId>`. No conecta, importa
+  ni ejecuta efectos; transporte ocupado rechaza inmediatamente.
+- `sharedReception` y `received()` conservan origen inmutable y permisos actuales.
+  Forwarding requiere destino autorizado y grant origin/target; el host firma un
+  solo salto y rechaza volver a reenviar una publicación reenviada. Ramas explícitas
+  son posibles; routing de varios saltos y administración remota siguen fuera del SDK.
+
+Ejemplo con el destino configurado y los grants explícitos de la Action:
 
 ```ts
-// Metadata solamente; no keys ni payloads.
-await copicu.shared.listChannels();
-
-// Snapshot capturado por el host para esta invocación.
-const queued = await copicu.shared.publish({
-  channelId,
-  source: { type: "snapshot", snapshotId: ctx.inputSnapshotId },
-});
-// -> { publicationId, status: "queued" }, después del commit local.
-
-// Texto calculado/transformado por un script de confianza.
-await copicu.shared.publish({
-  channelId,
-  source: { type: "text", text: resultado },
-});
-
-await copicu.shared.getPublicationStatus({ publicationId });
-// Metadata/outcomes locales y receipts remotos autorizados, no contenido.
+const { text } = await copicu.sharedClipboard.received();
+await copicu.sharedClipboard.publish({ text: transformar(text) });
 ```
 
-- `shared:read-channels` para listar sólo canales otorgados a la acción.
-- `shared:publish` + grant por canal; snapshot exige además permiso de lectura de la entrada. Texto generado exige publish igualmente.
-- `shared:read-status` limitado a canales/publicaciones autorizadas.
-- `shared:read-content` para obtener explícitamente contenido de una recepción/snapshot autorizados a ese run. No reutilizar `history.get` de un item mutable como entrada remota.
-- Administración de vinculación, secretos, devices y grants no se expone a scripts V1. UI propietario configura suscripción/action binding; API de gestión de suscripciones queda para después si hay necesidad concreta.
+El host cifra, guarda, reintenta y informa; el script no recibe bearer ni claves.
+Enviar no confirma recepción. Consultar estado se resuelve por metadata local y
+worker, sin convertir un host call en espera ilimitada de red.
 
-El gateway revalida acción, capabilities y grants host-side; no acepta permisos o channel scopes aportados por el runner. `publish` sólo admite preparación validada y commit local acotado: red/upload fuera del host call, espera de locks/admisión con límite y error explícito si no puede confirmar persistencia. Probar un host call lento/bloqueado además del timeout del child; no prometer cancelación dura de I/O ni informar `queued` por un trabajo aún no confirmado. Scripts siguen siendo código local confiable con fs/network/shell: los gates de API no son un sandbox ni un control DLP absoluto.
+Ampliación causal propuesta, fuera del límite actual de un salto: root y parent opacos, ruta de recursos visitados y
+presupuesto de saltos en metadata autenticada, con exposición mínima entre espacios.
+Rechazar un target ya visitado sin colapsar ramas legítimas ni envíos múltiples de
+una Action. Decidir codificación/privacidad y compatibilidad antes de firmar campos
+nuevos; clientes antiguos no reciben payload V2 como si fuera texto plano V1.
 
-Actualizar tipos SDK, discovery/input/context, host gateway/capabilities, runner, mocks/catálogos de Actions/Assistant y pruebas por comportamiento. Los métodos anteriores son propuestas, no APIs existentes.
+Los puentes automáticos necesitan trazabilidad causal y límite de saltos además
+de la procedencia actual. Diseñar versión wire si se agregan campos firmados; el
+host asigna causa/parent y presupuesto, el script no los reinicia para eludirlo.
+En A → B → A, el host detiene la repetición con resultado visible. Validar también
+ramas legítimas, múltiples publicaciones por Action y retries; dedupe de contenido
+no equivale a dedupe causal. No vender forwarding ilimitado con el SDK actual.
 
-### Acción receptora
+## 9. Conservación y ciclo de vida
 
-Trigger propuesto `sharedClipboardReceived`. Contexto construido por el worker: receipt ID, subscription ID, channel ID, publication ID, origin device ID, sequence, recovery flag y generation; sin texto/keys por defecto.
+Propuesta de retención inicial: siete días por publicación desde su origen,
+dentro del máximo del servicio; una cola offline no renueva edad ni frescura.
+Cuotas por recurso y espacio propietario, independientes de la cantidad de lectores.
+Tomar límites de fixtures como presupuestos de prueba, no capacidad de producción.
 
-- Binding explícito por suscripción, con acción descubierta sin errores y permisos/grants revisados. Crear/guardar un script desde Assistant no lo activa implícitamente.
-- Ejecutar sólo para recepciones nuevas elegibles. Recovery no ejecuta acciones automáticamente en el primer corte; reprocesar es manual y advertido.
-- Marcar `started` antes de arrancar Node, timeout/cola acotados y estado `interrupted` tras crash. No prometer exactamente una vez ni retries seguros de arbitrary effects. El runner actual retorna operaciones incluso al fallar y el host las procesa antes de revisar ese status: definir/probar la admisión de esas operaciones para el trigger receptor, validándolas host-side contra receipt/permisos/guards, sin cambiar acciones manuales. Registrar resultado del script y cada salida por separado; `failed` no significa rollback ni clipboard intacto.
-- No disparar `clipboardChange` por el import remoto. Trigger nuevo usa el runner existente, sin un daemon Node ni segundo runtime.
-- El contexto de recepción no autoriza paste/focus, ni grants nuevos. Permisos existentes de acciones manuales no se heredan como automatización receptora sin consentimiento.
-- Primer corte bloquea publicación desde contexto receptor por defecto; forwarding entre canales necesita después configuración/grant específico y límites de hops. Publicación manual de un clip recibido sí es intencional y genera ID nuevo.
-- La salida estándar de Windows usa helper protegido del dominio. Un script receptor que use `clipboard:write` se muestra como una segunda fuente explícita de escritura; V1 no permite coexistir esa escritura y el sink built-in en la misma suscripción. Sus operaciones retornadas de clipboard pasan por el mismo writer con receipt/generation/sequence guardadas al iniciar la recepción, no por la ruta manual sin esos guards. Un resultado lento no sobrescribe una copia posterior. Pausar recepción corta ambas fuentes pendientes; esto no cambia las acciones manuales existentes.
+Al llegar al límite se rechazan nuevas admisiones con estado visible, sin evictar
+envíos ya aceptados para hacer lugar. La cola local conserva resultado y expiración.
+Aplicar retención a ciphertext, caches, intents, reportes e índices con preservación
+de claims activos y evidencia/idempotencia necesaria. Mostrar gaps y contenido
+expirado; historial local importado usa su propia retención.
 
-## 6. Recepción, orden y efectos nativos
-
-### Flujo durable
-
-1. Aviso remoto indica disponibilidad; el cliente pide una página desde cursor por HTTPS autenticado.
-2. Validar entorno, channel/device grant, envelope/version, tamaño y origen; verificar firma y descifrar/autenticar antes de exponer contenido. Persistir receipts + cursor en una transacción, incluyendo estado por publicación: fetch transitorio o clave ausente son pendientes recuperables, no contenido vacío ni rechazo por corrupción. Sólo avanzar sobre entradas con registro durable ready/pendiente/rechazado; limitar pendientes y no avanzar por encima de una entrada que no se pudo conservar. Una entrada pendiente no impide procesar otras ya conservadas y listas. Retry de obtención/descifrado conserva identidad y clasificación/eligibilidad original, no crea una llegada live ni rejuvenece frescura; efectos siguen sujetos a Q1, generation y guards. Rechazo definitivo, expiración y pending se muestran separados; contenido inválido nunca se expone.
-3. Tomar snapshot de la política/generation de la suscripción. Encolar sinks fuera de locks SQLite/UI/watcher.
-4. History sink importa con operación de dominio; clipboard sink y acción sólo para eventos elegibles según procedencia, frescura y policy.
-5. Guardar outcome y reporte metadata-only pendiente en receipt/attempt existente antes de enviarlo al servicio; reintentar ese reporte con el mismo attempt ID hasta ack o final visible, incluso tras crash/respuesta perdida, sin volver a ejecutar el efecto. No podar el reporte pendiente silenciosamente. Vincularlo criptográficamente al receptor/publicación/sink/outcome; `uncertain` no se convierte en `applied` ni una confirmación de servicio se inventa como receipt del equipo. El receipt acredita lo declarado por ese host, no demuestra qué pegó una persona. No marcar offline devices como aplicados ni exigir que todos estén online para aceptar un envío.
-
-El eco de una publicación propia avanza cursor/estado de envío, pero no ejecuta history sink, clipboard sink ni acción receptora. No confundir reinicio del mismo dispositivo con una PC diferente.
-
-Orden dentro del canal: server sequence, nunca reloj de PCs. Un upload antiguo puede obtener sequence nueva: considerar también origin ordinal y antigüedad; no asumir "commit reciente" = "copia recién hecha". Servicio conserva último ordinal aceptado por device/channel para rechazar publicaciones inferiores que llegan desordenadas. La outbox envía en FIFO por canal y origina ordinal antes del primer intento.
-
-El cliente procesa efectos built-in en orden y sólo intenta el último elegible de una ráfaga. Ya procesado/skipped/failed un sequence, no permitir que un resultado lento anterior lo sobrescriba. Server sequence coordina orden, no integra la firma original del emisor asignada antes del commit. El relay sigue siendo autoridad de disponibilidad/orden; verificar identidades/rollback/gaps no prueba ausencia de censura o reordenamiento de un servidor malicioso.
-
-### Live versus recovery
-
-`live` exige suscripción habilitada en esa generation y publicación posterior al high-water de su bootstrap/reanudación, no expiración y upload fresco. Establecer el high-water en handshake de stream/recuperación evita clasificar un backlog como live por la conexión que lo transportó. Recuperaciones paginadas y publicaciones anteriores al barrier son siempre recovery.
-
-Q1 confirmada: **`liveOnly`**. Backlog recuperado se conserva dentro de retención para verlo/copiarlo manualmente; reconectar, reiniciar o reanudar no escribe Windows automáticamente ni ejecuta acciones receptoras por recovery. `latestOnResume` queda fuera de V1. Nueva suscripción comienza en el head del canal; cargar historia antigua sólo por acción explícita.
-
-Clock skew impide usar sólo `createdAt` enviado por el cliente como control de seguridad. Envío demorado lleva clasificación `deferred`, irreversible para auto-write V1; al reiniciar, lo pendiente es deferred. Frescura live se mide con lease del servicio + elapsed monotónico durante la sesión y se firma dentro del envelope. El host usa un lease vigente ya obtenido por el transporte activo; sin lease al preparar la publicación, ésta se firma como deferred, sin esperar la red para aceptar la cola local. Servicio y receptor verifican la prueba/expiración, no una afirmación libre del caller. Definir el protocolo exacto del lease/TTL en el gate técnico; timestamp local no basta.
-
-### Clipboard writer
-
-Un executor bounded serializa escrituras del dominio. Antes de cada intento:
-
-- sesión Windows habilitada/desbloqueada y perfil vigente;
-- misma suscripción/generation habilitada y sink permitido;
-- sequence aún elegible, no self-origin, no expirado/deferred/recovery según Q1;
-- clipboard nativo no cambió desde que se programó el efecto. Si otra app copió durante la espera, registrar `skippedLocalChange`, no reprogramar a una nueva sequence;
-- revalidar esas condiciones justo antes de modificar clipboard, con lectura/check y write nativos bajo guard coherente. No comparar antes de una espera y escribir luego sin recheck.
-
-Habilitar esta salida acepta reemplazos en vivo. El guard de cambio local protege una copia hecha **durante** la espera; no convierte sharing en una política "nunca reemplazar cualquier clipboard local". Al desbloquear/reanudar no aplicar el backlog al clipboard automáticamente (`liveOnly` confirmado).
-
-La confirmación de pausa es una barrera del executor: invalida generations pendientes y reconoce cualquier mutación nativa ya iniciada antes de responder "pausado". No espera a que termine un script ni mantiene SQLite bloqueada durante I/O. Después del ack de pausa no empieza otra escritura automática de esa suscripción; una escritura ya consumada no se revierte.
-
-**At-most-once automático de tentativa, no exactly-once del efecto:** claim durable y guard final; crash ambiguo no reintenta automáticamente. Busy puede tener retries acotados dentro de esa tentativa sin cambiar generation/expected sequence. Fallo final deja la recepción disponible para copiar manualmente. Preparar/validar buffers antes de mutar Windows; un fallo después de vaciar o escribir algún formato es `uncertain/partialWrite`, no prueba de clipboard intacto. Los formatos de Windows no constituyen una transacción revertible: no restaurar un clipboard anterior por encima de una copia externa posterior.
-
-Procedencia: registro de publicación/receipt + correlación de escritura propia por sequence nativa y marker de sesión host-generated. Reusar/ampliar helpers de clipboard, no añadir sólo otra ventana temporal de hash. Escritura de texto+marker en una operación nativa coherente y publicación de su correlación antes de que el watcher la procese. Una recopia externa posterior del mismo texto con otra sequence no se descarta por el mero hash. Marker no es credencial/autorización ni una garantía contra otras apps del mismo usuario.
-
-Verificar coexistencia con host writes actuales, delayed rendering, ráfagas, clipboard ocupado y Windows/RDP clipboard sync. Si la correlación fiable requiere refactor más grande que el vertical, detener y ajustar plan, no quitar el guard ni cambiar capturas locales en silencio.
-
-### History sink y carpeta
-
-Operación propuesta `import_shared_text(snapshot, subscription, receipt)` bajo AppStorage:
-
-- Ni `insert_text_with_scenario` ni `history.create` son wrappers neutros de import: ambos usan destino armado y bookkeeping de captura; create además puede fusionar metadata (`storage.rs`, líneas 1687–1740 y 1866–1934). Reusar helpers transaccionales, no esas operaciones completas.
-- Validar existencia de carpeta y snapshot de policy/generation en la misma transacción que admite el import. Si delete gana la carrera, sink inválido sin reroute; si import commit ocurre primero, un delete posterior conserva su semántica local existente. No cambiar `delete_folder` para simular una carpeta remota.
-- Identidad por hash local para dedupe; sólo clips nuevos reciben `folder_id` configurado. Duplicados conservan su ubicación y metadata.
-- No consumir destino de captura armado, contar copia externa local, inventar foreground de Casa como origen de Trabajo ni aplicar escenario/tags de captura ordinaria.
-- Registrar procedencia remota en el receipt durable, no sólo en los tres eventos de captura retenidos de un clip.
-- Mostrar feed de recepciones por suscripción independiente del scope de carpeta. Así un duplicado ubicado en otra carpeta sigue visible y tiene vínculo al clip si existe.
-- Root usa retención ordinaria; carpeta conserva la protección existente. Advertir conservación al elegir carpeta, no inventar retention por sharing para todos los clips.
-- Si el clip es eliminado/editado más tarde, el receipt retiene su snapshot según su TTL. `local_item_id` nullable no impide copiar la publicación original ni debe impedir borrado explícito del clip.
-- Carpeta faltante invalida ese sink sin reroute. Otros sinks tienen su resultado independiente y la recepción queda recuperable.
-
-## 7. Identidad, cifrado y recuperación
-
-Requisito: contenido cifrado antes de upload; TLS no sustituye E2EE. No diseño criptográfico casero ni "encriptación" con hash/base64.
-
-- Credencial de transporte por dispositivo, scoped a grants; distinta de claves de contenido y de cualquier token operativo/admin de Infra.
-- Claves privadas bajo custody Windows por usuario/perfil, referencias opacas en SQLite. No `.env` del producto, command line, SDK/Node, logs ni payloads React.
-- Canal usa key epoch; payload AEAD autentica channel/publication/origin/ordinal/version/epoch y límites relevantes. Origin device debe ser verificable con identidad/firma del dispositivo, no sólo una string recibida del relay o posesión de la clave compartida.
-- Inicialización crea owner/primer dispositivo. Enrolamiento privado mediante invitación single-use de alcance mínimo; segunda PC requiere aprobación de la primera y verificación humana por código/QR/out-of-band. El relay no puede insertar silenciosamente una clave de dispositivo autorizado.
-- Keys de canal se transfieren en envelopes protegidos al dispositivo aprobado mediante una implementación/protocolo auditado. El código corto de pairing no es la clave de cifrado ni un bearer permanente.
-- Revocación cancela auth/grants, invalida sesiones, rota key epoch para contenido nuevo y permite a clientes rechazar dispositivos revocados. Lo ya descargado no se borra; publicaciones en vuelo del epoch anterior se descartan/revalidan, no se reencryptan hacia dispositivos revocados.
-- Recuperación propuesta V1: transferir desde un equipo aprobado que conserva keys. Si se pierden todos, se pierde acceso al contenido anterior; declarar esa limitación y permitir canal nuevo. Recovery key exportable/passphrase exige otro flujo revisado antes de prometerlo, especialmente para backup futuro.
-- Q3 confirma servicio privado sin cuentas/login de producto V1. Una cuenta futura autenticaría a una persona, no descifraría ni recuperaría mágicamente el contenido. No compartir tokens/client secrets de Fixvox o gcloud.
-- Service/transport credentials quedan fuera del backup normal futuro. Restaurar perfil crea identidad nueva y exige revalidar vínculos/effects; no reutiliza device ordinal ni credenciales clonadas.
-
-**Gate técnico previo al servicio real:** C1 selecciona versiones/features/licencias/MSRV y prueba vectores AEAD/Ed25519/HPKE; custodia current-user y relay local implementados opt-in. Falta cerrar enrollment humano/durable, certificados/grants de producto, rotación, custody de credenciales y adapters nativos/runtime. No considerar la composición auditada ni usar la fecha para eludir esos requisitos.
-
-Amenazas cubiertas: usuario/red ajenos, dispositivos no otorgados/revocados, payload manipulado/replayed, fugas de keys/payload a logs y enrollment no consentido. No protección absoluta contra malware, administrador local, scripts confiables maliciosos, equipos autorizados que redistribuyen contenido ni DLP del empleador. No presentar E2EE como permiso para sacar datos laborales.
-
-## 8. Límites y UX propuestos
-
-Valores iniciales para discutir/verificar, no defaults existentes ni cuotas cloud comprobadas:
-
-| Control | Propuesta inicial |
+| Acción | Alcance |
 | --- | --- |
-| Payload texto | <=1 MiB UTF-8 antes de cifrar; validar byte length, no char count |
-| Outbox por perfil | <=100 pendientes y <=16 MiB cifrados; rechazar nuevo envío con feedback al llegar al primer límite |
-| Publicaciones remotas | TTL 24 h inicialmente; limpieza explícita y floor de cursor, sin declarar backup |
-| Receipts locales | 7 días o 500 por suscripción, el primer límite; snapshots/status compactos, clips en carpeta conservan política existente |
-| Recovery | Páginas de <=50, sin cargar todo historial ni ejecutar scripts por página |
-| Retry/transporte | Backoff con jitter y máximo finito; auth/key/quota permanent errors no tight loop |
-| Sink clipboard | Cola coalescida al último elegible; no backlog de efectos ni retries tras crash |
-| Acción receptora | Cola acotada, límite de runtime y una ejecución serial por suscripción; saturación visible, receipt conservado |
-| Efectos competidores | Una suscripción con escritura automática por perfil V1, sea sink built-in o acción con `clipboard:write`; las demás reciben/guardan sin escribir |
+| Desconectar carpeta | Sólo ese vínculo y sus efectos pendientes; recurso y clips permanecen. |
+| Pausar envío / recepción | Detiene la dirección elegida en el alcance indicado; no revoca acceso ni borra copias. |
+| Salir | Retira a la persona y sus dispositivos de un recurso ajeno; el propietario no abandona su recurso sin resolver propiedad. |
+| Eliminar recurso | Sólo propietario; marca deleting/deleted, bloquea publicación/lectura/nuevas invitaciones, purga contenido y retira accesos. Nunca recrear mismo ID. |
+| Eliminar espacio/persona | Inventario y confirmación explícitos: recursos propios, dispositivos y participaciones; sin borrar recursos de terceros. |
 
-Nunca podar pendientes in-flight o receipts con efecto activo sin transición explícita. Limpiar payloads cifrados completos, índices y attempts de forma consistente; UI distingue contenido expirado de receipt metadata. El servicio conserva identidad/idempotencia de IDs al menos hasta su expiración más ventana de retry; reject expired en vez de aceptar como nueva una publicación cuyo registro ya se limpió.
+Eliminar es idempotente y recuperable tras reinicio; estado de purga observable.
+No prometer secure-delete de SQLite, desaparición instantánea de backups ni borrado
+de copias previamente descargadas. Revocar persona o equipo requiere rotar claves
+para contenido futuro y tratar pendientes de epochs anteriores como pendientes de
+revisión; no reencriptar con ID nuevo un envío ambiguo y crear un duplicado.
 
-Settings, sección Sharing: equipos, canales, suscripciones, outputs, carpeta, estado, pause/disconnect/revoke. Picker: acción "Enviar a…", preset script con shortcut elegido sin colisiones y estado breve, sin nueva fila permanente por canal. Feed de recepción es scope local del picker basado en receipt, no carpeta remota obligatoria ni app web nueva. Usar controles Mantine existentes, teclado/lector de pantalla, labels explícitos y feedback metadata-only. Pausar toda escritura remota debe estar accesible aun con picker cerrado vía acción/tray.
+La revocación del servidor no retira bytes ya descargados ni detiene por sí sola
+un efecto local iniciado. Al observar una nueva revisión el host invalida generación
+y claims pendientes; las leases acotan lo que todavía no observó. Especificar esa
+ventana y sus carreras, sin prometer interrupción remota instantánea. Con sharing
+apagado no hay transporte ni auto-renovación de sesiones de sharing; consultar el
+catálogo manualmente es una nueva intención de red, no un worker oculto.
 
-No mostrar preview de clipboard en notificaciones por defecto. No mostrar online sin heartbeat/estado reciente ni "aplicado" por aceptación del servidor. Pausa de recepción no equivale a revocar ni a borrar contenido local.
+## 10. Alternativas y ampliaciones valoradas
 
-## 9. Verificación y gates de la sesión de implementación
+La tabla de [sharing-patterns.md](sharing-patterns.md) fundamenta las decisiones.
 
-No tests de producto ejecutados en esta preparación; la tabla es aceptación futura.
-
-| Área | Casos necesarios |
+| Idea | Valor / momento |
 | --- | --- |
-| Snapshot/Actions | Clipboard B vs picker A; change before read; Node cold start; expired/foreign token; capability/channel denial; malformed/overlimit input; real hotkey conflict |
-| Durable domain | Crash antes/después de outbox commit; accepted sin respuesta; replay mismo ID/ciphertext; dos publications del mismo texto; ordering/ordinal/gap/TTL; límites de colas |
-| Recepción/local | Guardado transaccional + cursor; corrupt payload no bloquea; immutable receipt vs edited/deleted clip; dedupe carpeta diferente; missing folder; marks/Inbox/capture destination intactos |
-| Clipboard nativo | Dos PCs, app externa + hotkey real; ocupado; delayed rendering; remote arrival vs local recopy; sequence antes de write; pause/generation; session lock; burst; crash ambiguous; no paste/focus |
-| Automatización | Binding deshabilitado/editado; opt-in explícito; recovery no ejecuta; timeout/fallo/cola llena; hostCall bloqueado; operaciones retornadas con status failed y outcomes separados; no reejecución arbitraria; prevención de forward loops; nuevos scopes en catálogo Assistant |
-| Servicio/seguridad | Cross-channel/device denial; wrong environment; pairing expired/replayed; origin spoof; ciphertext tamper; epoch rotation/revoke en vuelo; idempotencia/retención; secrets/payload ausentes de logs |
-| UI/performance | Narrow/keyboard/a11y; estados honestos por sink; pausar sin picker; empty/offline/error; sharing disabled sin red/read; captura/search no bloqueadas |
+| Recurso consultable, sin carpeta | Prioridad del nuevo corte; reduce obligatoriedad de configuración. |
+| Enviar a… y destino configurable de Action | Prioridad; aprovecha el mismo mecanismo desde teclado/scripts. |
+| Portapapeles temporal para una sesión | Siguiente ampliación: caducidad del recurso/invitación distinta de retención y lease. |
+| Varias salidas y transformaciones | Emisores múltiples en el modelo; puentes sólo después de resolver causalidad y permisos. |
+| Buzón de entrega sin lectura | Valioso para recopilar entradas; diferir hasta que cifrado separe publicar de descifrar. |
+| Imágenes/archivos, integraciones externas | Después de texto, límites de blobs y autenticación propia. Sin tokens genéricos ni buckets públicos en scripts. |
+| Colección editable, edición/borrado sincronizados | Otro contrato; no añadirlo al stream inmutable por analogía con carpetas. |
 
-### Matriz mínima de evidencia (propuesta, no ejecutada)
+## 11. Orden de trabajo y aceptación
 
-| Repro / requisito | Resultado esperado | Evidencia necesaria |
-| --- | --- | --- |
-| Picker A, clipboard B, cambio C antes de read — US1 / FR-05 | B coherente o stale; nunca A/C sustituidos | Guards deterministas + hotkey/reader Windows y cold Node reales |
-| Dos envíos iguales + retry — FR-06/10/12 | Dos publicaciones/receipts, un clip; retry conserva ID/bytes | Dominio/SQLite/relay fake, nuevos tests pendientes |
-| Upload conflictivo; GC entre upload/commit — FR-09/12 | Commit anterior intacto; ningún ack con objeto ausente | Adapter con fault injection/cleanup; fake no acredita atomicidad del proveedor |
-| Outcome guardado, crash antes de report/ack — US4 / SC-04 | Reenvío del mismo report; cero repetición del efecto | Persistencia/reinicio/relay fake, luego integración real |
-| P sin clave/fetch y Q válida — US5.4 / FR-17/21 | P durable pendiente, Q progresa; retry no se vuelve live | Dominio/SQLite con fallos y límites; sin descifrado fingido |
-| Dedupe X/import Y; delete concurrente; clip editado — FR-14/15 | Sin merge/move ni destino armado consumido; receipt inmutable; delete según orden de commit | Transacciones SQLite + runner; tests shared nuevos |
-| Script lento/writeText/writeItem/fallo, recopia o pausa ack — FR-09/16 | Sin writes tardíos; outcomes honestos, no rollback supuesto | Scheduler/host gateway + executor Windows real |
-| Remoto T y recopia externa T; busy/delayed render/lock/crash — FR-11/13 | Procedencia correcta; uncertain/partial visibles; no replay automático | Watcher/owner externo/Windows y proceso reales, no mocks |
-| Trabajo ↔ Casa y toggles off — SC-01–03/08 | 30 por sentido; >=95% de 60 en <=2 s bajo SC-02; 20 sin write al apagarlo; off sin reads/red | Dos PCs y apps externas con datos sintéticos; no autorizado/ejecutado aquí |
+La secuencia de producto siguiente conserva el diseño y los gates remotos; su
+base local ya está implementada y la evidencia vive en `local-implementation.md`
+y `local-acceptance.md`. Las [tareas SSE S1–S6](tasks.md#continuacion-sincronizacion-sse-2026-10-02)
+están cerradas localmente. La preparación de la candidata y los gates remotos se
+retoman desde el track, sin reiniciar el preflight ni presentar esta secuencia
+de diseño como tareas aún vacías.
 
-Pruebas existentes inspeccionadas y reutilizables, **no ejecutadas en la ronda**:
+1. Cerrar contratos de identidad/claves, transiciones de acceso, rango histórico,
+   retención y causalidad; dejar casos de carrera escritos antes de producto.
+2. Dominio de control + persistencia sintética + catálogo/CRUD + idempotencia.
+   Probar aislamiento de dos personas con varias PCs y acceso de dispositivos.
+3. Vinculación/invitaciones/rotación y recuperación con pruebas de composición.
+   Diagnosticar enrollment actual conservando el error original y contexto seguro.
+4. Migrar conexiones y separar cursores/feed; validar historial y dedupe.
+5. Selector, administración, envío explícito y estados reales; walkthrough con
+   keyboard y narrow picker, sin mocks presentados como recorrido remoto validado.
+6. Destino configurable/estado SDK y puentes limitados, preservando scripts actuales.
+7. Aceptación nativa y en dos PCs; después preparar despliegue revisable.
 
-- `src-tauri/src/clipboard.rs`: `retry_clipboard_operation_retries_until_success`, `self_write_suppression_consumes_matching_hash_once`, `suppression_tracks_multiple_writes_without_consuming_external_content`, `external_copy_after_different_self_write_is_not_a_consecutive_duplicate`. Son lógica local; `clipboardChange` real incluso está excluido por `cfg(test)` en líneas 666–676.
-- `src-tauri/src/storage/folders_tests.rs`: `capture_dedupes_globally_and_scoped_pages_and_find_follow_folder_identity`, `manual_creation_uses_destination_and_dedupe_preserves_prior_folder`, `four_deletion_modes_have_exact_counts_and_preserve_subtree_shape`, `retention_protects_folder_then_prunes_root_after_move`. Fixtures SQLite, no cobertura shared ya existente.
-- `src-tauri/src/actions.rs`: `script_host_gateway_denies_clipboard_read_without_read_capability`, `creating_history_requires_its_own_capability`, `global_shortcut_diagnostics_reject_reserved_and_duplicates`, `script_runner_wait_timeout_kills_synthetic_child`. Helpers/child, no prueba de timeout del host call ni de nuevos grants.
-- `tests/script-runner.test.mjs`: `preserves real newlines, literal backslashes, and regex whitespace through TypeScript host round trip`, `reports a read-back mismatch as a false verification and failed script`. Node real con host fake, no gateway Rust ni Windows.
+Matriz mínima: crear/conectar con respuesta perdida; cancelar sin crear; aislamiento;
+persona lectora no publica; cambiar audiencia pausa emisores; historial consultado
+no dispara efectos; race head/primer evento no pierde ni duplica; carpeta destino
+cambiada; recursos eliminados con outbox/lectura/script en curso; revocación con
+rotación; retries tras crash; puente cíclico; dispositivo que inicia sesión sin
+claves; Windows bloqueado/copia local durante espera y pausa global.
+Ampliar la matriz con general Root/Todo, cambio de alcance sin backfill, solapamiento
+general/carpeta, pausa por dirección con SDK y cola previa, persistencia tras reinicio,
+respuestas en vuelo, fences de reanudación y pausa de equipo dominante.
 
-Mocks no acreditan OpenClipboard/GetClipboardData, delayed rendering, correlación watcher, barrera nativa de pausa, hotkey/foco, lock de sesión ni interferencia Windows/RDP. Una PC Windows valida carreras nativas; dos PCs son gate para entrega/aplicación y latencia remotas. Los modelos efímeros de la revisión sólo contrastan contraejemplos arquitectónicos.
+No declarar listo por suites del corte anterior. Medir uso básico con una persona
+que, desde carpeta, crea o elige recurso y configura dirección sin JSON, secretos,
+código ni búsqueda en Settings; otra acepta invitación y consulta/recibe texto.
+Verificar invariantes de US1–US8, FR01–FR30 y SC01–SC12.
 
-[Research/preflight](research.md) registra L1 autorizado/completado: lógica interna `cfg(test)` y 25 unit tests en memoria con dependencias existentes, sin wiring runtime, clipboard, perfiles, instalación o red. El modelo Rust se compila/ejecuta en tests; no acredita writer Windows, journal durable, scheduler real ni E2EE. N1 nativo/custody y transporte tienen gates/permisos distintos.
-
-[Dossier N1](n1-native-custody.md): harness standalone opt-in sin wiring de app; N1-A completo con Check/Build offline/locked y 15 tests Pure. B (11 Clipboard) y C (6 DPAPI) autorizados y ejecutados en Windows Sandbox aislado, con helpers/artefactos y ambos guests cerrados. Correlación del writer del harness comprobada después del cierre, bajo nueva exclusión y owner/marker/sequence estable. No cierra el gate del watcher shipping, E2EE ni dos PCs.
-
-El [corte local autorizado](local-implementation.md) implementa D1/C1/T1 candidatos sobre fixtures, con cinco dependencias opcionales aprobadas y sin startup. Conserva checks/repro y los límites reales. Orden de integración restante:
-
-1. Usar Q1–Q3 ya confirmadas; precisar presupuestos/límites y gates técnicos, scope de datos y restricciones laborales. Solicitar permisos concretos antes de código/spikes con efectos, instalación o recursos.
-2. Spike acotado de snapshot/writer con perfil sintético y suite de cifrado/custody. Seleccionar dependencias y solicitar autorización exacta antes de instalarlas.
-3. Probar dominio/Actions/relay fake y UI mínima end-to-end; preservar APIs existentes. Aislar dev/instalada, sin credenciales reales.
-4. Preparar servicio aislado con tests locales y plan de recursos/costo/rollback. Deploy, DNS, enrollment real y pruebas de dos equipos requieren sus permisos explícitos; no extrapolar esta sesión a ellos.
-5. Gate real de dos PCs: matriz US1–US5 + SC1–SC8 con tokens sintéticos y receipt por dispositivo. Un mock de runner/WebView no demuestra clipboard remoto real.
-
-Puntos de integración probables: nuevo módulo pequeño `shared_clipboard` y storage de dominio; Actions/context/gateway/SDK; helpers de clipboard/procedencia; lifecycle backend; Settings/picker. No incrementar `lib.rs`/`storage.rs` con todo el feature monolítico ni modularizar unrelated code como requisito oculto.
-
-## 10. Checklist de revisión de este diseño
-
-- [x] Caso Trabajo ↔ Casa explícito y no depende de picker ni de copiar todo historial.
-- [x] Distinción canal/suscripción/carpeta/publicación/receipt y backup.
-- [x] Compatibilidad con Actions y límites reales de snapshots/operaciones diferidas documentados.
-- [x] Dedupe local no mueve clips ni pierde visibilidad de recepción.
-- [x] Orden, deferred/recovery, cambio local, pausa/generation y crash ambiguo tienen resultado propuesto.
-- [x] Exactly-once de efectos, disponibilidad con app cerrada y seguridad de Node no se prometen.
-- [x] Recursos/keys de otros productos no se reutilizan; no hay dependencia/proveedor escogido silenciosamente.
-- [x] Desarrollo, pruebas, permisos externos y continuidad separados de implementación.
-- [x] Q1–Q3 confirmadas por JP: `liveOnly`, texto plano, servicio privado.
-- [x] Preflight con fuentes primarias/candidatos/dossier; L1 autorizado y modelo Rust `cfg(test)` con 25 unit tests pasa offline. Sin instalación ni runtime shared.
-- [ ] Composición criptográfica/enrollment/versiones, custody, cuenta/costo y vectores validados; dependencias autorizadas. Fuentes públicas no sustituyen esos gates.
-- [x] Primitives N1 sintéticas: 11 Clipboard y 6 DPAPI en Sandbox, delayed/timeout y fin de helpers; no integración shipping.
-- [ ] Política nativa integrada con watcher/hotkey y límites de latencia shipping verificados, lock/suspend/dos PCs.
-
-**Readiness:** alcance confirmado, L1/N1 comprobados y candidatos D1/C1/T1 en pruebas locales; arquitectura técnica draft, no lista para activar sharing ni ejecutar cloud. Dependencias autorizadas; cerrar enrollment/custody de producto y adapters runtime/servicio/nativo. No reabrir Q1–Q3 sin pedido de JP.
+JP pidió el 2026-10-02 iniciar la implementación del plan revisado en una nueva
+sesión con GPT-6.1 SOL, medium o high a criterio del coordinador, agentes opcionales
+y supervisión. Se elige `gpt-6.1-sol high`, mismo checkout/host; implementación
+local y pruebas sintéticas autorizadas. Cerrar cada contrato pendiente antes de
+su corte. Instalar dependencias, commit/push, deploy, recursos cloud y pruebas
+con datos reales conservan autorización explícita específica.

@@ -13,6 +13,8 @@ const allowedCapabilities = [
   "history:delete",
   "clipboard:read",
   "clipboard:write",
+  "shared:read",
+  "shared:publish",
   "ui:toast",
   "ui:notify",
   "ui:alert",
@@ -51,7 +53,10 @@ const planSchema = z.object({
   title: z.string().min(1).max(80),
   summary: z.string().min(1).max(500),
   displayQuery: z.string().max(500).nullable(),
-  capabilities: z.array(z.enum(allowedCapabilities)).min(1).max(8),
+  capabilities: z.array(z.union([
+    z.enum(allowedCapabilities),
+    z.string().regex(/^shared:publish:[A-Za-z0-9_-]{1,128}$/),
+  ])).min(1).max(8),
   script: z.string().min(1).max(12000),
   warnings: z.array(z.string().max(240)).max(5),
 });
@@ -98,6 +103,7 @@ try {
       "If the script searches unmarked items before marking, do not use that unmarked-only query as displayQuery after the action, because the updated items would disappear.",
       "Use synthetic-safe logs: log IDs, counts, kinds and lengths, never clip text.",
       "Declare triggers ['devRun'], input { source: 'none', selection: 'none' }, and only the capabilities actually used.",
+      "Sharing APIs: copicu.sharedClipboard.channels() requires shared:read; copicu.sharedClipboard.publish({channelId,text}) requires shared:publish and shared:publish:<channelId>. Use only the specific channel explicitly authorized by the user; ask for its ID if absent. Sharing queues a local encrypted publication and does not confirm remote delivery. Never introduce credential, HTTP or retry logic in an action.",
       "Use stable item IDs from API results. Do not use visible row indexes unless the user explicitly asks for visible positions.",
     ].join("\n"),
     prompt: JSON.stringify({

@@ -42,6 +42,7 @@ type Result<T> = std::result::Result<T, Error>;
 pub(crate) enum KeyKind {
     Signing,
     Enrollment,
+    Credential,
     Channel { channel: String },
 }
 #[derive(Clone, PartialEq, Eq)]
@@ -74,6 +75,7 @@ impl Binding {
         match &self.kind {
             KeyKind::Signing => b.push(1),
             KeyKind::Enrollment => b.push(2),
+            KeyKind::Credential => b.push(4),
             KeyKind::Channel { channel } => {
                 if !crypto::valid_id(channel) {
                     return Err(Error::Binding);
@@ -91,7 +93,9 @@ impl Binding {
     }
 }
 fn encode(binding: &Binding, secret: &[u8]) -> Result<Sensitive> {
-    if secret.len() != 32 {
+    if (binding.kind == KeyKind::Credential && !(32..=128).contains(&secret.len()))
+        || (binding.kind != KeyKind::Credential && secret.len() != 32)
+    {
         return Err(Error::Size);
     }
     let prefix = binding.prefix()?;
@@ -105,7 +109,11 @@ fn encode(binding: &Binding, secret: &[u8]) -> Result<Sensitive> {
 }
 fn decode(binding: &Binding, bytes: &[u8]) -> Result<Sensitive> {
     let prefix = binding.prefix()?;
-    if bytes.len() != prefix.len() + 32 || !bytes.starts_with(&prefix) {
+    let len = bytes.len().saturating_sub(prefix.len());
+    if !bytes.starts_with(&prefix)
+        || (binding.kind == KeyKind::Credential && !(32..=128).contains(&len))
+        || (binding.kind != KeyKind::Credential && len != 32)
+    {
         return Err(Error::Binding);
     }
     Ok(Sensitive(bytes[prefix.len()..].to_vec()))
@@ -289,6 +297,22 @@ pub(crate) struct Vault {
     _locks: Vec<File>,
 }
 impl Vault {
+    pub(crate) fn store_credential(&self, b: &Binding, token: &str) -> Result<()> {
+        if b.kind != KeyKind::Credential
+            || !token
+                .bytes()
+                .all(|v| v.is_ascii_alphanumeric() || matches!(v, b'-' | b'_'))
+        {
+            return Err(Error::Binding);
+        }
+        self.put(b, token.as_bytes())
+    }
+    pub(crate) fn load_credential(&self, b: &Binding) -> Result<Sensitive> {
+        if b.kind != KeyKind::Credential {
+            return Err(Error::Binding);
+        }
+        self.get(b)
+    }
     /// Creates only a new dedicated directory beneath a checked absolute parent.
     pub(crate) fn create(parent: &Path, name: &str) -> Result<Self> {
         if !file_id(name) {

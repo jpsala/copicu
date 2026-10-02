@@ -26,6 +26,7 @@ No crear skills ceremoniales por cada topic o capacidad del harness, ni asumir q
 - `evaluar-skills/`: revisar candidatos antes de promoverlos.
 - `realinear-os/`: auditar y curar documentación dentro del pedido actual.
 - `repo-commit-push/`: commit/push sólo por pedido explícito y actual.
+- [release-windows](../skills/release-windows/SKILL.md): coordinar docs, GitHub y build/checks en paralelo; integrar versiones/artefacto y ejecutar sólo los efectos autorizados.
 - `speckit-*/`: specs grandes cuando el encargo lo requiera.
 - `impeccable/`: trabajo UI pertinente, sin instalar por defecto.
 

@@ -290,6 +290,7 @@ export type MetadataSelectionSnapshot = {
   title: MetadataScalarAggregate;
   notes: MetadataScalarAggregate;
   tags: MetadataSetValueAggregate[];
+  folder?: { state: "same" | "mixed"; folderId: number | null; path: string | null };
   singleItem: {
     contentPreview: string;
     contentKind: string;
@@ -328,7 +329,13 @@ export type MetadataSelectionIntent = {
   title: MetadataScalarIntent;
   notes: MetadataNotesIntent;
   tags: MetadataSetValueIntent[];
+  folder?: MetadataFolderIntent;
 };
+
+export type MetadataFolderIntent =
+  | { op: "untouched" }
+  | { op: "set"; folderId: number | null }
+  | { op: "create"; path: string };
 
 export type ApplyMetadataSelectionIntentResult = {
   snapshot: MetadataSelectionSnapshot;
@@ -356,6 +363,7 @@ export type ActivateItemRequest = {
 };
 
 export type ActionTrigger =
+  | "sharedReception"
   | "itemMenu"
   | "commandPalette"
   | "localShortcut"
@@ -524,6 +532,7 @@ export type UpdateHistoryItemRequest = {
 };
 
 export type CreateHistoryItemRequest = {
+  folder?: MetadataFolderIntent;
   text: string;
   title: string | null;
   notes: string | null;

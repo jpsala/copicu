@@ -87,7 +87,7 @@ if ($n1Native -and ($RunId -notmatch '^[A-Za-z0-9-]{1,64}$' -or $SessionLabel -n
 try {
   $null = Assert-N1Path $n1Target $n1Root
   $n1ManifestPath = Join-Path $n1Root 'src-tauri/Cargo.toml'
-  $n1Common = @('--manifest-path', $n1ManifestPath, '--offline', '--locked', '--bin', 'shared-clipboard-n1', '--features', 'shared-clipboard-n1')
+  $n1Common = @('--manifest-path', $n1ManifestPath, '--offline', '--locked', '--example', 'shared-clipboard-n1', '--features', 'shared-clipboard-n1')
   if (-not $n1Native) {
     $env:PATH = (($n1OldPath -split ';') | Where-Object { $_ -and $_ -notlike '*\miniconda3*' }) -join ';'
     $env:CARGO_TARGET_DIR = $n1Target
@@ -106,7 +106,7 @@ try {
       }
     }
   } else {
-    $n1Executable = Join-Path $n1Target 'debug/shared-clipboard-n1.exe'
+    $n1Executable = Join-Path $n1Target 'debug/examples/shared-clipboard-n1.exe'
     if (-not (Test-Path -LiteralPath $n1Executable -PathType Leaf)) { throw 'Build N1-A first; native modes never build or download' }
     $null = Assert-N1Path $n1Executable $n1Root
     $n1RunPath = Assert-N1Path (Join-Path $n1RunBase $RunId) $n1RunBase

@@ -198,6 +198,37 @@ globalThis.copicu = {
       operations.push({ type: "clipboard.writeItem", itemId: normalizeItemId(id) });
     },
   },
+  sharedClipboard: {
+    async received() {
+      return hostCall("sharedClipboard.received", {});
+    },
+    async channels() {
+      return hostCall("sharedClipboard.channels", {});
+    },
+    async target() {
+      return hostCall("sharedClipboard.target", {});
+    },
+    async state() {
+      return hostCall("sharedClipboard.state", {});
+    },
+    async history({ channelId, cursor = null } = {}) {
+      if (typeof channelId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(channelId) || (cursor !== null && (typeof cursor !== "string" || !/^(0|[1-9][0-9]{0,19})$/.test(cursor)))) throw new Error("sharedClipboard.history requires a valid channel and cursor");
+      return hostCall("sharedClipboard.history", { channelId, cursor });
+    },
+    async publish({ channelId, text } = {}) {
+      if (typeof text !== "string" || text.length === 0) {
+        throw new Error("sharedClipboard.publish requires nonempty plain text");
+      }
+      if (channelId === undefined) channelId = await hostCall("sharedClipboard.target", {});
+      if (typeof channelId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(channelId)) {
+        throw new Error("sharedClipboard.publish requires a valid channelId");
+      }
+      if (typeof text !== "string" || text.length === 0) {
+        throw new Error("sharedClipboard.publish requires nonempty plain text");
+      }
+      return hostCall("sharedClipboard.publish", { channelId, text });
+    },
+  },
   ai: {
     async respondMarkdown({ instruction, items = [], context = undefined, title = undefined } = {}) {
       const result = await hostCall("ai.respondMarkdown", {
@@ -390,6 +421,7 @@ try {
 
     verification = normalizeActionVerification(await action.run({
       ...input.context,
+      sharedReception: input.sharedReception ?? undefined,
       activeItemId: input.context.activeItemId?.toString(),
       currentItemId: input.context.currentItemId?.toString(),
       selectedItemIds: selectedIds,
