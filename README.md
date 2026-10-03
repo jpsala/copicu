@@ -1,4 +1,4 @@
-﻿# Copicu
+# Copicu
 
 **Copicu is a local-first, scriptable clipboard manager for Windows power users.**
 
@@ -39,12 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.4](https://github.com/jpsala/copicu/releases/tag/v0.5.4)
-- Asset: `Copicu_0.5.4_x64-setup.exe`
+- [v0.5.5](https://github.com/jpsala/copicu/releases/tag/v0.5.5)
+- Asset: `Copicu_0.5.5_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `16389E6BC891EF3CB35564515654901476B8052014BE2AD2BBE261FFCFC3C339`
+- SHA256: `DA16C22AD206389D28999E99411B74900FA5C3EDBCAE1D927ACB0E2629A7BBC5`
 
-Encrypted text and image sharing with previews, manual copy and folder reception. Update both PCs before sending images. Sharing uses the internal HTTPS service.
+Fix picker context-menu dismissal, keyboard focus, and secondary-click handling.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -104,6 +104,11 @@ Copicu is early-stage, but the core is functional:
 - use a command palette and local/global shortcut routes;
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
+
+### New In v0.5.5
+
+The [v0.5.5 release notes](docs/releases/v0.5.5.md) cover reliable picker menu
+dismissal after actions, secondary-click handling and keyboard focus.
 
 ### New In v0.5.4
 

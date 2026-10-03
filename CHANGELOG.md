@@ -4,6 +4,15 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-03
+
+### Fixed
+
+- Close the picker's item context menu after actions, including marking a clip,
+  and keep it closed after history refreshes. Suppress the native menu on right
+  clicks inside the custom menu and preserve focus for Escape.
+  [Full release notes](docs/releases/v0.5.5.md).
+
 ## [0.5.2] - 2026-10-02
 
 - Publish the verified v0.5.2-rc.1 installer through the normal update channel,

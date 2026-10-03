@@ -6856,6 +6856,56 @@ test("right click on item opens item actions menu", async ({ page }) => {
   await expect(menu).toBeHidden();
 });
 
+test("item context menu ignores secondary clicks inside its portal", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[1], text: "COPICU_SYNTH_MENU_EVENTS" }]);
+  await gotoShell(page);
+
+  const item = page.locator(".feed-item").first();
+  await item.click({ button: "right", position: { x: 76, y: 18 } });
+  const menu = page.getByRole("menu", { name: "Item actions" });
+  await expect(menu).toBeVisible();
+  const initialBox = await menu.boundingBox();
+  expect(initialBox).not.toBeNull();
+
+  await page.evaluate(() => {
+    document.addEventListener("contextmenu", (event) => {
+      (window as any).__copicuTestMenuContextEvent = event;
+    }, { capture: true, once: true });
+  });
+  await menu.locator(".item-menu-group-label").first().click({ button: "right" });
+  expect(await page.evaluate(() => (window as any).__copicuTestMenuContextEvent.defaultPrevented)).toBe(true);
+  await expect(menu).toBeVisible();
+  const currentBox = await menu.boundingBox();
+  expect(currentBox).not.toBeNull();
+  expect(currentBox!.x).toBe(initialBox!.x);
+  expect(currentBox!.y).toBe(initialBox!.y);
+
+  await menu.locator(".item-menu-group-label").first().click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+});
+
+test("item context menu closes after marking a clip", async ({ page }) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[1], text: "COPICU_SYNTH_MENU_MARK" }]);
+  await gotoShell(page);
+
+  const item = page.locator(".feed-item").first();
+  await item.click({ button: "right", position: { x: 76, y: 18 } });
+  const menu = page.getByRole("menu", { name: "Item actions" });
+  await expect(menu).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Mark", exact: true }).click();
+  await expect(item).toHaveClass(/is-marked/);
+  await expect(menu).toBeHidden();
+
+  const responsesBeforeFocus = await page.evaluate(() => (window as any).__copicuTestHistoryResponses.length);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestHistoryResponses.length))
+    .toBeGreaterThan(responsesBeforeFocus);
+  await expect(item).toHaveClass(/is-marked/);
+  await expect(menu).toBeHidden();
+});
+
 test("URL action appears only when selected text contains an URL", async ({ page }) => {
   await mockTauriInvoke(page, [
     {

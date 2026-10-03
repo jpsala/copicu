@@ -263,6 +263,7 @@ Activacion:
 Mouse y acciones contextuales:
 
 - Right click o tres puntitos por item abre acciones.
+- Elegir una acción cierra el menú contextual antes del refresco, también al marcar/desmarcar. El portal cancela el menú nativo de WebView2 para clic derecho dentro del menú propio; los encabezados conservan el menú, su ancla y el foco para cerrar con Escape. Regresión sintética: `item context menu` en `tests/visual/shell.spec.ts`.
 - El menu contextual no muestra `Delete`; borrar es una accion destructive directa via `Ctrl+D`, `Shift+Delete` o trash icon.
 - Las acciones hover por item aparecen al pasar por la fila; el trash icon borra sin confirmacion el item bajo hover o, si hay multiseleccion activa, los items seleccionados.
 - En un item regular, `Add to Inbox` asigna el estado durable y lo promueve al grupo Inbox. En un item Inbox, `Catalog Inbox item` abre metadata; guardar metadata lo quita de Inbox y cancelar lo conserva. `Remove from Inbox` solo limpia ese estado y nunca borra el historial.

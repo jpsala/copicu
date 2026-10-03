@@ -8310,6 +8310,17 @@ function App() {
                       aria-label="Item actions"
                       ref={itemMenuRef}
                       style={{ left: openItemMenu.x, top: openItemMenu.y }}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (event.target instanceof Element && event.target.closest('[role="menuitem"]')) {
+                          setOpenItemMenu(null);
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
                       onKeyDown={(event) => {
                         const menuItems = Array.from(
                           itemMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
