@@ -34,7 +34,7 @@ JP confirmó dejar archivos para después.
 - [x] M3 Snapshot/escritor Windows aislado con PNG/DIBV5 y fences existentes.
 - [x] M4 Previews, historial, copia/guardado manual y envío del clipboard actual.
 - [x] M5 Regresiones locales, PNG malicioso, cuotas y round-trip nativo sintético.
-- [ ] M6 Desplegar límite del relay y distribuir/instalar el paquete exacto firmado.
+- [x] M6 Desplegar límite del relay y distribuir/instalar el paquete exacto firmado.
 - [ ] M7 Actualizar ambas PCs y aceptar entrega física de imágenes.
 
 ## Revisión: cuenta canónica y servicio interno (2026-10-02)

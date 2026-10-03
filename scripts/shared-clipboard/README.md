@@ -67,7 +67,10 @@ directory. Disable access logs for the auth route and preserve all existing
 routes. After the proxy container is recreated during an upgrade, recreate this
 service too so it joins the new namespace; verify health and SSE afterwards.
 Do not add Traefik buffering middleware to this route; it buffers responses too.
-The service already enforces finite request/body limits.
+The service enforces finite request/body limits: 36 MiB per body/page and 25 MiB
++ 16 KiB per encrypted payload, with cumulative channel quotas retained. Update
+the service and both PCs before sending images; older clients can reject a whole
+page containing a large image and delay later text publications.
 
 ## Verify and use
 

@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "Texto e imágenes validados localmente; v0.5.4 en preparación. Google/HTTPS activos; custodia de claves y admisión pública pendientes."
-last_worked: "2026-10-03T02:52:00Z"
-next: "Distribuir v0.5.4 y ampliar el relay; actualizar ambas PCs para imágenes. Resolver la custodia pendiente antes de cambiar aprobación/admisión."
+summary: "Texto e imágenes distribuidos en v0.5.4 latest e instalados; relay actualizado. Custodia de claves, admisión pública e imágenes físicas pendientes."
+last_worked: "2026-10-03T03:19:58Z"
+next: "Actualizar la otra PC y aceptar imágenes físicas; resolver custodia para reemplazar aprobación entre PCs y activar admisión pública."
 topics:
   - shared-clipboard
 ---
@@ -16,9 +16,12 @@ topics:
 Copicu y pospuso archivos. PNG cifrado, blobs/miniaturas, captura y envío desde
 carpeta/clip activo/Windows, recepción y copia con alpha están implementados.
 388 Rust (1 omitido), 48 Bun/480 assertions, 24 visuales y el round-trip nativo
-sintético pasan. Frontend normal regenerado. Candidata normal/latest `v0.5.4`
-resuelta; falta paquete exacto y deploy del límite. Ambas PCs deben actualizarse
-antes de enviar imágenes. [Contrato](../../specs/016-shared-clipboard/media-plan.md)
+sintético pasan. Frontend normal regenerado. `v0.5.4` normal/latest publicada desde
+`1fbbf2215f6cebb87e4ab4ea35c450b4528e7ced`, firma y recursos verificados; cinco casos
+del payload exacto pasan con perfiles sintéticos. Updater/downloads remotos coinciden
+y el mismo NSIS está instalado con EXE idéntico. Relay amplía límites, conserva
+issuer/config y tiene backup consistente; HTTPS/info/401 verificados. Ambas PCs
+deben actualizarse antes de enviar imágenes. [Contrato](../../specs/016-shared-clipboard/media-plan.md)
 y [aceptación](../../specs/016-shared-clipboard/media-acceptance.md).
 JP reportó entrega manual de texto en una dirección entre PCs y entendió el
 traslado explícito de recepción desde All history. No acredita automatización,
@@ -30,7 +33,8 @@ cuenta al mismo nivel y sin aprobación/transferencia de claves entre equipos.
 El único endpoint de producto es `https://sharing.jpsala.dev/`, interno; aparece
 en diagnóstico de errores. La URL fija y el broker de admisión autenticada están
 implementados/probados localmente, incluidos en las regresiones del corte de
-imágenes. Dev conserva el perfil habitual de Home, sin clonar identidad.
+imágenes; la URL fija está distribuida en v0.5.4. Dev conserva el perfil habitual
+de Home, sin clonar identidad.
 El servidor confirma Home activo; la captura con etiquetas sintéticas era otro
 binario/perfil. Pendiente decisión de custodia: servicio o secreto personal E2EE.
 No se modificó esa frontera ni se publicó el reemplazo del flujo de equipos.
@@ -153,9 +157,8 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Preparar/publicar `v0.5.4`, comprobar firma/payload exactos y ampliar el relay
-   preservando configuración, issuer y datos. Actualizar ambas PCs y aceptar
-   imágenes físicas. Evidencia del corte en
+1. Actualizar la otra PC a `v0.5.4` y aceptar imágenes físicas. Firma, payload,
+   relay, publicación/updater y actualización local cerrados. Evidencia en
    [aceptación de imágenes](../../specs/016-shared-clipboard/media-acceptance.md).
    Distribución `v0.5.3` normal/latest y actualización local cerradas: tag/source,
    assets/hash, firma, CI y tres checks nativos en

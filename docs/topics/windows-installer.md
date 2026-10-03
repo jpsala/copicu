@@ -16,20 +16,26 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3),
-publicado a `2026-10-03T00:25:38Z`, source/tag inmutable
-`780241184555d61549755e99d9637fecd5e2736a`. NSIS offline firmado, payload x64 GUI,
-recursos y TypeScript verificados; instalado el mismo EXE con tres checks nativos
-en perfil sintético. El cierre por ruta mantiene otras copias corriendo.
-NSIS SHA256 `07C1404083F39219795791F0434A3E1F09F8AE0E3341EBD59722D3449AEA427F`;
-`latest.json`, 964 bytes, SHA256
-`7DDFFA12AE69797F5473EFBB3E2BB7E01920599775D82C2C245DC113D2C92C84`.
-Endpoint real latest HTTP 200/version `0.5.3`, API y los tres assets descargados
-coinciden a `2026-10-03T00:26:28.9672168Z`.
-[Recibos y límites](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053).
-[Agentic Validation 37081883421](https://github.com/jpsala/copicu/actions/runs/37081883421)
-SUCCESS para la fuente. Google/HTTPS están activos; aceptación física sintética sigue pendiente;
-los cinco casos completos de identidad son debug, no shipping.
+Release público stable/latest: [v0.5.4](https://github.com/jpsala/copicu/releases/tag/v0.5.4),
+publicado a `2026-10-03T03:18:02Z`, source/tag inmutable
+`1fbbf2215f6cebb87e4ab4ea35c450b4528e7ced`. NSIS offline firmado, payload x64 GUI,
+recursos y TypeScript verificados; cinco casos del payload exacto pasan con
+perfiles sintéticos, incluyendo PNG, alpha, previews, dedupe y restart.
+NSIS SHA256 `16389E6BC891EF3CB35564515654901476B8052014BE2AD2BBE261FFCFC3C339`;
+`latest.json`, 920 bytes, SHA256
+`B0737AB9E2EAC66CBE888EE0C304B1EE48E547C19D8105AACA18BBE52769CFBE`.
+Endpoint real latest HTTP 200/version `0.5.4`, API y los tres assets descargados
+coinciden a `2026-10-03T03:18:49.732Z`. Instalado el mismo NSIS; EXE idéntico,
+versión 0.5.4 y arranque confirmados. Google/HTTPS y relay de imágenes activos;
+imágenes físicas en dos PCs pendientes. Actualizar ambas antes de enviarlas.
+[Recibos y límites](../../specs/016-shared-clipboard/media-acceptance.md).
+[Agentic Validation 37091440975](https://github.com/jpsala/copicu/actions/runs/37091440975)
+SUCCESS para la fuente. Los casos shipping sintéticos no acreditan Google real;
+el escritor de Windows tiene aceptación nativa separada.
+
+[v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3) conserva
+[su evidencia de identidad](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053);
+no atribuirle los cambios posteriores de imágenes/URL fija.
 
 La anterior [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2) y su
 promoción de RC conservan [su evidencia](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).

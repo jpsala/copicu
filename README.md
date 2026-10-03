@@ -39,12 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3)
-- Asset: `Copicu_0.5.3_x64-setup.exe`
+- [v0.5.4](https://github.com/jpsala/copicu/releases/tag/v0.5.4)
+- Asset: `Copicu_0.5.4_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `07C1404083F39219795791F0434A3E1F09F8AE0E3341EBD59722D3449AEA427F`
+- SHA256: `16389E6BC891EF3CB35564515654901476B8052014BE2AD2BBE261FFCFC3C339`
 
-Browser sign-in, device approval and encrypted recovery for shared clipboards. Sharing requires the private HTTPS service.
+Encrypted text and image sharing with previews, manual copy and folder reception. Update both PCs before sending images. Sharing uses the internal HTTPS service.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -105,14 +105,18 @@ Copicu is early-stage, but the core is functional:
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
 
-### New In v0.5.3
+### New In v0.5.4
 
-The [v0.5.3 release notes](docs/releases/v0.5.3.md) cover browser sign-in,
-device approval and encrypted recovery for shared plain-text clipboards.
-In Settings → Sharing, enter your private HTTPS service URL and sign in on each
-PC with the same account. Compare the complete device fingerprint and approve
-the second PC from the first. The [service guide](scripts/shared-clipboard/README.md)
-describes operator setup; local tests do not establish two-PC acceptance.
+The [v0.5.4 release notes](docs/releases/v0.5.4.md) cover encrypted PNG image
+sharing, thumbnails, manual copy and **Send Windows clipboard**. Images support
+up to 25 MiB and 4096 × 4096 pixels. Update both PCs before sending images; older
+clients can reject large delivery pages. File transfer is deferred.
+In Settings → Sharing, name the PC and sign in with the same account through the
+internal service. The current linking flow uses device approval and encrypted
+recovery; account-wide key custody remains under review. The
+[service guide](scripts/shared-clipboard/README.md) describes operator setup and
+the initial admission policy; synthetic local checks do not establish two-PC
+image acceptance.
 
 From a folder or All history, use **Connect shared clipboard** to select or
 create a resource and choose sending, receiving or both. Sharing requires

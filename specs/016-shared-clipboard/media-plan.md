@@ -1,6 +1,7 @@
 # Sharing de contenido: texto e imágenes
 
-Estado: implementación local validada; distribución en preparación. Origen: pedido de JP del 2026-10-02 para compartir
+Estado: validado y distribuido en v0.5.4; relay actualizado. Aceptación física de
+imágenes pendiente. Origen: pedido de JP del 2026-10-02 para compartir
 imágenes y los contenidos del portapapeles. JP confirmó dejar transferencia de
 archivos para después. Este corte abarca los tipos que Copicu captura y conserva
 hoy: texto UTF-8 e imágenes normalizadas a PNG. HTML, RTF, objetos OLE y formatos
