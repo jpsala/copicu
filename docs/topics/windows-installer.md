@@ -16,18 +16,23 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2),
-publicado a `2026-10-02T20:22:36Z`, desde el source/tag inmutable
-`b8d7d83bdc671f3ef0351b86cc2d3599f95d3481`. Promueve el mismo EXE/firma de la RC
-sin recompilar. NSIS SHA256
-`23159C9E9119F90251965062BB494DD6816C845C98E73E625AE65DE9069C830E`.
-El nuevo `latest.json`, 799 bytes y SHA256
-`86E02EB757B6DC0C0A98358C291A8A3A1C4073842C088887D1DE468F1C5F5D33`, apunta al
-instalador bajo el tag normal. Endpoint real latest HTTP 200/version `0.5.2`, API
-latest y los tres assets descargados comprobados a `2026-10-02T20:23:49Z`.
-[Recibo exacto](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
-La instalación local ya acreditada de core `0.5.2` coincide con ese payload;
-la promoción no añade otro smoke ni acredita instalación en otras PCs.
+Release público stable/latest: [v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3),
+publicado a `2026-10-03T00:25:38Z`, source/tag inmutable
+`780241184555d61549755e99d9637fecd5e2736a`. NSIS offline firmado, payload x64 GUI,
+recursos y TypeScript verificados; instalado el mismo EXE con tres checks nativos
+en perfil sintético. El cierre por ruta mantiene otras copias corriendo.
+NSIS SHA256 `07C1404083F39219795791F0434A3E1F09F8AE0E3341EBD59722D3449AEA427F`;
+`latest.json`, 964 bytes, SHA256
+`7DDFFA12AE69797F5473EFBB3E2BB7E01920599775D82C2C245DC113D2C92C84`.
+Endpoint real latest HTTP 200/version `0.5.3`, API y los tres assets descargados
+coinciden a `2026-10-03T00:26:28.9672168Z`.
+[Recibos y límites](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053).
+[Agentic Validation 37081883421](https://github.com/jpsala/copicu/actions/runs/37081883421)
+SUCCESS para la fuente. Google/HTTPS real y aceptación física siguen pendientes;
+los cinco casos completos de identidad son debug, no shipping.
+
+La anterior [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2) y su
+promoción de RC conservan [su evidencia](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
 
 Distribución anterior [v0.5.1](https://github.com/jpsala/copicu/releases/tag/v0.5.1),
 fuente `6b1ad8b8099578ee84e8332fd9a54e0b043c1763`: conserva sus pruebas de resize,

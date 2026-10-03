@@ -1,8 +1,8 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "Cliente de primer acceso 0.5.3 firmado e instalado; VPS/Google preparados, activación puntual pendiente y aceptación física por hacer."
-last_worked: "2026-10-03T00:20:00Z"
+summary: "v0.5.3 normal/latest publicado e instalado; VPS/Google preparados, activación puntual pendiente y aceptación física por hacer."
+last_worked: "2026-10-03T00:26:28Z"
 next: "Resolver confirmación puntual de Google/OAuth, DNS e imagen Bun; activar HTTPS preparado y probar dos PCs físicas con sintéticos."
 topics:
   - shared-clipboard
@@ -30,7 +30,10 @@ valida; no hay servicio iniciado ni DNS nuevo. Confirmación puntual pendiente
 para términos/credenciales, registro A y pull de Bun oficial fijado por digest.
 [Guía y artefactos](../../scripts/shared-clipboard/README.md).
 
-Cliente `0.5.3` normal firmado y payload x64 GUI verificados; el mismo NSIS está
+Cliente [v0.5.3 normal/latest](https://github.com/jpsala/copicu/releases/tag/v0.5.3)
+publicado desde `780241184555d61549755e99d9637fecd5e2736a`; updater HTTP 200/version
+`0.5.3` y tres assets coinciden por digest. CI de esa fuente SUCCESS. Payload
+x64 GUI/firma verificados; el mismo NSIS está
 instalado localmente con EXE idéntico y tres checks nativos que preservan TLS,
 Settings y opt-ins. Otros procesos dev/sintéticos se conservaron. Los cinco
 casos de identidad siguen acreditados como debug; faltan Google/HTTPS real y
@@ -126,10 +129,10 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Distribución v0.5.2 normal/latest y actualización local cerradas: tag/source, assets/hash,
-   firma, CI y smoke acreditados en
-   [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
-   La RC conserva su tag y evidencia; sólo el release normal entra al endpoint latest.
+1. Distribución `v0.5.3` normal/latest y actualización local cerradas: tag/source,
+   assets/hash, firma, CI y tres checks nativos en
+   [aceptación de identidad](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053).
+   Las versiones anteriores conservan sus tags y evidencia; no sumar sus casos.
 2. Resolver la confirmación puntual pendiente, activar Google/OAuth y DNS,
    ejecutar el pull fijado y desplegar el servicio ya preparado. Verificar HTTPS,
    callback/admisión, SSE, restart y backup/rollback; completar R1 y la aceptación

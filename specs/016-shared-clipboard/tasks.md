@@ -16,8 +16,9 @@ históricos. Contrato en [identity-service-plan.md](identity-service-plan.md).
 - [ ] R1 Aprobar proveedor/cuentas, destino/costos, DNS/HTTPS y desplegar.
 - [ ] R2 Publicar/instalar cliente y aceptar en dos PCs físicas con sintéticos.
 
-JP autorizó deploy/distribución el 2026-10-02. Cliente `0.5.3` firmado, payload
-verificado e instalado con el mismo hash; tres checks release/instalada pasan.
+JP autorizó deploy/distribución el 2026-10-02. Cliente `v0.5.3` normal/latest
+publicado, firmado, payload verificado e instalado con el mismo hash; tres checks
+release/instalada pasan. Updater HTTP 200/version y downloads verificados.
 R1 conserva confirmación puntual de Google/OAuth, DNS e imagen Bun; R2 queda
 abierto por la aceptación física, separada de las pruebas debug y locales.
 

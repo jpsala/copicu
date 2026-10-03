@@ -133,6 +133,19 @@ distintos. El cierre selecciona la ruta instalada y conserva las otras copias.
 Un probe NSIS nativo propio comprobó paths con espacios, apóstrofe y dólar,
 sin comandos de shell ni cierre por nombre. No se leyó el perfil habitual.
 
+## Publicación normal v0.5.3
+
+[v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3) publicado como
+normal/latest a `2026-10-03T00:25:38Z`, desde tag/source inmutable
+`780241184555d61549755e99d9637fecd5e2736a`.
+[Agentic Validation 37081883421](https://github.com/jpsala/copicu/actions/runs/37081883421)
+SUCCESS para esa fuente: documentación y chunks de release. Recibo
+`.codex-run/release-candidate-v0.5.3-q9N3Xy/publication-receipt.json` a
+`2026-10-03T00:26:28.9672168Z`: API latest y tag correctos, endpoint real updater
+HTTP 200/version `0.5.3`, los tres downloads coinciden por SHA256 con locales y
+digests de GitHub, y manifest URL/firma coherentes. No se recompiló ni sustituyó
+el paquete después de comprobarlo; el manifest final sólo ajustó notas/fecha.
+
 ## Pendiente remoto
 
 JP autorizó desplegar y distribuir para usar otra PC el 2026-10-02. Se eligió
