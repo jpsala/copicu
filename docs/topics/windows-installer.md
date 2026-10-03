@@ -16,7 +16,27 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.4](https://github.com/jpsala/copicu/releases/tag/v0.5.4),
+Release público stable/latest: [v0.5.5](https://github.com/jpsala/copicu/releases/tag/v0.5.5),
+publicado a `2026-10-03T21:22:17Z` desde source/tag inmutable
+`e19babfa299298d28ce18248d7a5fabee8f37f65`. El corte corrige el menú contextual
+del picker; fuentes/config congeladas coinciden con el commit, sin incluir el
+WIP de custody, ventanas o búsqueda. Pasan 16 ejecuciones de renderer, cuatro
+casos del payload nativo con perfil sintético, Rust release offline con tests
+compilados, checks documentales y build frontend normal estricto.
+
+NSIS x64 GUI y recursos verificados; firma updater y trusted comment validados
+contra la public key del proyecto. Instalador, 14.440.625 bytes, SHA256
+`DA16C22AD206389D28999E99411B74900FA5C3EDBCAE1D927ACB0E2629A7BBC5`;
+`latest.json`, 922 bytes, SHA256
+`A4B8EFFF075642AFAE706A64EE807D8016D5AB88ADEA440981ADD3FF44EC6F21`.
+API, tag y los tres assets descargados coinciden; endpoint real latest HTTP 200,
+versión `0.5.5`, URL y firma correctas a `2026-10-03T21:23:17.763Z`.
+[Agentic Validation 37154811289](https://github.com/jpsala/copicu/actions/runs/37154811289)
+SUCCESS para la fuente. [Notas y alcance](../releases/v0.5.5.md).
+La instalación local de este corte queda separada; la aceptación de imágenes y
+proveedores conserva sus evidencias de v0.5.4.
+
+Distribución anterior: [v0.5.4](https://github.com/jpsala/copicu/releases/tag/v0.5.4),
 publicado a `2026-10-03T03:18:02Z`, source/tag inmutable
 `1fbbf2215f6cebb87e4ab4ea35c450b4528e7ced`. NSIS offline firmado, payload x64 GUI,
 recursos y TypeScript verificados; cinco casos del payload exacto pasan con
