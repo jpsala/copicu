@@ -4,8 +4,8 @@
 use serde::{Deserialize, Serialize};
 
 pub(crate) const MAX_TEXT_BYTES: usize = 1024 * 1024;
-pub(crate) const MAX_CIPHERTEXT_BYTES: usize = MAX_TEXT_BYTES + 16 * 1024;
-pub(crate) const MAX_ENVELOPE_JSON_BYTES: usize = 2_000_000;
+pub(crate) const MAX_CIPHERTEXT_BYTES: usize = crate::image_capture::MAX_IMAGE_PNG_BYTES + 16 * 1024;
+pub(crate) const MAX_ENVELOPE_JSON_BYTES: usize = 36 * 1024 * 1024;
 const DOMAIN: &[u8] = b"Copicu.shared.publication.v1\0";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

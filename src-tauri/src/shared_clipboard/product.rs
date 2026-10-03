@@ -1017,7 +1017,7 @@ pub(super) fn open_history_envelope(
     c: &StoredConfig,
     ch: &StoredChannel,
     e: &super::wire::Envelope,
-) -> Result<crypto::VerifiedText, String> {
+) -> Result<crypto::VerifiedContent, String> {
     let epoch = super::wire::counter(&e.key_epoch).map_err(fail)?;
     let store = runtime::store(storage)?;
     let vault = runtime::vault(&store, c)?;

@@ -10145,6 +10145,7 @@ async function mockSharedClipboard(page: Page, delayFirstRead = false, receiverW
         case "shared_clipboard_set_paused": runtime.__copicuSharedSnapshot.paused = args.paused; return structuredClone(runtime.__copicuSharedSnapshot);
         case "shared_clipboard_set_hotkeys": runtime.__copicuSharedSnapshot.sendActiveShortcut = args.sendActiveShortcut; runtime.__copicuSharedSnapshot.sendClipboardShortcut = args.sendClipboardShortcut; return structuredClone(runtime.__copicuSharedSnapshot);
         case "shared_clipboard_copy_receipt": return null;
+        case "shared_clipboard_receipt_preview":
         case "shared_clipboard_receipt_text": {
           runtime.__copicuSharedReads.push({ subscriptionId: args.subscriptionId, publicationId: args.publicationId });
           if (args.publicationId === "synthetic-work-publication") {
@@ -10221,7 +10222,7 @@ async function mockSharedIdentity(page: Page, initial: "unconfigured" | "active"
     w.__copicuSharedTestInvoke = async (cmd: string, args: any) => {
       if (cmd !== "shared_clipboard_identity") return previous(cmd, args);
       const input = args.input; w.__copicuIdentityCalls.push(structuredClone(input));
-      if (input.kind === "start") { w.__copicuIdentity.state = "waiting"; w.__copicuIdentity.name = input.name; w.__copicuIdentity.endpoint = input.endpoint; }
+      if (input.kind === "start") { w.__copicuIdentity.state = "waiting"; w.__copicuIdentity.name = input.name; }
       if (input.kind === "cancel") w.__copicuIdentity.state = "cancelled";
       if (input.kind === "approve") {
         if (w.__copicuLoseApproval) { w.__copicuLoseApproval = false; throw Error("Synthetic response lost. Retry this operation."); }
@@ -10239,9 +10240,10 @@ test("shared identity first access guides browser approval without enabling conn
   const identity = page.getByRole("region", { name: "Device sign-in" });
   await expect(page.getByText("No device linked", { exact: true })).toBeVisible();
   await expect(identity.getByRole("button", { name: "Sign in in browser" })).toBeDisabled();
-  await identity.getByLabel("Sharing service URL").fill("https://synthetic.invalid/");
+  await expect(identity.getByLabel("Sharing service URL")).toHaveCount(0);
   await identity.getByLabel("Name of this PC").fill("Synthetic Home");
   await identity.getByRole("button", { name: "Sign in in browser" }).click();
+  expect(await page.evaluate(() => (window as any).__copicuIdentityCalls.find((input: any) => input.kind === "start"))).toEqual({ kind: "start", name: "Synthetic Home" });
   await expect(identity.getByText(/Complete sign-in in your system browser/)).toBeVisible();
   await page.evaluate(() => { (window as any).__copicuIdentity.state = "pending"; });
   await identity.getByRole("button", { name: "Check approval" }).click();
@@ -10421,6 +10423,34 @@ test("shared product folder selector preserves exact context and chosen directio
   expect(await page.evaluate(()=>(window as any).__copicuSharedSnapshot.connections)).toEqual([expect.objectContaining({id:"folder_7",kind:"folder",folderId:7,direction:"both"})]);
 });
 
+test("shared product folder connection explains disabled confirmation and requires explicit reception move", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page); await gotoShell(page); await waitForDefaultHistoryReady(page);
+  await page.getByRole("button", { name: "Connect shared clipboard", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect shared clipboard" });
+  await dialog.getByRole("option", { name: /Synthetic clipboard/ }).click();
+  await dialog.getByRole("button", { name: "Connect clipboard", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await revealFolderTree(page);
+  await page.getByRole("button", { name: "Actions for Projects", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Connect shared clipboard…", exact: true }).click();
+  await dialog.getByRole("option", { name: /Synthetic clipboard/ }).click();
+  await dialog.getByLabel("Direction", { exact: true }).click();
+  await page.getByRole("option", { name: "Send and receive", exact: true }).click();
+  const confirm = dialog.getByRole("button", { name: "Connect clipboard", exact: true });
+  await expect(confirm).toBeDisabled();
+  await expect(dialog.getByRole("status")).toContainText("already connected to All history (Root) for reception on this PC");
+  await expect(confirm).toHaveAttribute("aria-describedby", "shared-connect-reception-notice");
+  await page.screenshot({path:testInfo.outputPath("shared-product-reception-move.png")});
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call:any) => call.cmd === "shared_clipboard_connection" && call.args.action === "connect").length)).toBe(1);
+  await dialog.getByRole("checkbox", { name: "Move automatic reception from All history (Root) to Projects" }).check();
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(dialog).not.toBeVisible();
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call:any) => call.cmd === "shared_clipboard_connection" && call.args.action === "connect"));
+  expect(calls).toHaveLength(2);
+  expect(calls[1].args.input).toEqual({id:"folder_7",channelId:"synthetic-channel",kind:"folder",folderId:7,direction:"both",moveReception:true});
+});
+
 test("shared clipboard previews immutable recovered text only on selection and copies manually", async ({ page }, testInfo) => {
   await mockTauriInvoke(page);
   await mockSharedClipboard(page);
@@ -10433,7 +10463,7 @@ test("shared clipboard previews immutable recovered text only on selection and c
   await feed.getByRole("option").filter({ hasText: "From synthetic-work" }).click();
   await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_RECOVERY_TEXT");
   await expect(feed.getByText("This publication is immutable.", { exact: false })).toBeVisible();
-  await expect(feed.getByText("Recovered and delayed text stays available", { exact: false })).toBeVisible();
+  await expect(feed.getByText("Recovered and delayed content stays available", { exact: false })).toBeVisible();
   expect(await page.evaluate(() => (window as any).__copicuSharedReads)).toEqual([{ subscriptionId: "synthetic-sub", publicationId: "synthetic-work-publication" }]);
   await feed.getByRole("button", { name: "Copy text", exact: true }).click();
   await expect(feed.getByRole("status")).toContainText("Received text copied to Windows clipboard.");
@@ -10446,6 +10476,54 @@ test("shared clipboard previews immutable recovered text only on selection and c
   await expect(page.getByText("COPICU_SYNTH_RECOVERY_TEXT", { exact: false })).toHaveCount(0);
 });
 
+test("shared product images preview and require explicit copy save and Windows clipboard send", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page);
+  await page.addInitScript(({ image }) => {
+    const runtime = window as any, previous = runtime.__copicuSharedTestInvoke;
+    runtime.__copicuSharedTestInvoke = async (cmd: string, args: any) => {
+      if (cmd === "shared_clipboard_history") return { entries: [{ publicationId: "synthetic-image", channelId: args.channelId, sequence: "8", originDeviceId: "Synthetic peer", expiresAtUnixMs: "4102444800000", kind: "image", image, width: 256, height: 192, byteSize: 1234, status: "available" }], before: null, head: "8", floor: "1" };
+      if (cmd === "shared_clipboard_publish_current") return { publicationId: "synthetic-current-image", state: "queued" };
+      return previous(cmd, args);
+    };
+  }, { image: pngDataUrl(256,192,"#245f53") });
+  await gotoShell(page); await waitForDefaultHistoryReady(page);
+  await page.getByRole("button", { name:"Shared clipboards",exact:true }).click();
+  const library = page.getByRole("dialog", { name:"Shared clipboards" });
+  await library.getByRole("button", { name:/Synthetic clipboard Mine/ }).click();
+  await library.getByRole("button", { name:"View available history",exact:true }).click();
+  await expect(library.getByRole("img", { name:"Shared clipboard image" })).toBeVisible();
+  await expect(library.getByText("256 × 192",{exact:true})).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((c:any) => ["shared_clipboard_history_action","shared_clipboard_publish_current"].includes(c.cmd)))).toEqual([]);
+  await library.getByRole("button", {name:"Copy image",exact:true}).click();
+  await expect(library.getByRole("status")).toContainText("Shared image copied to Windows.");
+  await library.getByRole("button", {name:"Save in folder",exact:true}).click();
+  await library.getByRole("button", {name:"Send Windows clipboard",exact:true}).click();
+  await expect(library.getByRole("status")).toContainText("Queued publication synthetic-current-image");
+  const commands = await page.evaluate(() => (window as any).__copicuTestInvocations.filter((c:any) => ["shared_clipboard_history_action","shared_clipboard_publish_current"].includes(c.cmd)));
+  expect(commands.map((c:any) => [c.cmd,c.args.action ?? "send"])).toEqual([["shared_clipboard_history_action","copy"],["shared_clipboard_history_action","save"],["shared_clipboard_publish_current","send"]]);
+  await page.screenshot({path:testInfo.outputPath("shared-product-image.png")});
+});
+
+test("shared clipboard image reception previews as image and clears it on expiry selection", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedClipboard(page);
+  await page.addInitScript(({ image }) => {
+    const runtime = window as any, previous = runtime.__copicuSharedTestInvoke;
+    runtime.__copicuSharedTestInvoke = async (cmd: string,args:any) => cmd === "shared_clipboard_receipt_preview" && args.publicationId === "synthetic-work-publication" ? {kind:"image",image,width:256,height:192,byteSize:1234} : previous(cmd,args);
+  }, {image:pngDataUrl(256,192,"#245f53")});
+  await gotoShell(page); await waitForDefaultHistoryReady(page);
+  await page.getByRole("button",{name:"Shared clipboard",exact:true}).click();
+  const feed = page.getByTestId("shared-clipboard-feed");
+  await feed.getByRole("option").filter({hasText:"From synthetic-work"}).click();
+  await expect(feed.getByRole("img",{name:"Received clipboard image"})).toBeVisible();
+  await expect(feed.getByLabel("Received plain text")).toHaveCount(0);
+  await feed.getByRole("button",{name:"Copy image",exact:true}).click();
+  await expect(feed.getByRole("status")).toContainText("Received image copied to Windows clipboard.");
+  await page.screenshot({path:testInfo.outputPath("shared-received-image.png")});
+  await feed.getByRole("option").filter({hasText:"From synthetic-expired-device"}).click();
+  await expect(feed.getByRole("img")).toHaveCount(0);
+  await expect(feed.getByRole("button",{name:"Copy text",exact:true})).toBeDisabled();
+});
+
 test("shared clipboard keyboard selection rejects stale previews and keeps expired metadata", async ({ page }) => {
   await mockTauriInvoke(page);
   await mockSharedClipboard(page, true);
@@ -10455,7 +10533,7 @@ test("shared clipboard keyboard selection rejects stale previews and keeps expir
   const feed = page.getByTestId("shared-clipboard-feed");
   const recovered = feed.getByRole("option").filter({ hasText: "From synthetic-work" });
   await recovered.click();
-  await expect(feed.getByRole("status")).toContainText("Reading received text…");
+  await expect(feed.getByRole("status")).toContainText("Reading received content…");
   await recovered.press("ArrowDown");
   await expect(feed.getByRole("option").filter({ hasText: "From synthetic-other" })).toBeFocused();
   await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_LIVE_TEXT");
@@ -10464,7 +10542,7 @@ test("shared clipboard keyboard selection rejects stale previews and keeps expir
   await expect(feed.getByText("COPICU_SYNTH_RECOVERY_TEXT", { exact: false })).toHaveCount(0);
   await feed.getByRole("option").filter({ hasText: "From synthetic-expired-device" }).click();
   await expect(feed.getByRole("button", { name: "Copy text", exact: true })).toBeDisabled();
-  await expect(feed.getByText("Text is unavailable or expired.", { exact: false })).toBeVisible();
+  await expect(feed.getByText("Content is unavailable or expired.", { exact: false })).toBeVisible();
   expect(await page.evaluate(() => (window as any).__copicuSharedReads)).toHaveLength(2);
   await feed.getByLabel("Filter receptions by channel or device").fill("no such device");
   await expect(feed.getByText("No channels or devices match this filter.")).toBeVisible();
@@ -10480,7 +10558,7 @@ test("shared clipboard settings keep folder reception Windows and send shortcuts
   await expect(sharing.getByText("Device linked", { exact: true })).toBeVisible();
   await expect(sharing.locator("form")).toHaveCount(0);
   await sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true }).check();
-  await sharing.getByRole("checkbox", { name: "Save received text in Copicu", exact: true }).check();
+  await sharing.getByRole("checkbox", { name: "Save received content in Copicu", exact: true }).check();
   await expect(sharing.getByRole("checkbox", { name: "Receive publications", exact: true })).not.toBeChecked();
   await expect(sharing.getByRole("checkbox", { name: "Update Windows clipboard on live arrivals", exact: true })).not.toBeChecked();
   await expect(sharing.getByRole("button", { name: "Publication folder /", exact: true })).toBeVisible();

@@ -24,7 +24,6 @@ impl Drop for SecretCode {
 enum IdentityCommand {
     Status,
     Start {
-        endpoint: String,
         name: String,
     },
     Cancel,
@@ -67,7 +66,7 @@ pub(crate) async fn shared_clipboard_identity(
             use crate::shared_clipboard::identity;
             match input {
                 IdentityCommand::Status => identity::status(&storage),
-                IdentityCommand::Start { endpoint, name } => identity::start(&storage, &endpoint, &name),
+                IdentityCommand::Start { name } => identity::start(&storage, &identity::service_endpoint()?, &name),
                 IdentityCommand::Cancel => identity::cancel(&storage),
                 IdentityCommand::Reopen => identity::reopen(&storage),
                 IdentityCommand::Approve { operation_id, device_id, fingerprint, expected_revision } => identity::device_action(&storage, serde_json::json!({"kind":"approve","operationId":operation_id,"deviceId":device_id,"fingerprint":fingerprint,"expectedRevision":expected_revision})),

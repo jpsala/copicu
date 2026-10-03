@@ -1,6 +1,20 @@
 # Feature Spec: Clipboard compartido configurable
 
-Status: producto local y SSE S1–S6 validados, 2026-10-02; servicio remoto y aceptación en dos PCs pendientes. Creado: 2026-09-30. Arquitectura en [`plan.md`](plan.md); contrato SSE en [`sse-sync-plan.md`](sse-sync-plan.md); estado de la candidata y próximo paso en [`041-shared-clipboard`](../../docs/tracks/041-shared-clipboard.md).
+Status: v0.5.3 publicada y servicio HTTPS activo; envío manual de texto entre PCs confirmado por JP. Revisión de identidad y contenido en curso, 2026-10-02. Creado: 2026-09-30. Arquitectura en [`plan.md`](plan.md); contrato SSE en [`sse-sync-plan.md`](sse-sync-plan.md); estado y próximo paso en [`041-shared-clipboard`](../../docs/tracks/041-shared-clipboard.md).
+
+## Revisión vigente: cuentas y contenido
+
+JP pidió acceso inicial para cualquier usuario autenticado, identidad canónica por
+cuenta, PCs equivalentes sin aprobación entre equipos y un servicio interno fijo
+`https://sharing.jpsala.dev/`. La custodia de claves necesaria para ese acceso está
+pendiente de una decisión explícita; no se degrada E2EE por inferencia. Contrato y
+estado en [identity-service-plan.md](identity-service-plan.md).
+
+JP amplió Q2 a imágenes y contenidos de portapapeles, y confirmó dejar archivos
+para después. El corte implementa los tipos que Copicu conserva actualmente:
+texto e imagen PNG. Contrato, límites y comprobación en [media-plan.md](media-plan.md).
+Las referencias a texto plano más abajo describen el corte previo; sus reglas de
+efectos, procedencia y permisos se aplican también a imágenes.
 
 ## Ampliación acordada: sincronización de catálogo por SSE
 
@@ -49,7 +63,7 @@ enrollment humano o uso de datos reales. El estado operativo se mantiene en el t
 
 **Objetivo confirmado:** copiar en Trabajo, pulsar un atajo configurable para publicar en un clipboard compartido y recibir en Casa, donde una suscripción puede actualizar automáticamente el portapapeles del sistema. El mismo flujo funciona en sentido inverso. Scripts deben poder usar la funcionalidad; no debe quedar como una integración rígida entre dos PCs.
 
-**Alcance vigente:** Q1 `liveOnly` (sólo llegadas nuevas elegibles actualizan Windows; recuperaciones visibles para copiar manualmente) y Q2 texto plano. JP sustituyó Q3 el 2026-10-02: cada persona tiene su espacio propio y puede crear/elegir portapapeles compartidos desde las carpetas. Catálogo, invitaciones, grants históricos y rotación están probados localmente con identidades sintéticas. Proveedor humano, recovery E2EE, límites/retención remotos y servicio desplegado conservan definición y aceptación propias.
+**Alcance vigente:** Q1 `liveOnly` (sólo llegadas nuevas elegibles actualizan Windows; recuperaciones visibles para copiar manualmente) y Q2 texto e imágenes según media-plan. JP sustituyó Q3 el 2026-10-02: cada persona tiene su espacio propio y puede crear/elegir portapapeles compartidos desde las carpetas. Catálogo, invitaciones, grants históricos y rotación están probados localmente con identidades sintéticas. Recovery E2EE y el nuevo modelo de vinculación conservan definición y aceptación propias.
 
 ## Objetivo de producto
 

@@ -2173,9 +2173,9 @@ impl AppStorage {
             let prune_outcome = prune_history_from_conn(&tx)?;
             tx.commit()
                 .map_err(|error| format!("failed to commit clipboard image capture: {error}"))?;
-            Ok((item_id, prune_outcome, projection_changed, feedback))
+            Ok((item_id, prune_outcome, projection_changed, feedback, existing_id.is_none()))
         })();
-        let (item_id, prune_outcome, projection_changed, feedback) = match capture_result {
+        let (item_id, prune_outcome, projection_changed, feedback, created) = match capture_result {
             Ok(outcome) => outcome,
             Err(error) => {
                 self.remove_blob_paths([ItemBlobPaths {
@@ -2186,11 +2186,12 @@ impl AppStorage {
             }
         };
 
-        if projection_changed || prune_outcome.removed_items > 0 {
+        if created || projection_changed || prune_outcome.removed_items > 0 {
             self.bump_mutation_epoch();
         }
         self.record_capture_folder_feedback(feedback);
         self.remove_blob_paths(prune_outcome.blob_paths);
+        if created { self.notify_shared_folder_ingress(item_id, true); }
         Ok(item_id)
     }
 

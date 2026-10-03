@@ -422,23 +422,19 @@ fn shared_publish_builtin(
     {
         // Resolve authorization before reading any clipboard content.
         let channel_id = crate::shared_clipboard::runtime::default_publish_channel(storage)?;
-        let (text, source) = if request.action_id == builtin::SHARED_SEND_ACTIVE_ID {
+        let (content, source) = if request.action_id == builtin::SHARED_SEND_ACTIVE_ID {
             let item_id = request
                 .context
                 .current_item_id
                 .ok_or_else(|| "an active Copicu clip is required".to_string())?;
-            let item = storage.get_item(item_id)?;
-            if item.content_kind() != "text" {
-                return Err("shared channels accept plain text clips only".to_string());
-            }
-            (item.text().to_string(), "builtinActive")
+            (crate::clipboard_content::ClipboardContent::from_item(storage, item_id)?, "builtinActive")
         } else {
             let sequence = clipboard_sequence
                 .ok_or_else(|| "clipboard invocation sequence is unavailable".to_string())?;
-            (crate::shared_snapshot_text(sequence)?, "builtinClipboard")
+            (crate::shared_native::snapshot_content(sequence)?, "builtinClipboard")
         };
-        crate::shared_clipboard::runtime::publish_text(storage, &channel_id, &text, source)?;
-        Ok("Queued text for shared channel".to_string())
+        crate::shared_clipboard::runtime::publish_content(storage, &channel_id, &content, source)?;
+        Ok(format!("Queued {} for shared channel", content.kind()))
     }
     #[cfg(not(feature = "shared-clipboard"))]
     {

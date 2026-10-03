@@ -176,32 +176,50 @@ pub(crate) struct ReceivePolicy<'a> {
 
 /// Immutable metadata and text travel together. No raw String admission API.
 /// Durable receipt admission must still fence grant/generation/replay state.
-pub(crate) struct VerifiedText {
+pub(crate) struct VerifiedContent {
     envelope: Envelope,
-    text: Sensitive,
+    content: crate::clipboard_content::ClipboardContent,
 }
-impl VerifiedText {
+impl VerifiedContent {
     pub(crate) fn envelope(&self) -> &Envelope {
         &self.envelope
     }
     pub(crate) fn text(&self) -> &str {
-        // Valid UTF-8 is proved before this value can be constructed.
-        unsafe { std::str::from_utf8_unchecked(&self.text.0[8..]) }
+        self.content.text().unwrap_or("")
+    }
+    pub(crate) fn content(&self) -> &crate::clipboard_content::ClipboardContent {
+        &self.content
     }
 }
 
 /// Metadata is host-authored; the signer identity must be checked by the caller
 /// against its local device grant. The body and signature must initially be empty.
 pub(crate) fn seal(
-    mut envelope: Envelope,
+    envelope: Envelope,
     text: &str,
+    key: &ChannelKey,
+    signer: &DeviceSigner,
+    entropy: &mut impl Entropy,
+) -> Result<Envelope> {
+    seal_content(
+        envelope,
+        &crate::clipboard_content::ClipboardContent::Text(text.into()),
+        key,
+        signer,
+        entropy,
+    )
+}
+
+pub(crate) fn seal_content(
+    mut envelope: Envelope,
+    content: &crate::clipboard_content::ClipboardContent,
     key: &ChannelKey,
     signer: &DeviceSigner,
     entropy: &mut impl Entropy,
 ) -> Result<Envelope> {
     if !envelope.ciphertext.is_empty()
         || !envelope.signature.is_empty()
-        || text.len() > MAX_TEXT_BYTES
+        || content.validate().is_err()
     {
         return Err(Error::Shape);
     }
@@ -212,10 +230,15 @@ pub(crate) fn seal(
     envelope.nonce = vec![0; 24];
     entropy.fill(&mut envelope.nonce)?;
     let aad = envelope.associated_data().map_err(|_| Error::Shape)?;
-    let mut body = Sensitive(Vec::with_capacity(8 + text.len()));
-    body.0.extend_from_slice(b"TXT1");
-    body.0.extend_from_slice(&(text.len() as u32).to_be_bytes());
-    body.0.extend_from_slice(text.as_bytes());
+    let (tag, bytes): (&[u8], &[u8]) = match content {
+        crate::clipboard_content::ClipboardContent::Text(text) => (b"TXT1", text.as_bytes()),
+        crate::clipboard_content::ClipboardContent::Image(png) => (b"IMG1", png),
+    };
+    let mut body = Sensitive(Vec::with_capacity(8 + bytes.len()));
+    body.0.extend_from_slice(tag);
+    body.0
+        .extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    body.0.extend_from_slice(bytes);
     let nonce: &XNonce = envelope
         .nonce
         .as_slice()
@@ -241,7 +264,7 @@ pub(crate) fn open(
     envelope: &Envelope,
     key: &ChannelKey,
     policy: &ReceivePolicy<'_>,
-) -> Result<VerifiedText> {
+) -> Result<VerifiedContent> {
     envelope.validate_shape().map_err(|_| Error::Shape)?;
     verify(
         &policy.signing_key,
@@ -286,19 +309,32 @@ pub(crate) fn open(
             )
             .map_err(|_| Error::Authentication)?,
     );
-    if text.0.len() < 8 || &text.0[..4] != b"TXT1" {
+    if text.0.len() < 8 {
         return Err(Error::Payload);
     }
     let length = u32::from_be_bytes(text.0[4..8].try_into().map_err(|_| Error::Payload)?) as usize;
-    if length > MAX_TEXT_BYTES
-        || length != text.0.len() - 8
-        || std::str::from_utf8(&text.0[8..]).is_err()
-    {
+    if length != text.0.len() - 8 {
         return Err(Error::Payload);
     }
-    Ok(VerifiedText {
+    let content = match &text.0[..4] {
+        b"TXT1" if length <= MAX_TEXT_BYTES => crate::clipboard_content::ClipboardContent::Text(
+            std::str::from_utf8(&text.0[8..])
+                .map_err(|_| Error::Payload)?
+                .into(),
+        ),
+        b"IMG1" => {
+            let decoded =
+                crate::image_capture::validate_png(&text.0[8..]).map_err(|_| Error::Payload)?;
+            let image = crate::image_capture::normalize_clipboard_image(decoded)
+                .map_err(|_| Error::Payload)?;
+            crate::clipboard_content::ClipboardContent::Image(image.png_bytes)
+        }
+        _ => return Err(Error::Payload),
+    };
+    content.validate().map_err(|_| Error::Payload)?;
+    Ok(VerifiedContent {
         envelope: envelope.clone(),
-        text,
+        content,
     })
 }
 
@@ -473,6 +509,47 @@ pub(super) mod tests {
         ));
     }
     #[test]
+    fn image_round_trip_keeps_type_pixels_and_existing_authentication_barriers() {
+        use crate::clipboard_content::ClipboardContent;
+        let mut rng = Fixed(31);
+        let signer = DeviceSigner::generate(&mut rng).unwrap();
+        let key = ChannelKey::generate("test".into(), "channel".into(), 1, &mut rng).unwrap();
+        let content =
+            ClipboardContent::Image(crate::image_capture::synthetic_image(3, 2).png_bytes);
+        let env = seal_content(meta(), &content, &key, &signer, &mut rng).unwrap();
+        let mut policy = ReceivePolicy {
+            environment: "test",
+            channel: "channel",
+            device: "device",
+            signing_key: signer.public(),
+            epoch: 1,
+            now_unix_ms: 1,
+            last_origin_ordinal: 0,
+            live_lease: Some("lease"),
+        };
+        let verified = open(&env, &key, &policy).unwrap();
+        assert!(verified.content() == &content);
+        assert!(verified.content().text().is_none());
+        let mut changed = env.clone();
+        changed.ciphertext[8] ^= 1;
+        assert!(matches!(
+            open(&changed, &key, &policy),
+            Err(Error::Signature)
+        ));
+        policy.now_unix_ms = 100;
+        assert!(matches!(open(&env, &key, &policy), Err(Error::Expired)));
+        let mut bad = crate::image_capture::synthetic_image(3, 2).png_bytes;
+        bad[16..20].copy_from_slice(&9000u32.to_be_bytes());
+        assert!(seal_content(
+            meta(),
+            &ClipboardContent::Image(bad),
+            &key,
+            &signer,
+            &mut rng
+        )
+        .is_err());
+    }
+    #[test]
     fn authenticated_but_malformed_payload_is_not_verified_text() {
         let mut rng = Fixed(31);
         let signer = DeviceSigner::generate(&mut rng).unwrap();
@@ -493,6 +570,7 @@ pub(super) mod tests {
             &b"bad"[..],
             &b"TXT1\0\0\0\x02a"[..],
             &b"TXT1\0\0\0\x01\xff"[..],
+            &b"IMG1\0\0\0\x03bad"[..],
         ] {
             let aad = env.associated_data().unwrap();
             env.ciphertext = key

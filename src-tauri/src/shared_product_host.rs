@@ -218,8 +218,8 @@ pub(crate) async fn shared_clipboard_history_action(
                     let _barrier = shared_native::EFFECT_BARRIER
                         .lock()
                         .map_err(|_| "Sharing effect barrier failed")?;
-                    let text = runtime::admit_historical_copy(&storage, &verified)?;
-                    let outcome = shared_native::write(&text, sequence);
+                    let content = runtime::admit_historical_copy(&storage, &verified)?;
+                    let outcome = shared_native::write_content(&content, sequence);
                     if outcome != "applied" {
                         return Err(format!("Could not copy shared publication: {outcome}"));
                     }
@@ -236,6 +236,27 @@ pub(crate) async fn shared_clipboard_history_action(
     })
     .await
     .map_err(|_| "Sharing history action worker failed")?
+}
+
+#[tauri::command]
+pub(crate) async fn shared_clipboard_publish_current(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    channel_id: String,
+) -> Result<serde_json::Value, String> {
+    trusted(&window)?;
+    let expected = crate::shared_clipboard_sequence().ok_or("Clipboard unavailable")?;
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(feature = "shared-clipboard")]
+        {
+            crate::shared_clipboard::runtime::authorize_publish(&storage, &channel_id)?;
+            let content = crate::shared_native::snapshot_content(expected)?;
+            crate::shared_clipboard::runtime::publish_content(&storage, &channel_id, &content, "manualWindowsClipboard")
+        }
+        #[cfg(not(feature = "shared-clipboard"))]
+        { let _ = (storage, channel_id, expected); Err("Sharing is unavailable in this build".into()) }
+    }).await.map_err(|_| "Clipboard publication worker failed")?
 }
 
 #[tauri::command]

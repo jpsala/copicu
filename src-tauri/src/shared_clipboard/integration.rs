@@ -260,7 +260,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
     assert!(result.history_changed);
     assert_eq!(result.effects.len(), 1);
     let effect = &result.effects[0];
-    assert_eq!(effect.text, "synthetic product shared text");
+    assert_eq!(effect.content.text().unwrap(), "synthetic product shared text");
     let status = runtime::snapshot(&receiver_storage).unwrap();
     assert_eq!(status.receipts.len(), 1);
     assert_eq!(status.receipts[0]["localItemId"], existing.id);
@@ -271,7 +271,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
     assert!(runtime::is_remote_item_or_text(
         &receiver_storage,
         Some(existing.id),
-        effect.text.as_str()
+        effect.content.text().unwrap()
     )
     .unwrap());
     assert_eq!(
@@ -285,7 +285,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
             &effect.publication_id
         )
         .unwrap(),
-        effect.text
+        effect.content.text().unwrap()
     );
     let attempt = runtime::claim_clipboard(&receiver_storage, effect).unwrap();
     assert!(runtime::claim_clipboard(&receiver_storage, effect).is_err());
@@ -335,7 +335,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
     let fresh = runtime::poll_once(&receiver_storage).unwrap();
     assert!(fresh.history_changed);
     assert_eq!(fresh.effects.len(), 1);
-    assert_eq!(fresh.effects[0].text, "synthetic fresh after resume");
+    assert_eq!(fresh.effects[0].content.text().unwrap(), "synthetic fresh after resume");
     assert_eq!(
         runtime::snapshot(&receiver_storage).unwrap().receipts.len(),
         2
@@ -499,7 +499,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
             &effect.publication_id,
             effect.generation,
             "synthetic_writer",
-            &effect.text,
+            effect.content.text().unwrap(),
             "synthetic-transformed-output",
             effect.lease_expires_at_unix_ms,
             effect.lease_started,
@@ -522,7 +522,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
         &action_effect.publication_id,
         action_effect.generation,
         "synthetic_writer",
-        &action_effect.text,
+        action_effect.content.text().unwrap(),
         transformed,
         action_effect.lease_expires_at_unix_ms,
         action_effect.lease_started,
@@ -540,7 +540,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
             &action_effect.publication_id,
             action_effect.generation,
             "synthetic_writer",
-            &action_effect.text,
+            action_effect.content.text().unwrap(),
             transformed,
             action_effect.lease_expires_at_unix_ms,
             action_effect.lease_started,
@@ -626,7 +626,7 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
         "Origin metadata survives encrypted payload removal"
     );
     assert!(
-        runtime::is_remote_item_or_text(&receiver_storage, Some(existing.id), effect.text.as_str())
+        runtime::is_remote_item_or_text(&receiver_storage, Some(existing.id), effect.content.text().unwrap())
             .unwrap(),
         "Payload pruning does not clear provenance of an existing local item"
     );

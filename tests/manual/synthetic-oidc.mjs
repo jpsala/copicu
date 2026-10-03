@@ -29,7 +29,7 @@ export async function syntheticOidc() {
   return {
     issuer: server.url.toString().replace(/\/$/, ''),
     setSubject(value) { subject = value; }, setClaims(editor) { editClaims = editor; },
-    async adapter(callback) { return createOidc({ issuer: server.url.toString().replace(/\/$/, ''), clientId: 'synthetic-client', clientSecret: 'synthetic-only-secret', redirectUri: callback, allowedSubjects: ['synthetic-account', 'synthetic-other'], allowLoopback: true }); },
+    async adapter(callback, admission = 'allowlist') { return createOidc({ issuer: server.url.toString().replace(/\/$/, ''), clientId: 'synthetic-client', clientSecret: 'synthetic-only-secret', redirectUri: callback, admission, allowedSubjects: admission === 'allowlist' ? ['synthetic-account', 'synthetic-other'] : [], allowLoopback: true }); },
     async stop() { await server.stop(true); },
   };
 }

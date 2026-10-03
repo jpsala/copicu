@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "v0.5.3 normal/latest publicado e instalado; VPS/Google preparados, activación puntual pendiente y aceptación física por hacer."
-last_worked: "2026-10-03T00:26:28Z"
-next: "Resolver confirmación puntual de Google/OAuth, DNS e imagen Bun; activar HTTPS preparado y probar dos PCs físicas con sintéticos."
+summary: "Texto e imágenes validados localmente; v0.5.4 en preparación. Google/HTTPS activos; custodia de claves y admisión pública pendientes."
+last_worked: "2026-10-03T02:52:00Z"
+next: "Distribuir v0.5.4 y ampliar el relay; actualizar ambas PCs para imágenes. Resolver la custodia pendiente antes de cambiar aprobación/admisión."
 topics:
   - shared-clipboard
 ---
@@ -12,7 +12,31 @@ topics:
 
 ## Estado actual
 
-**Primer acceso I1–I8 implementado y validado localmente (2026-10-02).**
+**Texto e imágenes (2026-10-02).** JP amplió Sharing a los tipos capturados por
+Copicu y pospuso archivos. PNG cifrado, blobs/miniaturas, captura y envío desde
+carpeta/clip activo/Windows, recepción y copia con alpha están implementados.
+388 Rust (1 omitido), 48 Bun/480 assertions, 24 visuales y el round-trip nativo
+sintético pasan. Frontend normal regenerado. Candidata normal/latest `v0.5.4`
+resuelta; falta paquete exacto y deploy del límite. Ambas PCs deben actualizarse
+antes de enviar imágenes. [Contrato](../../specs/016-shared-clipboard/media-plan.md)
+y [aceptación](../../specs/016-shared-clipboard/media-acceptance.md).
+JP reportó entrega manual de texto en una dirección entre PCs y entendió el
+traslado explícito de recepción desde All history. No acredita automatización,
+ambos sentidos ni imágenes físicas.
+
+**Revisión vigente: cuenta canónica y servicio interno (2026-10-02).**
+JP definió Sharing para cualquier cuenta Google autenticada, PCs de la misma
+cuenta al mismo nivel y sin aprobación/transferencia de claves entre equipos.
+El único endpoint de producto es `https://sharing.jpsala.dev/`, interno; aparece
+en diagnóstico de errores. La URL fija y el broker de admisión autenticada están
+implementados/probados localmente, incluidos en las regresiones del corte de
+imágenes. Dev conserva el perfil habitual de Home, sin clonar identidad.
+El servidor confirma Home activo; la captura con etiquetas sintéticas era otro
+binario/perfil. Pendiente decisión de custodia: servicio o secreto personal E2EE.
+No se modificó esa frontera ni se publicó el reemplazo del flujo de equipos.
+[Contrato y tareas A1–A5](../../specs/016-shared-clipboard/identity-service-plan.md).
+
+**Primer acceso I1–I8 distribuido en v0.5.3 (2026-10-02).**
 Servicio OIDC/PKCE y cuenta privada; alta durable en navegador del sistema,
 comparación/aprobación de equipos por huella y HPKE; nuevas claves para equipos
 aprobados, retiro/revinculación y recovery E2EE con snapshot cifrado. UI normal
@@ -21,14 +45,14 @@ outbox, leases, receipts, SSE y opt-ins separados. 382 Rust (1 benchmark omitido
 50 Bun, 26 visuales y cinco casos de UI/host Windows con tres perfiles nuevos
 pasan. [Evidencia y límites](../../specs/016-shared-clipboard/identity-acceptance.md).
 
-JP autorizó deploy/distribución para la otra PC el 2026-10-02. Se prepararon
-Google OIDC y el VPS existente con Traefik, `sharing.jpsala.dev` y Bun/SQLite,
-sin nueva suscripción. Se creó el proyecto Google y quedaron listos los
-formularios de política de datos y DNS; el cliente OAuth/secret aún no existe.
-Seis módulos/config Docker en `/opt/copicu-sharing` coinciden por hash y Compose
-valida; no hay servicio iniciado ni DNS nuevo. Confirmación puntual pendiente
-para términos/credenciales, registro A y pull de Bun oficial fijado por digest.
-[Guía y artefactos](../../scripts/shared-clipboard/README.md).
+JP autorizó deploy/distribución para la otra PC y confirmó los tres gates de
+Google/OAuth, DNS e imagen Bun. Google OIDC y HTTPS están activos en el VPS
+existente con Traefik, `sharing.jpsala.dev` y Bun/SQLite, sin nueva suscripción.
+Seis módulos en `/opt/copicu-sharing` coinciden con la fuente distribuida.
+Health/info y certificado verificados; V1/V2 sin auth entregan 401. Backup
+consistente y restauración aislada conservan issuer. La instancia activa mantiene
+la lista inicial de JP y aprobación de PCs hasta resolver la revisión de cuenta.
+[Evidencia remota](../../specs/016-shared-clipboard/identity-acceptance.md#servicio-remoto-activo).
 
 Cliente [v0.5.3 normal/latest](https://github.com/jpsala/copicu/releases/tag/v0.5.3)
 publicado desde `780241184555d61549755e99d9637fecd5e2736a`; updater HTTP 200/version
@@ -36,15 +60,15 @@ publicado desde `780241184555d61549755e99d9637fecd5e2736a`; updater HTTP 200/ver
 x64 GUI/firma verificados; el mismo NSIS está
 instalado localmente con EXE idéntico y tres checks nativos que preservan TLS,
 Settings y opt-ins. Otros procesos dev/sintéticos se conservaron. Los cinco
-casos de identidad siguen acreditados como debug; faltan Google/HTTPS real y
+casos de identidad conservan alcance debug; falta tráfico físico sintético entre
 dos PCs físicas. [Recibos del corte](../../specs/016-shared-clipboard/identity-acceptance.md#paquete-windows-v053).
 
 **Producto local y SSE S1–S6 validados (2026-10-02).** Runtime, host Windows,
 UI y SDK están conectados. Catálogo V2 por persona sintética, CRUD/intents
 recuperables, invitaciones/HPKE, permisos históricos, revocación/rotación,
 conexión desde carpeta o All history, scope general, pausas por dirección y
-consulta histórica tienen evidencia local. Q1 `liveOnly`, Q2 texto plano y Q3
-espacios propios por persona siguen vigentes.
+consulta histórica tienen evidencia local. Q1 `liveOnly` y Q3 espacios propios
+por persona siguen vigentes; Q2 se amplió a texto e imágenes por pedido de JP.
 
 El corte incluye destino por Action, estado local de cola/pausas e historial con
 grants explícitos; recepción/forwarding limitados y escritor Windows cercado.
@@ -97,11 +121,11 @@ recuperación, y una UI normal de primer acceso; validar envío/recepción con d
 sintéticos. Reusar runtime/SSE y preservar `liveOnly`, leases, receipts y opt-ins.
 El pedido posterior «Dale, haz lo que haga falta, así yo lo puedo usar en la otra
 PC» autoriza deploy, commit/push, distribución y actualización local actuales.
-No transfiere permisos a otra sesión: las confirmaciones puntuales requeridas
-por términos/credenciales/DNS e instalación de runtime se conservan arriba.
+No transfiere permisos a otra sesión: los gates puntuales ya resueltos y su alcance
+se conservan arriba.
 I1–I8 tienen [contrato](../../specs/016-shared-clipboard/identity-service-plan.md),
 [tareas](../../specs/016-shared-clipboard/tasks.md#continuacion-primer-acceso-entre-pcs-2026-10-02)
-y aceptación local. R1/R2 permanecen pendientes con gates externos explícitos.
+y aceptación local. R1 cerrado por deploy real; R2 sigue abierto por tráfico físico.
 
 ## Evidencia y recuperación mínima
 
@@ -129,16 +153,20 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Distribución `v0.5.3` normal/latest y actualización local cerradas: tag/source,
+1. Preparar/publicar `v0.5.4`, comprobar firma/payload exactos y ampliar el relay
+   preservando configuración, issuer y datos. Actualizar ambas PCs y aceptar
+   imágenes físicas. Evidencia del corte en
+   [aceptación de imágenes](../../specs/016-shared-clipboard/media-acceptance.md).
+   Distribución `v0.5.3` normal/latest y actualización local cerradas: tag/source,
    assets/hash, firma, CI y tres checks nativos en
    [aceptación de identidad](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053).
    Las versiones anteriores conservan sus tags y evidencia; no sumar sus casos.
-2. Resolver la confirmación puntual pendiente, activar Google/OAuth y DNS,
-   ejecutar el pull fijado y desplegar el servicio ya preparado. Verificar HTTPS,
-   callback/admisión, SSE, restart y backup/rollback; completar R1 y la aceptación
-   física de R2. El cliente `0.5.3` ya está firmado e instalado localmente;
-   los fixtures no acreditan proveedor real ni dos PCs. En una sesión posterior,
-   comprobar autorización actual antes de ejecutar esos efectos.
+2. Resolver custodia de claves con JP para vincular equipos por cuenta sin
+   aprobación ni transferencia entre PCs. La admisión autenticada y URL interna
+   pasan checks locales; falta sustituir el flujo de equipos, activar Google
+   Audience/configuración pública y distribuir el cliente actualizado. Completar
+   R2 con envío/recepción sintéticos y streaming remoto. El paquete `0.5.3`
+   conserva su fuente/evidencia; no atribuirle cambios posteriores al tag.
 3. No reducir polling/ticks sin medir idle/latencia y repetir regresiones de
    outbox, retención, leases, pausa y efectos. Lock/suspend/crash nativos siguen
    teniendo aceptación propia.
@@ -172,6 +200,7 @@ Origen de las decisiones: Q1 `liveOnly` y Q2 texto plano confirmadas por JP el
 La conexión general y el scope cambiable en Settings fueron pedidos posteriores
 del mismo día. Contrato en spec/plan; analogías en
 [sharing-patterns.md](../../specs/016-shared-clipboard/sharing-patterns.md).
+La ampliación posterior de JP conserva texto e imágenes, posponiendo archivos.
 Backup, biblioteca mutable sincronizada y formatos arbitrarios quedan fuera del corte.
 
 ## Resultado N1-B/C en Windows Sandbox (2026-10-01)

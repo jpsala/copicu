@@ -178,7 +178,7 @@ test("body, shape and base64 caps reject without commits or diagnostic payload",
 }));
 
 test("aggregate response cap cuts contiguously and next page preserves bytes", async () => fixture(async (f) => {
-  for (let index = 1; index <= 3; index++) expect((await f.call(route("publish"), f.publication(`large-${index}`, String(index), { ciphertext: randomBytes(MAX_CIPHERTEXT).toString("base64") }))).status).toBe(200);
+  for (let index = 1; index <= 3; index++) expect((await f.call(route("publish"), f.publication(`large-${index}`, String(index), { ciphertext: randomBytes(Math.floor(MAX_BODY * 3 / 8)).toString("base64") }))).status).toBe(200);
   const first = await f.call(route("sync") + "?cursor=0"); expect(first.bytes).toBeLessThanOrEqual(MAX_BODY); expect(first.value.entries).toHaveLength(1); expect(first.value.next_cursor).toBe("1");
   const second = await f.call(route("sync") + "?cursor=1"); expect(second.value.entries[0].server_sequence).toBe("2"); expect(second.bytes).toBeLessThanOrEqual(MAX_BODY);
 }));

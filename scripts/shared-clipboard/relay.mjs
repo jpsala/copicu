@@ -6,8 +6,8 @@ import { createControl } from './control.mjs';
 import { createIdentity } from './identity.mjs';
 export { controlSigningBytes } from './control.mjs';
 
-export const MAX_BODY = 2_000_000;
-export const MAX_CIPHERTEXT = 1024 * 1024 + 16 * 1024;
+export const MAX_BODY = 36 * 1024 * 1024;
+export const MAX_CIPHERTEXT = 25 * 1024 * 1024 + 16 * 1024;
 // Local fixture candidates, not production capacity claims. Reducing a limit
 // rejects new records; it never evicts identities, receipts or retained rows.
 export const DEFAULT_LIMITS = Object.freeze({ publicationsPerChannel: 4096, payloadBytesPerChannel: 64 * 1024 * 1024, pendingLeases: 1024, reportsPerChannel: 16384, devices: 256, grants: 4096, controlEventsPerPerson: 1024 });

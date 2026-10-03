@@ -3,7 +3,7 @@
 http:
   routers:
     copicu-sharing:
-      rule: "Host(`sharing.example.com`)"
+      rule: "Host(`sharing.jpsala.dev`)"
       entryPoints: [https]
       service: copicu-sharing
       middlewares: [copicu-sharing-headers]

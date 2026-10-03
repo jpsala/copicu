@@ -3,7 +3,7 @@
 //! Native effects remain host-owned and require durable claims and revalidation.
 use super::{
     config::*,
-    crypto::{self, ChannelKey, DeviceSigner, Entropy, ReceivePolicy, SystemEntropy, VerifiedText},
+    crypto::{self, ChannelKey, DeviceSigner, Entropy, ReceivePolicy, SystemEntropy, VerifiedContent},
     custody::{Binding, KeyKind, Vault},
     transport::{self, LeaseProof, RelayClient, Report},
     wire::{self, Envelope, Freshness},
@@ -14,6 +14,7 @@ use crate::storage::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
+use crate::clipboard_content::ClipboardContent;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -785,7 +786,8 @@ pub(crate) fn history_page(
         let e = &entry.envelope;
         let mut value = json!({"publicationId":e.publication_id,"channelId":channel_id,"sequence":entry.server_sequence,"originDeviceId":e.device_id,"expiresAtUnixMs":e.expires_at_unix_ms,"status":"unavailable"});
         if let Ok(text) = super::product::open_history_envelope(storage, &c, &ch, e) {
-            value["text"] = json!(text.text());
+            let preview = text.content().preview()?;
+            for (key, item) in preview.as_object().ok_or("Invalid publication preview")? { value[key] = item.clone(); }
             value["status"] = json!("available");
         }
         entries.push(value);
@@ -811,7 +813,7 @@ fn historical_verified(
     storage: &AppStorage,
     channel_id: &str,
     publication: &str,
-) -> Result<VerifiedText, String> {
+) -> Result<VerifiedContent, String> {
     if !crypto::valid_id(publication) {
         return Err("Invalid publication ID".into());
     }
@@ -839,15 +841,14 @@ pub(crate) fn historical_text(
     publication: &str,
 ) -> Result<String, String> {
     let _network = NETWORK.lock().map_err(error)?;
-    Ok(historical_verified(storage, channel_id, publication)?
-        .text()
-        .into())
+    historical_verified(storage, channel_id, publication)?.content().text().map(str::to_owned)
+        .ok_or_else(|| "This publication is an image; use Copy image".into())
 }
 pub(crate) fn prepare_historical_copy(
     storage: &AppStorage,
     channel_id: &str,
     publication: &str,
-) -> Result<VerifiedText, String> {
+) -> Result<VerifiedContent, String> {
     let _network = NETWORK.lock().map_err(error)?;
     historical_verified(storage, channel_id, publication)
 }
@@ -855,16 +856,16 @@ pub(crate) fn prepare_historical_copy(
 // access immediately before the native writer, without a second network call.
 pub(crate) fn admit_historical_copy(
     storage: &AppStorage,
-    verified: &VerifiedText,
-) -> Result<String, String> {
+    verified: &VerifiedContent,
+) -> Result<ClipboardContent, String> {
     let _admission = WORKER.lock().map_err(error)?;
     let c = required(storage)?;
     let ch = channel(&c, &verified.envelope().channel_id)?;
     let current = super::product::open_history_envelope(storage, &c, ch, verified.envelope())?;
     store(storage)?
-        .provenance(current.text(), None)
+        .provenance_hash(&current.content().hash(), None)
         .map_err(error)?;
-    Ok(current.text().into())
+    Ok(current.content().clone())
 }
 pub(crate) fn historical_import(
     storage: &AppStorage,
@@ -1400,7 +1401,7 @@ pub(super) fn open_envelope(
     k: &ChannelKey,
     e: &Envelope,
     at: u64,
-) -> Result<VerifiedText, String> {
+) -> Result<VerifiedContent, String> {
     let grant = ch
         .grants
         .iter()
@@ -1863,6 +1864,19 @@ fn publish_text_unlocked(
     text: &str,
     _source: &str,
 ) -> Result<Value, String> {
+    publish_content_unlocked(storage, channel_id, &ClipboardContent::Text(text.into()), _source)
+}
+pub(crate) fn publish_content(storage: &AppStorage, channel_id: &str, content: &ClipboardContent, source: &str) -> Result<Value, String> {
+    let _worker = WORKER.lock().map_err(error)?;
+    publish_content_unlocked(storage, channel_id, content, source)
+}
+pub(crate) fn authorize_publish(storage: &AppStorage, channel_id: &str) -> Result<(), String> {
+    let c = required(storage)?;
+    let ch = channel(&c, channel_id)?;
+    if send_is_paused(&c, ch) || !ch.policy.can_publish { return Err("Shared clipboard sending is paused or access was denied".into()); }
+    Ok(())
+}
+fn publish_content_unlocked(storage: &AppStorage, channel_id: &str, content: &ClipboardContent, _source: &str) -> Result<Value, String> {
     let c = required(storage)?;
     let ch = channel(&c, channel_id)?;
     if send_is_paused(&c, ch) {
@@ -1871,9 +1885,7 @@ fn publish_text_unlocked(
     if !ch.policy.can_publish {
         return Err("Publishing to this channel is not authorized".into());
     }
-    if text.is_empty() || text.len() > wire::MAX_TEXT_BYTES {
-        return Err("Only nonempty plain text up to 1 MiB can be published".into());
-    }
+    content.validate()?;
     let s = store(storage)?;
     let v = vault(&s, &c)?;
     let k = key(&v, &c, ch)?;
@@ -1902,7 +1914,7 @@ fn publish_text_unlocked(
     let ordinal = s
         .reserve(&publication, &c.environment, channel_id, &c.device_id)
         .map_err(error)?;
-    let sealed = crypto::seal(
+    let sealed = crypto::seal_content(
         Envelope {
             version: 1,
             environment: c.environment.clone(),
@@ -1920,7 +1932,7 @@ fn publish_text_unlocked(
             ciphertext: vec![],
             signature: vec![],
         },
-        text,
+        content,
         &k,
         &signing,
         &mut SystemEntropy,
@@ -1958,13 +1970,15 @@ pub(crate) fn publish_folder_ingress(
         return Ok(0);
     }
     let clip = storage.get_item(item)?;
-    if clip.content_kind() != "text" || is_remote_item_or_text(storage, Some(item), clip.text())? {
+    if !matches!(clip.content_kind(), "text" | "image")
+        || store(storage)?.is_remote_hash(Some(item), clip.normalized_hash()).map_err(error)? {
         return Ok(0);
     }
+    let content = ClipboardContent::from_item(storage, item)?;
     let mut count = 0;
     for ch in &c.channels {
         if ingress_matches(&c, ch, folder, new_ingress) {
-            publish_text_unlocked(storage, &ch.policy.id, clip.text(), "folderIngress")?;
+            publish_content_unlocked(storage, &ch.policy.id, &content, "folderIngress")?;
             count += 1;
         }
     }
@@ -1978,7 +1992,7 @@ pub(crate) struct IncomingEffect {
     pub origin_device_id: String,
     pub generation: u64,
     pub sequence: u64,
-    pub text: String,
+    pub content: ClipboardContent,
     pub lease_expires_at_unix_ms: u64,
     pub lease_started: Instant,
     pub lease_duration_ms: u64,
@@ -2247,11 +2261,11 @@ fn poll_channel(
         if e.device_id == c.device_id {
             continue;
         }
-        s.provenance(verified.text(), None).map_err(error)?;
+        s.provenance_hash(&verified.content().hash(), None).map_err(error)?;
         if ch.policy.save_to_folder {
             match s.history_import(&subscription, fence, &verified, &random_id("history")?, at) {
                 Ok(HistoryOutcome::Applied { item }) => {
-                    s.provenance(verified.text(), item).map_err(error)?;
+                    s.provenance_hash(&verified.content().hash(), item).map_err(error)?;
                     result.history_changed = true;
                 }
                 Ok(HistoryOutcome::MissingFolder) => {}
@@ -2273,11 +2287,11 @@ fn poll_channel(
                         origin_device_id: e.device_id.clone(),
                         generation: fence.generation,
                         sequence,
-                        text: verified.text().into(),
+                        content: verified.content().clone(),
                         lease_expires_at_unix_ms: expiry,
                         lease_started: received,
                         lease_duration_ms: duration,
-                        action_id: if ch.policy.receive_action_enabled {
+                        action_id: if ch.policy.receive_action_enabled && verified.content().text().is_some() {
                             ch.policy.receive_action_id.clone()
                         } else {
                             None
@@ -2339,7 +2353,16 @@ pub(crate) fn receipt_text(
         .map_err(error)?;
     let ch = channel(&c, &e.channel_id)?;
     let k = key(&v, &c, ch)?;
-    Ok(open_envelope(&c, ch, &k, &e, now()?)?.text().into())
+    open_envelope(&c, ch, &k, &e, now()?)?.content().text()
+        .map(str::to_owned).ok_or_else(|| "This reception is an image; use Copy image".into())
+}
+pub(crate) fn receipt_content(storage: &AppStorage, subscription: &str, publication: &str) -> Result<ClipboardContent, String> {
+    let c = required(storage)?;
+    let s = store(storage)?;
+    let v = vault(&s, &c)?;
+    let e = s.receipt_envelope(subscription, publication).map_err(error)?;
+    let ch = channel(&c, &e.channel_id)?;
+    Ok(open_envelope(&c, ch, &key(&v, &c, ch)?, &e, now()?)?.content().clone())
 }
 pub(crate) fn claim_clipboard(
     storage: &AppStorage,
@@ -2367,7 +2390,7 @@ pub(crate) fn claim_clipboard(
         .receipt_envelope(&effect.subscription_id, &effect.publication_id)
         .map_err(error)?;
     let text = open_envelope(&c, ch, &key(&v, &c, ch)?, &e, now()?)?;
-    if text.text() != effect.text {
+    if text.content() != &effect.content {
         return Err("Receipt changed before delivery".into());
     }
     let attempt = random_id("clipboard")?;

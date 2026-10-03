@@ -38,9 +38,17 @@ export function validateIdToken(token, { issuer, clientId, nonce, jwks, now = Da
       || typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255) throw Error('invalid_identity_claims');
   return claims;
 }
-export async function createOidc({ issuer, clientId, clientSecret, redirectUri, allowedSubjects = [], allowedEmails = [], allowLoopback = false }) {
+export function validateAdmission({ admission = 'allowlist', allowedSubjects = [], allowedEmails = [] }) {
+  if (!['allowlist', 'authenticated'].includes(admission) || !Array.isArray(allowedSubjects) || !Array.isArray(allowedEmails)
+      || [...allowedSubjects, ...allowedEmails].some(value => typeof value !== 'string' || !value || value.length > 255)) throw Error('invalid_identity_admission');
+  if (admission === 'allowlist' && !allowedSubjects.length && !allowedEmails.length) throw Error('identity_admission_required');
+  if (admission === 'authenticated' && (allowedSubjects.length || allowedEmails.length)) throw Error('invalid_identity_admission');
+  return admission;
+}
+export async function createOidc({ issuer, clientId, clientSecret, redirectUri, admission = 'allowlist', allowedSubjects = [], allowedEmails = [], allowLoopback = false }) {
   const issuerUrl = secureUrl(issuer, allowLoopback); secureUrl(redirectUri, allowLoopback);
-  if (!clientId || !clientSecret || (!allowedSubjects.length && !allowedEmails.length)) throw Error('identity_admission_required');
+  validateAdmission({ admission, allowedSubjects, allowedEmails });
+  if (!clientId || !clientSecret) throw Error('identity_credentials_required');
   const discovery = await jsonResponse(await request(`${issuerUrl.toString().replace(/\/$/, '')}/.well-known/openid-configuration`));
   if (discovery.issuer !== issuer || !discovery.code_challenge_methods_supported?.includes('S256') || !discovery.id_token_signing_alg_values_supported?.includes('RS256')) throw Error('unsupported_identity_provider');
   const authorization = secureUrl(discovery.authorization_endpoint, allowLoopback), tokenEndpoint = secureUrl(discovery.token_endpoint, allowLoopback), keys = secureUrl(discovery.jwks_uri, allowLoopback);
@@ -59,7 +67,7 @@ export async function createOidc({ issuer, clientId, clientSecret, redirectUri, 
       try { claims = validateIdToken(tokens.id_token, { issuer, clientId, nonce, jwks }); }
       catch (error) { if (error.message !== 'invalid_identity_key') throw error; jwks = await jsonResponse(await request(keys)); loadedAt = Date.now(); claims = validateIdToken(tokens.id_token, { issuer, clientId, nonce, jwks }); }
       const email = typeof claims.email === 'string' ? claims.email.toLowerCase() : '';
-      if (!allowedSubjects.includes(claims.sub) && !(claims.email_verified === true && allowedEmails.map(e => e.toLowerCase()).includes(email))) throw Error('account_not_allowed');
+      if (admission === 'allowlist' && !allowedSubjects.includes(claims.sub) && !(claims.email_verified === true && allowedEmails.map(e => e.toLowerCase()).includes(email))) throw Error('account_not_allowed');
       return { issuer, subject: claims.sub }; // Email is not account identity or a display directory.
     },
   };

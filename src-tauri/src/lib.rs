@@ -8,6 +8,7 @@ mod assistant_database;
 #[cfg(not(test))]
 mod assistant_operations;
 mod clipboard;
+mod clipboard_content;
 #[cfg(feature = "shared-clipboard")]
 pub mod shared_native;
 #[cfg(all(feature = "shared-clipboard", feature = "shared-clipboard-n1"))]
@@ -4037,12 +4038,14 @@ pub fn run() {
             shared_host::shared_clipboard_set_paused,
             shared_host::shared_clipboard_set_hotkeys,
             shared_host::shared_clipboard_receipt_text,
+            shared_host::shared_clipboard_receipt_preview,
             shared_host::shared_clipboard_copy_receipt,
             shared_product_host::shared_clipboard_catalog,
             shared_product_host::shared_clipboard_operation,
             shared_product_host::shared_clipboard_connection,
             shared_product_host::shared_clipboard_history,
             shared_product_host::shared_clipboard_publish,
+            shared_product_host::shared_clipboard_publish_current,
             shared_product_host::shared_clipboard_history_action,
             shared_product_host::shared_clipboard_action_target,
             open_assistant_window,

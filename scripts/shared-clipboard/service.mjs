@@ -4,7 +4,7 @@ import { readFile, writeFile, stat } from 'node:fs/promises';
 import { createPrivateKey, generateKeyPairSync } from 'node:crypto';
 import path from 'node:path';
 import { createRelay } from './relay.mjs';
-import { createOidc } from './oidc.mjs';
+import { createOidc, validateAdmission } from './oidc.mjs';
 
 export function validateServiceConfig(c) {
   if (!c || c.version !== 1 || Object.keys(c).sort().join(',') !== 'databasePath,environment,issuerKeyPath,oidc,port,publicUrl,version') throw Error('invalid_service_config');
@@ -12,7 +12,8 @@ export function validateServiceConfig(c) {
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash || !/^[A-Za-z0-9_-]{1,128}$/.test(c.environment)) throw Error('invalid_service_origin');
   if (!Number.isInteger(c.port) || c.port < 1024 || c.port > 65535 || !path.isAbsolute(c.databasePath) || !path.isAbsolute(c.issuerKeyPath) || c.databasePath === c.issuerKeyPath) throw Error('invalid_service_storage');
   const o = c.oidc;
-  if (!o || Object.keys(o).sort().join(',') !== 'allowedEmails,allowedSubjects,clientId,clientSecretPath,issuer' || !path.isAbsolute(o.clientSecretPath) || !Array.isArray(o.allowedEmails) || !Array.isArray(o.allowedSubjects) || (!o.allowedEmails.length && !o.allowedSubjects.length) || [...o.allowedEmails, ...o.allowedSubjects].some(v => typeof v !== 'string' || !v || v.length > 255)) throw Error('invalid_identity_admission');
+  if (!o || Object.keys(o).filter(key => key !== 'admission').sort().join(',') !== 'allowedEmails,allowedSubjects,clientId,clientSecretPath,issuer' || !path.isAbsolute(o.clientSecretPath)) throw Error('invalid_identity_admission');
+  validateAdmission(o);
   if (c.issuerKeyPath === o.clientSecretPath || c.databasePath === o.clientSecretPath) throw Error('invalid_secret_path');
   return c;
 }
@@ -28,7 +29,7 @@ export async function startService(config) {
   try {
     leaseSigner = createPrivateKey(pem);
     if (leaseSigner.asymmetricKeyType !== 'ed25519') throw Error('invalid_issuer_key');
-    oidc = await createOidc({ issuer: c.oidc.issuer, clientId: c.oidc.clientId, clientSecret: clientSecret.toString('utf8').trim(), redirectUri: new URL('v3/auth/callback', c.publicUrl).toString(), allowedEmails: c.oidc.allowedEmails, allowedSubjects: c.oidc.allowedSubjects });
+    oidc = await createOidc({ issuer: c.oidc.issuer, clientId: c.oidc.clientId, clientSecret: clientSecret.toString('utf8').trim(), redirectUri: new URL('v3/auth/callback', c.publicUrl).toString(), admission: c.oidc.admission, allowedEmails: c.oidc.allowedEmails, allowedSubjects: c.oidc.allowedSubjects });
   } finally { pem.fill(0); clientSecret.fill(0); }
   return createRelay({ dbPath: c.databasePath, environment: c.environment, leaseSigner, port: c.port, identity: { publicUrl: c.publicUrl, oidc } });
 }

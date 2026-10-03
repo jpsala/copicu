@@ -132,7 +132,7 @@ pub(super) fn builtin_actions() -> Vec<ActionDefinition> {
         shared_publish_action(
             SHARED_SEND_ACTIVE_ID,
             "Send active clip to shared channel",
-            "Send the active Copicu text clip to the configured channel.",
+            "Send the active Copicu text or image clip to the configured channel.",
             ActionInputSource::PickerSelection,
             SelectionRequirement::Active,
             "history:read-content",
@@ -172,8 +172,8 @@ fn shared_publish_action(
         input: ActionInput {
             source,
             selection,
-            kinds: Some(vec![ClipKind::Text]),
-            mime: Some(vec!["text/plain".to_string()]),
+            kinds: Some(vec![ClipKind::Text, ClipKind::Image]),
+            mime: Some(vec!["text/plain".to_string(), "image/png".to_string()]),
             query: None,
         },
         capabilities: vec![read_capability.to_string(), "shared:publish".to_string()],

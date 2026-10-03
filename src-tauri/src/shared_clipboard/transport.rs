@@ -418,6 +418,7 @@ impl RelayClient {
             return Err(Error::InvalidEndpoint);
         }
         let mut request = self.client.request(method, url);
+        if path.contains("/history") { request = request.timeout(Duration::from_secs(45)); }
         if let Some(input) = input {
             let body = serde_json::to_vec(input).map_err(|_| Error::InvalidInput)?;
             if body.len() > MAX_ENVELOPE_JSON_BYTES {
@@ -498,6 +499,7 @@ impl RelayClient {
         let value: Acceptance = self.send(
             self.client
                 .post(self.channel_url(&envelope.channel_id, "publish")?)
+                .timeout(Duration::from_secs(45))
                 .header(CONTENT_TYPE, "application/json")
                 .body(body),
         )?;
@@ -516,7 +518,7 @@ impl RelayClient {
         url.query_pairs_mut()
             .append_pair("cursor", &cursor.to_string())
             .append_pair("limit", "50");
-        let value: Page = self.send(self.client.get(url))?;
+        let value: Page = self.send(self.client.get(url).timeout(Duration::from_secs(45)))?;
         value.validate(&self.environment, channel, cursor)?;
         Ok(value)
     }

@@ -28,7 +28,7 @@ Endpoint real latest HTTP 200/version `0.5.3`, API y los tres assets descargados
 coinciden a `2026-10-03T00:26:28.9672168Z`.
 [Recibos y límites](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053).
 [Agentic Validation 37081883421](https://github.com/jpsala/copicu/actions/runs/37081883421)
-SUCCESS para la fuente. Google/HTTPS real y aceptación física siguen pendientes;
+SUCCESS para la fuente. Google/HTTPS están activos; aceptación física sintética sigue pendiente;
 los cinco casos completos de identidad son debug, no shipping.
 
 La anterior [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2) y su

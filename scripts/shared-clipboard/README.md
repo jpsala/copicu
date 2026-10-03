@@ -9,20 +9,31 @@ The concrete contract, provider proposal and external gates live in
 [identity-service-plan.md](../../specs/016-shared-clipboard/identity-service-plan.md).
 These files do not deploy a service. JP authorized deployment/distribution on
 2026-10-02; the selected destination is the existing VPS/Traefik and Google OIDC.
-Specific approval of Google terms/OAuth credentials, DNS and the pinned Bun
-image is pending. No runtime was fetched or service started. The private account
-admission and credentials stay outside Git; this guide grants no future permission.
+JP approved Google terms/OAuth credentials, DNS and the pinned Bun image in this
+session. The service is running at `https://sharing.jpsala.dev/` with Google OIDC,
+Traefik HTTPS and persistent SQLite. Credentials and account configuration stay
+outside Git; this guide grants no future permission. Remote evidence and limits
+are recorded in [identity acceptance](../../specs/016-shared-clipboard/identity-acceptance.md#servicio-remoto-activo).
+
+The next client uses that fixed internal URL; Settings asks for the PC name and
+browser sign-in only. Any authenticated Google account is the target admission
+policy, with all its PCs at the same level. The current deployment still uses the
+initial allowlist and `v0.5.3` device approval. The replacement key-custody model
+needs JP's decision before deployment; do not silently weaken E2EE.
 
 ## Prepare for operator review
 
-1. Choose the approved HTTPS hostname and replace `sharing.example.com` in
-   `deploy/Caddyfile` and a private copy of `deploy/service.example.json`.
+1. Use the fixed product hostname `sharing.jpsala.dev` and a private copy of
+   `deploy/service.example.json`. Alternative remote URLs are not client settings.
 2. Register an OIDC **web application** with that exact
    `https://HOST/v3/auth/callback`. Discovery must advertise S256 and RS256.
    Only `openid email` are requested. No Google Drive/clipboard permission.
-3. Put the client ID in private config, the client secret in its protected file,
-   and explicitly list admitted verified emails or provider subjects. Empty
-   admission lists fail closed. Identity is keyed by issuer/subject, not email.
+3. Put the client ID in private config and the client secret in its protected file.
+   `oidc.admission: "authenticated"` admits any account whose provider token passes
+   signature, issuer, audience, time and nonce checks, with empty admission lists.
+   The optional `"allowlist"` mode (also the legacy default) requires admitted
+   verified emails or provider subjects. A missing policy with empty lists fails
+   closed. Identity is keyed by issuer/subject, not email.
 4. Generate a fresh Ed25519 service issuer with
    `bun scripts/shared-clipboard/service.mjs --init-issuer ABSOLUTE_NEW_KEY`.
    Never replace an existing issuer to fix startup: SQLite pins its public key.
@@ -45,7 +56,7 @@ scripts/shared-clipboard/deploy/compose.yaml up -d`. The Caddy container shares
 the service network namespace, so the Bun port stays on loopback. Review runtime
 logs for code-free readiness only; do not enable access logs for auth URLs.
 The equivalent existing-runtime launch is `bun service.mjs --config
-ABSOLUTE_PRIVATE_CONFIG`. Neither command has been executed as a deployment.
+ABSOLUTE_PRIVATE_CONFIG`.
 
 If the VPS already has Coolify/Traefik occupying ports 80/443, use
 `deploy/compose.traefik.yaml` and the separate `deploy/traefik.example.yaml`
@@ -62,11 +73,12 @@ The service already enforces finite request/body limits.
 
 Verify HTTPS certificate, `/health`, the configured public origin, OIDC callback,
 SSE streaming (proxy buffering disabled), unauthorized V1/V2 denial, persistence
-after service restart and revocation. Then on the first PC, Settings → Sharing:
-enter the HTTPS service URL/name and sign in in the system browser. On the second
-PC, use the same service/account. Compare its complete fingerprint on both PCs,
-then approve in Devices on the first PC. Create/connect a clipboard explicitly
-on each PC; select direction. Windows updates and Actions stay off until enabled.
+after service restart and revocation. The next client uses Settings → Sharing:
+enter the PC name and sign in in the system browser with the same account.
+The distributed `v0.5.3` still asks for the HTTPS URL and requires comparing the
+complete fingerprint on both PCs and approving in Devices. Create/connect a
+clipboard explicitly on each PC; select direction. Windows updates and Actions
+stay off until enabled.
 
 Generate and store the recovery code outside Copicu. Recovery needs account login
 and that code, retires older devices and requires key rotation before sending
@@ -76,7 +88,8 @@ history. Without an approved PC or saved code the service cannot recover keys.
 ## Backup and rollback
 
 Stop the service cleanly for a consistent SQLite copy, or use SQLite's online
-backup mechanism. Preserve DB, issuer identity, private config and encrypted
+backup mechanism, such as `VACUUM INTO` into a fresh owner-only path. Preserve DB,
+issuer identity, private config and encrypted
 snapshots together. WAL/SHM must not be discarded while the service is running.
 Recovery codes remain user-owned and are not part of server backup.
 

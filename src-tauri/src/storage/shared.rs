@@ -1,11 +1,14 @@
 //! Explicit opt-in sharing persistence; never initialized by startup/MIGRATIONS.
-//! The feature-gated RuntimeStore admits only immutable VerifiedText and current
+//! The feature-gated RuntimeStore admits only immutable VerifiedContent and current
 //! stored grants. Legacy private methods remain synthetic fixture candidates.
 
 use super::{hash_text, normalize_text_for_storage, prune_history_from_conn, AppStorage};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
-const MAX_BYTES: usize = 2_000_000; // Matches bounded wire envelope, including body.
+#[cfg(feature = "shared-clipboard")]
+const MAX_BYTES: usize = crate::shared_clipboard::wire::MAX_ENVELOPE_JSON_BYTES;
+#[cfg(not(feature = "shared-clipboard"))]
+const MAX_BYTES: usize = 2_000_000;
 const MAX_TEXT_BYTES: usize = 1024 * 1024;
 const MAX_PAGE: usize = 50;
 const MAX_PENDING: i64 = 100;
@@ -400,6 +403,8 @@ impl AppStorage {
             if now < 0 || expires_at <= now {
                 return Err(Error::Ineligible);
             }
+            let queued_bytes: i64 = conn.query_row("SELECT COALESCE(SUM(length(envelope)+length(ciphertext)),0) FROM shared_outbox WHERE state='queued'", [], |r| r.get(0)).map_err(db)?;
+            if queued_bytes.saturating_add(envelope.len() as i64).saturating_add(ciphertext.len() as i64) > 64 * 1024 * 1024 { return Err(Error::Limit); }
             conn.execute("UPDATE shared_outbox SET envelope=?2,ciphertext=?3,expires_at=?4,state='queued' WHERE publication=?1",params![reservation.publication,envelope,ciphertext,expires_at]).map_err(db)?;
             Ok(())
         })
@@ -589,7 +594,7 @@ impl AppStorage {
             if !exists {
                 return Err(Error::Missing);
             }
-            conn.execute("UPDATE shared_receipts SET envelope=NULL,ciphertext=NULL,acquisition='expired' WHERE subscription=?1 AND (envelope IS NOT NULL OR ciphertext IS NOT NULL) AND (expires_at<=?2 OR (acquisition IN ('ready','rejected','expired') AND sequence NOT IN (SELECT sequence FROM shared_receipts WHERE subscription=?1 ORDER BY sequence DESC LIMIT ?3))) AND NOT EXISTS(SELECT 1 FROM shared_attempts a WHERE a.subscription=shared_receipts.subscription AND a.publication=shared_receipts.publication AND (a.outcome='claimed' OR a.report='pending'))",params![sid,now,keep_latest]).map_err(db)
+            conn.execute("UPDATE shared_receipts SET envelope=NULL,ciphertext=NULL,acquisition='expired' WHERE subscription=?1 AND (envelope IS NOT NULL OR ciphertext IS NOT NULL) AND (expires_at<=?2 OR (acquisition IN ('ready','rejected','expired') AND sequence NOT IN (SELECT sequence FROM shared_receipts WHERE subscription=?1 ORDER BY sequence DESC LIMIT ?3)) OR publication IN (SELECT publication FROM (SELECT publication,SUM(COALESCE(length(envelope),0)+COALESCE(length(ciphertext),0)) OVER(ORDER BY sequence DESC) AS used FROM shared_receipts WHERE subscription=?1) WHERE used>134217728)) AND NOT EXISTS(SELECT 1 FROM shared_attempts a WHERE a.subscription=shared_receipts.subscription AND a.publication=shared_receipts.publication AND (a.outcome='claimed' OR a.report='pending'))",params![sid,now,keep_latest]).map_err(db)
         })
     }
     // Receipts and their cursor commit together. Pages must be contiguous; a
@@ -891,7 +896,7 @@ pub(crate) use runtime::{
 mod runtime {
     use super::*;
     use crate::shared_clipboard::{
-        crypto::VerifiedText,
+        crypto::VerifiedContent,
         wire::{self, Freshness},
     };
     use ed25519_dalek::{Signature, VerifyingKey};
@@ -939,7 +944,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
     }
     pub(crate) struct VerifiedArrival<'a> {
         pub(crate) server_sequence: u64,
-        pub(crate) text: &'a VerifiedText,
+        pub(crate) text: &'a VerifiedContent,
     }
     /// Metadata only; safe to sign/retry after crashes or grant changes. Sending
     /// this report never grants or repeats an effect. No ciphertext/key/text.
@@ -980,15 +985,42 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
         }
         Ok(())
     }
-    fn serialized(text: &VerifiedText) -> Result<Vec<u8>> {
-        if text.text().len() > MAX_TEXT_BYTES {
-            return Err(Error::Limit);
-        }
+    fn serialized(text: &VerifiedContent) -> Result<Vec<u8>> {
         let bytes = serde_json::to_vec(text.envelope()).map_err(|_| Error::Invalid)?;
         opaque(&bytes)?;
         Ok(bytes)
     }
-    fn current_grant(conn: &Connection, text: &VerifiedText, now: i64) -> Result<()> {
+    fn insert_content(conn: &Connection, storage: &AppStorage, verified: &VerifiedContent, hash: &str, folder: Option<i64>, now: i64) -> Result<i64> {
+        match verified.content() {
+            crate::clipboard_content::ClipboardContent::Text(text) => {
+                conn.execute("INSERT INTO clipboard_items(content_kind,text,normalized_hash,created_at_unix_ms,last_used_at_unix_ms,last_copied_at_unix_ms,copy_count,mime_primary,folder_id) VALUES('text',?1,?2,?3,?3,NULL,0,'text/plain',?4)",params![text,hash,now,folder]).map_err(db)?;
+            }
+            crate::clipboard_content::ClipboardContent::Image(png) => {
+                let image = crate::image_capture::normalize_clipboard_image(crate::image_capture::validate_png(png).map_err(|_| Error::Invalid)?).map_err(|_| Error::Invalid)?;
+                let blob = super::super::relative_blob_path(super::super::IMAGE_BLOB_DIR, hash);
+                let thumbnail = super::super::relative_blob_path(super::super::THUMBNAIL_BLOB_DIR, hash);
+                super::super::write_blob(&storage.app_data_dir.join(&blob), &image.png_bytes).map_err(|_| Error::Storage)?;
+                super::super::write_blob(&storage.app_data_dir.join(&thumbnail), &image.thumbnail_png_bytes).map_err(|_| Error::Storage)?;
+                conn.execute("INSERT INTO clipboard_items(content_kind,text,normalized_hash,created_at_unix_ms,last_used_at_unix_ms,last_copied_at_unix_ms,copy_count,mime_primary,blob_path,thumbnail_path,byte_size,width,height,folder_id) VALUES('image',?1,?2,?3,?3,NULL,0,'image/png',?4,?5,?6,?7,?8,?9)",params![format!("Image {} × {}",image.width,image.height),hash,now,super::super::path_to_db_string(&blob),super::super::path_to_db_string(&thumbnail),image.png_bytes.len() as i64,image.width,image.height,folder]).map_err(db)?;
+            }
+        }
+        Ok(conn.last_insert_rowid())
+    }
+
+    // Drop after the transaction releases its connection. Failed imports cannot
+    // leave unreferenced payloads, and an existing referenced blob is preserved.
+    struct ImportBlobs<'a>(&'a AppStorage, Option<String>);
+    impl Drop for ImportBlobs<'_> {
+        fn drop(&mut self) {
+            if let Some(hash) = &self.1 {
+                self.0.remove_blob_paths([super::super::ItemBlobPaths {
+                    blob_path: Some(format!("blobs/images/{hash}.png")),
+                    thumbnail_path: Some(format!("blobs/thumbnails/{hash}.png")),
+                }]);
+            }
+        }
+    }
+    fn current_grant(conn: &Connection, text: &VerifiedContent, now: i64) -> Result<()> {
         pinned_grant(conn, text, now, false)
     }
     // Only explicit historical imports can use a previously granted epoch.
@@ -996,7 +1028,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
     // authorized range. Live admission retains exact current-epoch matching.
     fn pinned_grant(
         conn: &Connection,
-        text: &VerifiedText,
+        text: &VerifiedContent,
         now: i64,
         historical: bool,
     ) -> Result<()> {
@@ -1319,7 +1351,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                         return Err(Error::Replay);
                     }
                     // This label records signed sender intent and local sequence
-                    // classification only. VerifiedText does not prove a valid
+                    // classification only. VerifiedContent does not prove a valid
                     // issuer lease or elapsed/native fences: never use this DB
                     // label as permission for clipboard or action execution.
                     let delivery = if !enabled || last <= bootstrap {
@@ -1351,18 +1383,15 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             &self,
             sid: &str,
             fence: PageFence,
-            text: &VerifiedText,
+            text: &VerifiedContent,
             attempt: &str,
             now_unix_ms: u64,
         ) -> Result<HistoryOutcome> {
             id(attempt)?;
             let now = timestamp(now_unix_ms)?;
             let body = serialized(text)?;
-            let normalized = normalize_text_for_storage(text.text());
-            if normalized.is_empty() {
-                return Err(Error::Invalid);
-            }
-            let hash = hash_text(&normalized);
+            let hash = text.content().hash();
+            let _blobs = ImportBlobs(self.storage, (text.content().kind() == "image").then(|| hash.clone()));
             let outcome = tx(self.storage, |conn| {
                 let (env, channel, device, enabled, _) = subscription(conn, sid, fence)?;
                 let e = text.envelope();
@@ -1434,8 +1463,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                     let item = match existing {
                         Some(i) => i,
                         None => {
-                            conn.execute("INSERT INTO clipboard_items(content_kind,text,normalized_hash,created_at_unix_ms,last_used_at_unix_ms,last_copied_at_unix_ms,copy_count,mime_primary,folder_id) VALUES('text',?1,?2,?3,?3,NULL,0,'text/plain',?4)",params![text.text(),hash,now,folder]).map_err(db)?;
-                            conn.last_insert_rowid()
+                            insert_content(conn, self.storage, text, &hash, folder, now)?
                         }
                     };
                     conn.execute("UPDATE shared_receipts SET history_outcome='applied',local_item_id=?3 WHERE subscription=?1 AND publication=?2",params![sid,e.publication_id,item]).map_err(db)?;
@@ -2001,6 +2029,9 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
         }
         pub(crate) fn provenance(&self, text: &str, item: Option<i64>) -> Result<()> {
             let hash = hash_text(&normalize_text_for_storage(text));
+            self.provenance_hash(&hash, item)
+        }
+        pub(crate) fn provenance_hash(&self, hash: &str, item: Option<i64>) -> Result<()> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
             conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=COALESCE(excluded.item_id,shared_remote_provenance.item_id)",params![hash,item]).map_err(db)?;
             Ok(())
@@ -2009,17 +2040,14 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
         /// automatic Actions. Dedupe preserves an existing item's metadata.
         pub(crate) fn import_manual(
             &self,
-            text: &VerifiedText,
+            text: &VerifiedContent,
             folder: Option<i64>,
             now: u64,
         ) -> Result<serde_json::Value> {
             let now = timestamp(now)?;
-            let normalized = normalize_text_for_storage(text.text());
-            if normalized.is_empty() {
-                return Err(Error::Invalid);
-            }
-            let hash = hash_text(&normalized);
-            tx(self.storage, |conn| {
+            let hash = text.content().hash();
+            let _blobs = ImportBlobs(self.storage, (text.content().kind() == "image").then(|| hash.clone()));
+            let result = tx(self.storage, |conn| {
                 pinned_grant(conn, text, now, true)?;
                 if let Some(folder) = folder {
                     if folder <= 0
@@ -2045,20 +2073,21 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                 let (item, destination) = if let Some(existing) = existing {
                     existing
                 } else {
-                    conn.execute("INSERT INTO clipboard_items(content_kind,text,normalized_hash,created_at_unix_ms,last_used_at_unix_ms,last_copied_at_unix_ms,copy_count,mime_primary,folder_id) VALUES('text',?1,?2,?3,?3,NULL,0,'text/plain',?4)",params![text.text(),hash,now,folder]).map_err(db)?;
-                    (conn.last_insert_rowid(), folder)
+                    (insert_content(conn, self.storage, text, &hash, folder, now)?, folder)
                 };
                 conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=excluded.item_id",params![hash,item]).map_err(db)?;
-                if existing.is_none() {
-                    prune_history_from_conn(conn).map_err(|_| Error::Storage)?;
-                }
-                Ok(
-                    serde_json::json!({"itemId":item,"folderId":destination,"alreadyExists":existing.is_some()}),
-                )
-            })
+                let prune = if existing.is_none() { Some(prune_history_from_conn(conn).map_err(|_| Error::Storage)?) } else { None };
+                Ok((serde_json::json!({"itemId":item,"folderId":destination,"alreadyExists":existing.is_some()}), prune))
+            })?;
+            if result.0["alreadyExists"] == false || result.1.as_ref().is_some_and(|p| p.removed_items > 0) { self.storage.bump_mutation_epoch(); }
+            if let Some(prune) = result.1 { self.storage.remove_blob_paths(prune.blob_paths); }
+            Ok(result.0)
         }
         pub(crate) fn is_remote(&self, item: Option<i64>, text: &str) -> Result<bool> {
             let hash = hash_text(&normalize_text_for_storage(text));
+            self.is_remote_hash(item, &hash)
+        }
+        pub(crate) fn is_remote_hash(&self, item: Option<i64>, hash: &str) -> Result<bool> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
             conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_remote_provenance WHERE hash=?1 OR (item_id=?2 AND ?2 IS NOT NULL))",params![hash,item],|r|r.get(0)).map_err(db)
         }
@@ -2067,7 +2096,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             sid: &str,
             publication: &str,
             fence: PageFence,
-            text: &VerifiedText,
+            text: &VerifiedContent,
             attempt: &str,
             now: u64,
         ) -> Result<()> {
@@ -2150,7 +2179,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             &self,
             sid: &str,
             publication: &str,
-            text: &VerifiedText,
+            text: &VerifiedContent,
             attempt: &str,
             now: u64,
         ) -> Result<()> {
@@ -3337,7 +3366,7 @@ mod tests {
     mod authenticated {
         use super::*;
         use crate::shared_clipboard::{
-            crypto::{self, ChannelKey, DeviceSigner, Entropy, ReceivePolicy, VerifiedText},
+            crypto::{self, ChannelKey, DeviceSigner, Entropy, ReceivePolicy, VerifiedContent},
             wire::{Envelope, Freshness},
         };
         struct Synthetic(u8);
@@ -3405,7 +3434,7 @@ mod tests {
             publication: &str,
             ordinal: u64,
             expires: u64,
-        ) -> VerifiedText {
+        ) -> VerifiedContent {
             verified_content(
                 signer,
                 key,
@@ -3422,7 +3451,7 @@ mod tests {
             ordinal: u64,
             expires: u64,
             content: &str,
-        ) -> VerifiedText {
+        ) -> VerifiedContent {
             let e = Envelope {
                 version: 1,
                 environment: "test".into(),
@@ -3824,22 +3853,15 @@ mod tests {
             let fence = setup_auth(f.storage(), &signer, None);
             let text = "s".repeat(800_000);
             let a = verified_content(&signer, &key, "large-one", 1, 1000, &text);
-            let b = verified_content(&signer, &key, "large-two", 2, 1000, &text);
+            let count = MAX_BYTES / serde_json::to_vec(a.envelope()).unwrap().len() + 1;
+            let payloads = (0..count).map(|i| verified_content(&signer, &key, &format!("large-{i}"), i as u64 + 1, 1000, &text)).collect::<Vec<_>>();
+            let entries = payloads.iter().enumerate().map(|(i, text)| VerifiedArrival { server_sequence:i as u64 + 1, text }).collect::<Vec<_>>();
             let store = RuntimeStore::init(f.storage()).unwrap();
             assert!(matches!(
                 store.admit_page(
                     "auth",
                     fence,
-                    &[
-                        VerifiedArrival {
-                            server_sequence: 1,
-                            text: &a
-                        },
-                        VerifiedArrival {
-                            server_sequence: 2,
-                            text: &b
-                        }
-                    ],
+                    &entries,
                     2
                 ),
                 Err(Error::Limit)

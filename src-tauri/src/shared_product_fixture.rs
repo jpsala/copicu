@@ -75,6 +75,9 @@ fn boundary(profile: &Path, bundle: &Path) -> Result<(), String> {
 }
 pub fn run() -> Result<(), String> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args == ["--native-image-roundtrip", "--allow-clipboard-mutation"] {
+        return native_image_roundtrip();
+    }
     let prepare = args.first().is_some_and(|s| s == "--prepare-profile");
     let read = args
         .first()
@@ -180,4 +183,27 @@ pub fn run() -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn native_image_roundtrip() -> Result<(), String> {
+    use crate::{clipboard_content::ClipboardContent, shared_native};
+    use clipboard_rs::{Clipboard, ClipboardContext};
+    let clipboard = ClipboardContext::new().map_err(|_| "Cannot initialize synthetic clipboard test")?;
+    clipboard.set_text("COPICU_SYNTH_NATIVE_IMAGE_START".into()).map_err(|_| "Cannot prepare synthetic clipboard")?;
+    let image = crate::image_capture::synthetic_image(64,48);
+    let content = ClipboardContent::Image(image.png_bytes);
+    let sequence = shared_native::sequence().ok_or("Missing Windows clipboard sequence")?;
+    let outcome = shared_native::write_content(&content,sequence);
+    if outcome != "applied" { return Err(format!("Synthetic image write did not apply: {outcome}")); }
+    let sequence = shared_native::sequence().ok_or("Missing image sequence")?;
+    let read = shared_native::snapshot_content(sequence)?;
+    if read != content { return Err("Synthetic image pixels or alpha changed in Windows round-trip".into()); }
+    if !shared_native::is_remote_write(&content.hash()) { return Err("Synthetic image write lost its provenance".into()); }
+    let expired = shared_native::write_content_before(&content,sequence,Some(1),Some(0));
+    if expired != "clipboardStale" || shared_native::sequence() != Some(sequence) { return Err("Expired image write mutated Windows".into()); }
+    clipboard.set_text("COPICU_SYNTH_NATIVE_IMAGE_END".into()).map_err(|_| "Cannot finish synthetic clipboard test")?;
+    if shared_native::write_content(&content,sequence) != "clipboardStale" { return Err("Stale image write was admitted".into()); }
+    if shared_native::snapshot(shared_native::sequence().ok_or("Missing final sequence")?)? != "COPICU_SYNTH_NATIVE_IMAGE_END" { return Err("Stale image write overwrote synthetic text".into()); }
+    println!("{}", serde_json::json!({"synthetic":true,"imageWrite":true,"pixelAndAlphaRoundTrip":true,"provenance":true,"expiredNoMutation":true,"staleNoMutation":true}));
+    Ok(())
 }

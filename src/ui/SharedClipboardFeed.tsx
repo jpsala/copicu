@@ -8,7 +8,7 @@ import { UiButton, UiIconButton, UiTextInput } from "./controls";
 import "./sharedClipboard.css";
 
 export type SharedClipboardFeedProps = {
-  api?: Pick<SharedClipboardApi, "status" | "receiptText" | "copyReceipt">;
+  api?: Pick<SharedClipboardApi, "status" | "receiptText" | "copyReceipt"> & Partial<Pick<SharedClipboardApi, "receiptPreview">>;
   onClose?: () => void;
   onOpenSettings?: () => void;
   closeLabel?: string;
@@ -29,7 +29,7 @@ export function SharedClipboardFeed({ api = sharedClipboardApi, onClose, onOpenS
   const activeRef = useRef(true);
   const copyingRef = useRef(false);
   const id = useId();
-  const loader = useMemo(() => createSharedReceiptLoader(api.receiptText, next => { if (activeRef.current) setPreview(next); }), [api]);
+  const loader = useMemo(() => createSharedReceiptLoader(api.receiptPreview ?? api.receiptText, next => { if (activeRef.current) setPreview(next); }), [api]);
   const receipts = useMemo(() => snapshot ? sharedReceptionRows(snapshot, query) : [], [snapshot, query]);
   const hasVisibleSelection = receipts.some(receipt => sharedReceiptKey(receipt) === preview.receiptKey);
   const selected = snapshot?.receipts.find(receipt => sharedReceiptKey(receipt) === preview.receiptKey);
@@ -58,7 +58,7 @@ export function SharedClipboardFeed({ api = sharedClipboardApi, onClose, onOpenS
     copyingRef.current = true; setCopying(true); setNotice(null);
     try {
       await api.copyReceipt(selected.subscriptionId, selected.publicationId);
-      if (activeRef.current) { setNotice("Received text copied to Windows clipboard."); void refresh(); }
+      if (activeRef.current) { setNotice(`Received ${preview.image ? "image" : "text"} copied to Windows clipboard.`); void refresh(); }
     } catch { if (activeRef.current) setNotice("Could not copy this reception. Refresh its status and try again."); }
     finally { copyingRef.current = false; if (activeRef.current) setCopying(false); }
   };
@@ -70,7 +70,7 @@ export function SharedClipboardFeed({ api = sharedClipboardApi, onClose, onOpenS
     select(receipts[index]);
     listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]')[index]?.focus();
   };
-  const empty = !snapshot ? "Checking receptions…" : !snapshot.available ? "Sharing is unavailable in this build." : !snapshot.configured ? "Link this device in Sharing settings to receive text from a private channel." : query.trim() ? "No channels or devices match this filter." : "No receptions yet. Enable reception for a channel in Sharing settings.";
+  const empty = !snapshot ? "Checking receptions…" : !snapshot.available ? "Sharing is unavailable in this build." : !snapshot.configured ? "Link this device in Sharing settings to receive content from a shared clipboard." : query.trim() ? "No channels or devices match this filter." : "No receptions yet. Enable reception for a channel in Sharing settings.";
   return <section className="shared-clipboard-feed" aria-label="Shared clipboard receptions" data-testid="shared-clipboard-feed" onKeyDown={event => {
     if (event.key === "Escape" && onClose) { event.preventDefault(); event.stopPropagation(); loader.clear(); onClose(); }
     if (event.key === "Enter") { event.stopPropagation(); if (event.target instanceof HTMLInputElement) event.preventDefault(); }
@@ -96,16 +96,16 @@ export function SharedClipboardFeed({ api = sharedClipboardApi, onClose, onOpenS
       </div>
       <div className="shared-feed-preview" aria-label="Reception preview" aria-busy={preview.status === "loading"}>
         {selected ? <>
-          <header><div><h3>{channelName(selected)}</h3><p>From {selected.originDeviceId}</p></div><UiButton type="button" variant="default" size="compact-sm" leftSection={<Copy size={14} aria-hidden="true" />} disabled={!sharedReceiptCanCopy(selected, now) || copying} loading={copying} onClick={() => void copy()}>Copy text</UiButton></header>
+          <header><div><h3>{channelName(selected)}</h3><p>From {selected.originDeviceId}</p></div><UiButton type="button" variant="default" size="compact-sm" leftSection={<Copy size={14} aria-hidden="true" />} disabled={!sharedReceiptCanCopy(selected, now) || copying} loading={copying} onClick={() => void copy()}>{preview.image ? "Copy image" : "Copy text"}</UiButton></header>
           <div className="shared-feed-provenance"><span>{deliveryLabel(selected)}</span><span>{sharedReceiptStatus(selected, now)}</span></div>
-          {selected.delivery !== "live" && <p className="shared-feed-description">Recovered and delayed text stays available for manual copy. It does not overwrite Windows clipboard automatically.</p>}
-          <p className="shared-feed-description">This publication is immutable. Local edits do not change its received text.</p>
-          {preview.status === "loading" && <p className="shared-feed-loading" role="status">Reading received text…</p>}
-          {preview.status === "ready" && <pre className="shared-feed-text" tabIndex={0} aria-label="Received plain text">{preview.text}</pre>}
-          {preview.status === "unavailable" && <p className="shared-feed-empty">Text is unavailable or expired. Its publication metadata remains visible.</p>}
+          {selected.delivery !== "live" && <p className="shared-feed-description">Recovered and delayed content stays available for manual copy. It does not overwrite Windows clipboard automatically.</p>}
+          <p className="shared-feed-description">This publication is immutable. Local edits do not change its received content.</p>
+          {preview.status === "loading" && <p className="shared-feed-loading" role="status">Reading received content…</p>}
+          {preview.status === "ready" && (preview.image ? <figure className="shared-image-preview"><img src={preview.image} alt="Received clipboard image" /><figcaption>{preview.width} × {preview.height}</figcaption></figure> : <pre className="shared-feed-text" tabIndex={0} aria-label="Received plain text">{preview.text}</pre>)}
+          {preview.status === "unavailable" && <p className="shared-feed-empty">Content is unavailable or expired. Its publication metadata remains visible.</p>}
           {preview.status === "error" && <div className="shared-feed-read-error"><p role="alert">Could not read this reception.</p><UiButton type="button" size="compact-sm" variant="default" onClick={() => select(selected)}>Retry preview</UiButton></div>}
           <details className="shared-feed-details"><summary>Publication details</summary><dl><div><dt>Publication</dt><dd>{selected.publicationId}</dd></div><div><dt>Sequence</dt><dd>{selected.sequence}</dd></div><div><dt>Expires</dt><dd>{Number.isFinite(Number(selected.expiresAtUnixMs)) ? new Date(Number(selected.expiresAtUnixMs)).toLocaleString() : "Unavailable"}</dd></div>{selected.localItemId !== null && <div><dt>Local clip</dt><dd>{selected.localItemId}</dd></div>}</dl></details>
-        </> : <div className="shared-feed-empty shared-feed-preview-empty"><h3>Choose a reception</h3><p>Read its original plain text, check where it came from, then copy it manually.</p></div>}
+        </> : <div className="shared-feed-empty shared-feed-preview-empty"><h3>Choose a reception</h3><p>Preview its content, check where it came from, then copy it manually.</p></div>}
         {notice && <p className="shared-feed-notice" role="status" id={`${id}-notice`}>{notice}</p>}
       </div>
     </div>

@@ -25,6 +25,36 @@ use std::collections::BTreeMap;
 
 const DOMAIN: &[u8] = b"Copicu.shared.identity.v3\0";
 const RECOVERY_REFERENCE: &str = "account_recovery_v3";
+const SERVICE_ENDPOINT: &str = "https://sharing.jpsala.dev/";
+
+fn fixed_service_endpoint(endpoint: &str, allow_loopback: bool) -> Result<String, String> {
+    let url = reqwest::Url::parse(endpoint).map_err(|_| "Invalid internal sharing endpoint")?;
+    let fixture = allow_loopback
+        && url.scheme() == "http"
+        && url
+            .host_str()
+            .is_some_and(|host| matches!(host, "127.0.0.1" | "[::1]"));
+    if (url.as_str() != SERVICE_ENDPOINT && !fixture)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(
+            "Copicu Sharing uses its internal service. Retry with the current application.".into(),
+        );
+    }
+    Ok(url.into())
+}
+
+pub(crate) fn service_endpoint() -> Result<String, String> {
+    #[cfg(debug_assertions)]
+    if let Ok(endpoint) = std::env::var("COPICU_SHARED_IDENTITY_ENDPOINT") {
+        return fixed_service_endpoint(&endpoint, allowed_loopback());
+    }
+    Ok(SERVICE_ENDPOINT.into())
+}
 #[cfg(all(test, windows))]
 #[path = "identity_integration.rs"]
 mod integration;
@@ -78,10 +108,10 @@ fn remote(e: transport::Error) -> String {
             "The account or clipboard changed. Refresh and review before retrying."
         }
         transport::Error::Unsupported => {
-            "This service does not support device sign-in. Check its URL and version."
+            "Copicu Sharing cannot complete device sign-in. Update Copicu and retry."
         }
         transport::Error::Quota => "The service reached its account or device limit.",
-        _ => "Cannot reach the sharing service. Check its URL and connection, then retry.",
+        _ => return format!("Cannot reach Copicu Sharing at {SERVICE_ENDPOINT}. Check your internet connection and retry."),
     }
     .into()
 }
@@ -159,6 +189,8 @@ fn browser_url(state: &LocalIdentity, vault: &Vault) -> Result<String, String> {
     Ok(url.into())
 }
 pub(crate) fn start(storage: &AppStorage, endpoint: &str, name: &str) -> Result<Value, String> {
+    let endpoint = fixed_service_endpoint(endpoint, allowed_loopback())?;
+    let endpoint = endpoint.as_str();
     let _network = runtime::NETWORK.lock().map_err(fail)?;
     let previous_config = runtime::config(storage)?;
     let previous_state = load(storage)?;
@@ -185,7 +217,7 @@ pub(crate) fn start(storage: &AppStorage, endpoint: &str, name: &str) -> Result<
         &"0".repeat(43),
         allowed_loopback(),
     )
-    .map_err(|_| "Enter an HTTPS service URL without a path, credentials or query".to_string())?;
+    .map_err(|_| "Cannot use the internal sharing service. Update Copicu and retry.".to_string())?;
     let info = discovery
         .request_identity("GET", "/v3/info", None)
         .map_err(remote)?;
@@ -1070,6 +1102,30 @@ fn open_browser(_: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_is_fixed_and_only_explicit_tests_can_use_literal_loopback() {
+        assert_eq!(
+            fixed_service_endpoint("https://sharing.jpsala.dev", false).unwrap(),
+            SERVICE_ENDPOINT
+        );
+        for endpoint in [
+            "http://sharing.jpsala.dev/",
+            "https://other.example/",
+            "https://sharing.jpsala.dev:444/",
+            "https://user@sharing.jpsala.dev/",
+            "https://sharing.jpsala.dev/path",
+            "https://sharing.jpsala.dev/?endpoint=other",
+            "https://sharing.jpsala.dev/#other",
+        ] {
+            assert!(fixed_service_endpoint(endpoint, false).is_err());
+            assert!(fixed_service_endpoint(endpoint, true).is_err());
+        }
+        assert!(fixed_service_endpoint("http://127.0.0.1:5454/", false).is_err());
+        assert!(fixed_service_endpoint("http://127.0.0.1:5454/", true).is_ok());
+        assert!(fixed_service_endpoint("http://[::1]:5454/", true).is_ok());
+        assert!(fixed_service_endpoint("http://localhost:5454/", true).is_err());
+        assert!(fixed_service_endpoint("http://127.0.0.1.example:5454/", true).is_err());
+    }
     #[test]
     fn recovery_code_is_random_seed_not_a_password_and_ciphertext_is_account_bound() {
         let c:StoredConfig=serde_json::from_value(json!({"environment":"synthetic","deviceId":"synthetic_device","endpoint":"https://synthetic.invalid/","allowLoopback":false,"issuerPublicKey":"synthetic","enrollmentFingerprint":"synthetic","vaultName":"synthetic_vault","signingReference":"synthetic_signing","bearerReference":"synthetic_bearer","paused":false,"channels":[]})).unwrap();

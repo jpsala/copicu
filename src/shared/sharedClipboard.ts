@@ -79,6 +79,7 @@ export const sharedClipboardApi = {
   setPaused: (paused: boolean) => invoke<SharedClipboardSnapshot>("shared_clipboard_set_paused", { paused }),
   copyReceipt: (subscriptionId: string, publicationId: string) => invoke<void>("shared_clipboard_copy_receipt", { subscriptionId, publicationId }),
   receiptText: (subscriptionId: string, publicationId: string) => invoke<string>("shared_clipboard_receipt_text", { subscriptionId, publicationId }),
+  receiptPreview: (subscriptionId: string, publicationId: string) => invoke<SharedContentPreview>("shared_clipboard_receipt_preview", { subscriptionId, publicationId }),
   setHotkeys: (sendActiveShortcut: string | null, sendClipboardShortcut: string | null) => invoke<SharedClipboardSnapshot>("shared_clipboard_set_hotkeys", { sendActiveShortcut, sendClipboardShortcut }),
 };
 export type SharedClipboardApi = typeof sharedClipboardApi;
@@ -165,9 +166,13 @@ export type SharedReceiptPreview = {
   receiptKey: string | null;
   status: "idle" | "loading" | "ready" | "unavailable" | "error";
   text: string | null;
+  image?: string;
+  width?: number;
+  height?: number;
 };
+export type SharedContentPreview = { kind: "text"; text: string } | { kind: "image"; image: string; width: number; height: number; byteSize: number };
 /** A single visible payload; switching, closing or expiring invalidates pending reads. */
-export function createSharedReceiptLoader(readText: (subscriptionId: string, publicationId: string) => Promise<string>, show: (preview: SharedReceiptPreview) => void, now: () => number = Date.now) {
+export function createSharedReceiptLoader(readText: (subscriptionId: string, publicationId: string) => Promise<string | SharedContentPreview>, show: (preview: SharedReceiptPreview) => void, now: () => number = Date.now) {
   let generation = 0;
   return {
     clear: () => { generation += 1; show({ receiptKey: null, status: "idle", text: null }); },
@@ -178,9 +183,10 @@ export function createSharedReceiptLoader(readText: (subscriptionId: string, pub
       show({ receiptKey, status: "loading", text: null });
       if (!sharedReceiptCanCopy(receipt, now())) { show({ receiptKey, status: "unavailable", text: null }); return; }
       try {
-        const text = await readText(receipt.subscriptionId, receipt.publicationId);
+        const content = await readText(receipt.subscriptionId, receipt.publicationId);
+        const value = typeof content === "string" ? { text: content } : content.kind === "text" ? { text: content.text } : { text: null, image: content.image, width: content.width, height: content.height };
         if (generation !== requested) return;
-        show(sharedReceiptCanCopy(receipt, now()) ? { receiptKey, status: "ready", text } : { receiptKey, status: "unavailable", text: null });
+        show(sharedReceiptCanCopy(receipt, now()) ? { receiptKey, status: "ready", ...value } : { receiptKey, status: "unavailable", text: null });
       } catch { if (generation === requested) show({ receiptKey, status: "error", text: null }); }
     },
   };

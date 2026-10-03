@@ -146,18 +146,40 @@ HTTP 200/version `0.5.3`, los tres downloads coinciden por SHA256 con locales y
 digests de GitHub, y manifest URL/firma coherentes. No se recompiló ni sustituyó
 el paquete después de comprobarlo; el manifest final sólo ajustó notas/fecha.
 
-## Pendiente remoto
+## Servicio remoto activo
 
-JP autorizó desplegar y distribuir para usar otra PC el 2026-10-02. Se eligió
-Google OIDC y el VPS existente, con su Traefik y `sharing.jpsala.dev`, sin nueva
-suscripción. Los seis módulos de servicio/config Docker están preparados en
-`/opt/copicu-sharing`; hashes coinciden y Compose valida. No hay servicio
-iniciado, credenciales OAuth ni DNS nuevo. La política de datos/cliente OAuth,
-el registro DNS y el pull de Bun oficial fijado por digest tienen confirmación
-puntual pendiente; la autorización general no sustituye esos gates.
+JP confirmó los tres gates puntuales de Google/OAuth, DNS e imagen Bun en esta
+sesión. El servicio está activo en `https://sharing.jpsala.dev/`, detrás del
+Traefik existente. Los seis módulos desplegados coinciden por hash con la fuente
+de `v0.5.3`; conserva issuer Ed25519 y SQLite persistentes. Imagen oficial Bun
+`1.3.14` fijada al digest documentado. No se creó una suscripción nueva.
 
-Después de activar, verificar callback/login/admisión reales, HTTPS, streaming,
-restart y backup/rollback con sintéticos. Falta la aceptación física en dos PCs.
-El espacio admite vínculo entre PCs de la misma cuenta; no agrega un directorio
-público ni descubrimiento de nuevas personas. No atribuir al release las cinco
-pruebas debug ni a la preparación del VPS resultados de Google o tráfico remoto.
+Evidencia en `.codex-run/sharing-deploy-20261002/`: certificado HTTPS verificado
+sin bypass, `/health` HTTP 200/ready/version 3 y `/v3/info` con el origen y
+issuer correctos. DNS público y resolución local entregan el destino aprobado.
+`unauthenticated-routes.json` acredita 401 en V1 channels y V2 catalog/changes/events.
+Google guardó sólo `openid email`; captura `google-oidc-scopes.jpg`.
+El proxy tiene access logs apagados en esta ruta y no usa buffering.
+
+Backup remoto consistente mediante `VACUUM INTO`, con `integrity_check=ok`, issuer
+y configuración privados 0600, en `/opt/copicu-sharing/backups/20261003T014500Z`.
+Su copia se abrió con el entrypoint real en un contenedor aislado, sin puertos
+publicados: health ready y el mismo issuer público. El probe se cerró; el servicio
+habitual siguió healthy. No se inspeccionó contenido de usuarios ni se reinició
+el servicio activo para esta verificación.
+
+JP informó que instaló e inició sesión en la otra PC. Metadata del servicio
+confirma Home activo. La captura con `synthetic owner / synthetic product fixture`
+correspondía a otro binario/perfil; dev ahora usa el perfil habitual de Home y
+conserva su identidad. JP reportó entrega manual de texto en una dirección entre
+sus PCs por **Send new text**, y confirmó el traslado explícito de recepción desde
+All history a la carpeta. Este reporte no acredita las pruebas sintéticas en dos
+PCs físicas, automatización en ambos sentidos, streaming remoto ni recovery Google.
+
+La admisión desplegada sigue limitada a JP y Google sigue en Testing. La nueva
+política de cualquier cuenta autenticada está implementada y probada localmente,
+con aislamiento por issuer/subject y validación OIDC/PKCE conservada. La URL fija
+del cliente pasa build normal, 383 Rust (1 omitido), 52 Bun/502 assertions y ocho
+visuales desktop/narrow. Son resultados posteriores al tag, no del NSIS `v0.5.3`.
+La eliminación de aprobación/transferencia entre PCs espera la decisión de
+custodia de claves; no se redujo E2EE ni se publicó otro paquete.

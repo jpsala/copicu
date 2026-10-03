@@ -20,7 +20,7 @@ export type DeviceIntent = { kind: "approve" | "revoke"; operationId: string; de
 const command = (input: unknown) => invoke<SharedIdentityStatus>("shared_clipboard_identity", { input });
 export const sharedIdentityApi = {
   status: () => command({ kind: "status" }),
-  start: (endpoint: string, name: string) => command({ kind: "start", endpoint, name }),
+  start: (name: string) => command({ kind: "start", name }),
   cancel: () => command({ kind: "cancel" }),
   reopen: () => command({ kind: "reopen" }),
   device: (intent: DeviceIntent) => command(intent),

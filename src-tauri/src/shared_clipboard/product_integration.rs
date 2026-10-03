@@ -193,6 +193,68 @@ fn runtime_drains_twenty_publications_without_aging_live_lease_and_respects_paus
 }
 
 #[test]
+fn images_cross_encrypted_relay_save_preview_and_copy_without_capture_echo() {
+    use crate::clipboard_content::ClipboardContent;
+    let _runtime = runtime::TEST_RUNTIME.lock().unwrap();
+    let signers = (0..2).map(|_| DeviceSigner::generate(&mut SystemEntropy).unwrap()).collect::<Vec<_>>();
+    let (fixture, endpoint, issuer) = Fixture::start(&signers);
+    let owner = enrolled(&fixture, 0, &signers, &endpoint, &issuer);
+    let receiver = enrolled(&fixture, 1, &signers, &endpoint, &issuer);
+    refresh_catalog(&owner, true).unwrap();
+    refresh_catalog(&receiver, true).unwrap();
+    let folder = receiver.create_folder_path("/Synthetic images").unwrap();
+    let owner_connection = ConnectionInput { id:"general".into(),channel_id:"bootstrap".into(),kind:"general".into(),folder_id:None,direction:"send".into(),move_reception:false };
+    let head = runtime::prepare_connection_head(&owner, &owner_connection).unwrap();
+    runtime::connect_with_head(&owner, owner_connection, head).unwrap();
+    let connection = ConnectionInput { id:format!("folder_{}",folder.id),channel_id:"bootstrap".into(),kind:"folder".into(),folder_id:Some(folder.id),direction:"both".into(),move_reception:false };
+    let head = runtime::prepare_connection_head(&receiver, &connection).unwrap();
+    runtime::connect_with_head(&receiver, connection, head).unwrap();
+    let mut policy = runtime::snapshot(&receiver).unwrap().channels[0].clone();
+    policy.update_clipboard = true;
+    runtime::update_channel(&receiver, policy).unwrap();
+    runtime::poll_once(&owner).unwrap();
+    runtime::poll_once(&receiver).unwrap();
+    let image = crate::image_capture::synthetic_image(800,600);
+    assert!(image.png_bytes.len() > 1024 * 1024, "fixture exceeds the old text-only bound");
+    let item = owner.insert_image(&image).unwrap();
+    assert_eq!(runtime::snapshot(&owner).unwrap().outbox.len(), 1, "new image ingress queues automatically");
+    owner.insert_image(&image).unwrap();
+    assert_eq!(runtime::snapshot(&owner).unwrap().outbox.len(), 1, "recapture is not a new ingress");
+    runtime::poll_once(&owner).unwrap();
+    let arrival = runtime::poll_once(&receiver).unwrap();
+    assert!(arrival.history_changed);
+    assert_eq!(arrival.effects.len(), 1);
+    let effect = &arrival.effects[0];
+    assert!(effect.content == ClipboardContent::Image(image.png_bytes.clone()));
+    assert!(effect.action_id.is_none(), "text script Actions do not run with fabricated image text");
+    let state = runtime::snapshot(&receiver).unwrap();
+    let local_id = state.receipts[0]["localItemId"].as_i64().unwrap();
+    let received = receiver.get_item(local_id).unwrap();
+    assert_eq!(received.content_kind(), "image");
+    assert_eq!(received.normalized_hash(), image.normalized_hash);
+    assert_eq!(receiver.read_blob_for_item(&received).unwrap(), image.png_bytes);
+    assert!(receiver.get_item_preview(local_id).is_ok());
+    assert!(runtime::snapshot(&receiver).unwrap().outbox.is_empty());
+    assert_eq!(runtime::publish_folder_ingress(&receiver, Some(folder.id),local_id,false).unwrap(),0);
+    let attempt = runtime::claim_clipboard(&receiver, effect).unwrap();
+    runtime::finish_clipboard(&receiver,&effect.subscription_id,&attempt,"applied").unwrap();
+    assert!(runtime::claim_clipboard(&receiver,effect).is_err());
+    assert!(runtime::receipt_text(&receiver,&effect.subscription_id,&effect.publication_id).is_err());
+    let content = runtime::receipt_content(&receiver,&effect.subscription_id,&effect.publication_id).unwrap();
+    assert_eq!(content.preview().unwrap()["kind"], "image");
+    let history = runtime::history_page(&receiver,"bootstrap",None).unwrap();
+    assert_eq!(history["entries"][0]["kind"], "image");
+    assert!(history["entries"][0]["text"].is_null());
+    let duplicate = runtime::historical_import(&receiver,"bootstrap",&effect.publication_id,None).unwrap();
+    assert_eq!(duplicate["itemId"],local_id);
+    assert_eq!(duplicate["folderId"],folder.id);
+    assert_eq!(duplicate["alreadyExists"],true);
+    assert_eq!(owner.get_item(item).unwrap().content_kind(), "image");
+    runtime::set_flow_paused(&receiver,None,None,Some(true)).unwrap();
+    assert!(runtime::claim_clipboard(&receiver,effect).is_err());
+}
+
+#[test]
 fn rust_sse_replay_live_reconciles_durable_control_without_receipt_effects() {
     use crate::shared_clipboard::control_sync;
     use std::sync::{Arc, atomic::AtomicBool};

@@ -104,6 +104,9 @@
 .shared-feed-preview .shared-feed-description { margin-bottom: 8px; max-width: 70ch; font-size: 0.76rem; }
 .shared-feed-text { margin: 14px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; user-select: text; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.82rem; line-height: 1.55; }
 .shared-feed-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shared-image-preview { margin: 14px 0; }
+.shared-image-preview img { display: block; max-width: 100%; max-height: 240px; width: auto; height: auto; object-fit: contain; }
+.shared-image-preview figcaption { margin-top: 6px; font-size: 0.75rem; color: var(--ink-soft); }
 .shared-feed-empty { padding: 18px 14px; margin: 0; color: var(--ink-soft); line-height: 1.45; max-width: 65ch; }
 .shared-feed-preview-empty { padding: 8px 0; }
 .shared-feed-loading { padding: 20px 0; }

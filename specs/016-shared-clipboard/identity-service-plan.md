@@ -2,10 +2,31 @@
 
 Estado: implementación y aceptación local en [identity-acceptance.md](identity-acceptance.md).
 JP autorizó deploy/distribución el 2026-10-02; proveedor y destino concretos son
-Google y el VPS existente con Traefik, sin nueva suscripción. Confirmación puntual
-de términos/credenciales, DNS e imagen de runtime pendiente. La aceptación en dos
+Google y el VPS existente con Traefik, sin nueva suscripción. JP confirmó los tres
+gates puntuales y el servicio está activo con HTTPS/OIDC. La aceptación en dos
 PCs se comprueba por separado; este documento no concede permisos futuros.
 Este contrato amplía el producto local sin cambiar V1/V2 ni `liveOnly`.
+
+## Revisión de producto vigente (2026-10-02)
+
+JP definió para el próximo corte:
+
+- Cualquier cuenta Google autenticada puede habilitar Sharing; la admisión inicial
+  limitada a JP fue una configuración de pruebas, no una regla del producto.
+- La cuenta (`issuer + sub`) es la autoridad. Sus PCs tienen el mismo nivel;
+  vincular otra PC no requiere aprobación ni transferencia de claves desde una PC.
+- El cliente usa internamente un único servicio: `https://sharing.jpsala.dev/`.
+  Settings pide sólo el nombre del equipo e inicio de sesión. El endpoint aparece
+  en diagnósticos cuando la conexión falla, sin campo editable. Los fixtures de
+  loopback requieren un opt-in exclusivo de debug/tests y no admiten otro host.
+- Vincular una PC no conecta carpetas, envía historial ni activa efectos locales.
+
+La custodia de claves de cuenta queda por definir con JP: servicio que gestiona
+las claves (y puede descifrar), o secreto personal adicional que conserva E2EE.
+No cambiar esa frontera de privacidad por inferencia. La aprobación/HPKE y el
+recovery descritos abajo documentan el comportamiento distribuido en `v0.5.3`,
+que será sustituido al resolver la custodia. Google autentica la cuenta y no
+provee por sí solo una clave de cifrado compartida.
 
 ## Solución propuesta y fuentes
 
@@ -16,10 +37,11 @@ su [SQLite de Durable Objects](https://developers.cloudflare.com/durable-objects
 requiere adaptar el runtime/almacenamiento y repetir atomicidad y SSE. Es una
 alternativa, no un destino elegido ni una autorización para crear recursos.
 
-Propuesta de proveedor: Google OIDC, con una aplicación web del servicio y una
-lista explícita de cuentas admitidas. El cliente soporta el contrato OIDC del
+Proveedor elegido: Google OIDC, con una aplicación web del servicio. La lista
+inicial de admisión se sustituirá por cualquier cuenta autenticada, según la
+revisión vigente. El cliente soporta el contrato OIDC del
 servicio y no depende de Google ni contiene un client secret. Registrar la
-aplicación/callback y obtener credenciales sigue pendiente de aprobación.
+aplicación/callback ya está registrada; sus credenciales están fuera de Git.
 [Google documenta](https://developers.google.com/identity/openid-connect/openid-connect)
 el flujo de código, discovery, state/nonce y validación de ID tokens. Se usa
 `issuer + sub` para identidad; email verificado sirve sólo para la lista inicial
@@ -105,7 +127,7 @@ aprobado ni código guardado, las claves no son recuperables; no resetear en sil
 ## Servicio y operación revisables
 
 Entrypoint separado del fixture: configuración validada, issuer Ed25519 durable,
-SQLite persistente, lista cerrada de admisión, HTTPS público, callback exacto,
+SQLite persistente, política explícita de admisión, HTTPS público, callback exacto,
 timeouts/límites, no CORS público, health sin identidad y shutdown limpio.
 El servicio escucha loopback detrás del proxy; no confía en headers de identidad
 ni registra cuerpos, bearer, códigos OIDC, links, email o contenido de clipboard.

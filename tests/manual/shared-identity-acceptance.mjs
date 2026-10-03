@@ -50,7 +50,7 @@ try {
     for (const entry of schema) db.exec(entry.sql);
     db.exec(`PRAGMA user_version=${schemaVersion}`); db.prepare('INSERT INTO app_settings VALUES(?,?,0)').run('app', JSON.stringify(s)); db.close();
     const diagnostic = openSync(path.join(profile, 'host-startup.log'), 'a');
-    const child = spawn(exe, [], { cwd: repo, windowsHide: true, stdio: ['ignore', diagnostic, diagnostic], env: { ...childEnv, COPICU_APP_DATA_DIR: profile, COPICU_SCRIPTS_DIR: path.join(profile, 'scripts'), WEBVIEW2_USER_DATA_FOLDER: path.join(profile, 'webview'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` } }); processes.push(child); closeSync(diagnostic);
+    const child = spawn(exe, [], { cwd: repo, windowsHide: true, stdio: ['ignore', diagnostic, diagnostic], env: { ...childEnv, COPICU_SHARED_IDENTITY_ENDPOINT: info.url, COPICU_APP_DATA_DIR: profile, COPICU_SCRIPTS_DIR: path.join(profile, 'scripts'), WEBVIEW2_USER_DATA_FOLDER: path.join(profile, 'webview'), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` } }); processes.push(child); closeSync(diagnostic);
     await wait(async () => { try { return (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).some(t => t.type === 'page' && /tauri|localhost/.test(t.url)); } catch { return false; } }, 'owned WebView');
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`); browsers.push(browser);
     let main, ui;
@@ -65,7 +65,7 @@ try {
     await ui.getByText('No device linked', { exact: true }).waitFor();
     const settingsCall = (c, a = {}) => ui.evaluate(({ c, a }) => window.__TAURI_INTERNALS__.invoke(c, a), { c, a });
     const identityCall = input => settingsCall('shared_clipboard_identity', { input });
-    await identity.getByLabel('Sharing service URL').fill(info.url);
+    assert.equal(await identity.getByLabel('Sharing service URL').count(), 0);
     await identity.getByLabel('Name of this PC').fill(`Synthetic ${name}`);
     await identity.getByRole('button', { name: 'Sign in in browser' }).click();
     await wait(async () => ['active', 'pending'].includes((await identityCall({ kind: 'status' })).state), 'system browser synthetic login');

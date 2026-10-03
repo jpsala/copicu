@@ -336,13 +336,13 @@ pub(crate) async fn shared_clipboard_copy_receipt(
         {
             use crate::{shared_clipboard::runtime, shared_native};
             let expected = shared_native::sequence().ok_or("Clipboard unavailable")?;
-            let text = runtime::receipt_text(&storage, &subscription_id, &publication_id)?;
+            let content = runtime::receipt_content(&storage, &subscription_id, &publication_id)?;
             let _barrier = shared_native::EFFECT_BARRIER
                 .lock()
                 .map_err(|_| "Sharing effect barrier failed")?;
             let attempt =
                 runtime::claim_manual_clipboard(&storage, &subscription_id, &publication_id)?;
-            let outcome = shared_native::write(&text, expected);
+            let outcome = shared_native::write_content(&content, expected);
             let stored = if outcome == "applied" {
                 "applied"
             } else if outcome == "uncertain" {
@@ -365,6 +365,23 @@ pub(crate) async fn shared_clipboard_copy_receipt(
     })
     .await
     .map_err(|_| "Reception copy worker failed")?
+}
+
+#[tauri::command]
+pub(crate) async fn shared_clipboard_receipt_preview(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    subscription_id: String,
+    publication_id: String,
+) -> Result<serde_json::Value, String> {
+    trusted(&window, false)?;
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(feature = "shared-clipboard")]
+        { crate::shared_clipboard::runtime::receipt_content(&storage, &subscription_id, &publication_id)?.preview() }
+        #[cfg(not(feature = "shared-clipboard"))]
+        { let _ = (storage, subscription_id, publication_id); Err("Sharing is unavailable in this build".into()) }
+    }).await.map_err(|_| "Reception preview worker failed")?
 }
 
 /// The reception runner supplies only its immutable host context. This uses
@@ -488,7 +505,7 @@ pub(crate) fn start<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
                         publication_id: effect.publication_id,
                         origin_device_id: effect.origin_device_id,
                         generation: effect.generation,
-                        text: effect.text,
+                        text: effect.content.text().unwrap_or("").into(),
                         subscription_id: effect.subscription_id.clone(),
                         expected_sequence,
                         lease_expires_at_unix_ms: effect.lease_expires_at_unix_ms,
@@ -568,8 +585,8 @@ pub(crate) fn start<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
                                                         .saturating_add(remaining)
                                                 })
                                                 .unwrap_or(0);
-                                            shared_native::write_before(
-                                                &effect.text,
+                                            shared_native::write_content_before(
+                                                &effect.content,
                                                 expected,
                                                 Some(
                                                     clock_deadline

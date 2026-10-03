@@ -1,6 +1,6 @@
 ---
 title: Clipboard compartido y backup futuro
-summary: "Sharing local con OIDC, equipos/recovery E2EE, acceso histórico y SSE; despliegue y dos PCs pendientes."
+summary: "Sharing de texto e imágenes con Google/HTTPS activo y servicio interno; custodia de claves y aceptación física de imágenes pendientes."
 keywords:
   - clipboard compartido
   - shared clipboard
@@ -15,9 +15,11 @@ keywords:
 
 Runtime, host Windows, UI y SDK están implementados y validados localmente con
 personas/equipos sintéticos; incluye prueba instalada ↔ dev y SSE S1–S6.
-Q1 `liveOnly`, Q2 texto plano y Q3 espacios propios por persona siguen vigentes.
+Q1 `liveOnly` y Q3 espacios propios por persona siguen vigentes. JP amplió Q2 de
+texto plano a texto e imágenes; archivos se posponen.
 Primer acceso OIDC y recovery E2EE están implementados con aceptación local;
-proveedor/cuentas, despliegue HTTPS y aceptación en dos PCs permanecen abiertos.
+Google/HTTPS están activos. JP reportó entrega manual de texto en una dirección
+entre sus PCs; la aceptación sintética física y las imágenes siguen pendientes.
 Estado de la candidata, próximo paso y evidencia en
 [track 041](../tracks/041-shared-clipboard.md) y
 [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md).
@@ -28,11 +30,21 @@ publica sus copias. Una conexión explícita determina el flujo; Windows y Actio
 mantienen opt-ins propios. El corte anterior está incluido en el NSIS firmado
 `v0.5.2-rc.1`, core `0.5.2`; estado de publicación/instalación en el track y
 [evidencia del artefacto](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02).
-El primer acceso posterior todavía requiere publicar/instalar el cliente.
+El primer acceso está distribuido en `v0.5.3`; sus evidencias se conservan separadas
+de cambios posteriores al tag.
 
 ## Primer acceso y equipos
 
-Settings → Sharing pide servicio/nombre y abre el navegador del sistema.
+El endpoint de producto es único e interno: `https://sharing.jpsala.dev/`.
+El próximo cliente sólo pide nombre de PC y navegador; muestra el endpoint en
+errores de conexión. Un override técnico requiere debug/tests y loopback literal,
+sin campo editable ni hosts remotos alternativos. La política definida por JP
+admite cualquier cuenta Google autenticada, con sus PCs al mismo nivel y sin
+aprobación ni transferencia de claves entre ellas. La custodia espera decisión
+entre claves gestionadas por el servicio o un secreto personal adicional E2EE.
+
+El flujo distribuido en `v0.5.3` todavía pide servicio/nombre y aprobación de PCs;
+el despliegue inicial conserva una lista privada de admisión.
 OIDC prueba la cuenta; una segunda PC espera comparación de huella y aprobación
 para recibir claves HPKE. Login, crear recurso y aprobar un equipo no conectan
 carpetas ni importan historial ni habilitan efectos. Secretos permanecen en DPAPI;
@@ -55,6 +67,21 @@ deja cerrar los bodies SSE y después cierra servidor/SQLite.
 [evidencia local](../../specs/016-shared-clipboard/identity-acceptance.md) y
 [operación del servicio](../../scripts/shared-clipboard/README.md).
 
+## Contenido compartido
+
+Texto e imágenes conservan tipo bajo cifrado autenticado (`TXT1`/`IMG1`). La
+imagen se normaliza a PNG, se guarda en blobs deduplicados y muestra miniatura;
+copiarla en Windows publica PNG y DIBV5 con alpha. Máximo PNG: 25 MiB y 4096 ×
+4096 px. HTML, RTF, OLE y formatos privados requieren captura/persistencia propia;
+archivos quedan para después. Actions de recepción siguen procesando sólo texto.
+
+Actualizar el servicio y ambas PCs antes de enviar imágenes: clientes anteriores
+pueden rechazar páginas grandes y demorar textos posteriores. Conectar no envía
+clips previos; la procedencia remota impide eco. Colas, pausas, retención, permisos,
+leases y cercos del escritor se conservan. Las transferencias demoradas no habilitan
+efectos automáticos fuera de `liveOnly`. [Contrato](../../specs/016-shared-clipboard/media-plan.md)
+y [aceptación](../../specs/016-shared-clipboard/media-acceptance.md).
+
 ## Identidades, conexiones y efectos
 
 - Recurso compartido, carpeta local y clip deduplicado tienen identidades distintas.
@@ -62,7 +89,7 @@ deja cerrar los bodies SSE y después cierra servidor/SQLite.
   carpeta o recurso no cambia el destino configurado.
 - Una conexión explícita puede enviar, recibir o ambas desde una carpeta exacta,
   Root o All history. El scope general se elige en Settings: Todo Copicu o Sólo
-  textos sin carpeta. El envío general admite ingresos locales nuevos al perfil;
+  clips sin carpeta. El envío general admite ingresos locales nuevos al perfil;
   mover un clip existente no crea ese ingreso. Una conexión de carpeta exacta con
   envío habilitado sí publica entradas locales efectivas por movimiento al destino,
   además de las capturas/creaciones nuevas. No incluye descendientes. El
@@ -138,7 +165,7 @@ cierre local en [aceptación SSE](../../specs/016-shared-clipboard/local-accepta
 El primer objetivo sigue siendo Trabajo ↔ Casa, sin compartir indiscriminadamente
 el historial ni pegar/enfocar ventanas por recibir. Backup puede reutilizar
 identidad/custodia/almacenamiento, pero necesita retención y recuperación propias.
-Drive, imágenes/HTML, publicación automática por tags y sincronización de
+Drive, HTML/RTF, archivos, publicación automática por tags y sincronización de
 ediciones/borrados/carpetas quedan fuera de este corte. Compartir por carpeta
 exacta sí pertenece al producto local implementado.
 

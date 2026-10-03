@@ -13,14 +13,44 @@ históricos. Contrato en [identity-service-plan.md](identity-service-plan.md).
 - [x] I6 UI integrada, errores/offline, conexión inicial y regresiones afectadas.
 - [x] I7 Artefactos de servicio/config/proxy/deploy y guía revisables.
 - [x] I8 Aceptación local de perfiles nuevos, host/UI reales y evidencia curada.
-- [ ] R1 Aprobar proveedor/cuentas, destino/costos, DNS/HTTPS y desplegar.
+- [x] R1 Aprobar proveedor/cuentas, destino/costos, DNS/HTTPS y desplegar.
 - [ ] R2 Publicar/instalar cliente y aceptar en dos PCs físicas con sintéticos.
 
 JP autorizó deploy/distribución el 2026-10-02. Cliente `v0.5.3` normal/latest
 publicado, firmado, payload verificado e instalado con el mismo hash; tres checks
 release/instalada pasan. Updater HTTP 200/version y downloads verificados.
-R1 conserva confirmación puntual de Google/OAuth, DNS e imagen Bun; R2 queda
-abierto por la aceptación física, separada de las pruebas debug y locales.
+R1: confirmaciones puntuales dadas, Google/DNS/HTTPS activos, backup consistente
+y restauración aislada con issuer conservado. R2 queda abierto por envío/recepción
+física sintética y streaming remoto, separados de las pruebas debug y locales.
+JP reportó entrega manual de texto en una dirección entre sus PCs.
+
+## Ampliación: texto e imágenes (2026-10-02)
+
+Contrato en [media-plan.md](media-plan.md); [evidencia](media-acceptance.md).
+JP confirmó dejar archivos para después.
+
+- [x] M1 Fijar representación cifrada tipada y límites PNG/transport/IPC.
+- [x] M2 Captura, colas, importación de imágenes y provenance sin eco.
+- [x] M3 Snapshot/escritor Windows aislado con PNG/DIBV5 y fences existentes.
+- [x] M4 Previews, historial, copia/guardado manual y envío del clipboard actual.
+- [x] M5 Regresiones locales, PNG malicioso, cuotas y round-trip nativo sintético.
+- [ ] M6 Desplegar límite del relay y distribuir/instalar el paquete exacto firmado.
+- [ ] M7 Actualizar ambas PCs y aceptar entrega física de imágenes.
+
+## Revisión: cuenta canónica y servicio interno (2026-10-02)
+
+Contrato en [identity-service-plan.md](identity-service-plan.md).
+
+- [x] A1 URL única interna, sin campo editable ni requisito de URL en el primer
+  acceso; errores de conexión identifican el servicio. Loopback sólo en debug/tests.
+- [x] A2 Política explícita de cualquier cuenta autenticada en el broker; conservar
+  firma/issuer/audience/nonce/PKCE y separación por subject. Tests locales pasan;
+  Google Audience y configuración pública todavía no se cambiaron.
+- [ ] A3 Resolver custodia de claves con JP: servicio o secreto personal E2EE.
+- [ ] A4 Vincular PCs al mismo nivel por cuenta, sin aprobación ni transferencia
+  entre PCs; migración compatible, acceso/retiro y pruebas de aislamiento.
+- [ ] A5 Activar la admisión pública, distribuir el cliente actualizado y completar
+  prueba física de envío/recepción sin efectos locales implícitos.
 
 I1–I8 no acreditan R1/R2. Mantener V1/V2/SSE y los opt-ins de Windows/Actions.
 Evidencia y reproducción en [identity-acceptance.md](identity-acceptance.md).

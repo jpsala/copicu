@@ -1,7 +1,11 @@
 //! Bounded native clipboard operations for Sharing, isolated from the UI process.
 //! IPC carries synthetic/private text only over owned anonymous pipes, never logs.
+use crate::clipboard_content::ClipboardContent;
 use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, OnceLock};
+#[cfg(windows)]
+#[path = "shared_native_image.rs"]
+mod image;
 
 pub(crate) static EFFECT_BARRIER: Mutex<()> = Mutex::new(());
 static REMOTE_WRITES: OnceLock<Mutex<Vec<(u32, String, String)>>> = OnceLock::new();
@@ -14,6 +18,8 @@ pub(crate) fn set_owner_window(owner: isize) {
 struct NativeRequest {
     expected_sequence: u32,
     text: Option<String>,
+    #[serde(default)]
+    content: Option<ClipboardContent>,
     marker: Option<String>,
     deadline_unix_ms: Option<u64>,
     deadline_tick_ms: Option<u64>,
@@ -26,6 +32,8 @@ struct NativeReply {
     outcome: String,
     sequence: u32,
     text: Option<String>,
+    #[serde(default)]
+    content: Option<ClipboardContent>,
 }
 
 pub(crate) fn sequence() -> Option<u32> {
@@ -40,9 +48,17 @@ pub(crate) fn sequence() -> Option<u32> {
 }
 
 pub(crate) fn snapshot(expected_sequence: u32) -> Result<String, String> {
+    snapshot_content(expected_sequence)?
+        .text()
+        .map(str::to_owned)
+        .ok_or_else(|| "unsupportedFormat".into())
+}
+
+pub(crate) fn snapshot_content(expected_sequence: u32) -> Result<ClipboardContent, String> {
     let reply = operation(NativeRequest {
         expected_sequence,
         text: None,
+        content: None,
         marker: None,
         deadline_unix_ms: None,
         deadline_tick_ms: None,
@@ -52,11 +68,10 @@ pub(crate) fn snapshot(expected_sequence: u32) -> Result<String, String> {
     if reply.outcome != "applied" {
         return Err(reply.outcome);
     }
-    reply.text.ok_or_else(|| "clipboardUnavailable".into())
-}
-
-pub(crate) fn write(text: &str, expected_sequence: u32) -> String {
-    write_before(text, expected_sequence, None, None)
+    reply
+        .content
+        .or_else(|| reply.text.map(ClipboardContent::Text))
+        .ok_or_else(|| "clipboardUnavailable".into())
 }
 
 pub(crate) fn write_before(
@@ -65,6 +80,25 @@ pub(crate) fn write_before(
     deadline_unix_ms: Option<u64>,
     remaining_ms: Option<u64>,
 ) -> String {
+    write_content_before(
+        &ClipboardContent::Text(text.into()),
+        expected_sequence,
+        deadline_unix_ms,
+        remaining_ms,
+    )
+}
+pub(crate) fn write_content(content: &ClipboardContent, expected_sequence: u32) -> String {
+    write_content_before(content, expected_sequence, None, None)
+}
+pub(crate) fn write_content_before(
+    content: &ClipboardContent,
+    expected_sequence: u32,
+    deadline_unix_ms: Option<u64>,
+    remaining_ms: Option<u64>,
+) -> String {
+    if content.validate().is_err() {
+        return "unsupportedFormat".into();
+    }
     let ledger = REMOTE_WRITES.get_or_init(|| Mutex::new(Vec::new()));
     let Ok(mut ledger) = ledger.lock() else {
         return "failed".into();
@@ -78,17 +112,14 @@ pub(crate) fn write_before(
         return "failed".into();
     }
     let marker: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
-    ledger.push((
-        0,
-        crate::storage::hash_text(&crate::storage::normalize_text_for_storage(text)),
-        marker.clone(),
-    ));
+    ledger.push((0, content.hash(), marker.clone()));
     if ledger.len() > 8 {
         ledger.remove(0);
     }
     let reply = operation(NativeRequest {
         expected_sequence,
-        text: Some(text.into()),
+        text: content.text().map(str::to_owned),
+        content: (content.kind() == "image").then(|| content.clone()),
         marker: Some(marker),
         deadline_unix_ms,
         deadline_tick_ms: remaining_ms.map(|remaining| ticks().saturating_add(remaining)),
@@ -155,6 +186,7 @@ fn marker_matches(current: u32, hash: &str, ledger: &[(u32, String, String)]) ->
     let reply = operation(NativeRequest {
         expected_sequence: current,
         text: None,
+        content: None,
         marker: None,
         deadline_unix_ms: None,
         deadline_tick_ms: None,
@@ -216,7 +248,7 @@ fn operation(request: NativeRequest) -> Result<NativeReply, String> {
             return Err("nativeUnavailable".into());
         }
     };
-    // The child drains concurrently; one request is bounded to 1 MiB UTF-8.
+    // Owned pipes carry bounded text or a base64 PNG, never command arguments.
     let mut input = child.stdin.take().ok_or("nativeUnavailable")?;
     let encoded = serde_json::to_vec(&request).map_err(|_| "nativeUnavailable")?;
     let writer = std::thread::spawn(move || {
@@ -227,10 +259,17 @@ fn operation(request: NativeRequest) -> Result<NativeReply, String> {
     let output = child.stdout.take().ok_or("nativeUnavailable")?;
     let reader = std::thread::spawn(move || {
         let mut bytes = Vec::new();
-        let result = output.take(6 * 1024 * 1024 + 1).read_to_end(&mut bytes);
+        let result = output.take(36 * 1024 * 1024 + 1).read_to_end(&mut bytes);
         (result, bytes)
     });
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now()
+        + Duration::from_secs(
+            if request.content.is_some() || (request.text.is_none() && !request.probe_marker) {
+                5
+            } else {
+                2
+            },
+        );
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
@@ -254,7 +293,7 @@ fn operation(request: NativeRequest) -> Result<NativeReply, String> {
     if !status.is_some_and(|s| s.success())
         || write_result.is_err()
         || read_result.is_err()
-        || bytes.len() > 6 * 1024 * 1024
+        || bytes.len() > 36 * 1024 * 1024
     {
         return Err("nativeUnavailable".into());
     }
@@ -307,7 +346,7 @@ pub fn helper_if_requested() -> bool {
     use std::io::{Read, Write};
     let mut bytes = Vec::new();
     let reply = if std::io::stdin()
-        .take(6 * 1024 * 1024 + 1)
+        .take(36 * 1024 * 1024 + 1)
         .read_to_end(&mut bytes)
         .is_ok()
     {
@@ -317,6 +356,7 @@ pub fn helper_if_requested() -> bool {
                 outcome: "failed".into(),
                 sequence: 0,
                 text: None,
+                content: None,
             },
         }
     } else {
@@ -324,6 +364,7 @@ pub fn helper_if_requested() -> bool {
             outcome: "failed".into(),
             sequence: 0,
             text: None,
+            content: None,
         }
     };
     if let Ok(encoded) = serde_json::to_vec(&reply) {
@@ -338,6 +379,7 @@ fn native_operation(_: NativeRequest) -> NativeReply {
         outcome: "failed".into(),
         sequence: 0,
         text: None,
+        content: None,
     }
 }
 
@@ -355,6 +397,7 @@ fn native_operation(request: NativeRequest) -> NativeReply {
         outcome: "failed".into(),
         sequence: 0,
         text: None,
+        content: None,
     };
     if request.expected_sequence == 0 || sequence() != Some(request.expected_sequence) {
         reply.outcome = "clipboardStale".into();
@@ -452,7 +495,21 @@ fn native_operation(request: NativeRequest) -> NativeReply {
         }
         return reply;
     }
-    if let Some(text) = request.text {
+    if request.content.is_some() {
+        match image::write(&request, owner) {
+            Ok(()) => {
+                drop(guard);
+                reply.sequence = sequence().unwrap_or(0);
+                reply.outcome = if reply.sequence != 0 {
+                    "applied"
+                } else {
+                    "uncertain"
+                }
+                .into();
+            }
+            Err(outcome) => reply.outcome = outcome,
+        }
+    } else if let Some(text) = request.text {
         if text.is_empty() || text.len() > 1024 * 1024 || text.contains('\0') {
             return reply;
         }
@@ -560,6 +617,19 @@ fn native_operation(request: NativeRequest) -> NativeReply {
             reply.outcome = "applied".into();
         }
     } else {
+        // Prefer image representations when a native snapshot contains several
+        // formats. Read bounded bytes under this same sequence/clipboard lock.
+        if let Ok(content) = image::read() {
+            drop(guard);
+            if sequence() != Some(request.expected_sequence) {
+                reply.outcome = "clipboardStale".into();
+            } else {
+                reply.outcome = "applied".into();
+                reply.sequence = request.expected_sequence;
+                reply.content = Some(content);
+            }
+            return reply;
+        }
         if unsafe { IsClipboardFormatAvailable(13) }.is_err() {
             reply.outcome = "unsupportedFormat".into();
             return reply;

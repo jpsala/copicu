@@ -492,6 +492,11 @@ impl<R: Runtime> TextClipboardHandler<R> {
             }
         };
 
+        #[cfg(feature = "shared-clipboard")]
+        if crate::shared_native::is_remote_write(&image.normalized_hash) {
+            record_self_write(&self.state, image.normalized_hash.clone(), probe_result, None);
+            return;
+        }
         if self.suppression.consume_if_matches(&image.normalized_hash) {
             record_self_write(
                 &self.state,

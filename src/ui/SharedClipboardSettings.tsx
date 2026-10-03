@@ -53,7 +53,7 @@ function ChannelSettings({ policy, channels, folders, actions, busy, unavailable
       <h3>Publish from a folder</h3>
       {draft.canPublish && <>
         <UiCheckbox label="Use this channel for Send shortcuts" checked={draft.defaultSendChannel ?? false} disabled={busy} onChange={event => change({ defaultSendChannel: event.currentTarget.checked })} />
-        <p>Send active clip uses the picker selection. Send Windows clipboard uses the current Windows text.</p>
+        <p>Send active clip uses the picker selection. Send Windows clipboard uses the current Windows text or image.</p>
       </>}
       <UiCheckbox label="Publish new local arrivals" checked={draft.publishFolderEnabled} disabled={busy || !draft.canPublish} onChange={event => change({ publishFolderEnabled: event.currentTarget.checked })} />
       <p>Only this folder. Its existing clips and subfolders are excluded. Received content is never sent back automatically.</p>
@@ -64,21 +64,21 @@ function ChannelSettings({ policy, channels, folders, actions, busy, unavailable
       <h3>Receive from this channel</h3>
       <UiCheckbox label="Receive publications" checked={draft.receiveEnabled} disabled={busy} onChange={event => change({ receiveEnabled: event.currentTarget.checked })} />
       <p>Choose the local effects independently. Turning reception on does not publish local copies.</p>
-      <UiCheckbox label="Save received text in Copicu" checked={draft.saveToFolder} disabled={busy} onChange={event => change({ saveToFolder: event.currentTarget.checked })} />
+      <UiCheckbox label="Save received content in Copicu" checked={draft.saveToFolder} disabled={busy} onChange={event => change({ saveToFolder: event.currentTarget.checked })} />
       {draft.saveToFolder && <>
         <FolderSelect folders={folders} label="Reception folder" allowCreate={false} disabled={busy} value={{ kind: "existing", folderId: draft.receiveFolderId }} onChange={choice => { if (choice.kind === "existing") change({ receiveFolderId: choice.folderId }); }} />
         <p>Existing clips keep their folder, tags and other metadata.</p>
       </>}
       <UiCheckbox label="Update Windows clipboard on live arrivals" checked={draft.updateClipboard} disabled={busy || (!draft.updateClipboard && (otherWriter || (draft.receiveActionEnabled && draft.receiveActionWritesClipboard)))} onChange={event => change({ updateClipboard: event.currentTarget.checked })} />
-      <p>Copies the original received text. Only one channel and one output can update Windows. Recovered publications remain available for manual copy. Receiving never pastes or opens another app.</p>
+      <p>Copies the original received text or image. Only one channel and one output can update Windows. Recovered publications remain available for manual copy. Receiving never pastes or opens another app.</p>
       <UiCheckbox label="Run a local action on live arrivals" checked={draft.receiveActionEnabled ?? false} disabled={busy || (!eligibleActions.length && !draft.receiveActionEnabled)} onChange={event => change({ receiveActionEnabled: event.currentTarget.checked, ...(!event.currentTarget.checked ? { receiveActionWritesClipboard: false } : {}) })} />
       {!eligibleActions.length && <p>No authorized reception scripts are available for this channel. Scripts must declare the sharedReception trigger and explicit channel access.</p>}
       {draft.receiveActionEnabled && <>
         <UiSelect label="Reception action" placeholder="Choose an authorized script" value={draft.receiveActionId} disabled={busy} data={eligibleActions.map(action => ({ value: action.id, label: action.title }))} onChange={receiveActionId => change({ receiveActionId, receiveActionForwardChannelIds: [], receiveActionWritesClipboard: false })} />
-        <p>The action reads the received publication. It cannot paste or focus another app. Recovered publications do not run actions automatically.</p>
+        <p>The action reads text receptions; images are saved and copied without running this action. It cannot paste or focus another app. Recovered publications do not run actions automatically.</p>
         {selectedAction?.capabilities.includes("clipboard:write") && <>
           <UiCheckbox label="Allow reception action to update Windows clipboard" checked={draft.receiveActionWritesClipboard ?? false} disabled={busy || (!draft.receiveActionWritesClipboard && (draft.updateClipboard || otherWriter))} onChange={event => change({ receiveActionWritesClipboard: event.currentTarget.checked })} />
-          <p>The action may transform or generate text and write it once per live reception. Turn off the original-text output before enabling this output.</p>
+          <p>The action may transform or generate text and write it once per live reception. Turn off the original-content output before enabling this output.</p>
         </>}
         {otherWriter && <p className="shared-inline-notice">Another channel owns Windows clipboard updates. Turn off its output before choosing one here.</p>}
         {selectedAction && <MultiSelect label="Allow this action to forward to channels" placeholder="No forwarding allowed" value={draft.receiveActionForwardChannelIds ?? []} disabled={busy} comboboxProps={{ withinPortal: true }} data={channels.filter(target => sharedForwardTargetEligible(selectedAction, policy.id, target)).map(target => ({ value: target.id, label: target.name }))} onChange={receiveActionForwardChannelIds => change({ receiveActionForwardChannelIds })} />}
@@ -107,7 +107,7 @@ function SendShortcutSettings({ snapshot, busy, onSave }: { snapshot: SharedClip
     <h3>Send shortcuts</h3>
     <div className="shared-shortcut-fields">
       <UiTextInput label="Send active Copicu clip" description="Uses the active clip in the picker." placeholder="Not assigned" value={active} disabled={busy} onChange={event => setActive(event.currentTarget.value)} />
-      <UiTextInput label="Send Windows clipboard" description="Uses the current text in Windows." placeholder="Not assigned" value={clipboard} disabled={busy} onChange={event => setClipboard(event.currentTarget.value)} />
+      <UiTextInput label="Send Windows clipboard" description="Uses the current text or image in Windows." placeholder="Not assigned" value={clipboard} disabled={busy} onChange={event => setClipboard(event.currentTarget.value)} />
     </div>
     <p>Enter a shortcut such as Ctrl+Alt+S, or leave it blank to disable it. Both use the channel chosen for Send shortcuts.</p>
     <div className="shared-settings-actions"><UiButton type="button" size="compact-sm" disabled={!dirty || busy} loading={busy} onClick={save}>Save shortcuts</UiButton>{dirty && <UiButton type="button" variant="subtle" size="compact-sm" disabled={busy} onClick={() => { setActive(snapshot.sendActiveShortcut ?? ""); setClipboard(snapshot.sendClipboardShortcut ?? ""); }}>Undo shortcuts</UiButton>}</div>
@@ -171,7 +171,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
   }}>
     <div className="shared-settings-status">
       <div><strong>{!snapshot ? "Checking sharing…" : !snapshot.available ? "Sharing unavailable in this build" : !snapshot.configured ? "No device linked" : identityState === "revoked" ? "Device access retired" : allPaused ? "Sharing paused" : "Device linked"}</strong>
-        <p>{snapshot?.configured ? "Manage this PC's connections and local effects below." : "Sign in and approve this PC to share plain text between your devices."}</p></div>
+        <p>{snapshot?.configured ? "Manage this PC's connections and local effects below." : "Sign in and approve this PC to share text and images between your devices."}</p></div>
       <div className="shared-settings-actions">
         {snapshot?.configured && <UiButton type="button" variant={allPaused ? "filled" : "default"} size="compact-sm" loading={busy} disabled={linkPending} onClick={() => void run(async () => { accept(await api.setPaused(!allPaused)); })}>{allPaused ? "Resume sharing" : "Pause sharing"}</UiButton>}
         <UiButton type="button" variant="subtle" size="compact-sm" disabled={busy} onClick={() => void run(async () => { accept(await api.status()); })}>Refresh status</UiButton>
@@ -184,8 +184,8 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
     {snapshot?.available && <SharedIdentitySettings onConnect={() => setConnectOpen(true)} onChanged={next => { setIdentityState(next.state); if (next.state === "active" || next.state === "revoked") void api.status().then(accept); }} />}
     {snapshot?.configured && !linkPending && <div className="shared-settings-group">
       <h3>General connection</h3>
-      <UiSelect label="General sending scope" value={snapshot.generalSendScope ?? "unfiled"} disabled={busy} data={[{ value: "unfiled", label: "Only texts without a folder" }, { value: "all", label: "All Copicu" }]} onChange={scope => { if (scope === "all" || scope === "unfiled") void run(async () => { accept(await sharedProductApi.setScope(scope)); setNotice("Sending scope saved. Existing content was not sent."); }); }} />
-      <p>All Copicu includes new local texts from every folder. Existing texts and moving clips between folders do not enter the general stream. Sending needs an explicit connection.</p>
+      <UiSelect label="General sending scope" value={snapshot.generalSendScope ?? "unfiled"} disabled={busy} data={[{ value: "unfiled", label: "Only clips without a folder" }, { value: "all", label: "All Copicu" }]} onChange={scope => { if (scope === "all" || scope === "unfiled") void run(async () => { accept(await sharedProductApi.setScope(scope)); setNotice("Sending scope saved. Existing content was not sent."); }); }} />
+      <p>All Copicu includes new local texts and images from every folder. Existing clips and moving clips between folders do not enter the general stream. Sending needs an explicit connection.</p>
       <div className="shared-settings-actions"><UiButton type="button" variant="default" disabled={busy} onClick={() => setConnectOpen(true)}>Connect All history…</UiButton><UiButton type="button" variant="default" disabled={busy} onClick={() => setLibraryOpen(true)}>Manage shared clipboards</UiButton></div>
       {!!snapshot.connections?.length && <ul className="shared-activity-list" aria-label="Shared connections">{snapshot.connections.map(connection => <li key={connection.id}>
         <div><strong>{snapshot.channels.find(channel => channel.id === connection.channelId)?.name ?? "Shared clipboard"}</strong>
@@ -211,7 +211,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
         <dl><div><dt>Device</dt><dd>{enrollment.preview.deviceId}</dd></div><div><dt>Service</dt><dd>{enrollment.preview.endpoint}</dd></div><div><dt>Environment</dt><dd>{enrollment.preview.environment}</dd></div><div><dt>Channels</dt><dd>{enrollment.preview.channels.map(item => `${item.name} (${item.canPublish ? "send and receive" : "receive"})`).join(", ")}</dd></div></dl>
         <label className="shared-fingerprint-label">Enrollment fingerprint<code>{enrollment.preview.fingerprint}</code></label>
         <UiCheckbox label="I verified this fingerprint with the channel owner" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.currentTarget.checked)} />
-        <p>Recovery requires the channel owner and an available channel key. Revoking this device stops future access; previously downloaded text remains local.</p>
+        <p>Recovery requires the channel owner and an available channel key. Revoking this device stops future access; previously downloaded content remains local.</p>
         <UiButton type="button" size="compact-sm" disabled={!confirmed || busy} loading={busy} onClick={() => void run(async () => { accept(await api.configure(enrollment.path, enrollment.preview.fingerprint)); setEnrollment(null); setConfirmed(false); setNotice("Device linked. Review each channel before enabling local effects."); })}>Link device</UiButton>
       </div>}
     </details>}
@@ -229,9 +229,9 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
       <div className="shared-settings-group shared-activity">
         <div className="shared-activity-heading"><h3>Activity</h3><div className="shared-settings-actions"><span>{queued} queued</span>{onViewReceptions && <UiButton type="button" variant="subtle" size="compact-sm" onClick={onViewReceptions}>View receptions</UiButton>}</div></div>
         {(snapshot.sendPaused || snapshot.paused) && <p>Previously queued publications wait while sending is paused. A request already started may still be accepted.</p>}
-        {snapshot.outbox.length === 0 && snapshot.receipts.length === 0 && <p>Send text with a sharing Action or add a new local clip to an enabled publication folder. Incoming text will appear here with its origin.</p>}
+        {snapshot.outbox.length === 0 && snapshot.receipts.length === 0 && <p>Send text or images with a sharing Action or add a new local clip to an enabled publication folder. Incoming content will appear here with its origin.</p>}
         {snapshot.outbox.length > 0 && <ul className="shared-activity-list" aria-label="Outgoing publications">{snapshot.outbox.slice(0, 20).map(publication => <li key={publication.publicationId}><div><strong>{snapshot.channels.find(item => item.id === publication.channelId)?.name ?? publication.channelId}</strong><small title={publication.publicationId}>Sent · {publication.publicationId}</small></div><span>{sharedPublicationState(publication)}</span></li>)}</ul>}
-        {snapshot.receipts.length > 0 && <ul className="shared-activity-list" aria-label="Received publications">{snapshot.receipts.slice(0, 20).map(receipt => <li key={`${receipt.subscriptionId}:${receipt.publicationId}`}><div><strong>{snapshot.channels.find(item => item.id === receipt.channelId)?.name ?? receipt.channelId}</strong><small>From {receipt.originDeviceId} · {receipt.delivery === "live" ? "Live" : receipt.delivery === "recovery" ? "Recovered" : "Delayed"}</small><small>{sharedReceiptStatus(receipt)}</small></div><UiButton type="button" variant="default" size="compact-xs" disabled={busy || !sharedReceiptCanCopy(receipt)} onClick={() => void run(async () => { await api.copyReceipt(receipt.subscriptionId, receipt.publicationId); setNotice("Received text copied to Windows clipboard."); })}>Copy text</UiButton></li>)}</ul>}
+        {snapshot.receipts.length > 0 && <ul className="shared-activity-list" aria-label="Received publications">{snapshot.receipts.slice(0, 20).map(receipt => <li key={`${receipt.subscriptionId}:${receipt.publicationId}`}><div><strong>{snapshot.channels.find(item => item.id === receipt.channelId)?.name ?? receipt.channelId}</strong><small>From {receipt.originDeviceId} · {receipt.delivery === "live" ? "Live" : receipt.delivery === "recovery" ? "Recovered" : "Delayed"}</small><small>{sharedReceiptStatus(receipt)}</small></div><UiButton type="button" variant="default" size="compact-xs" disabled={busy || !sharedReceiptCanCopy(receipt)} onClick={() => void run(async () => { await api.copyReceipt(receipt.subscriptionId, receipt.publicationId); setNotice("Received content copied to Windows clipboard."); })}>Copy content</UiButton></li>)}</ul>}
       </div>
     </>}
     {libraryOpen && <SharedClipboardLibrary onClose={() => setLibraryOpen(false)} onConnect={() => { setLibraryOpen(false); setConnectOpen(true); }} />}

@@ -37,7 +37,6 @@ function DeviceReview({ device, current, revision, busy, onDevice }: { device: S
 
 export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onConnect }: { api?: SharedIdentityApi; onChanged?: (status: SharedIdentityStatus) => void; onConnect: () => void }) {
   const [status, setStatus] = useState<SharedIdentityStatus | null>(null);
-  const [endpoint, setEndpoint] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +85,12 @@ export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onC
     <h3>{state === "active" ? "Your account and devices" : state === "pending" ? "Approve this device" : "Link this device"}</h3>
     {!status ? <p role="status">Checking device sign-in…</p> : <p>{sharingIdentityMessage(status)}</p>}
     {initial && <>
-      <UiTextInput label="Sharing service URL" placeholder="https://sharing.example.com" value={endpoint} disabled={busy} autoComplete="off" onChange={event => setEndpoint(event.currentTarget.value)} />
-      <p>Both PCs need a reachable private service. If it has not been deployed yet, sign-in will remain unavailable. Get its HTTPS URL from the service administrator.</p>
       <UiTextInput label="Name of this PC" placeholder="Work PC" value={name} disabled={busy} maxLength={80} autoComplete="off" onChange={event => setName(event.currentTarget.value)} />
-      <UiButton type="button" size="compact-sm" loading={busy} disabled={busy || !endpoint.trim() || !name.trim()} onClick={() => act(() => api.start(endpoint.trim(), name.trim()))}>Sign in in browser</UiButton>
+      <UiButton type="button" size="compact-sm" loading={busy} disabled={busy || !name.trim()} onClick={() => act(() => api.start(name.trim()))}>Sign in in browser</UiButton>
       <p>Signing in does not share existing history or turn on Windows clipboard updates.</p>
     </>}
     {(waiting || pending) && <>
-      <p>{status?.name} · {status?.endpoint}</p>
+      <p>{status?.name}</p>
       {status?.fingerprint && <label className="shared-fingerprint-label">This device's fingerprint<code>{status.fingerprint}</code></label>}
       <div className="shared-settings-actions">{waiting && <UiButton type="button" variant="default" size="compact-sm" disabled={busy} onClick={() => act(api.reopen)}>Open sign-in again</UiButton>}<UiButton type="button" variant="default" size="compact-sm" disabled={busy} onClick={() => act(api.status)}>Check approval</UiButton><UiButton type="button" variant="subtle" size="compact-sm" disabled={busy} onClick={() => act(api.cancel)}>Cancel linking</UiButton></div>
       {pending && status?.recoveryReady && <details className="shared-device-review"><summary>Recover with a saved code</summary>
@@ -105,7 +102,7 @@ export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onC
       {pending && !status?.recoveryReady && <p>Without an approved PC or a previously saved recovery code, content keys cannot be recovered by signing in alone.</p>}
     </>}
     {status && state === "active" && <>
-      <p>{status.name} · {status.endpoint}</p>
+      <p>{status.name}</p>
       <UiButton type="button" size="compact-sm" variant="default" onClick={onConnect}>Create or connect a clipboard…</UiButton>
       <details className="shared-device-review" open={status.devices.some(device => device.state === "pending")}><summary>Devices ({status.devices.filter(d => d.state === "active").length} approved)</summary>
         <ul className="shared-device-list" aria-label="Account devices">{status.devices.map(device => <DeviceReview key={`${device.deviceId}:${device.fingerprint}`} device={device} current={device.deviceId === status.deviceId} revision={status.revision ?? ""} busy={busy} onDevice={async intent => { await run(() => api.device(intent), intent.kind === "approve" ? "Device approved. Review its local connection before sharing." : "Device retired. Review affected clipboard key rotation."); }} />)}</ul>
@@ -122,6 +119,7 @@ export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onC
     {state === "offline" && <UiButton type="button" size="compact-sm" variant="default" disabled={busy} onClick={() => act(api.status)}>Retry service connection</UiButton>}
     {state === "revoked" && <p>Sign in again to request a new device identity in this profile. Approval or recovery is required. Local copies stay; previous connections and effects are not reactivated.</p>}
     {(error || status?.error) && <p className="shared-error" role="alert">{error ?? status?.error}</p>}
+    {state === "offline" && status?.endpoint && <p className="shared-inline-notice">Service: {status.endpoint}</p>}
     {notice && <p className="shared-inline-notice" role="status">{notice}</p>}
   </section>;
 }
