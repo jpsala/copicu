@@ -53,6 +53,8 @@ mod script_editor;
 mod shared_host;
 #[cfg(not(test))]
 mod shared_product_host;
+#[cfg(not(test))]
+mod shared_identity_host;
 // Shared runtime is opt-in; normal builds do not initialize sharing.
 #[cfg(any(test, feature = "shared-clipboard"))]
 #[allow(dead_code)] // Candidate APIs are exercised by tests, not app startup.
@@ -4028,6 +4030,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             shared_clipboard_set_active_item,
             shared_host::shared_clipboard_status,
+            shared_identity_host::shared_clipboard_identity,
             shared_host::shared_clipboard_preview_enrollment,
             shared_host::shared_clipboard_configure,
             shared_host::shared_clipboard_update_channel,

@@ -1,6 +1,6 @@
 ---
 title: Clipboard compartido y backup futuro
-summary: "Contratos del producto local de sharing: acceso histórico, efectos opt-in y sincronización SSE; servicio remoto y dos PCs pendientes."
+summary: "Sharing local con OIDC, equipos/recovery E2EE, acceso histórico y SSE; despliegue y dos PCs pendientes."
 keywords:
   - clipboard compartido
   - shared clipboard
@@ -16,17 +16,44 @@ keywords:
 Runtime, host Windows, UI y SDK están implementados y validados localmente con
 personas/equipos sintéticos; incluye prueba instalada ↔ dev y SSE S1–S6.
 Q1 `liveOnly`, Q2 texto plano y Q3 espacios propios por persona siguen vigentes.
-Identidad humana, recovery E2EE, servicio remoto y aceptación en dos PCs permanecen
-abiertos. Estado de la candidata, próximo paso y evidencia en
+Primer acceso OIDC y recovery E2EE están implementados con aceptación local;
+proveedor/cuentas, despliegue HTTPS y aceptación en dos PCs permanecen abiertos.
+Estado de la candidata, próximo paso y evidencia en
 [track 041](../tracks/041-shared-clipboard.md) y
 [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md).
 
 La capacidad se compila por defecto, pero sharing sigue apagado en un perfil
 sin configurar: no inicializa tablas auxiliares ni transporte de sharing ni
 publica sus copias. Una conexión explícita determina el flujo; Windows y Actions
-mantienen opt-ins propios. El corte está incluido en el NSIS firmado
+mantienen opt-ins propios. El corte anterior está incluido en el NSIS firmado
 `v0.5.2-rc.1`, core `0.5.2`; estado de publicación/instalación en el track y
 [evidencia del artefacto](../../specs/016-shared-clipboard/local-acceptance.md#candidata-firmada-v052-rc1-2026-10-02).
+El primer acceso posterior todavía requiere publicar/instalar el cliente.
+
+## Primer acceso y equipos
+
+Settings → Sharing pide servicio/nombre y abre el navegador del sistema.
+OIDC prueba la cuenta; una segunda PC espera comparación de huella y aprobación
+para recibir claves HPKE. Login, crear recurso y aprobar un equipo no conectan
+carpetas ni importan historial ni habilitan efectos. Secretos permanecen en DPAPI;
+el servidor conserva hashes, claves públicas y ciphertext.
+El login sin terminar expira a los diez minutos; un resultado ya confirmado se
+recupera con prueba local firmada tras offline/restart. Esto no reabre el login,
+extiende la aprobación pendiente de 24 horas ni recupera acceso retirado.
+
+Recuperar exige esa cuenta y el código aleatorio guardado fuera de Copicu.
+Restaura claves disponibles en el snapshot cifrado, retira equipos anteriores y
+exige rotación antes de enviar. No es backup del historial local. Sin equipo
+aprobado ni código, login u operador no recuperan las claves.
+
+Revincular un perfil retirado exige su cuenta/servicio/issuer original: conservar
+receipts/replay y copias locales, invalidar generaciones y empezar sin conexiones
+o efectos previos. Shutdown cerca requests a ambos lados de la ruta async,
+deja cerrar los bodies SSE y después cierra servidor/SQLite.
+
+[Contrato](../../specs/016-shared-clipboard/identity-service-plan.md),
+[evidencia local](../../specs/016-shared-clipboard/identity-acceptance.md) y
+[operación del servicio](../../scripts/shared-clipboard/README.md).
 
 ## Identidades, conexiones y efectos
 

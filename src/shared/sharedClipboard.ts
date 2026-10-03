@@ -41,6 +41,7 @@ export type SharedReceiptSummary = {
   expiresAtUnixMs: string;
 };
 export type SharedClipboardSnapshot = {
+  identityState?: string;
   controlSyncState?: string;
   unavailableChannelIds?: string[];
   available: boolean;

@@ -1,0 +1,28 @@
+# Review the actual proxy's entrypoints and resolver. Keep this separate from
+# existing routes; install only after DNS, identity and deployment are ready.
+http:
+  routers:
+    copicu-sharing:
+      rule: "Host(`sharing.example.com`)"
+      entryPoints: [https]
+      service: copicu-sharing
+      middlewares: [copicu-sharing-headers]
+      tls:
+        certResolver: letsencrypt
+      observability:
+        accessLogs: false
+  services:
+    copicu-sharing:
+      loadBalancer:
+        responseForwarding:
+          flushInterval: -1ms
+        servers:
+          - url: "http://127.0.0.1:5454"
+  middlewares:
+    copicu-sharing-headers:
+      headers:
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+        stsSeconds: 31536000
+# Do not add buffering middleware: it buffers responses too and would hold SSE.
+# The service enforces its own finite request and protocol body limits.

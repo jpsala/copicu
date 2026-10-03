@@ -1,0 +1,42 @@
+services:
+  sharing:
+    build:
+      context: ../../..
+      dockerfile: scripts/shared-clipboard/deploy/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - sharing-data:/var/lib/copicu-sharing
+    secrets:
+      - service.json
+      - copicu-issuer.pem
+      - oidc-client-secret
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://127.0.0.1:5454/health');process.exit(r.ok?0:1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  https:
+    image: caddy:2
+    network_mode: "service:sharing"
+    depends_on:
+      sharing:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+secrets:
+  service.json:
+    file: ./private/service.json
+  copicu-issuer.pem:
+    file: ./private/copicu-issuer.pem
+  oidc-client-secret:
+    file: ./private/oidc-client-secret
+volumes:
+  sharing-data:
+  caddy-data:
+  caddy-config:

@@ -1430,6 +1430,7 @@ pub(super) fn open_envelope(
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SharedSnapshot {
+    pub identity_state: Option<String>,
     pub control_sync_state: String,
     pub unavailable_channel_ids: Vec<String>,
     pub available: bool,
@@ -1453,6 +1454,7 @@ pub(crate) struct SharedSnapshot {
 pub(crate) fn snapshot(storage: &AppStorage) -> Result<SharedSnapshot, String> {
     let Some(c) = config(storage)? else {
         return Ok(SharedSnapshot {
+            identity_state: None,
             control_sync_state: "off".into(),
             unavailable_channel_ids: vec![],
             available: true,
@@ -1489,6 +1491,7 @@ pub(crate) fn snapshot(storage: &AppStorage) -> Result<SharedSnapshot, String> {
         })
     }).map(|channel| channel.policy.id.clone()).collect();
     Ok(SharedSnapshot {
+        identity_state: store(storage)?.identity_json().map_err(error)?.and_then(|raw|serde_json::from_str::<Value>(&raw).ok()).and_then(|v|v["state"].as_str().map(str::to_owned)),
         control_sync_state,
         unavailable_channel_ids,
         available: true,

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
+import { emitTo } from "@tauri-apps/api/event";
 import type { FolderScope, FolderSummary } from "../shared/contracts";
 import { sharedClipboardApi, type SharedClipboardSnapshot } from "../shared/sharedClipboard";
 import { connectionContext, connectionReceives, resourceResults, sharedProductApi, type SharedCatalog, type SharedConnection, type SharedProductApi } from "../shared/sharedProduct";
@@ -20,6 +22,7 @@ export function SharedClipboardConnect({ scope, folders, onClose, onConnected, a
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const operation = useRef<{ id: string; name: string } | null>(null);
   const modal = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -35,14 +38,21 @@ export function SharedClipboardConnect({ scope, folders, onClose, onConnected, a
   const canSend = selected?.permission !== "read";
   const ready = !!selected && selected.keyState === "ready" && (direction === "receive" || canSend) && (!receiver || direction === "send" || moveReception);
   useSharedCatalogInvalidation(async () => {
-    const [next, status] = await Promise.all([api.catalog(), sharedClipboardApi.status()]);
+    const status = await sharedClipboardApi.status();
+    if ((!status.configured || ["waiting", "pending", "revoked", "expired", "cancelled"].includes(status.identityState ?? ""))) { setNeedsSignIn(true); setSnapshot(status); return; }
+    const next = await api.catalog();
+    setNeedsSignIn(false);
     setCatalog(next); setSnapshot(status);
     if (chosen && !next.resources.some(resource => resource.id === chosen)) setError("This clipboard was removed or your access was revoked. Choose a clipboard to continue.");
   }, busy);
   useEffect(() => {
     initialFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     let active = true;
-    void Promise.all([api.catalog(), sharedClipboardApi.status()]).then(([next, status]) => {
+    void sharedClipboardApi.status().then(async status => {
+      if (!active) return;
+      setSnapshot(status);
+      if ((!status.configured || ["waiting", "pending", "revoked", "expired", "cancelled"].includes(status.identityState ?? ""))) { setNeedsSignIn(true); return; }
+      const next = await api.catalog();
       if (!active) return;
       setCatalog(next); setSnapshot(status);
       const current = status.connections?.find(connection => connection.id === id);
@@ -54,8 +64,20 @@ export function SharedClipboardConnect({ scope, folders, onClose, onConnected, a
     search.current?.focus();
     return () => { active = false; initialFocus.current?.isConnected && initialFocus.current.focus(); };
   }, [api, id]);
+  useEffect(() => {
+    if (!needsSignIn) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void sharedClipboardApi.status().then(async status => {
+        if (!active || (!status.configured || ["waiting", "pending", "revoked", "expired", "cancelled"].includes(status.identityState ?? ""))) return;
+        const next = await api.catalog();
+        if (active) { setSnapshot(status); setCatalog(next); setNeedsSignIn(false); setError(null); }
+      }).catch(failure => { if (active) setError(String(failure)); });
+    }, 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [needsSignIn, api]);
   const confirm = async () => {
-    if (busy || (!creating && !ready) || (creating && !name.trim())) return;
+    if (busy || needsSignIn || (!creating && !ready) || (creating && !name.trim())) return;
     setBusy(true); setError(null);
     try {
       let channelId = chosen;
@@ -86,8 +108,9 @@ export function SharedClipboardConnect({ scope, folders, onClose, onConnected, a
       <header><h2 id="shared-connect-title">Connect shared clipboard</h2><span>{context}{kind === "general" ? " · General connection" : " · Exact folder"}</span></header>
       {catalog?.mode === "synthetic" && <p className="shared-inline-notice">Local synthetic service. Human account linking is not configured.</p>}
       {error && <p className="shared-error" role="alert">{error}</p>}
-      {!catalog && !error && <p role="status">Loading available clipboards…</p>}
-      {catalog && <>
+      {needsSignIn && <div className="shared-settings-group"><p>Link this PC in Settings → Sharing, then return to connect {context}. Your connection choices stay here. Linking does not send existing content.</p><UiButton type="button" variant="default" onClick={() => void invoke("open_settings_window").then(() => emitTo("settings", "copicu://settings/focus-section", "sharing")).catch(failure => setError(String(failure)))}>Open Sharing settings</UiButton></div>}
+      {!catalog && !error && !needsSignIn && <p role="status">Loading available clipboards…</p>}
+      {catalog && !needsSignIn && <>
         {!creating ? <>
           <UiTextInput ref={search} label="Find shared clipboard" placeholder="Name or owner" value={query} disabled={busy} onChange={event => setQuery(event.currentTarget.value)} onKeyDown={event => { if (event.key === "ArrowDown" && results[0]) { event.preventDefault(); setChosen(results[0].id); document.getElementById(`shared-resource-${results[0].id}`)?.focus(); } else if (event.key === "Enter") event.preventDefault(); }} />
           <div className="shared-resource-options" role="listbox" aria-label="Available shared clipboards" onKeyDown={event => {
@@ -112,7 +135,7 @@ export function SharedClipboardConnect({ scope, folders, onClose, onConnected, a
         {selected?.keyState === "pending" && <p role="status">This device needs approved content keys before it can connect.</p>}
         {createdId && <p role="status">Created; connection still needs to be completed. Retry keeps the same resource.</p>}
       </>}
-      <footer><UiButton type="button" variant="default" disabled={busy} onClick={onClose}>Cancel</UiButton><UiButton type="button" loading={busy} disabled={!catalog || busy || (creating ? !name.trim() : !ready)} onClick={() => void confirm()}>{createdId ? "Retry connection" : creating ? "Create and connect" : "Connect clipboard"}</UiButton></footer>
+      <footer><UiButton type="button" variant="default" disabled={busy} onClick={onClose}>Cancel</UiButton><UiButton type="button" loading={busy} disabled={needsSignIn || !catalog || busy || (creating ? !name.trim() : !ready)} onClick={() => void confirm()}>{createdId ? "Retry connection" : creating ? "Create and connect" : "Connect clipboard"}</UiButton></footer>
     </div>
   </div>, document.body);
 }

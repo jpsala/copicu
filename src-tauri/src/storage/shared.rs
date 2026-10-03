@@ -903,6 +903,8 @@ CREATE TABLE shared_replay(environment TEXT NOT NULL,channel TEXT NOT NULL,origi
 "#;
     const PRODUCT_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS shared_product_config(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL,last_error TEXT);
+CREATE TABLE IF NOT EXISTS shared_identity_state(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS shared_identity_intents(id TEXT PRIMARY KEY,json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shared_remote_provenance(hash TEXT PRIMARY KEY,item_id INTEGER);
 CREATE TABLE IF NOT EXISTS shared_network_status(id INTEGER PRIMARY KEY CHECK(id=1),last_error TEXT);
 CREATE TABLE IF NOT EXISTS shared_effect_notes(attempt TEXT PRIMARY KEY,reason TEXT NOT NULL);
@@ -1112,6 +1114,19 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                 options.folder_id,
             )?;
             self.fence(&options.id)
+        }
+        /// Reuse a retired profile's receipt/replay ledger only after its scope
+        /// was explicitly rebound. Importing keys never enables reception.
+        pub(crate) fn subscribe_product(&self, options: Subscribe) -> Result<PageFence> {
+            let prior = {
+                let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+                conn.query_row("SELECT environment,channel,device,history_enabled,folder_id,cursor,bootstrap FROM shared_subscriptions WHERE id=?1", [&options.id], |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,bool>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Vec<u8>>(5)?,r.get::<_,Vec<u8>>(6)?))).optional().map_err(db)?
+            };
+            if let Some((environment,channel,device,history,folder,cursor,bootstrap)) = prior {
+                if environment!=options.environment || channel!=options.channel || device!=options.local_device || history || folder.is_some() || options.history_enabled || options.folder_id.is_some() { return Err(Error::Invalid); }
+                self.policy(&options.id, Policy::Paused, options.head.max(number(cursor)?).max(number(bootstrap)?))?;
+                self.fence(&options.id)
+            } else { self.subscribe(options) }
         }
         pub(crate) fn fence(&self, sid: &str) -> Result<PageFence> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
@@ -1540,6 +1555,51 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             tx(self.storage, |conn| {
                 conn.execute_batch(PRODUCT_SCHEMA).map_err(db)?;
                 conn.execute("INSERT INTO shared_product_config(id,json) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json",[json]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn identity_json(&self) -> Result<Option<String>> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.query_row("SELECT json FROM shared_identity_state WHERE id=1", [], |r| r.get(0)).optional().map_err(db)
+        }
+        /// Explicitly approved identity after retirement. Preserve receipts and
+        /// local copies, invalidate old effects and detach automatic outputs.
+        pub(crate) fn activate_relinked_identity(&self, old_device: &str, environment: &str, new_device: &str, json: &str) -> Result<()> {
+            if json.len()>65536 {return Err(Error::Limit);}
+            tx(self.storage, |conn| {
+                let rows = {
+                    let mut stmt=conn.prepare("SELECT id,generation,environment FROM shared_subscriptions WHERE device=?1").map_err(db)?;
+                    let rows=stmt.query_map([old_device], |r|Ok((r.get::<_,String>(0)?,r.get::<_,Vec<u8>>(1)?,r.get::<_,String>(2)?))).map_err(db)?.collect::<std::result::Result<Vec<_>,_>>().map_err(db)?;
+                    rows
+                };
+                for (sid,generation,prior_environment) in rows {
+                    let next=number(generation)?.checked_add(1).ok_or(Error::Limit)?.to_be_bytes().to_vec();
+                    conn.execute("UPDATE shared_subscriptions SET enabled=0,history_enabled=0,folder_id=NULL,generation=?1,device=?2 WHERE id=?3",params![next,if prior_environment==environment{new_device}else{old_device},sid]).map_err(db)?;
+                }
+                conn.execute("UPDATE shared_grants SET authorized=0 WHERE environment=?1",[environment]).map_err(db)?;
+                conn.execute("UPDATE shared_outbox SET state='cancelled',envelope=NULL,ciphertext=NULL WHERE device=?1 AND state IN ('preparing','queued') AND commit_ambiguous=0",[old_device]).map_err(db)?;
+                conn.execute("UPDATE shared_outbox_history SET state='cancelled' WHERE device=?1 AND state IN ('preparing','queued') AND commit_ambiguous=0",[old_device]).map_err(db)?;
+                conn.execute("INSERT INTO shared_product_config(id,json) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json",[json]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn save_identity(&self, json: &str) -> Result<()> {
+            if json.len() > 65536 { return Err(Error::Limit); }
+            tx(self.storage, |conn| {
+                conn.execute("INSERT INTO shared_identity_state VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET json=excluded.json", [json]).map_err(db)?;
+                Ok(())
+            })
+        }
+        pub(crate) fn identity_intent(&self, id: &str) -> Result<Option<String>> {
+            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
+            conn.query_row("SELECT json FROM shared_identity_intents WHERE id=?1", [id], |r| r.get(0)).optional().map_err(db)
+        }
+        pub(crate) fn save_identity_intent(&self, id: &str, json: &str) -> Result<()> {
+            if json.len() > 1_048_576 { return Err(Error::Limit); }
+            tx(self.storage, |conn| {
+                let count: i64 = conn.query_row("SELECT count(*) FROM shared_identity_intents", [], |r| r.get(0)).map_err(db)?;
+                if count >= 4096 { return Err(Error::Limit); }
+                conn.execute("INSERT INTO shared_identity_intents VALUES(?1,?2)", [id,json]).map_err(db)?;
                 Ok(())
             })
         }

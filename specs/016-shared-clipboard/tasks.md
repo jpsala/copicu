@@ -1,5 +1,29 @@
 # Portapapeles compartidos: plan y ejecución
 
+## Continuación: primer acceso entre PCs (2026-10-02)
+
+Pedido actual de implementación, sin heredar modelo, supervisión ni permisos
+históricos. Contrato en [identity-service-plan.md](identity-service-plan.md).
+
+- [x] I1 Recuperar WIP y fijar contrato, propuesta de proveedor/servicio y gates.
+- [x] I2 Servicio OIDC/PKCE durable, identidad cerrada, alta/cancelación/retry.
+- [x] I3 Host DPAPI y estado durable; navegador y primer acceso sin bundle.
+- [x] I4 Aprobar equipos con huella/HPKE, distribuir nuevas claves y retirar.
+- [x] I5 Recuperación E2EE explícita y snapshot cifrado con límites visibles.
+- [x] I6 UI integrada, errores/offline, conexión inicial y regresiones afectadas.
+- [x] I7 Artefactos de servicio/config/proxy/deploy y guía revisables.
+- [x] I8 Aceptación local de perfiles nuevos, host/UI reales y evidencia curada.
+- [ ] R1 Aprobar proveedor/cuentas, destino/costos, DNS/HTTPS y desplegar.
+- [ ] R2 Publicar/instalar cliente y aceptar en dos PCs físicas con sintéticos.
+
+JP autorizó deploy/distribución el 2026-10-02. Cliente `0.5.3` firmado, payload
+verificado e instalado con el mismo hash; tres checks release/instalada pasan.
+R1 conserva confirmación puntual de Google/OAuth, DNS e imagen Bun; R2 queda
+abierto por la aceptación física, separada de las pruebas debug y locales.
+
+I1–I8 no acreditan R1/R2. Mantener V1/V2/SSE y los opt-ins de Windows/Actions.
+Evidencia y reproducción en [identity-acceptance.md](identity-acceptance.md).
+
 ## Continuación: sincronización SSE (2026-10-02)
 
 JP confirmó SSE y pidió nueva sesión supervisada. Fuente de implementación:
@@ -94,8 +118,8 @@ autorizaciones específicas.
 - [x] Build normal offline/locked y reinicio de dev aislada; walkthrough real desde
   All history y carpeta, envío aceptado, consulta sin efectos, guardado/dedupe y
   pausas independientes. Captura/updater apagados; instalada preservada.
-- [ ] Preparar servicio/deploy revisables y obtener sus permisos específicos;
-  probar dos PCs y latencia real con alcance de datos explícito.
+- [ ] Aprobar y ejecutar servicio/deploy ya preparados; probar dos PCs y latencia
+  real con alcance de datos explícito (R1/R2).
 
 ## Corte local implementado
 
@@ -120,7 +144,8 @@ con cortes paralelos. Sin instalación, publicación, deploy ni datos reales.
 
 Gates remotos separados de la implementación local:
 
-- [ ] Proveedor OAuth/OIDC, vinculación humana de dispositivos, recuperación E2EE
-  y aceptación remota de invitaciones. Revocación/rotación locales ya tienen controles.
+- [ ] Configurar proveedor OAuth/OIDC real y verificar vínculo/recuperación allí;
+  aceptación remota de invitaciones. Vínculo/recovery y revocación/rotación tienen
+  implementación y evidencia local en I1–I8.
 - [ ] Servicio privado desplegado con HTTPS/DNS y alcance/costos aprobados.
 - [ ] Aceptación en dos PCs, latencia real, lock/suspend y crash nativo.

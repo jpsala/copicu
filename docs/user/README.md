@@ -50,7 +50,7 @@ Copicu currently supports:
 - settings for core behavior;
 - built-in actions;
 - local trusted TypeScript/JavaScript scripts;
-- shared text clipboards in v0.5.2, with explicit connections and optional Windows/Action effects;
+- shared text clipboards with account/device linking, explicit connections and optional Windows/Action effects;
 - a Markdown output window for generated summaries, reports, translations, and compiled notes.
 
 ## Search, Select And Reuse
@@ -89,11 +89,18 @@ For mixed selections, leave the Folder field unchanged to retain each clip's loc
 
 Open **picker menu → Organize** for **Saved searches**, **Capture modes**, Inbox and Tags. A Saved search (formerly Saved View) is a passive query. A Capture mode (formerly Scenario) owns its query and can add configured metadata to new captures until stopped. Neither is a folder, and capture modes do not choose the destination folder.
 
-## Shared Clipboards In v0.5.2
+<a id="shared-clipboards-in-v052"></a>
+## Shared Clipboards In v0.5.3
 
-v0.5.2 includes shared plain-text clipboards validated with a local synthetic service and prepared profiles. It does not provide human account linking or a deployed service, and it has not been accepted between two separate PCs. A normal unconfigured profile shows **Sharing is off** in **Settings → Sharing**. **Technical preparation for a local synthetic service** is for controlled local testing.
+v0.5.3 adds account sign-in, device approval and encrypted recovery to shared plain-text clipboards. It needs a private HTTPS sharing service configured by its operator. A normal unconfigured profile shows **Sharing is off** in **Settings → Sharing**.
 
-On a device already linked to that local service:
+1. On the first PC, open **Settings → Sharing**, enter the **Sharing service URL** and **Name of this PC**, then choose **Sign in in browser**. Use the account admitted by your service. The first PC starts with an empty private space.
+2. On the other PC, repeat with the same service and account. It remains pending until you compare its complete **Device fingerprint** on both PCs and approve it in **Devices** on the first PC.
+3. Signing in and approving do not connect clipboards or send existing history. Create or connect a clipboard on each PC using the steps below and choose its direction.
+
+Under **Set up recovery**, generate a recovery code and store it outside Copicu. The service keeps an encrypted snapshot of available content keys, not your local history. A new PC needs your account login and the saved code to recover keys; recovery retires previous devices and requires key rotation before sending resumes. Update the snapshot from a PC that has the code when keys change.
+
+On a linked device:
 
 1. Open a folder's menu and choose **Connect shared clipboard…**, or use **Connect…** beside the browsing scope. Choose **All history** first for a general connection.
 2. Search **Find shared clipboard** by name or owner, or select **Create shared clipboard…**. A new clipboard starts private to its owner's devices. **Read only** permits reception; **Awaiting keys** means this device cannot connect yet.

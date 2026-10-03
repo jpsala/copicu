@@ -11,6 +11,8 @@ import { sharedProductApi } from "../shared/sharedProduct";
 import { SharedClipboardLibrary } from "./SharedClipboardLibrary";
 import { SharedClipboardConnect } from "./SharedClipboardConnect";
 import { sharedControlMessage, useSharedCatalogInvalidation } from "../shared/useSharedCatalogInvalidation";
+import { SharedIdentitySettings } from "./SharedIdentitySettings";
+import type { SharedIdentityStatus } from "../shared/sharedIdentity";
 
 export type SharedClipboardSettingsProps = {
   api?: SharedClipboardApi;
@@ -128,6 +130,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [targetActionId, setTargetActionId] = useState<string | null>(null);
+  const [identityState, setIdentityState] = useState<SharedIdentityStatus["state"] | null>(null);
   const accept = (next: SharedClipboardSnapshot) => {
     setSnapshot(next);
     setChannelId(previous => next.channels.some(channel => channel.id === previous) ? previous : next.channels[0]?.id ?? null);
@@ -159,6 +162,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
   const channel = snapshot?.channels.find(candidate => candidate.id === channelId);
   const queued = snapshot?.outbox.filter(publication => ["pending", "queued"].includes(publication.state)).length ?? 0;
   const allPaused = snapshot?.paused || (snapshot?.sendPaused && snapshot?.receivePaused);
+  const linkPending = ["waiting", "pending", "revoked", "expired", "cancelled"].includes(snapshot?.identityState ?? identityState ?? "");
   return <div className="shared-clipboard-settings" onKeyDown={event => {
     if (event.key === "Enter") {
       event.stopPropagation();
@@ -166,10 +170,10 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
     }
   }}>
     <div className="shared-settings-status">
-      <div><strong>{!snapshot ? "Checking sharing…" : !snapshot.available ? "Sharing unavailable in this build" : !snapshot.configured ? "Sharing is off" : allPaused ? "Sharing paused" : "Sharing enabled"}</strong>
-        <p>{snapshot?.configured ? `${snapshot.deviceId ?? "This device"} · ${snapshot.environment ?? "Private service"}` : "Link this device to a private channel to start sharing plain text."}</p></div>
+      <div><strong>{!snapshot ? "Checking sharing…" : !snapshot.available ? "Sharing unavailable in this build" : !snapshot.configured ? "No device linked" : identityState === "revoked" ? "Device access retired" : allPaused ? "Sharing paused" : "Device linked"}</strong>
+        <p>{snapshot?.configured ? "Manage this PC's connections and local effects below." : "Sign in and approve this PC to share plain text between your devices."}</p></div>
       <div className="shared-settings-actions">
-        {snapshot?.configured && <UiButton type="button" variant={allPaused ? "filled" : "default"} size="compact-sm" loading={busy} onClick={() => void run(async () => { accept(await api.setPaused(!allPaused)); })}>{allPaused ? "Resume sharing" : "Pause sharing"}</UiButton>}
+        {snapshot?.configured && <UiButton type="button" variant={allPaused ? "filled" : "default"} size="compact-sm" loading={busy} disabled={linkPending} onClick={() => void run(async () => { accept(await api.setPaused(!allPaused)); })}>{allPaused ? "Resume sharing" : "Pause sharing"}</UiButton>}
         <UiButton type="button" variant="subtle" size="compact-sm" disabled={busy} onClick={() => void run(async () => { accept(await api.status()); })}>Refresh status</UiButton>
       </div>
     </div>
@@ -177,7 +181,8 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
     {snapshot?.lastError && <p className="shared-error" role="alert">{snapshot.lastError}</p>}
     {sharedControlMessage(snapshot?.controlSyncState) && <p role="status">{sharedControlMessage(snapshot?.controlSyncState)}</p>}
     {notice && <p className="shared-inline-notice" role="status">{notice}</p>}
-    {snapshot?.configured && <div className="shared-settings-group">
+    {snapshot?.available && <SharedIdentitySettings onConnect={() => setConnectOpen(true)} onChanged={next => { setIdentityState(next.state); if (next.state === "active" || next.state === "revoked") void api.status().then(accept); }} />}
+    {snapshot?.configured && !linkPending && <div className="shared-settings-group">
       <h3>General connection</h3>
       <UiSelect label="General sending scope" value={snapshot.generalSendScope ?? "unfiled"} disabled={busy} data={[{ value: "unfiled", label: "Only texts without a folder" }, { value: "all", label: "All Copicu" }]} onChange={scope => { if (scope === "all" || scope === "unfiled") void run(async () => { accept(await sharedProductApi.setScope(scope)); setNotice("Sending scope saved. Existing content was not sent."); }); }} />
       <p>All Copicu includes new local texts from every folder. Existing texts and moving clips between folders do not enter the general stream. Sending needs an explicit connection.</p>
@@ -194,7 +199,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
       <p>Device pauses take priority over each clipboard's pause. New local copies made while sending is paused are not queued. Resuming reception starts from now; earlier content remains available in shared history.</p>
     </div>}
     {snapshot?.available && !snapshot.configured && <details className="shared-settings-group">
-      <summary>Technical preparation for a local synthetic service</summary>
+      <summary>Advanced: synthetic test enrollment</summary>
       <h3>Link this device</h3>
       <p>Human account linking needs a configured identity provider. This local preparation is for controlled fixtures.</p>
       <p>Choose the enrollment file prepared for this device. Copicu keeps credentials in protected local storage; channel names do not grant access.</p>
@@ -210,7 +215,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
         <UiButton type="button" size="compact-sm" disabled={!confirmed || busy} loading={busy} onClick={() => void run(async () => { accept(await api.configure(enrollment.path, enrollment.preview.fingerprint)); setEnrollment(null); setConfirmed(false); setNotice("Device linked. Review each channel before enabling local effects."); })}>Link device</UiButton>
       </div>}
     </details>}
-    {snapshot?.configured && <>
+    {snapshot?.configured && !linkPending && <>
       <UiSelect label="Channel" value={channelId} onChange={setChannelId} allowDeselect={false} data={snapshot.channels.map(item => ({ value: item.id, label: `${item.name}${snapshot.unavailableChannelIds?.includes(item.id) ? " · Unavailable" : ""}` }))} />
       {channel && snapshot.unavailableChannelIds?.includes(channel.id) && <p className="shared-inline-notice" role="status">This clipboard was removed or your access was revoked. Local copies and drafts remain; its settings cannot be saved.</p>}
       {snapshot.channels.map(policy => <div key={policy.id} hidden={policy.id !== channel?.id}><ChannelSettings policy={policy} channels={snapshot.channels} folders={folders} actions={actions} busy={busy || !!snapshot.unavailableChannelIds?.includes(policy.id)} unavailable={!!snapshot.unavailableChannelIds?.includes(policy.id)} onSave={nextPolicy => run(async () => { accept(await api.updateChannel(nextPolicy)); setNotice("Channel settings saved. Existing folder contents were not sent."); })} /></div>)}

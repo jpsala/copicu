@@ -227,6 +227,11 @@ se copia su configuración a otro equipo al iniciar sesión.
 
 ## 5. Identidad, acceso e invitaciones
 
+El corte entre PCs se concreta en [identity-service-plan.md](identity-service-plan.md):
+broker OIDC/PKCE, alta con secretos generados en host, aprobación HPKE de equipos,
+retiro y recuperación E2EE. Reusar Bun/SQLite detrás de HTTPS es la propuesta
+revisable de servicio; Google OIDC es el proveedor propuesto, aún sin aprobar.
+
 Separar autenticación de persona, credencial de dispositivo y claves de contenido.
 Propuesta: usar autenticación estándar en navegador del sistema, con OAuth/OIDC y
 PKCE S256 cuando se seleccione proveedor. RFC 8252/7636 son referencias en

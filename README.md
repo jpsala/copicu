@@ -39,14 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.2](https://github.com/jpsala/copicu/releases/tag/v0.5.2)
-- Asset: `Copicu_0.5.2_x64-setup.exe`
+- [v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3)
+- Asset: `Copicu_0.5.3_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `23159C9E9119F90251965062BB494DD6816C845C98E73E625AE65DE9069C830E`
+- SHA256: `07C1404083F39219795791F0434A3E1F09F8AE0E3341EBD59722D3449AEA427F`
 
-Opt-in local shared clipboards with SSE and a common searchable folder selector.
-Existing installations can find v0.5.2 through **Check for updates**; the signed
-installer matches the locally verified v0.5.2-rc.1 payload.
+Browser sign-in, device approval and encrypted recovery for shared clipboards. Sharing requires the private HTTPS service.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -107,18 +105,20 @@ Copicu is early-stage, but the core is functional:
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
 
-### New In v0.5.2
+### New In v0.5.3
 
-The [v0.5.2 release notes](docs/releases/v0.5.2.md) cover opt-in
-shared clipboards and a common folder selector across the picker and editors.
-These features are validated locally with synthetic profiles; the hosted
-service, human account setup and testing between two physical PCs remain pending.
+The [v0.5.3 release notes](docs/releases/v0.5.3.md) cover browser sign-in,
+device approval and encrypted recovery for shared plain-text clipboards.
+In Settings → Sharing, enter your private HTTPS service URL and sign in on each
+PC with the same account. Compare the complete device fingerprint and approve
+the second PC from the first. The [service guide](scripts/shared-clipboard/README.md)
+describes operator setup; local tests do not establish two-PC acceptance.
 
 From a folder or All history, use **Connect shared clipboard** to select or
 create a resource and choose sending, receiving or both. Sharing requires
-explicit provisioning and connections. Sending and receiving pause independently;
+account linking and explicit connections. Sending and receiving pause independently;
 opening shared history does not import clips or write the Windows clipboard.
-See the [user guide](docs/user/README.md#shared-clipboards-in-v052)
+See the [user guide](docs/user/README.md#shared-clipboards-in-v053)
 for the sharing workflow.
 
 ## Core Flows

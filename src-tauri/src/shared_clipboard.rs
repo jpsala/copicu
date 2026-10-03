@@ -20,6 +20,8 @@ pub(crate) mod runtime;
 pub(crate) mod product;
 #[cfg(feature = "shared-clipboard")]
 pub(crate) mod control_sync;
+#[cfg(feature = "shared-clipboard")]
+pub(crate) mod identity;
 #[cfg(any(test, feature = "shared-clipboard"))]
 pub(crate) mod wire;
 

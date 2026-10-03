@@ -3,6 +3,7 @@
 import { Database } from "bun:sqlite";
 import { createHash, createPublicKey, randomBytes, sign, timingSafeEqual, verify } from "node:crypto";
 import { createControl } from './control.mjs';
+import { createIdentity } from './identity.mjs';
 export { controlSigningBytes } from './control.mjs';
 
 export const MAX_BODY = 2_000_000;
@@ -15,6 +16,15 @@ const PUB_DOMAIN = Buffer.from("Copicu.shared.publication.v1\0");
 const LEASE_DOMAIN = Buffer.from("Copicu.shared.lease.v1\0");
 const REPORT_DOMAIN = Buffer.from("Copicu.shared.report.v1\0");
 const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");
+// Compressed EIGHT_TORSION points from curve25519-dalek 5.0.0. Mask the sign
+// bit so non-canonical x=0 sign variants are rejected too, matching host guards.
+const WEAK_Y = new Set([
+  '0100000000000000000000000000000000000000000000000000000000000000',
+  'c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a',
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  '26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05',
+  'ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f',
+]);
 const DAY = 86_400_000n;
 const LEASE_DURATION = 10_000n;
 const hash = (bytes) => createHash("sha256").update(bytes).digest();
@@ -104,7 +114,9 @@ export function reportSigningBytes(environment, channel, device, report) {
 function publicKey(raw) {
   const bytes = typeof raw === "string" ? base64(raw, 32) : Buffer.from(raw);
   if (bytes.length !== 32) deny(400, "invalid_public_key");
-  // C1 owns strict weak-key rejection and human approval before provisioning.
+  const canonical = Buffer.from(bytes); canonical[31] &= 127;
+  let y = 0n; for (let i=31;i>=0;i--) y=(y<<8n)|BigInt(canonical[i]);
+  if (y >= (1n<<255n)-19n || WEAK_Y.has(canonical.toString('hex'))) deny(400,'invalid_public_key');
   return createPublicKey({ key: Buffer.concat([SPKI_ED25519, bytes]), format: "der", type: "spki" });
 }
 async function body(request) {
@@ -129,7 +141,7 @@ const response = (value, status = 200) => new Response(JSON.stringify(value), { 
  * dbPath belongs to a newly-created fixture directory (same path for restart).
  * This constructor is a local owner's provisioning surface, not enrollment.
  */
-export function createRelay({ dbPath, environment, devices = [], channels = [], persons = [], leaseSigner, now = () => BigInt(Date.now()), faults = {}, limits: overrides = {} }) {
+export function createRelay({ dbPath, environment, devices = [], channels = [], persons = [], leaseSigner, now = () => BigInt(Date.now()), faults = {}, limits: overrides = {}, identity: identityOptions = null, port = 0 }) {
   opaque(environment);
   if (!leaseSigner || leaseSigner.asymmetricKeyType !== "ed25519") throw new Error("Ed25519 lease signer required");
   if (!overrides || typeof overrides !== "object" || Array.isArray(overrides) || Object.keys(overrides).some((key) => !Object.hasOwn(DEFAULT_LIMITS, key))) throw new Error("invalid relay limits");
@@ -186,7 +198,7 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       }
     })();
   } catch (error) { db.close(); throw error; }
-  const waiters = new Set(); let stopped = false; let control = null;
+  const waiters = new Set(); let stopped = false; let control = null; let identity = null;
   function clock() { const value = now(); if (typeof value !== "bigint" || value <= 0n || value > U64_MAX) throw new Error("invalid fixture clock"); return value; }
   function auth(request) {
     const header = request.headers.get("authorization");
@@ -334,15 +346,22 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       return { attempt_id: value.attempt_id, status: "ack" };
     })();
   }
-  try { control = createControl({query,transaction,environment,persons,devices,channels,deny,opaque,counter,be64,from64,base64,publicKey,clock,notify,limits,maxBody:MAX_BODY}); }
+  try { control = createControl({query,transaction,environment,persons,devices,channels,deny,opaque,counter,be64,from64,base64,publicKey,clock,notify,limits,maxBody:MAX_BODY,managedIdentity:!!identityOptions}); }
   catch(error) {db.close(true); throw error;}
   // Keep the outer server cap finite but above the protocol cap so ordinary
   // over-limit requests reach our bounded reader and receive a stable 413.
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, maxRequestBodySize: MAX_BODY * 2, idleTimeout: 15,
+  const server = Bun.serve({ hostname: "127.0.0.1", port, maxRequestBodySize: MAX_BODY * 2, idleTimeout: 15,
     async fetch(request) {
       try {
         if (stopped) deny(503, "stopped");
-        const url = new URL(request.url); let device = auth(request);
+        const url = new URL(request.url);
+        if (url.pathname === '/health' && request.method === 'GET') return response({status:'ready',version:3});
+        const identityResult = await identity?.route(request, url);
+        // A shutdown can run while an async identity route yields, including
+        // the no-op for V1/V2. Never open a new stream/watch after draining.
+        if (stopped) deny(503, "stopped");
+        if (identityResult) return identityResult;
+        let device = auth(request);
         if (url.pathname === '/v2/catalog' && request.method === 'GET') return response(control.catalog(device));
         if (url.pathname === '/v2/changes' && request.method === 'GET') return response(control.events.changes(device, url));
         if (url.pathname === '/v2/events' && request.method === 'GET') return control.events.stream(device, url, request);
@@ -376,6 +395,9 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       } catch (error) { return response({ error: error instanceof Denied ? error.code : "internal_error" }, error instanceof Denied ? error.status : 500); }
     }, error() { return response({ error: "internal_error" }, 500); }
   });
+  try {
+    if (identityOptions) identity = createIdentity({query,transaction,control,environment,issuerPublicKey:issuerPublicKey.toString('base64'),publicUrl:identityOptions.publicUrl??server.url.toString(),oidc:identityOptions.oidc,deny,opaque,base64,publicKey,body,response,clock,be64,from64,limits,notify,faults:identityOptions.faults});
+  } catch (error) { server.stop(true); db.close(true); throw error; }
   return {
     url: server.url.toString().replace(/\/$/, ""),
     issuerPublicKey: issuerPublicKey.toString("base64"),
@@ -383,6 +405,12 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
     setChannelEpoch(channel, epoch) { transaction(() => { const old = query("SELECT key_epoch FROM relay_channels WHERE id=?").get(opaque(channel)); const value = counter(epoch); if (!old || value <= from64(old.key_epoch)) deny(409, "invalid_epoch_transition"); query("UPDATE relay_channels SET key_epoch=? WHERE id=?").run(be64(value), channel); })(); notify(channel); },
     approveGrant(device, channel, epoch) { transaction(() => { const current = query("SELECT key_epoch FROM relay_channels WHERE id=?").get(opaque(channel)); const value = be64(counter(epoch)); if (!current || !value.equals(Buffer.from(current.key_epoch))) deny(409, "stale_epoch"); query("UPDATE relay_grants SET key_epoch=? WHERE device=? AND channel=?").run(value, opaque(device), channel); })(); notify(channel); },
     prune,
-    async stop() { if (stopped) return; stopped = true; notify(); control.events.stop(); await server.stop(true); db.clearQueryCache(); db.close(true); }
+    async stop() {
+      if (stopped) return; stopped = true; notify(); control.events.stop();
+      // Let closed SSE bodies settle before forcing remaining sockets closed.
+      // New/late requests are already fenced by stopped on both sides of await.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      await server.stop(true); db.clearQueryCache(); db.close(true);
+    }
   };
 }

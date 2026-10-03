@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "publicUrl": "https://sharing.example.com/",
+  "environment": "private_jp",
+  "port": 5454,
+  "databasePath": "/var/lib/copicu-sharing/relay.sqlite",
+  "issuerKeyPath": "/run/secrets/copicu-issuer.pem",
+  "oidc": {
+    "issuer": "https://accounts.google.com",
+    "clientId": "REPLACE_WITH_APPROVED_OIDC_CLIENT_ID",
+    "clientSecretPath": "/run/secrets/oidc-client-secret",
+    "allowedSubjects": [],
+    "allowedEmails": ["person@example.invalid"]
+  }
+}

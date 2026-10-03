@@ -389,8 +389,15 @@ impl RelayClient {
         path: &str,
         input: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value> {
-        if !path.starts_with("/v2/")
-            || path.contains("..")
+        if !path.starts_with("/v2/") { return Err(Error::InvalidInput); }
+        self.request_api(method, path, input)
+    }
+    pub(super) fn request_identity(&self, method: &str, path: &str, input: Option<&serde_json::Value>) -> Result<serde_json::Value> {
+        if !path.starts_with("/v3/") { return Err(Error::InvalidInput); }
+        self.request_api(method, path, input)
+    }
+    fn request_api(&self, method: &str, path: &str, input: Option<&serde_json::Value>) -> Result<serde_json::Value> {
+        if path.contains("..")
             || path.contains('#')
             || path.contains('\\')
         {

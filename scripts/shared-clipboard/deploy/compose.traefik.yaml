@@ -1,0 +1,31 @@
+# For an existing Traefik container with its file provider enabled. No public
+# Bun port; the service shares the proxy namespace and listens on loopback.
+services:
+  sharing:
+    build:
+      context: ../../..
+      dockerfile: scripts/shared-clipboard/deploy/Dockerfile
+    network_mode: "container:coolify-proxy"
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - sharing-data:/var/lib/copicu-sharing
+    secrets:
+      - service.json
+      - copicu-issuer.pem
+      - oidc-client-secret
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://127.0.0.1:5454/health');process.exit(r.ok?0:1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+secrets:
+  service.json:
+    file: ./private/service.json
+  copicu-issuer.pem:
+    file: ./private/copicu-issuer.pem
+  oidc-client-secret:
+    file: ./private/oidc-client-secret
+volumes:
+  sharing-data:

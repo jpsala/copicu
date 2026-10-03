@@ -57,6 +57,14 @@
 .shared-enrollment-review dd { margin: 0; overflow-wrap: anywhere; }
 .shared-fingerprint-label { display: grid; gap: 6px; }
 .shared-fingerprint-label code { padding: 8px; background: var(--surface-muted); border: 1px solid var(--line); border-radius: 4px; font-size: 0.75rem; overflow-wrap: anywhere; user-select: text; }
+.shared-identity { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.shared-identity > .shared-device-review > * + * { margin-top: 10px; }
+.shared-device-list { list-style: none; margin: 0; padding: 0; }
+.shared-device-row { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.shared-device-row > div:first-child { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.shared-device-row > div:first-child span { color: var(--ink-soft); }
+.shared-device-row > .shared-fingerprint-label { width: 100%; min-width: 0; }
+.shared-recovery-code { display: grid; gap: 10px; padding: 12px 0; }
 .shared-activity { padding-top: 14px; border-top: 1px solid var(--line); }
 .shared-activity-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .shared-activity-heading > span { color: var(--ink-soft); font-size: 0.76rem; }

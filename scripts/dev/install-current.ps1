@@ -14,16 +14,30 @@ Push-Location $repoRoot
 try {
   if (-not $SkipBuild) {
     npm run tauri:build
+    if ($LASTEXITCODE -ne 0) {
+      throw "Build failed with exit code $LASTEXITCODE"
+    }
   }
 
   if (-not (Test-Path $installer)) {
     throw "Installer not found: $installer"
   }
 
-  $processes = Get-Process copicu -ErrorAction SilentlyContinue
-  if ($processes) {
-    $processes | Stop-Process -Force
-    Start-Sleep -Seconds 1
+  $installedPath = [System.IO.Path]::GetFullPath($installedExe)
+  foreach ($candidate in @(Get-CimInstance Win32_Process -Filter "Name = 'copicu.exe'")) {
+    if (-not $candidate.ExecutablePath -or -not [string]::Equals(
+      [System.IO.Path]::GetFullPath($candidate.ExecutablePath), $installedPath,
+      [System.StringComparison]::OrdinalIgnoreCase
+    )) { continue }
+    $installedProcess = Get-Process -Id $candidate.ProcessId -ErrorAction SilentlyContinue
+    if (-not $installedProcess -or -not $installedProcess.Path -or -not [string]::Equals(
+      [System.IO.Path]::GetFullPath($installedProcess.Path), $installedPath,
+      [System.StringComparison]::OrdinalIgnoreCase
+    )) { continue }
+    Stop-Process -InputObject $installedProcess -Force
+    if (-not $installedProcess.WaitForExit(10000)) {
+      throw "Installed process did not exit: pid=$($installedProcess.Id)"
+    }
   }
 
   $installArguments = @("/S")
@@ -40,7 +54,7 @@ try {
     throw "Installed executable not found: $installedExe"
   }
 
-  Start-Process -FilePath $installedExe
+  Start-Process -FilePath $installedExe -WindowStyle Hidden
   Start-Sleep -Seconds 2
 
   Get-Process copicu -ErrorAction SilentlyContinue |

@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "v0.5.2 normal/latest publicado con el mismo payload instalado y validado de la RC; servicio remoto e identidad humana/dos PCs pendientes."
-last_worked: "2026-10-02T20:23:49Z"
-next: "Si JP pide avanzar al servicio remoto, preparar identidad/HTTPS/recovery y aceptación en dos PCs; producto local y distribución v0.5.2 están cerrados."
+summary: "Cliente de primer acceso 0.5.3 firmado e instalado; VPS/Google preparados, activación puntual pendiente y aceptación física por hacer."
+last_worked: "2026-10-03T00:20:00Z"
+next: "Resolver confirmación puntual de Google/OAuth, DNS e imagen Bun; activar HTTPS preparado y probar dos PCs físicas con sintéticos."
 topics:
   - shared-clipboard
 ---
@@ -11,6 +11,30 @@ topics:
 # Clipboard compartido: arquitectura y spec
 
 ## Estado actual
+
+**Primer acceso I1–I8 implementado y validado localmente (2026-10-02).**
+Servicio OIDC/PKCE y cuenta privada; alta durable en navegador del sistema,
+comparación/aprobación de equipos por huella y HPKE; nuevas claves para equipos
+aprobados, retiro/revinculación y recovery E2EE con snapshot cifrado. UI normal
+en Settings/selector, sin bundle como recorrido habitual. Conserva `liveOnly`,
+outbox, leases, receipts, SSE y opt-ins separados. 382 Rust (1 benchmark omitido),
+50 Bun, 26 visuales y cinco casos de UI/host Windows con tres perfiles nuevos
+pasan. [Evidencia y límites](../../specs/016-shared-clipboard/identity-acceptance.md).
+
+JP autorizó deploy/distribución para la otra PC el 2026-10-02. Se prepararon
+Google OIDC y el VPS existente con Traefik, `sharing.jpsala.dev` y Bun/SQLite,
+sin nueva suscripción. Se creó el proyecto Google y quedaron listos los
+formularios de política de datos y DNS; el cliente OAuth/secret aún no existe.
+Seis módulos/config Docker en `/opt/copicu-sharing` coinciden por hash y Compose
+valida; no hay servicio iniciado ni DNS nuevo. Confirmación puntual pendiente
+para términos/credenciales, registro A y pull de Bun oficial fijado por digest.
+[Guía y artefactos](../../scripts/shared-clipboard/README.md).
+
+Cliente `0.5.3` normal firmado y payload x64 GUI verificados; el mismo NSIS está
+instalado localmente con EXE idéntico y tres checks nativos que preservan TLS,
+Settings y opt-ins. Otros procesos dev/sintéticos se conservaron. Los cinco
+casos de identidad siguen acreditados como debug; faltan Google/HTTPS real y
+dos PCs físicas. [Recibos del corte](../../specs/016-shared-clipboard/identity-acceptance.md#paquete-windows-v053).
 
 **Producto local y SSE S1–S6 validados (2026-10-02).** Runtime, host Windows,
 UI y SDK están conectados. Catálogo V2 por persona sintética, CRUD/intents
@@ -56,10 +80,31 @@ Sólo el manifest apunta al tag normal. El endpoint real `releases/latest` entre
 `0.5.2` y sus tres assets descargados coinciden; no acredita instalación en otra PC.
 [Recibo de promoción y updater](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
 
+## Continuación: Sharing entre PCs
+
+JP informó que instaló `0.5.2` en otra PC y Settings muestra **Sharing is off** y
+**Technical preparation for a local synthetic service**. Es un reporte de JP,
+sin inspección remota del perfil. El código muestra ese estado cuando no hay
+configuración; el flujo actual importa un bundle técnico para el servicio de
+pruebas. La distribución del cliente no completa la vinculación humana.
+
+Pedido actual de JP: abrir una nueva sesión y terminar lo que falta para compartir
+entre sus PCs. Completar el servicio accesible por los equipos, vinculación y
+recuperación, y una UI normal de primer acceso; validar envío/recepción con datos
+sintéticos. Reusar runtime/SSE y preservar `liveOnly`, leases, receipts y opt-ins.
+El pedido posterior «Dale, haz lo que haga falta, así yo lo puedo usar en la otra
+PC» autoriza deploy, commit/push, distribución y actualización local actuales.
+No transfiere permisos a otra sesión: las confirmaciones puntuales requeridas
+por términos/credenciales/DNS e instalación de runtime se conservan arriba.
+I1–I8 tienen [contrato](../../specs/016-shared-clipboard/identity-service-plan.md),
+[tareas](../../specs/016-shared-clipboard/tasks.md#continuacion-primer-acceso-entre-pcs-2026-10-02)
+y aceptación local. R1/R2 permanecen pendientes con gates externos explícitos.
+
 ## Evidencia y recuperación mínima
 
 | Corte | Evidencia comprobada | Fuente |
 | --- | --- | --- |
+| Primer acceso I1–I8 | OIDC sintético con crypto real; DPAPI/HPKE, vínculo/recovery, UI y restart; implementación de servicio sin deploy. | [Aceptación de identidad](../../specs/016-shared-clipboard/identity-acceptance.md) |
 | Producto local | HTTP/SQLite/DPAPI/cifrado real; catálogo/acceso, carpetas, Actions, pausas e historial. | [Implementación local](../../specs/016-shared-clipboard/local-implementation.md#corte-de-producto-local-2026-10-02) |
 | Instalada ↔ dev, anterior a SSE | 39 casos de host real y recorridos nativos de publicación, clipboard/Notepad y hotkeys; build release local y NSIS instalados. | [Aceptación instalada ↔ dev](../../specs/016-shared-clipboard/local-acceptance.md#resultado-y-niveles-de-evidencia) |
 | SSE S1–S6 | 70 Rust sharing + 37 storage shared; 31 Bun/240 assertions; diez visuales; 13 lifecycle por modo, ocho superficies y diez publicaciones shipping; retiro nativo en Library/selector/Settings. | [Aceptación SSE](../../specs/016-shared-clipboard/local-acceptance.md#aceptacion-sse-local-2026-10-02) |
@@ -69,9 +114,10 @@ Suites de cortes anteriores y repeticiones no se suman como aceptación nueva.
 La evidencia propia de SSE no se presenta como una revisión independiente ni
 aceptación remota. Los resultados actuales y comandos permanecen en sus dossiers.
 
-Para retomar: estado de este track → [contrato SSE](../../specs/016-shared-clipboard/sse-sync-plan.md)
-→ [tareas S1–S6 cerradas](../../specs/016-shared-clipboard/tasks.md#continuacion-sincronizacion-sse-2026-10-02)
-→ aceptación del caso. Abrir [spec](../../specs/016-shared-clipboard/spec.md) y
+Para retomar: estado de este track → [primer acceso/servicio](../../specs/016-shared-clipboard/identity-service-plan.md)
+→ aceptación del caso y R1/R2. Para mantenimiento de SSE, consultar su
+[contrato](../../specs/016-shared-clipboard/sse-sync-plan.md).
+Abrir [spec](../../specs/016-shared-clipboard/spec.md) y
 [plan](../../specs/016-shared-clipboard/plan.md) sólo para ampliar el contrato.
 Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 [Actions](../topics/actions-and-scripting-api.md) y
@@ -84,9 +130,12 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
    firma, CI y smoke acreditados en
    [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md#release-normal-v052-2026-10-02).
    La RC conserva su tag y evidencia; sólo el release normal entra al endpoint latest.
-2. Servicio remoto revisable, HTTPS/proxy, proveedor humano, vinculación/recovery
-   E2EE y aceptación en dos PCs siguen abiertos. El provisioning sintético y dos
-   procesos en una PC no los acreditan.
+2. Resolver la confirmación puntual pendiente, activar Google/OAuth y DNS,
+   ejecutar el pull fijado y desplegar el servicio ya preparado. Verificar HTTPS,
+   callback/admisión, SSE, restart y backup/rollback; completar R1 y la aceptación
+   física de R2. El cliente `0.5.3` ya está firmado e instalado localmente;
+   los fixtures no acreditan proveedor real ni dos PCs. En una sesión posterior,
+   comprobar autorización actual antes de ejecutar esos efectos.
 3. No reducir polling/ticks sin medir idle/latencia y repetir regresiones de
    outbox, retención, leases, pausa y efectos. Lock/suspend/crash nativos siguen
    teniendo aceptación propia.

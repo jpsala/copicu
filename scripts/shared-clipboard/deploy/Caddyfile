@@ -1,0 +1,19 @@
+# Replace this hostname only after destination/DNS approval. No access log: URLs
+# can contain short-lived browser tickets and OIDC authorization codes.
+sharing.example.com {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+    request_body {
+        max_size 2MB
+    }
+    reverse_proxy 127.0.0.1:5454 {
+        flush_interval -1
+        transport http {
+            dial_timeout 3s
+            response_header_timeout 15s
+        }
+    }
+}

@@ -27,6 +27,14 @@ remoto desplegado ni aceptación en dos PCs.
 
 ## Autoridad y evidencia
 
+Continuación autorizada el 2026-10-02: completar primer acceso, identidad,
+vinculación y servicio usable entre las PCs de JP. Contrato de este corte en
+[identity-service-plan.md](identity-service-plan.md). FR-31: un perfil nuevo
+inicia sesión por navegador, crea su espacio privado y vincula otra PC mediante
+aprobación con huella o recuperación E2EE explícita, sin bundles en el recorrido
+habitual ni efectos/importación al vincular. Proveedor y destino son propuestas;
+despliegue y aceptación física permanecen separados de implementación local.
+
 JP confirmó Q1–Q3 el 2026-09-30 y amplió el producto con carpetas/Actions y espacios
 personales el 2026-10-01/02. El corte local implementa runtime, UI, SDK, cifrado,
 custodia y relay sobre personas/equipos sintéticos. La instalación local posterior

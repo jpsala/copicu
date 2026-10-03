@@ -1,0 +1,11 @@
+*
+!scripts/
+!scripts/shared-clipboard/
+!scripts/shared-clipboard/service.mjs
+!scripts/shared-clipboard/relay.mjs
+!scripts/shared-clipboard/control.mjs
+!scripts/shared-clipboard/events.mjs
+!scripts/shared-clipboard/identity.mjs
+!scripts/shared-clipboard/oidc.mjs
+!scripts/shared-clipboard/deploy/
+!scripts/shared-clipboard/deploy/Dockerfile

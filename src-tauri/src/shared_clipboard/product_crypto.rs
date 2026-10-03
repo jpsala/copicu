@@ -49,7 +49,7 @@ fn header(packet: &Value) -> Result<Value, String> {
     object.remove("signature");
     Ok(h)
 }
-pub(super) fn wrap(
+pub(in crate::shared_clipboard) fn wrap(
     environment: &str,
     resource: &str,
     epoch: u64,

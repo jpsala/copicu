@@ -13,7 +13,7 @@ export function controlSigningBytes(value) {
   const { signature, ...intent } = value;
   return Buffer.concat([CONTROL_DOMAIN, Buffer.from(canonical(intent))]);
 }
-export function createControl({ query, transaction, environment, persons, devices, channels, deny, opaque, counter, be64, from64, base64, publicKey, clock, notify, limits, maxBody }) {
+export function createControl({ query, transaction, environment, persons, devices, channels, deny, opaque, counter, be64, from64, base64, publicKey, clock, notify, limits, maxBody, managedIdentity = false }) {
   query(`CREATE TABLE IF NOT EXISTS control_people(id TEXT PRIMARY KEY,name TEXT NOT NULL) STRICT`).run();
   query(`CREATE TABLE IF NOT EXISTS control_devices(device TEXT PRIMARY KEY REFERENCES relay_devices(id),person TEXT NOT NULL REFERENCES control_people(id),kem BLOB) STRICT`).run();
   query(`CREATE TABLE IF NOT EXISTS control_resources(id TEXT PRIMARY KEY REFERENCES relay_channels(id),owner TEXT NOT NULL REFERENCES control_people(id),metadata TEXT NOT NULL,revision INTEGER NOT NULL,deleted INTEGER NOT NULL DEFAULT 0,rotation_pending INTEGER NOT NULL DEFAULT 0) STRICT`).run();
@@ -77,9 +77,10 @@ export function createControl({ query, transaction, environment, persons, device
     const p=identity(device);
     const rows=query('SELECT r.id FROM control_resources r JOIN control_members m ON m.resource=r.id WHERE m.person=? AND m.revoked=0 AND r.deleted=0 ORDER BY r.id').all(p.id);
     const invitations=query('SELECT i.id,i.resource AS resourceId,i.permission,i.include_history AS includeHistory,i.state,r.owner AS ownerId,p.name AS ownerName FROM control_invites i JOIN control_resources r ON r.id=i.resource JOIN control_people p ON p.id=r.owner WHERE i.person=? AND i.state IN (\'open\',\'accepted\') AND i.expires>? AND r.deleted=0').all(p.id,be64(clock()));
-    const devices=query('SELECT cd.device AS deviceId,cd.person AS personId,d.public_key,cd.kem,d.revoked FROM control_devices cd JOIN relay_devices d ON d.id=cd.device ORDER BY cd.device').all().map(d=>({deviceId:d.deviceId,personId:d.personId,signingPublicKey:Buffer.from(d.public_key).toString('base64'),kemPublicKey:d.kem?Buffer.from(d.kem).toString('base64'):null,revoked:!!d.revoked}));
+    const related = managedIdentity ? new Set([p.id, ...query('SELECT DISTINCT m.person FROM control_members m JOIN control_members own ON own.resource=m.resource WHERE own.person=? AND own.revoked=0 AND m.revoked=0 UNION SELECT person FROM control_invites WHERE resource IN (SELECT resource FROM control_members WHERE person=? AND permission=\'owner\' AND revoked=0) AND state IN (\'open\',\'accepted\') AND expires>?').all(p.id,p.id,be64(clock())).map(row=>row.person)]) : null;
+    const devices=query('SELECT cd.device AS deviceId,cd.person AS personId,d.public_key,cd.kem,d.revoked FROM control_devices cd JOIN relay_devices d ON d.id=cd.device ORDER BY cd.device').all().filter(d=>!related||related.has(d.personId)).map(d=>({deviceId:d.deviceId,personId:d.personId,signingPublicKey:Buffer.from(d.public_key).toString('base64'),kemPublicKey:d.kem?Buffer.from(d.kem).toString('base64'):null,revoked:!!d.revoked}));
     const operations=query('SELECT id,result FROM control_intents WHERE device=? ORDER BY id').all(device).map(r=>{const result=JSON.parse(r.result);return {operationId:r.id,resourceId:result.resource?.id??result.resourceId??null,kind:result.kind??(result.registered?'register_device_key':'unknown'),status:'committed'};});
-    return {person:p,mode:'synthetic',resources:rows.map(r=>resourceView(device,r.id)),invitations,people:query('SELECT id,name FROM control_people ORDER BY id').all(),devices,operations,control:events.watermark(device)};
+    return {person:p,mode:managedIdentity?'private':'synthetic',resources:rows.map(r=>resourceView(device,r.id)),invitations,people:query('SELECT id,name FROM control_people ORDER BY id').all().filter(row=>!related||related.has(row.id)),devices,operations,control:events.watermark(device)};
   }
   function metadata(value) {
     if (!value || typeof value !== 'object' || Object.keys(value).length!==2) deny(400,'invalid_metadata');
@@ -95,9 +96,9 @@ export function createControl({ query, transaction, environment, persons, device
   // A package is authenticated ciphertext bound to a provisioned recipient KEM.
   // Payload never contains a clear channel key. Cryptographic opening/approval is
   // a host operation; the relay checks signatures, completeness and scope only.
-  function packages(ownerDevice,resource,epoch,values,people) {
+  function packages(ownerDevice,resource,epoch,values,people,targets=null) {
     if (!Array.isArray(values) || values.length>256) deny(400,'invalid_packages');
-    const required=query('SELECT cd.device,cd.kem FROM control_devices cd JOIN relay_devices d ON d.id=cd.device WHERE d.revoked=0').all().filter(d=>people.includes(identity(d.device).id));
+    const required=targets??query('SELECT cd.device,cd.kem FROM control_devices cd JOIN relay_devices d ON d.id=cd.device WHERE d.revoked=0').all().filter(d=>people.includes(identity(d.device).id));
     if (values.length !== required.length) deny(409,'key_packages_required');
     const seen=new Set();
     for (const p of values) {
@@ -146,6 +147,10 @@ export function createControl({ query, transaction, environment, persons, device
         // unauthorized until an authenticated encrypted key package is approved.
         if(query('SELECT count(*) AS n FROM relay_grants').get().n>=limits.grants) deny(429,'grant_capacity');
         query('INSERT INTO relay_grants VALUES (?,?,?,?,?,1)').run(device,id,be64(1n),1,1);
+        if (managedIdentity || input.packages) {
+          packages(device,id,1n,input.packages,[person.id]);
+          installGrants(id,person.id,'owner',be64(1n));
+        }
         out={resource:resourceView(device,id)};
       } else if(input.kind==='accept') {
         const i=query('SELECT * FROM control_invites WHERE id=?').get(opaque(input.invitation_id));
@@ -247,5 +252,5 @@ export function createControl({ query, transaction, environment, persons, device
     const row=query('SELECT sequence,envelope FROM relay_publications WHERE channel=? AND id=? AND envelope IS NOT NULL AND expires>? AND sequence>=?').get(resource,opaque(publication),be64(clock()),m.history_floor);
     return {entry:row?{server_sequence:from64(row.sequence).toString(),envelope:JSON.parse(row.envelope)}:null};
   }
-  return {identity,catalog,operation,authorize,history,historicalEntry,resourceView,events};
+  return {identity,catalog,catalogSnapshot,member,packages,operation,authorize,history,historicalEntry,resourceView,events};
 }

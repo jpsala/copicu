@@ -24,7 +24,7 @@ use std::{
     path::Path,
 };
 #[path = "product_crypto.rs"]
-mod product_crypto;
+pub(super) mod product_crypto;
 #[cfg(all(test, windows))]
 #[path = "product_integration.rs"]
 mod product_integration;
@@ -47,7 +47,7 @@ fn sign_wire(vault: &Vault, c: &StoredConfig, mut wire: Value) -> Result<Value, 
     wire["signature"] = json!(STANDARD.encode(runtime::signer(vault, c)?.sign(&bytes)));
     Ok(wire)
 }
-fn raw_catalog(vault: &Vault, c: &StoredConfig) -> Result<Value, String> {
+pub(super) fn raw_catalog(vault: &Vault, c: &StoredConfig) -> Result<Value, String> {
     let kem = enrollment(vault, c)?;
     let register = sign_wire(
         vault,
@@ -62,7 +62,7 @@ fn raw_catalog(vault: &Vault, c: &StoredConfig) -> Result<Value, String> {
         .request_control("GET", "/v2/catalog", None)
         .map_err(remote)
 }
-fn epoch_reference(resource: &str, epoch: u64) -> String {
+pub(super) fn epoch_reference(resource: &str, epoch: u64) -> String {
     format!(
         "resource_key_{}_{epoch}",
         &config::hex(&Sha256::digest(resource.as_bytes()))[..24]
@@ -464,6 +464,13 @@ pub(super) fn refresh_catalog(storage: &AppStorage, automatic: bool) -> Result<V
     if let Some(mark) = control_mark {
         store.save_control_cache(&super::control_sync::identity(&c), &mark.person_id, &mark.generation, mark.cursor, &serde_json::to_string(&result).map_err(fail)?).map_err(fail)?;
     }
+    drop(_worker);
+    drop(_barrier);
+    if result["mode"] == "private" {
+        if let Err(reason) = super::identity::backup(storage, &c, &vault, &result) {
+            runtime::record_error(storage, &reason);
+        }
+    }
     Ok(result)
 }
 #[derive(Serialize, Deserialize)]
@@ -485,7 +492,7 @@ fn read_intent(path: &Path) -> Result<Option<IntentRecord>, String> {
     }
     serde_json::from_slice(&bytes).map(Some).map_err(fail)
 }
-fn install(
+pub(super) fn install(
     storage: &AppStorage,
     c: &mut StoredConfig,
     vault: &Vault,
@@ -550,9 +557,10 @@ fn install(
             {
                 // Already revoked at this revision is idempotent. Missing historical
                 // signers remain usable for manual verification, never live grants.
-                store
-                    .revoke_grant(&c.environment, &rid, &device_id, revision)
-                    .map_err(fail)?;
+                match store.revoke_grant(&c.environment, &rid, &device_id, revision) {
+                    Ok(()) | Err(crate::storage::shared::Error::Missing) => {}
+                    Err(error) => return Err(fail(error)),
+                }
             }
             Ok(StoredGrant {
                 device_id,
@@ -588,7 +596,7 @@ fn install(
             format!("channel_{}", config::hex(&Sha256::digest(rid.as_bytes())))
         };
         store
-            .subscribe(Subscribe {
+            .subscribe_product(Subscribe {
                 id: sid,
                 environment: c.environment.clone(),
                 channel: rid,
@@ -868,6 +876,15 @@ pub(crate) fn operation(storage: &AppStorage, input: Value) -> Result<Value, Str
                     Err(e) => return Err(fail(e)),
                 };
                 wire["metadata"] = encrypt_name(&c, &resource, 1, &key, name)?;
+                let catalog = raw_catalog(&vault, &c)?;
+                if catalog["mode"] == "private" {
+                    let signer = runtime::signer(&vault, &c)?;
+                    let packets = catalog["devices"].as_array().ok_or("Invalid device catalog")?.iter()
+                        .filter(|d| d["revoked"] != true && d["personId"] == catalog["person"]["id"])
+                        .map(|d| product_crypto::wrap(&c.environment, &resource, 1, &key, &signer, &c.device_id, d, &mut SystemEntropy))
+                        .collect::<Result<Vec<_>, String>>()?;
+                    wire["packages"] = json!(packets);
+                }
                 generated_key = Some(key);
             } else {
                 let channel = c
@@ -984,6 +1001,13 @@ pub(crate) fn operation(storage: &AppStorage, input: Value) -> Result<Value, Str
     import_packages(storage, &mut c, &vault, &latest_catalog)?;
     if result.get("resource").is_some() {
         result["resource"] = public_resource(&c, &vault, result["resource"].clone());
+    }
+    drop(_worker);
+    drop(_barrier);
+    if latest_catalog["mode"] == "private" {
+        if let Err(reason) = super::identity::backup(storage, &c, &vault, &latest_catalog) {
+            runtime::record_error(storage, &reason);
+        }
     }
     Ok(result)
 }

@@ -147,6 +147,11 @@ el NSIS de una continuación de código posterior.
 
 ### Reinstalar el mismo número de versión
 
+El instalador y `install:current` cierran sólo procesos con ruta completa igual
+al ejecutable instalado. NSIS mantiene un handle entre la comparación y el
+cierre, sin construir comandos de shell. Copias dev/sintéticas de otros
+directorios se conservan; una instalación nueva no compara rutas vacías.
+
 Para una instalación existente, NSIS necesita `/S /UPDATE` para reemplazar de
 forma fiable un build local con la misma versión. `/S` solo puede salir con 0
 conservando el exe anterior. `install:current` añade `/UPDATE` si existe el exe;
@@ -391,7 +396,7 @@ Promover el estado actual del repo a la app instalada:
 npm run install:current
 ```
 
-Uso conversacional esperado: si JP dice `actualizar instalada`, `promover dev a instalada`, `crear instalador e instalar` o equivalente, ejecutar ese comando. El script builda, genera el NSIS, cierra `copicu.exe`, instala silencioso y relanza el ejecutable instalado.
+Uso conversacional esperado: si JP dice `actualizar instalada`, `promover dev a instalada`, `crear instalador e instalar` o equivalente, ejecutar ese comando. El script builda, genera el NSIS, cierra la copia instalada por ruta/PID, instala silencioso y relanza el ejecutable instalado.
 
 ## Datos Runtime
 

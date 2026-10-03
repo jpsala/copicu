@@ -1,5 +1,8 @@
 # Prueba local: instalada ↔ dev
 
+Primer acceso posterior a `0.5.2`: [identidad y servicio](identity-acceptance.md).
+Su evidencia local y gates remotos están separados de esta distribución.
+
 ## Release normal v0.5.2 (2026-10-02)
 
 Origen: JP pidió que las otras PCs recibieran el update, tras comprobar que una

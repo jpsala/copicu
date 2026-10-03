@@ -10140,6 +10140,7 @@ async function mockSharedClipboard(page: Page, delayFirstRead = false, receiverW
     runtime.__copicuSharedTestInvoke = async (cmd: string, args: any) => {
       switch (cmd) {
         case "shared_clipboard_status": return structuredClone(runtime.__copicuSharedSnapshot);
+        case "shared_clipboard_identity": return {state: "technical", devices: []};
         case "shared_clipboard_update_channel": runtime.__copicuSharedSnapshot.channels = [structuredClone(args.policy)]; return structuredClone(runtime.__copicuSharedSnapshot);
         case "shared_clipboard_set_paused": runtime.__copicuSharedSnapshot.paused = args.paused; return structuredClone(runtime.__copicuSharedSnapshot);
         case "shared_clipboard_set_hotkeys": runtime.__copicuSharedSnapshot.sendActiveShortcut = args.sendActiveShortcut; runtime.__copicuSharedSnapshot.sendClipboardShortcut = args.sendClipboardShortcut; return structuredClone(runtime.__copicuSharedSnapshot);
@@ -10203,6 +10204,102 @@ async function mockSharedProduct(page: Page) {
     };
   });
 }
+
+async function mockSharedIdentity(page: Page, initial: "unconfigured" | "active" = "unconfigured") {
+  await mockSharedProduct(page);
+  await page.addInitScript(({ initial }) => {
+    const w = window as any, previous = w.__copicuSharedTestInvoke;
+    w.__copicuIdentity = { state: initial, endpoint: "https://synthetic.invalid/", name: "Synthetic Work", deviceId: "synthetic-work", personId: "synthetic-person", revision: "2", fingerprint: "a".repeat(64), recoveryReady: false, devices: [
+      { deviceId: "synthetic-work", personId: "synthetic-person", name: "Synthetic Work", state: "active", fingerprint: "a".repeat(64) },
+      { deviceId: "synthetic-home", personId: "synthetic-person", name: "Synthetic Home", state: "pending", fingerprint: "b".repeat(64) },
+    ] };
+    w.__copicuSharedSnapshot.configured = initial === "active";
+    w.__copicuSharedSnapshot.identityState = initial;
+    w.__copicuSharedSnapshot.channels = []; w.__copicuSharedSnapshot.receipts = [];
+    w.__copicuProductCatalog.mode = "private";
+    w.__copicuIdentityCalls = [];
+    w.__copicuSharedTestInvoke = async (cmd: string, args: any) => {
+      if (cmd !== "shared_clipboard_identity") return previous(cmd, args);
+      const input = args.input; w.__copicuIdentityCalls.push(structuredClone(input));
+      if (input.kind === "start") { w.__copicuIdentity.state = "waiting"; w.__copicuIdentity.name = input.name; w.__copicuIdentity.endpoint = input.endpoint; }
+      if (input.kind === "cancel") w.__copicuIdentity.state = "cancelled";
+      if (input.kind === "approve") {
+        if (w.__copicuLoseApproval) { w.__copicuLoseApproval = false; throw Error("Synthetic response lost. Retry this operation."); }
+        w.__copicuIdentity.devices[1].state = "active";
+      }
+      if (input.kind === "setupRecovery") { w.__copicuIdentity.recoveryReady = true; w.__copicuIdentity.localRecoveryCode = true; return { ...structuredClone(w.__copicuIdentity), code: "7c".repeat(32) }; }
+      return structuredClone(w.__copicuIdentity);
+    };
+  }, { initial });
+}
+
+test("shared identity first access guides browser approval without enabling connections or effects", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedIdentity(page); await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const identity = page.getByRole("region", { name: "Device sign-in" });
+  await expect(page.getByText("No device linked", { exact: true })).toBeVisible();
+  await expect(identity.getByRole("button", { name: "Sign in in browser" })).toBeDisabled();
+  await identity.getByLabel("Sharing service URL").fill("https://synthetic.invalid/");
+  await identity.getByLabel("Name of this PC").fill("Synthetic Home");
+  await identity.getByRole("button", { name: "Sign in in browser" }).click();
+  await expect(identity.getByText(/Complete sign-in in your system browser/)).toBeVisible();
+  await page.evaluate(() => { (window as any).__copicuIdentity.state = "pending"; });
+  await identity.getByRole("button", { name: "Check approval" }).click();
+  await expect(identity.getByText(/Compare this fingerprint on both PCs/)).toBeVisible();
+  await expect(identity.getByText("a".repeat(64), { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect All history…" })).toHaveCount(0);
+  expect(await identity.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([]);
+  await page.screenshot({ path: `.codex-run/shared-identity-pending-${testInfo.project.name}.png` });
+});
+
+test("shared identity approval requires fingerprint comparison and retries the same intention", async ({ page }) => {
+  await mockTauriInvoke(page); await mockSharedIdentity(page, "active"); await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const identity = page.getByRole("region", { name: "Device sign-in" });
+  await expect(identity.getByRole("button", { name: "Approve device" })).toBeDisabled();
+  await identity.getByRole("checkbox", { name: "I compared this fingerprint on the requesting PC" }).check();
+  await page.evaluate(() => { (window as any).__copicuLoseApproval = true; });
+  await identity.getByRole("button", { name: "Approve device" }).click();
+  await expect(identity.getByRole("alert")).toContainText("response lost");
+  await identity.getByRole("button", { name: "Approve device" }).click();
+  await expect(identity.getByRole("status")).toContainText("Device approved");
+  const operations = await page.evaluate(() => (window as any).__copicuIdentityCalls.filter((input: any) => input.kind === "approve"));
+  expect(operations).toHaveLength(2); expect(operations[0]).toEqual(operations[1]);
+  expect(operations[0].fingerprint).toBe("b".repeat(64));
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([]);
+});
+
+test("shared identity recovery code appears only on request and can be hidden without clipboard writes", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedIdentity(page, "active"); await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const identity = page.getByRole("region", { name: "Device sign-in" });
+  await identity.getByText("Set up recovery", { exact: true }).click();
+  await expect(identity.getByText("Keep this code private", { exact: false })).toHaveCount(0);
+  await identity.getByRole("button", { name: "Generate recovery code" }).click();
+  const code = identity.locator(".shared-recovery-code code");
+  await expect(code).toHaveText(/7c7c7c7c/);
+  expect(await code.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await page.screenshot({ path: `.codex-run/shared-identity-recovery-${testInfo.project.name}.png` });
+  await identity.getByRole("button", { name: "I stored the code, hide it" }).click();
+  await expect(code).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => /copy|clipboard_write/.test(call.cmd)))).toEqual([]);
+});
+
+test("shared identity connect retains its draft across linking and blocks retired access", async ({ page }) => {
+  await mockTauriInvoke(page); await mockSharedIdentity(page, "active"); await gotoShell(page); await waitForDefaultHistoryReady(page);
+  await page.getByRole("button", { name: "Connect shared clipboard", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect shared clipboard" });
+  await dialog.getByLabel("Find shared clipboard").fill("Synthetic preserved draft");
+  await page.evaluate(async () => { const w = window as any; w.__copicuSharedSnapshot.identityState = "revoked"; await w.__copicuTestEmitEvent("shared-catalog-invalidated", { state: "denied" }); });
+  await expect(dialog.getByRole("button", { name: "Open Sharing settings" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Connect clipboard", exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("Find shared clipboard")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Open Sharing settings" }).click();
+  await page.evaluate(async () => { const w = window as any; w.__copicuSharedSnapshot.identityState = "active"; await w.__copicuTestEmitEvent("shared-catalog-invalidated", { state: "live" }); });
+  await expect(dialog.getByLabel("Find shared clipboard")).toHaveValue("Synthetic preserved draft");
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([]);
+});
 
 test("shared product remote invalidation preserves draft focus and selection, then shows removal",async({page})=>{
   await mockTauriInvoke(page);await mockSharedProduct(page);await gotoShell(page);await waitForDefaultHistoryReady(page);
@@ -10380,7 +10477,7 @@ test("shared clipboard settings keep folder reception Windows and send shortcuts
   await expect(page.getByLabel("Search settings")).toBeVisible();
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const sharing = page.locator(".shared-clipboard-settings");
-  await expect(sharing.getByText("Sharing enabled", { exact: true })).toBeVisible();
+  await expect(sharing.getByText("Device linked", { exact: true })).toBeVisible();
   await expect(sharing.locator("form")).toHaveCount(0);
   await sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true }).check();
   await sharing.getByRole("checkbox", { name: "Save received text in Copicu", exact: true }).check();
