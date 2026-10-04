@@ -25,6 +25,9 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::with_custody(false)
+    }
+    fn with_custody(managed: bool) -> Self {
         let root = std::env::temp_dir().join(format!(
             "copicu-identity-v3-{}-{}",
             std::process::id(),
@@ -62,7 +65,7 @@ impl Fixture {
             endpoint: String::new(),
         };
         let result =
-            f.ask(json!({"dbPath":f.root.join("relay.sqlite"),"environment":"identity_synthetic"}));
+            f.ask(json!({"dbPath":f.root.join("relay.sqlite"),"environment":"identity_synthetic","managedCustody":managed}));
         f.endpoint = result["url"].as_str().unwrap().into();
         f
     }
@@ -158,6 +161,150 @@ fn send(storage: &AppStorage, id: &str, text: &str) -> String {
         .iter()
         .any(|p| p["publicationId"] == pub_id && p["state"] == "accepted"));
     pub_id
+}
+
+#[test]
+fn managed_account_links_equal_pcs_and_delivers_text_image_rotation_and_restart() {
+    let _serial = runtime::TEST_RUNTIME.lock().unwrap();
+    let mut f = Fixture::with_custody(true);
+    let a = f.profile("managed_work");
+    let b = f.profile("managed_home");
+    let c = f.profile("managed_later");
+    assert_eq!(f.login(&a, "Synthetic Work")["state"], "active");
+    assert_eq!(f.login(&b, "Synthetic Home")["state"], "active");
+    let rid = create(&a, "managed_create", "Synthetic managed ñ 🙂");
+    assert_eq!(
+        product::catalog(&b).unwrap()["resources"][0]["name"],
+        "Synthetic managed ñ 🙂"
+    );
+    assert!(runtime::snapshot(&b).unwrap().connections.is_empty());
+    connect(&a, &rid);
+    connect(&b, &rid);
+    let publication = send(&a, &rid, "synthetic managed text λ");
+    runtime::poll_once(&b).unwrap();
+    let receipt = runtime::snapshot(&b)
+        .unwrap()
+        .receipts
+        .into_iter()
+        .find(|r| r["publicationId"] == publication)
+        .unwrap();
+    assert_eq!(
+        runtime::receipt_text(
+            &b,
+            receipt["subscriptionId"].as_str().unwrap(),
+            &publication
+        )
+        .unwrap(),
+        "synthetic managed text λ"
+    );
+    let image = crate::clipboard_content::ClipboardContent::Image(
+        crate::image_capture::synthetic_image(3, 2).png_bytes,
+    );
+    let cfg = runtime::required(&a).unwrap();
+    let image_id = runtime::publish_content(&a, &rid, &image, "syntheticTest").unwrap()
+        ["publicationId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    runtime::poll_once(&a).unwrap();
+    runtime::poll_once(&b).unwrap();
+    let saved = runtime::snapshot(&b)
+        .unwrap()
+        .receipts
+        .into_iter()
+        .find(|r| r["publicationId"] == image_id)
+        .unwrap();
+    let content =
+        runtime::receipt_content(&b, saved["subscriptionId"].as_str().unwrap(), &image_id).unwrap();
+    assert!(content == image);
+    assert!(runtime::snapshot(&b)
+        .unwrap()
+        .channels
+        .iter()
+        .all(|ch| !ch.update_clipboard && !ch.receive_action_enabled));
+    assert_eq!(f.login(&c, "Synthetic Later")["state"], "active");
+    assert_eq!(
+        product::catalog(&c).unwrap()["resources"][0]["keyState"],
+        "ready"
+    );
+    assert!(runtime::snapshot(&c).unwrap().connections.is_empty());
+    assert!(runtime::snapshot(&c).unwrap().receipts.is_empty());
+    let catalog = product::catalog(&a).unwrap();
+    product::operation(&a,json!({"kind":"rotate","operationId":"managed_rotate","resourceId":rid,"expectedRevision":catalog["resources"][0]["revision"]})).unwrap();
+    product::catalog(&b).unwrap();
+    assert_eq!(
+        runtime::required(&b).unwrap().channels[0].epoch,
+        cfg.channels[0].epoch + 1
+    );
+    // Rotation fences the old receive range. Reconcile the new live head before
+    // publishing, as the background worker does, without replaying history.
+    runtime::poll_once(&a).unwrap();
+    runtime::poll_once(&b).unwrap();
+    let reverse = send(&b, &rid, "synthetic after rotation");
+    runtime::poll_once(&a).unwrap();
+    assert!(runtime::snapshot(&a)
+        .unwrap()
+        .receipts
+        .iter()
+        .any(|r| r["publicationId"] == reverse));
+    f.ask(json!({"command":"restart"}));
+    assert_eq!(status(&c).unwrap()["state"], "active");
+    assert_eq!(
+        product::catalog(&c).unwrap()["resources"][0]["keyState"],
+        "ready"
+    );
+    drop(c);
+    drop(b);
+    drop(a);
+}
+
+#[test]
+fn managed_custody_migrates_legacy_keys_without_reconnecting_or_changing_effects() {
+    let _serial = runtime::TEST_RUNTIME.lock().unwrap();
+    let mut f = Fixture::new();
+    let a = f.profile("legacy_work");
+    let b = f.profile("legacy_pending");
+    f.login(&a, "Synthetic Legacy Work");
+    let rid = create(&a, "legacy_managed_migration", "Synthetic legacy clipboard");
+    connect(&a, &rid);
+    let legacy_publication = send(&a, &rid, "synthetic before migration");
+    assert_eq!(f.login(&b, "Synthetic Legacy Home")["state"], "pending");
+    let before = runtime::required(&a).unwrap();
+    f.ask(json!({"command":"custody"}));
+    // Opening the upgraded owner deposits current keys; no peer approval occurs.
+    assert_eq!(product::catalog(&a).unwrap()["keyCustody"], "service");
+    assert_eq!(status(&b).unwrap()["state"], "active");
+    let resources = product::catalog(&b).unwrap();
+    assert_eq!(
+        resources["resources"][0]["name"],
+        "Synthetic legacy clipboard"
+    );
+    let after = runtime::required(&a).unwrap();
+    assert_eq!(after.channels[0].epoch, before.channels[0].epoch);
+    assert!(after.channels[0].policy == before.channels[0].policy);
+    assert_eq!(runtime::snapshot(&a).unwrap().connections.len(), 1);
+    assert!(runtime::snapshot(&b).unwrap().connections.is_empty());
+    assert!(runtime::snapshot(&b).unwrap().receipts.is_empty());
+    connect(&b, &rid);
+    let publication = send(&a, &rid, "synthetic migrated text");
+    runtime::poll_once(&b).unwrap();
+    assert!(runtime::snapshot(&b)
+        .unwrap()
+        .receipts
+        .iter()
+        .any(|r| r["publicationId"] == publication));
+    assert!(!runtime::snapshot(&b)
+        .unwrap()
+        .receipts
+        .iter()
+        .any(|r| r["publicationId"] == legacy_publication));
+    f.ask(json!({"command":"restart"}));
+    assert_eq!(
+        product::catalog(&b).unwrap()["resources"][0]["keyState"],
+        "ready"
+    );
+    drop(b);
+    drop(a);
 }
 
 #[test]

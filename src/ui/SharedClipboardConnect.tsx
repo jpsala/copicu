@@ -135,7 +135,7 @@ export function SharedClipboardConnect({ scope, folders, onClose, onConnected, a
           <UiCheckbox label={`Move automatic reception from ${receiverLabel} to ${context}`} checked={moveReception} disabled={busy} onChange={event => setMoveReception(event.currentTarget.checked)} />
         </div>}
         <p>{direction !== "receive" ? `${context} sends new local text and images${kind === "general" ? snapshot?.generalSendScope === "all" ? " from all Copicu folders" : " without a folder" : " from this exact folder"}. ` : ""}{direction !== "send" ? `New received text and images are saved in ${kind === "general" ? "Root" : context}. ` : ""}Existing content stays where it is. Windows updates and Actions remain separate.</p>
-        {selected && selected.keyState !== "ready" && <p role="status">{selected.name}'s encryption keys are not available on this PC yet. It can connect once those keys are available.</p>}
+        {selected && selected.keyState !== "ready" && <p role="status">{selected.keyMessage ?? `${selected.name}'s encryption keys are not available on this PC yet. It can connect once those keys are available.`}</p>}
         {createdId && <p role="status">Created; connection still needs to be completed. Retry keeps the same resource.</p>}
       </>}
       <footer><UiButton type="button" variant="default" disabled={busy} onClick={onClose}>Cancel</UiButton><UiButton type="button" loading={busy} aria-describedby={receiver && direction !== "send" && !moveReception ? "shared-connect-reception-notice" : undefined} disabled={needsSignIn || !catalog || busy || (creating ? !name.trim() : !ready)} onClick={() => void confirm()}>{createdId ? "Retry connection" : creating ? "Create and connect" : "Connect clipboard"}</UiButton></footer>

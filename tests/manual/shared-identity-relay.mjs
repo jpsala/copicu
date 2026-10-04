@@ -1,14 +1,15 @@
 // Synthetic subprocess fixture. OIDC uses real RSA/PKCE over loopback; controls
 // are stdin-only and never exist in the shipped service. Output contains no keys.
 import { createInterface } from 'node:readline';
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { createRelay } from '../../scripts/shared-clipboard/relay.mjs';
 import { syntheticOidc } from './synthetic-oidc.mjs';
 const lines = createInterface({ input: process.stdin });
 const issuer = await syntheticOidc(), leaseSigner = generateKeyPairSync('ed25519').privateKey;
+const custodyKey = randomBytes(32);
 let config, relay, adapter, failure;
 const restart = async () => {
-  relay = createRelay({ ...config, leaseSigner, identity: { oidc: { authorization: p => adapter.authorization(p), authenticate: p => adapter.authenticate(p) }, faults: {
+  relay = createRelay({ ...config, leaseSigner, custodyKey:config.managedCustody?custodyKey:null, identity: { oidc: { authorization: p => adapter.authorization(p), authenticate: p => adapter.authenticate(p) }, faults: {
     beforeCommit: p => { if (failure?.mode === 'before' && failure.kind === p.kind) { failure = null; return true; } return false; },
     afterCommit: p => { if (failure?.mode === 'after' && failure.kind === p.kind) { failure = null; return true; } return false; },
   } } });
@@ -25,6 +26,7 @@ try {
       const response = await fetch(url); if (!response.ok) throw Error('synthetic sign-in');
     } else if (value.command === 'offline') { await relay.stop(); relay = null; }
     else if (value.command === 'restart') { if (relay) await relay.stop(); await restart(); }
+    else if (value.command === 'custody') { if(relay) await relay.stop(); config.managedCustody=true; await restart(); }
     else if (value.command === 'subject') issuer.setSubject(value.subject);
     else if (value.command === 'fault') failure = { kind: value.kind, mode: value.mode };
     else throw Error('invalid synthetic identity command');

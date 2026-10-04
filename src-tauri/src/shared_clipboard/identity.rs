@@ -356,7 +356,7 @@ fn public(mut raw: Value, state: &LocalIdentity, vault: &Vault) -> Value {
     raw["endpoint"] = json!(state.config.endpoint);
     raw["name"] = json!(state.name);
     raw["recoveryReady"] = json!(!raw["recovery"].is_null());
-    raw["localRecoveryCode"] = json!(credential(vault, &state.config, RECOVERY_REFERENCE).is_ok());
+    raw["localRecoveryCode"] = json!(raw["keyCustody"] != "service" && credential(vault, &state.config, RECOVERY_REFERENCE).is_ok());
     raw.as_object_mut().map(|m| m.remove("recovery"));
     if let Some(devices) = raw["devices"].as_array_mut() {
         for d in devices {
@@ -760,6 +760,7 @@ pub(super) fn backup(
     vault: &Vault,
     catalog: &Value,
 ) -> Result<(), String> {
+    if catalog["keyCustody"] == "service" { return Ok(()); }
     let Some(mut state) =
         load(storage)?.filter(|s| s.state == "active" && s.config.device_id == c.device_id)
     else {

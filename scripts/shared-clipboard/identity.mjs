@@ -2,6 +2,7 @@
 // relay. Browser login proves a person; approval/recovery separately grants keys.
 import { createHash, randomBytes, verify } from 'node:crypto';
 import { canonical } from './control.mjs';
+import { CUSTODY_DEVICE } from './custody.mjs';
 export const IDENTITY_DOMAIN = Buffer.from('Copicu.shared.identity.v3\0');
 export function identitySigningBytes(value) {
   const { signature, recoverySignature, ...payload } = value;
@@ -17,6 +18,16 @@ export function createIdentity({ query, transaction, control, environment, issue
   query(`CREATE TABLE IF NOT EXISTS identity_sessions(id TEXT PRIMARY KEY,digest BLOB NOT NULL,payload TEXT NOT NULL,state TEXT NOT NULL,nonce TEXT NOT NULL,verifier TEXT NOT NULL,expires INTEGER NOT NULL,person TEXT) STRICT`).run();
   query(`CREATE TABLE IF NOT EXISTS identity_intents(device TEXT NOT NULL,id TEXT NOT NULL,digest BLOB NOT NULL,result TEXT NOT NULL,PRIMARY KEY(device,id)) STRICT`).run();
   const now = () => Number(clock());
+  if(control.custody) transaction(()=>{
+    // Still-valid OIDC requests migrate; retired/cancelled/expired devices do not.
+    for(const row of query("SELECT device FROM identity_devices WHERE state='pending' AND expires>?").all(now())) {
+      query("UPDATE identity_devices SET state='active' WHERE device=?").run(row.device);
+      query('UPDATE relay_devices SET revoked=0 WHERE id=?').run(row.device);
+      query('UPDATE identity_accounts SET revision=revision+1 WHERE person=(SELECT person FROM control_devices WHERE device=?)').run(row.device);
+      control.events.deviceChanged(row.device);
+    }
+    for(const row of query("SELECT device FROM identity_devices WHERE state='active'").all()) control.activateDevice(row.device);
+  })();
   const account = person => query('SELECT * FROM identity_accounts WHERE person=?').get(person);
   function fingerprint(device, person) {
     const row = query('SELECT d.public_key,cd.kem FROM relay_devices d JOIN control_devices cd ON cd.device=d.id WHERE d.id=?').get(device);
@@ -33,7 +44,7 @@ export function createIdentity({ query, transaction, control, environment, issue
   function view(device) {
     const a = account(device.person);
     const devices = query('SELECT d.id AS deviceId,d.public_key,cd.kem,i.name,i.state,i.expires FROM relay_devices d JOIN control_devices cd ON cd.device=d.id JOIN identity_devices i ON i.device=d.id WHERE cd.person=? ORDER BY i.name,d.id').all(device.person).map(d => ({ deviceId: d.deviceId, personId: device.person, name: d.name, state: d.state === 'pending' && d.expires <= now() ? 'expired' : d.state, fingerprint: fingerprint(d.deviceId, device.person), signingPublicKey: Buffer.from(d.public_key).toString('base64'), kemPublicKey: Buffer.from(d.kem).toString('base64') }));
-    return { state: device.state, personId: device.person, deviceId: device.id, name: device.name, revision: String(a.revision), fingerprint: fingerprint(device.id, device.person), devices: device.state === 'active' ? devices : devices.filter(d => d.deviceId === device.id), recovery: a.recovery_key ? { publicKey: Buffer.from(a.recovery_key).toString('base64'), blob: JSON.parse(a.recovery_blob), revision: String(a.recovery_revision) } : null };
+    return { state: device.state, personId: device.person, deviceId: device.id, name: device.name, revision: String(a.revision), fingerprint: fingerprint(device.id, device.person), devices: device.state === 'active' ? devices : devices.filter(d => d.deviceId === device.id), keyCustody:control.custody?'service':'endToEnd', recovery: !control.custody && a.recovery_key ? { publicKey: Buffer.from(a.recovery_key).toString('base64'), blob: JSON.parse(a.recovery_blob), revision: String(a.recovery_revision) } : null };
   }
   function revoke(device) {
     control.events.deviceChanged(device);
@@ -71,6 +82,7 @@ export function createIdentity({ query, transaction, control, environment, issue
     }
   }
   function action(device, input) {
+    if(control.custody && input?.kind!=='revoke') deny(400,'device_approval_not_required');
     const fields = ['operationId', 'kind', 'deviceId', 'fingerprint', 'expectedRevision', 'resources', 'publicKey', 'blob', 'recoveryRevision', 'signature', 'recoverySignature'];
     if (!input || Array.isArray(input) || Object.keys(input).some(k => !fields.includes(k))) deny(400, 'invalid_fields');
     opaque(input.operationId); signed(input, device.public_key);
@@ -120,12 +132,13 @@ export function createIdentity({ query, transaction, control, environment, issue
   }
   return { async route(request, url) {
     if (!url.pathname.startsWith('/v3/')) return null;
-    if (url.pathname === '/v3/info' && request.method === 'GET') return response({ version: 3, environment, endpoint: origin, issuerPublicKey, identity: 'oidc', deviceApproval: true, recovery: true });
+    if (url.pathname === '/v3/info' && request.method === 'GET') return response({ version: 3, environment, endpoint: origin, issuerPublicKey, identity: 'oidc', deviceApproval: !control.custody, recovery: !control.custody, keyCustody:control.custody?'service':'endToEnd' });
     if (url.pathname === '/v3/auth/start' && request.method === 'POST') {
       const p = await body(request);
       const expected = ['sessionId', 'environment', 'endpoint', 'deviceId', 'name', 'signingPublicKey', 'kemPublicKey', 'tokenHash', 'challenge', 'browserChallenge', 'signature'];
       if (!p || Object.keys(p).sort().join(',') !== expected.sort().join(',')) deny(400, 'invalid_fields');
       opaque(p.sessionId); opaque(p.deviceId);
+      if(p.deviceId===CUSTODY_DEVICE) deny(400,'reserved_device_identity');
       if (p.environment !== environment || p.endpoint !== origin || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80 || /[\u0000-\u001f]/.test(p.name) || !/^[a-f0-9]{64}$/.test(p.tokenHash) || !/^[A-Za-z0-9_-]{43}$/.test(p.challenge) || !/^[A-Za-z0-9_-]{43}$/.test(p.browserChallenge)) deny(400, 'invalid_identity_scope');
       const key = base64(p.signingPublicKey, 32), kem = base64(p.kemPublicKey, 32); if (kem.equals(Buffer.alloc(32))) deny(400, 'invalid_device_key'); signed(p, key);
       const digest = hash(identitySigningBytes(p));
@@ -163,16 +176,17 @@ export function createIdentity({ query, transaction, control, environment, issue
           if (newPerson) { if (query('SELECT count(*) AS n FROM identity_accounts').get().n >= 128) deny(429, 'account_capacity'); person = `person_${randomBytes(16).toString('hex')}`; query('INSERT INTO control_people VALUES (?,?)').run(person, 'Private account'); query('INSERT INTO identity_accounts(person,subject_hash) VALUES (?,?)').run(person, subjectHash); }
           // A cancelled first sign-in cannot strand an empty account. Existing
           // resources/recovery material permanently disable this bootstrap.
-          const first = newPerson || (!account(person).recovery_key && !query('SELECT 1 FROM control_resources WHERE owner=?').get(person) && !query("SELECT 1 FROM identity_devices i JOIN control_devices cd ON cd.device=i.device WHERE cd.person=? AND i.state='active'").get(person));
+          const first = !!control.custody || newPerson || (!account(person).recovery_key && !query('SELECT 1 FROM control_resources WHERE owner=?').get(person) && !query("SELECT 1 FROM identity_devices i JOIN control_devices cd ON cd.device=i.device WHERE cd.person=? AND i.state='active'").get(person));
           if (query('SELECT count(*) AS n FROM relay_devices').get().n >= limits.devices) deny(429, 'device_capacity');
           query('INSERT INTO relay_devices VALUES (?,?,?,?)').run(p.deviceId, Buffer.from(p.tokenHash, 'hex'), base64(p.signingPublicKey, 32), first ? 0 : 1);
           query('INSERT INTO control_devices VALUES (?,?,?)').run(p.deviceId, person, base64(p.kemPublicKey, 32));
           query('INSERT INTO identity_devices VALUES (?,?,?,?)').run(p.deviceId, p.name.trim(), first ? 'active' : 'pending', now() + 86400000);
+          if(control.custody) control.activateDevice(p.deviceId);
           query("UPDATE identity_sessions SET state='complete',person=?,verifier='' WHERE id=?").run(person, s.id);
           query('UPDATE identity_accounts SET revision=revision+1 WHERE person=?').run(person);
           control.events.deviceChanged(p.deviceId);
         })(); notify(); control.events.wake();
-        return html('Sign-in completed. Copicu will show whether this device needs approval.');
+        return html(control.custody?'Sign-in completed. This PC is linked to your account. Return to Copicu to connect a clipboard.':'Sign-in completed. Copicu will show whether this device needs approval.');
       } catch { query("UPDATE identity_sessions SET state='failed',verifier='' WHERE id=? AND state='exchanging'").run(s.id); return html('Sign-in could not be verified or this account is not admitted by the service.'); }
     }
     if (['/v3/auth/poll', '/v3/auth/cancel'].includes(url.pathname) && request.method === 'POST') {

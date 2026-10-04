@@ -38,8 +38,8 @@ try {
   fixture = spawn('bun', ['tests/manual/shared-identity-relay.mjs'], { cwd: repo, stdio: ['pipe', 'pipe', relayDiagnostic], windowsHide: true }); closeSync(relayDiagnostic);
   const lines = createInterface({ input: fixture.stdout });
   const ask = async value => { const reply = once(lines, 'line'); fixture.stdin.write(JSON.stringify(value) + '\n'); return JSON.parse((await reply)[0]); };
-  const info = await ask({ dbPath: path.join(root, 'relay.sqlite'), environment: 'identity_ui_synthetic' });
-  for (const [index, name, port] of [[0, 'Work', 9451], [1, 'Home', 9452], [2, 'Recovered', 9453]]) {
+  const info = await ask({ dbPath: path.join(root, 'relay.sqlite'), environment: 'identity_ui_synthetic', managedCustody: true });
+  for (const [index, name, port] of [[0, 'Work', 9451], [1, 'Home', 9452], [2, 'Later', 9453]]) {
     const profile = path.join(root, name.toLowerCase()); await mkdir(profile);
     const s = structuredClone(settings);
     s.general.captureEnabled = false; s.general.launchOnStartup = false;
@@ -67,15 +67,17 @@ try {
     const identityCall = input => settingsCall('shared_clipboard_identity', { input });
     assert.equal(await identity.getByLabel('Sharing service URL').count(), 0);
     await identity.getByLabel('Name of this PC').fill(`Synthetic ${name}`);
-    await identity.getByRole('button', { name: 'Sign in in browser' }).click();
-    await wait(async () => ['active', 'pending'].includes((await identityCall({ kind: 'status' })).state), 'system browser synthetic login');
+    await identity.getByRole('button', { name: 'Sign in with Google' }).click();
+    await wait(async () => (await identityCall({ kind: 'status' })).state === 'active', 'system browser synthetic login');
+    await identity.getByText(/This PC is linked to your account/).waitFor();
+    assert.equal(await identity.getByRole('button', { name: /Approve|recovery|Send available keys/i }).count(), 0);
     peers.push({ name, profile, ui, identity, call, settingsCall, identityCall });
   }
   const [a, b, c] = peers, status = peer => peer.call('shared_clipboard_status');
   assert.equal((await a.identityCall({ kind: 'status' })).state, 'active');
-  for (const peer of [b, c]) { assert.equal((await peer.identityCall({ kind: 'status' })).state, 'pending'); assert.equal((await status(peer)).configured, false); }
+  for (const peer of [b, c]) { assert.equal((await peer.identityCall({ kind: 'status' })).state, 'active'); assert.equal((await status(peer)).configured, true); }
   assert.deepEqual((await a.call('shared_clipboard_catalog')).resources, []);
-  pass('three fresh profiles use mounted UI and system-browser OIDC; first is empty and siblings require approval');
+  pass('three fresh profiles use mounted UI and system-browser OIDC; same-account PCs are active without approvals');
   await a.identity.getByRole('button', { name: 'Create or connect a clipboard…' }).click();
   let dialog = a.ui.getByRole('dialog', { name: 'Connect shared clipboard' });
   await dialog.getByRole('button', { name: 'Create shared clipboard…' }).click();
@@ -85,23 +87,13 @@ try {
   await dialog.getByRole('button', { name: 'Create and connect', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   const channelId = (await a.call('shared_clipboard_catalog')).resources[0].id;
-  const pending = await b.identityCall({ kind: 'status' });
-  const owner = await a.identityCall({ kind: 'status' });
-  assert.equal(owner.devices.find(d => d.deviceId === pending.deviceId).fingerprint, pending.fingerprint);
-  await b.identity.getByText(pending.fingerprint, { exact: true }).waitFor();
-  await b.ui.screenshot({ path: path.join(root, 'native-pending.png') });
-  const row = a.identity.getByRole('listitem').filter({ hasText: 'Synthetic Home' });
-  // Wait for the last enrollment to reach mounted UI. Approval uses that exact
-  // displayed account revision, never an API response substituted into React.
-  await a.identity.getByRole('listitem').filter({ hasText: 'Synthetic Recovered' }).waitFor();
-  await row.getByRole('checkbox', { name: 'I compared this fingerprint on the requesting PC' }).check();
-  await row.getByRole('button', { name: 'Approve device', exact: true }).click();
-  await wait(async () => { const alert = a.identity.getByRole('alert'); if (await alert.count()) throw Error(await alert.innerText()); return (await a.identityCall({ kind: 'status' })).devices.find(d => d.deviceId === pending.deviceId).state === 'active'; }, 'owner approval commit');
-  await wait(async () => (await b.identityCall({ kind: 'status' })).state === 'active', 'device approval import');
+  await b.call('shared_clipboard_catalog');
+  await c.call('shared_clipboard_catalog');
+  await b.ui.screenshot({ path: path.join(root, 'native-linked.png') });
   const linked = await status(b); assert.equal(linked.connections.length, 0); assert.equal(linked.receipts.length, 0);
   assert(linked.channels.every(ch => !ch.receiveEnabled && !ch.updateClipboard && !ch.receiveActionEnabled && !ch.publishFolderEnabled));
   assert.equal((await b.call('shared_clipboard_catalog')).resources[0].name, 'Synthetic Windows identity ñ 🙂');
-  pass('full fingerprint approval imports real HPKE keys while every local connection and native effect stays off');
+  pass('service HPKE packages supply content keys while every local connection and native effect stays off');
   await b.identity.getByRole('button', { name: 'Create or connect a clipboard…' }).click();
   dialog = b.ui.getByRole('dialog', { name: 'Connect shared clipboard' });
   await dialog.getByRole('option', { name: /Synthetic Windows identity/ }).click();
@@ -119,21 +111,20 @@ try {
   await ask({ command: 'restart' }); assert.equal((await b.identityCall({ kind: 'status' })).state, 'active');
   assert.equal((await status(b)).connections.length, 1);
   pass('service restart preserves identity, keys and explicit connection');
-  await a.identity.getByText('Set up recovery', { exact: true }).click();
-  await a.identity.getByRole('button', { name: 'Generate recovery code' }).click();
-  const codeElement = a.identity.locator('.shared-recovery-code code'); await codeElement.waitFor();
-  const code = (await codeElement.innerText()).replaceAll(' ', ''); assert.equal(code.length, 64);
-  await a.identity.getByRole('button', { name: 'I stored the code, hide it' }).click();
-  await c.identity.getByRole('button', { name: 'Check approval' }).click();
-  await c.identity.getByText('Recover with a saved code', { exact: true }).click();
-  await c.identity.getByLabel('Saved recovery code').fill(code);
-  await c.identity.getByRole('checkbox', { name: "Retire earlier devices and recover this account's available keys" }).check();
-  await c.identity.getByRole('button', { name: 'Recover this device', exact: true }).click();
-  await wait(async () => (await c.identityCall({ kind: 'status' })).state === 'active', 'UI recovery');
-  const recovered = await status(c); assert.equal(recovered.connections.length, 0); assert.equal(recovered.receipts.length, 0); assert(!recovered.channels[0].canPublish);
-  for (const old of [a, b]) { assert.equal((await old.identityCall({ kind: 'status' })).state, 'revoked'); assert((await status(old)).receivePaused); assert((await status(old)).receipts.length >= 1); }
-  await c.ui.screenshot({ path: path.join(root, 'native-recovered.png') });
-  pass('explicit UI recovery restores content keys, retires older devices, preserves their local copies and requires rotation');
+  assert.equal((await c.call('shared_clipboard_catalog')).resources[0].name, 'Synthetic Windows identity ñ 🙂');
+  assert.equal((await status(c)).connections.length, 0);
+  assert.equal((await status(c)).receipts.length, 0);
+  await a.identity.getByText('Devices (3 linked)', { exact: true }).click();
+  const row=a.identity.getByRole('listitem').filter({hasText:'Synthetic Home'});
+  await row.getByRole('button',{name:'Retire device…'}).click();
+  await row.getByRole('checkbox',{name:"I want to stop this device's access"}).check();
+  await row.getByRole('button',{name:'Retire device',exact:true}).click();
+  await wait(async () => (await b.identityCall({kind:'status'})).state==='revoked','UI retirement');
+  assert.equal((await c.identityCall({kind:'status'})).state,'active');
+  assert((await status(b)).receivePaused); assert((await status(b)).receipts.length>=1);
+  await c.identity.getByText('Devices (2 linked)', { exact: true }).waitFor();
+  await c.ui.screenshot({path:path.join(root,'native-service-custody.png')});
+  pass('third PC receives keys without peer contact; explicit retirement stops only that device and preserves downloaded copies');
   const executableHash = createHash('sha256'); for await (const chunk of createReadStream(exe)) executableHash.update(chunk);
   await writeFile(path.join(root, 'identity-ui-results.json'), JSON.stringify({ executable: exe, executableSHA256: executableHash.digest('hex'), checkedAt: new Date().toISOString(), cases: results, physicalPcAcceptance: false }, null, 2));
   console.log(JSON.stringify({ passed: results.length, root }));

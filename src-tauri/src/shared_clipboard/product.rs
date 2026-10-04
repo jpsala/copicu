@@ -25,6 +25,8 @@ use std::{
 };
 #[path = "product_crypto.rs"]
 pub(super) mod product_crypto;
+#[path = "product_custody.rs"]
+mod product_custody;
 #[cfg(all(test, windows))]
 #[path = "product_integration.rs"]
 mod product_integration;
@@ -58,9 +60,13 @@ pub(super) fn raw_catalog(vault: &Vault, c: &StoredConfig) -> Result<Value, Stri
     client
         .request_control("POST", "/v2/operations", Some(&register))
         .map_err(remote)?;
-    client
+    let mut catalog = client
         .request_control("GET", "/v2/catalog", None)
-        .map_err(remote)
+        .map_err(remote)?;
+    if product_custody::migrate(vault, c, &catalog)? {
+        catalog = client.request_control("GET", "/v2/catalog", None).map_err(remote)?;
+    }
+    Ok(catalog)
 }
 pub(super) fn epoch_reference(resource: &str, epoch: u64) -> String {
     format!(
@@ -126,6 +132,7 @@ fn import_packages(
                 .iter()
                 .find(|d| d["deviceId"] == packet["ownerDeviceId"])
                 .ok_or("Package owner is not a linked trusted device")?;
+            product_custody::verify_package_owner(c, catalog, packet, owner)?;
             let key =
                 product_crypto::unwrap(&c.environment, &c.device_id, &kem, &signer, packet, owner)?;
             let packet_epoch = packet["epoch"]
@@ -363,9 +370,10 @@ fn public_resource(c: &StoredConfig, vault: &Vault, mut resource: Value) -> Valu
     });
     resource["name"] = json!(name
         .clone()
-        .unwrap_or_else(|| "Shared clipboard (key approval pending)".into()));
+        .unwrap_or_else(|| if resource.get("custodyMissingEpochs").is_some() { "Shared clipboard (keys awaiting migration)".into() } else { "Shared clipboard (key approval pending)".into() }));
     if name.is_none() {
         resource["keyState"] = json!("pending");
+        if resource.get("custodyMissingEpochs").is_some() { resource["keyMessage"] = json!("Update and open Copicu on a PC with this clipboard's keys. The service will make them available to your account."); }
     }
     if let Some(object) = resource.as_object_mut() {
         object.remove("metadata");
@@ -431,7 +439,7 @@ pub(super) fn refresh_catalog(storage: &AppStorage, automatic: bool) -> Result<V
         .map(|r| public_resource(&c, &vault, r))
         .collect::<Vec<_>>();
     result["resources"] = json!(resources);
-    let reviews=result["devices"].as_array().ok_or("Invalid linked device catalog")?.iter().map(|device|{
+    let reviews=result["devices"].as_array().ok_or("Invalid linked device catalog")?.iter().filter(|device|device["serviceCustody"]!=true).map(|device|{
         let transcript=json!({"environment":c.environment,"personId":device["personId"],"deviceId":device["deviceId"],"signingPublicKey":device["signingPublicKey"],"kemPublicKey":device["kemPublicKey"]});
         let mut bytes=b"Copicu.shared.linked-device-review.v2\0".to_vec();bytes.extend(serde_json::to_vec(&transcript).map_err(fail)?);
         Ok(json!({"personId":device["personId"],"deviceId":device["deviceId"],"fingerprint":config::hex(&Sha256::digest(bytes)),"state":if device["revoked"]==true{"revoked"}else if device["kemPublicKey"].is_null(){"pending"}else{"ready"}}))
@@ -460,6 +468,7 @@ pub(super) fn refresh_catalog(storage: &AppStorage, automatic: bool) -> Result<V
     result["pendingOperations"] = json!(pending);
     if let Some(object) = result.as_object_mut() {
         object.remove("devices");
+        object.remove("custody");
     }
     if let Some(mark) = control_mark {
         store.save_control_cache(&super::control_sync::identity(&c), &mark.person_id, &mark.generation, mark.cursor, &serde_json::to_string(&result).map_err(fail)?).map_err(fail)?;
@@ -794,6 +803,10 @@ pub(crate) fn operation(storage: &AppStorage, input: Value) -> Result<Value, Str
                 })
                 .collect::<Result<Vec<_>, String>>()?;
             wire["packages"] = json!(packets);
+            if let Some(target) = product_custody::target(&c, &catalog)? {
+                wire["custody_packages"] = json!([product_crypto::wrap_service(&c.environment, &resource, epoch, &key, &signer, &c.device_id, target, &mut SystemEntropy)?]);
+                wire.as_object_mut().unwrap().remove("packages");
+            }
             if let Some(invite) = invitation.filter(|i| i["includeHistory"] == 1) {
                 let mut historical = Vec::new();
                 for old in current["retainedEpochs"]
@@ -842,8 +855,12 @@ pub(crate) fn operation(storage: &AppStorage, input: Value) -> Result<Value, Str
                         })
                         .collect::<Result<Vec<_>, String>>()?;
                     historical.push(json!({"epoch":old_epoch.to_string(),"packages":packets}));
+                    if let Some(target) = product_custody::target(&c, &catalog)? {
+                        wire["custody_packages"].as_array_mut().ok_or("Missing service key package")?.push(product_crypto::wrap_service(&c.environment, &resource, old_epoch, &key, &signer, &c.device_id, target, &mut SystemEntropy)?);
+                    }
                 }
                 wire["history_packages"] = json!(historical);
+                if catalog["keyCustody"] == "service" { wire.as_object_mut().unwrap().remove("history_packages"); }
             }
             if rotating {
                 wire["metadata"] = encrypt_name(&c, &resource, epoch, &key, &ch.policy.name)?;
@@ -884,6 +901,10 @@ pub(crate) fn operation(storage: &AppStorage, input: Value) -> Result<Value, Str
                         .map(|d| product_crypto::wrap(&c.environment, &resource, 1, &key, &signer, &c.device_id, d, &mut SystemEntropy))
                         .collect::<Result<Vec<_>, String>>()?;
                     wire["packages"] = json!(packets);
+                    if let Some(target) = product_custody::target(&c, &catalog)? {
+                        wire["custody_packages"] = json!([product_crypto::wrap_service(&c.environment, &resource, 1, &key, &signer, &c.device_id, target, &mut SystemEntropy)?]);
+                        wire.as_object_mut().unwrap().remove("packages");
+                    }
                 }
                 generated_key = Some(key);
             } else {
@@ -1004,7 +1025,7 @@ pub(crate) fn operation(storage: &AppStorage, input: Value) -> Result<Value, Str
     }
     drop(_worker);
     drop(_barrier);
-    if latest_catalog["mode"] == "private" {
+    if latest_catalog["mode"] == "private" && latest_catalog["keyCustody"] != "service" {
         if let Err(reason) = super::identity::backup(storage, &c, &vault, &latest_catalog) {
             runtime::record_error(storage, &reason);
         }

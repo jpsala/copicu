@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "Texto e imágenes distribuidos en v0.5.4 latest e instalados; relay actualizado. Custodia de claves, admisión pública e imágenes físicas pendientes."
-last_worked: "2026-10-03T03:19:58Z"
-next: "Actualizar la otra PC y aceptar imágenes físicas; resolver custodia para reemplazar aprobación entre PCs y activar admisión pública."
+summary: "Custodia desplegada y cliente v0.5.6 definitivo firmado/verificado. Publicación latest, updater e instalación pendientes; admisión existente conservada."
+last_worked: "2026-10-04T02:53:23Z"
+next: "Publicar v0.5.6 y comprobar updater/assets; después actualizar PCs y aceptar la notebook. Admisión pública y prueba física quedan separadas."
 topics:
   - shared-clipboard
 ---
@@ -12,11 +12,25 @@ topics:
 
 ## Estado actual
 
+**Cierre de custodia (2026-10-03).** JP pidió terminar el flujo sin aprobación
+para usarlo en la notebook. Reporta que Casa y Trabajo ya comparten y autentican;
+la notebook muestra **Check approval**. Es un reporte humano, sin inspección de
+versiones/perfiles ni nueva aceptación física. Un par de equipos ya vinculados
+puede seguir funcionando con el flujo legado; ese uso no acredita custodia.
+Al iniciar este cierre, latest es `v0.5.5`, source
+`e19babfa299298d28ce18248d7a5fabee8f37f65`, y conserva aprobación. El servicio
+publica `deviceApproval:true`, `recovery:true` y no anuncia `keyCustody`.
+El servicio de custodia ya está desplegado: HTTPS/401, issuer conservado y
+backup/restore real aislado comprobados. El cliente `v0.5.6` definitivo está
+firmado/verificado y sus cinco casos shipping pasan; faltan publicación y updater.
+Evidencia del cierre en
+[aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
+
 **Texto e imágenes (2026-10-02).** JP amplió Sharing a los tipos capturados por
 Copicu y pospuso archivos. PNG cifrado, blobs/miniaturas, captura y envío desde
 carpeta/clip activo/Windows, recepción y copia con alpha están implementados.
 388 Rust (1 omitido), 48 Bun/480 assertions, 24 visuales y el round-trip nativo
-sintético pasan. Frontend normal regenerado. `v0.5.4` normal/latest publicada desde
+sintético pasan. Frontend normal regenerado. `v0.5.4` fue publicada como normal/latest desde
 `1fbbf2215f6cebb87e4ab4ea35c450b4528e7ced`, firma y recursos verificados; cinco casos
 del payload exacto pasan con perfiles sintéticos. Updater/downloads remotos coinciden
 y el mismo NSIS está instalado con EXE idéntico. Relay amplía límites, conserva
@@ -36,8 +50,21 @@ implementados/probados localmente, incluidos en las regresiones del corte de
 imágenes; la URL fija está distribuida en v0.5.4. Dev conserva el perfil habitual
 de Home, sin clonar identidad.
 El servidor confirma Home activo; la captura con etiquetas sintéticas era otro
-binario/perfil. Pendiente decisión de custodia: servicio o secreto personal E2EE.
-No se modificó esa frontera ni se publicó el reemplazo del flujo de equipos.
+binario/perfil. JP eligió el 2026-10-03 claves gestionadas por el servicio,
+aceptando que el operador puede descifrar. Reemplazo en implementación local:
+cuenta canónica, PCs iguales, vault AES-GCM y paquetes HPKE firmados de custodia,
+migración de claves existentes y UI sin aprobación/códigos. Pruebas Bun y UI
+pasan. JP autorizó descargar las dependencias AES: seis paquetes descargados y
+`Cargo.lock` actualizado. Frontend y binario debug con `shared-clipboard`
+recompilados; dev arrancó en el perfil aislado habitual y JP confirmó «anduvo»
+para ese arranque. La suite de la fuente candidata pasa: 392 Rust, 59 Bun/662
+assertions y 32 visuales; incluye host/migración, anuncio de custodia firmado y
+paquetes legados conservados. Cinco casos de UI/host Windows pasan con tres
+perfiles nuevos; el payload definitivo y cinco casos shipping pasan. Publicación
+y comprobación del updater siguen pendientes.
+[Contrato nuevo](../../specs/016-shared-clipboard/service-key-custody.md).
+[Operación y backup/restore](../../specs/016-shared-clipboard/custody-operations.md).
+[Evidencia local y gate restante](../../specs/016-shared-clipboard/custody-acceptance.md).
 [Contrato y tareas A1–A5](../../specs/016-shared-clipboard/identity-service-plan.md).
 
 **Primer acceso I1–I8 distribuido en v0.5.3 (2026-10-02).**
@@ -55,11 +82,12 @@ existente con Traefik, `sharing.jpsala.dev` y Bun/SQLite, sin nueva suscripción
 Seis módulos en `/opt/copicu-sharing` coinciden con la fuente distribuida.
 Health/info y certificado verificados; V1/V2 sin auth entregan 401. Backup
 consistente y restauración aislada conservan issuer. La instancia activa mantiene
-la lista inicial de JP y aprobación de PCs hasta resolver la revisión de cuenta.
+la lista inicial de JP. El corte de custodia elimina aprobación/recovery del
+servicio y conserva la admisión OIDC/Google existente; no abre Audience general.
 [Evidencia remota](../../specs/016-shared-clipboard/identity-acceptance.md#servicio-remoto-activo).
 
-Cliente [v0.5.3 normal/latest](https://github.com/jpsala/copicu/releases/tag/v0.5.3)
-publicado desde `780241184555d61549755e99d9637fecd5e2736a`; updater HTTP 200/version
+Cliente [v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3)
+publicado como normal/latest desde `780241184555d61549755e99d9637fecd5e2736a`; updater HTTP 200/version
 `0.5.3` y tres assets coinciden por digest. CI de esa fuente SUCCESS. Payload
 x64 GUI/firma verificados; el mismo NSIS está
 instalado localmente con EXE idéntico y tres checks nativos que preservan TLS,
@@ -157,22 +185,30 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Actualizar la otra PC a `v0.5.4` y aceptar imágenes físicas. Firma, payload,
-   relay, publicación/updater y actualización local cerrados. Evidencia en
+1. Publicar el NSIS `v0.5.6` final verificado y comprobar latest, updater y assets
+   contra los hashes/firma del artefacto. Cinco casos UI/host Windows,
+   host/migración y regresiones pasan. El servicio ya está desplegado y su backup
+   de custodia se restauró con el entrypoint real en aislamiento. Evidencia en
+   [aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
+2. Actualizar las PCs y completar R2/M7 con envío/recepción sintéticos en dos
+   PCs físicas y streaming remoto; no inferir sus versiones de un tag público.
+   Audience/admisión general queda fuera del corte de la notebook y conserva
+   su gate separado. `v0.5.5` era latest al iniciar el cierre. En `v0.5.4` se
+   cerraron firma, payload, relay, publicación/updater y actualización local. Evidencia en
    [aceptación de imágenes](../../specs/016-shared-clipboard/media-acceptance.md).
    Distribución `v0.5.3` normal/latest y actualización local cerradas: tag/source,
    assets/hash, firma, CI y tres checks nativos en
    [aceptación de identidad](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053).
    Las versiones anteriores conservan sus tags y evidencia; no sumar sus casos.
-2. Resolver custodia de claves con JP para vincular equipos por cuenta sin
-   aprobación ni transferencia entre PCs. La admisión autenticada y URL interna
-   pasan checks locales; falta sustituir el flujo de equipos, activar Google
-   Audience/configuración pública y distribuir el cliente actualizado. Completar
-   R2 con envío/recepción sintéticos y streaming remoto. El paquete `0.5.3`
-   conserva su fuente/evidencia; no atribuirle cambios posteriores al tag.
 3. No reducir polling/ticks sin medir idle/latencia y repetir regresiones de
    outbox, retención, leases, pausa y efectos. Lock/suspend/crash nativos siguen
    teniendo aceptación propia.
+
+La implementación de custodia incluye `scripts/shared-clipboard/custody.mjs`,
+`scripts/shared-clipboard/deploy/backup.mjs` y
+`src-tauri/src/shared_clipboard/product_custody.rs`, además del contrato,
+operación y aceptación enlazados arriba. El candidato excluye el WIP de
+GPUI/CopyQ y `src-tauri/src/storage/search.rs`, conservado en el checkout primario.
 
 Al retomar, verificar checkout/HEAD/WIP y archivos sin seguimiento contra la
 fuente distribuida del tag; no atribuirle cambios posteriores. Revalidar executable,

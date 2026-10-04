@@ -141,7 +141,7 @@ const response = (value, status = 200) => new Response(JSON.stringify(value), { 
  * dbPath belongs to a newly-created fixture directory (same path for restart).
  * This constructor is a local owner's provisioning surface, not enrollment.
  */
-export function createRelay({ dbPath, environment, devices = [], channels = [], persons = [], leaseSigner, now = () => BigInt(Date.now()), faults = {}, limits: overrides = {}, identity: identityOptions = null, port = 0 }) {
+export function createRelay({ dbPath, environment, devices = [], channels = [], persons = [], leaseSigner, custodyKey = null, now = () => BigInt(Date.now()), faults = {}, limits: overrides = {}, identity: identityOptions = null, port = 0 }) {
   opaque(environment);
   if (!leaseSigner || leaseSigner.asymmetricKeyType !== "ed25519") throw new Error("Ed25519 lease signer required");
   if (!overrides || typeof overrides !== "object" || Array.isArray(overrides) || Object.keys(overrides).some((key) => !Object.hasOwn(DEFAULT_LIMITS, key))) throw new Error("invalid relay limits");
@@ -224,6 +224,7 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       query("UPDATE relay_publications SET envelope=NULL,lease_proof=NULL WHERE expires<=?").run(be64(at));
       if (at > DAY) query("DELETE FROM relay_publications WHERE expires<=?").run(be64(at - DAY));
       query("DELETE FROM relay_leases WHERE expires<=? AND id NOT IN (SELECT json_extract(envelope,'$.freshness.lease_id') FROM relay_publications WHERE envelope IS NOT NULL AND json_extract(envelope,'$.freshness.kind')='live')").run(be64(at));
+      control?.custody?.prune(at);
     })();
   }
   function publish(device, channel, input) {
@@ -346,7 +347,7 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       return { attempt_id: value.attempt_id, status: "ack" };
     })();
   }
-  try { control = createControl({query,transaction,environment,persons,devices,channels,deny,opaque,counter,be64,from64,base64,publicKey,clock,notify,limits,maxBody:MAX_BODY,managedIdentity:!!identityOptions}); }
+  try { control = createControl({query,transaction,environment,persons,devices,channels,deny,opaque,counter,be64,from64,base64,publicKey,clock,notify,limits,maxBody:MAX_BODY,managedIdentity:!!identityOptions,custodyKey,leaseSigner}); }
   catch(error) {db.close(true); throw error;}
   // Keep the outer server cap finite but above the protocol cap so ordinary
   // over-limit requests reach our bounded reader and receive a stable 413.
@@ -410,7 +411,7 @@ export function createRelay({ dbPath, environment, devices = [], channels = [], 
       // Let closed SSE bodies settle before forcing remaining sockets closed.
       // New/late requests are already fenced by stopped on both sides of await.
       await new Promise(resolve => setTimeout(resolve, 0));
-      await server.stop(true); db.clearQueryCache(); db.close(true);
+      await server.stop(true); control.custody?.close(); db.clearQueryCache(); db.close(true);
     }
   };
 }

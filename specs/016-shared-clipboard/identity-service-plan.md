@@ -21,12 +21,13 @@ JP definió para el próximo corte:
   loopback requieren un opt-in exclusivo de debug/tests y no admiten otro host.
 - Vincular una PC no conecta carpetas, envía historial ni activa efectos locales.
 
-La custodia de claves de cuenta queda por definir con JP: servicio que gestiona
-las claves (y puede descifrar), o secreto personal adicional que conserva E2EE.
-No cambiar esa frontera de privacidad por inferencia. La aprobación/HPKE y el
-recovery descritos abajo documentan el comportamiento distribuido en `v0.5.3`,
-que será sustituido al resolver la custodia. Google autentica la cuenta y no
-provee por sí solo una clave de cifrado compartida.
+JP eligió el 2026-10-03 la custodia gestionada por el servicio, aceptando que el
+operador puede descifrar el contenido. El login Google basta para vincular otra
+PC, sin códigos ni aprobación entre equipos. El contrato de implementación y
+migración está en [service-key-custody.md](service-key-custody.md).
+La aprobación/HPKE y el recovery descritos abajo conservan el contrato legado
+distribuido de `v0.5.3` a `v0.5.5`, sólo para compatibilidad de fixtures y migración.
+Google autentica la cuenta; las claves aleatorias las custodia Copicu.
 
 ## Solución propuesta y fuentes
 
@@ -40,8 +41,8 @@ alternativa, no un destino elegido ni una autorización para crear recursos.
 Proveedor elegido: Google OIDC, con una aplicación web del servicio. La lista
 inicial de admisión se sustituirá por cualquier cuenta autenticada, según la
 revisión vigente. El cliente soporta el contrato OIDC del
-servicio y no depende de Google ni contiene un client secret. Registrar la
-aplicación/callback ya está registrada; sus credenciales están fuera de Git.
+servicio y no depende de Google ni contiene un client secret.
+La aplicación/callback ya está registrada; sus credenciales están fuera de Git.
 [Google documenta](https://developers.google.com/identity/openid-connect/openid-connect)
 el flujo de código, discovery, state/nonce y validación de ID tokens. Se usa
 `issuer + sub` para identidad; email verificado sirve sólo para la lista inicial
@@ -54,11 +55,11 @@ El broker usa callback HTTPS propio, state y nonce de un uso, PKCE y token
 exchange en backend. El desktop usa además su propio challenge para consultar
 el resultado: abrir el link en otro navegador no concede el dispositivo.
 
-## Identidad y primer acceso
+## Identidad y primer acceso legado
 
-1. Settings pide URL HTTPS del servicio y nombre del equipo. Sin URL desplegada,
-   explica lo que falta. Importar un bundle queda como herramienta avanzada
-   para perfiles sintéticos, fuera del recorrido habitual.
+1. `v0.5.3` pide URL HTTPS del servicio y nombre del equipo; desde `v0.5.4` la
+   URL es interna. Importar un bundle queda como herramienta avanzada para
+   perfiles sintéticos, fuera del recorrido habitual.
 2. El host genera Ed25519, HPKE X25519, bearer aleatorio y verificador local.
    DPAPI custodia secretos; SQLite guarda sólo referencias y estado durable.
    No enviar private keys/bearer al renderer ni al servicio. El alta envía
@@ -87,7 +88,7 @@ Respuesta perdida no crea una segunda persona/equipo. Cancelar invalida la
 solicitud; reiniciar conserva el estado. Error de red permite Retry; denied,
 expirado, proveedor mal configurado y clave pendiente se explican por separado.
 
-## Equipos, creación y retiro
+## Equipos, creación y retiro legados
 
 El catálogo de servicio real expone sólo personas relacionadas por acceso o
 invitación y dispositivos pertinentes. No publicar un directorio de cuentas.
@@ -105,7 +106,7 @@ Revincular un perfil retirado exige el mismo servicio/issuer y cuenta; otro
 servicio/cuenta requiere un perfil nuevo. El ledger de receipts/replay se conserva
 pausado, con generación invalidada y sin restaurar destinos o efectos antiguos.
 
-## Recuperación E2EE
+## Recuperación E2EE legada
 
 La persona genera explícitamente un código aleatorio de 256 bits y lo guarda
 fuera de Copicu. Sirve como seed Ed25519 de recuperación y, por derivación con
@@ -139,7 +140,10 @@ DB/WAL y ciphertext juntos; no es backup del historial desktop.
 No ejecutar deploy, descargar imágenes, abrir cuentas, usar credenciales
 encontradas ni tocar un VPS como consecuencia de preparar estos archivos.
 
-## Aceptación y límites
+## Aceptación del corte legado y límites
+
+Esta matriz corresponde a I1–I8. La aceptación del reemplazo sin aprobación
+se registra por separado en [custody-acceptance.md](custody-acceptance.md).
 
 - OIDC sintético con claves reales: state/nonce/PKCE, claims/JWKS, denegación,
   expiración, cancelación, retry/restart y ausencia de secretos en respuestas.

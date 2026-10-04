@@ -1,13 +1,13 @@
 // Real-service entrypoint. No synthetic identities or bootstrap bundles; all
 // enrollment passes through operator-configured OIDC and account admission.
 import { readFile, writeFile, stat } from 'node:fs/promises';
-import { createPrivateKey, generateKeyPairSync } from 'node:crypto';
+import { createPrivateKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { createRelay } from './relay.mjs';
 import { createOidc, validateAdmission } from './oidc.mjs';
 
 export function validateServiceConfig(c) {
-  if (!c || c.version !== 1 || Object.keys(c).sort().join(',') !== 'databasePath,environment,issuerKeyPath,oidc,port,publicUrl,version') throw Error('invalid_service_config');
+  if (!c || ![1,2].includes(c.version) || Object.keys(c).sort().join(',') !== (c.version===2?'custodyKeyPath,databasePath,environment,issuerKeyPath,oidc,port,publicUrl,version':'databasePath,environment,issuerKeyPath,oidc,port,publicUrl,version')) throw Error('invalid_service_config');
   const url = new URL(c.publicUrl);
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash || !/^[A-Za-z0-9_-]{1,128}$/.test(c.environment)) throw Error('invalid_service_origin');
   if (!Number.isInteger(c.port) || c.port < 1024 || c.port > 65535 || !path.isAbsolute(c.databasePath) || !path.isAbsolute(c.issuerKeyPath) || c.databasePath === c.issuerKeyPath) throw Error('invalid_service_storage');
@@ -15,6 +15,7 @@ export function validateServiceConfig(c) {
   if (!o || Object.keys(o).filter(key => key !== 'admission').sort().join(',') !== 'allowedEmails,allowedSubjects,clientId,clientSecretPath,issuer' || !path.isAbsolute(o.clientSecretPath)) throw Error('invalid_identity_admission');
   validateAdmission(o);
   if (c.issuerKeyPath === o.clientSecretPath || c.databasePath === o.clientSecretPath) throw Error('invalid_secret_path');
+  if(c.version===2 && (!path.isAbsolute(c.custodyKeyPath) || [c.databasePath,c.issuerKeyPath,o.clientSecretPath].includes(c.custodyKeyPath))) throw Error('invalid_custody_path');
   return c;
 }
 async function protectedFile(file) {
@@ -31,7 +32,9 @@ export async function startService(config) {
     if (leaseSigner.asymmetricKeyType !== 'ed25519') throw Error('invalid_issuer_key');
     oidc = await createOidc({ issuer: c.oidc.issuer, clientId: c.oidc.clientId, clientSecret: clientSecret.toString('utf8').trim(), redirectUri: new URL('v3/auth/callback', c.publicUrl).toString(), admission: c.oidc.admission, allowedEmails: c.oidc.allowedEmails, allowedSubjects: c.oidc.allowedSubjects });
   } finally { pem.fill(0); clientSecret.fill(0); }
-  return createRelay({ dbPath: c.databasePath, environment: c.environment, leaseSigner, port: c.port, identity: { publicUrl: c.publicUrl, oidc } });
+  const custodyKey = c.version===2 ? await protectedFile(c.custodyKeyPath) : null;
+  try { return createRelay({ dbPath: c.databasePath, environment: c.environment, leaseSigner, custodyKey, port: c.port, identity: { publicUrl: c.publicUrl, oidc } }); }
+  finally { custodyKey?.fill(0); }
 }
 if (import.meta.main) {
   try {
@@ -40,6 +43,10 @@ if (import.meta.main) {
       const key = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' });
       await writeFile(file, key, { flag: 'wx', mode: 0o600 });
       process.stdout.write('Service signing identity created. Preserve it with the database.\n');
+    } else if (command === '--init-custody' && file && path.isAbsolute(file)) {
+      const key=randomBytes(32);
+      try { await writeFile(file,key,{flag:'wx',mode:0o600}); } finally { key.fill(0); }
+      process.stdout.write('Service custody secret created. Preserve it separately with the database backup.\n');
     } else if (command === '--config' && file && path.isAbsolute(file)) {
       const configBytes = await protectedFile(file), config = JSON.parse(configBytes.toString('utf8')); configBytes.fill(0);
       const relay = await startService(config);

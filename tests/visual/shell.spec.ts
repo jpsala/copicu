@@ -10260,9 +10260,9 @@ async function mockSharedIdentity(page: Page, initial: "unconfigured" | "active"
   await mockSharedProduct(page);
   await page.addInitScript(({ initial }) => {
     const w = window as any, previous = w.__copicuSharedTestInvoke;
-    w.__copicuIdentity = { state: initial, endpoint: "https://synthetic.invalid/", name: "Synthetic Work", deviceId: "synthetic-work", personId: "synthetic-person", revision: "2", fingerprint: "a".repeat(64), recoveryReady: false, devices: [
+    w.__copicuIdentity = { state: initial, keyCustody: "service", endpoint: "https://synthetic.invalid/", name: "Synthetic Work", deviceId: "synthetic-work", personId: "synthetic-person", revision: "2", fingerprint: "a".repeat(64), devices: [
       { deviceId: "synthetic-work", personId: "synthetic-person", name: "Synthetic Work", state: "active", fingerprint: "a".repeat(64) },
-      { deviceId: "synthetic-home", personId: "synthetic-person", name: "Synthetic Home", state: "pending", fingerprint: "b".repeat(64) },
+      { deviceId: "synthetic-home", personId: "synthetic-person", name: "Synthetic Home", state: "active", fingerprint: "b".repeat(64) },
     ] };
     w.__copicuSharedSnapshot.configured = initial === "active";
     w.__copicuSharedSnapshot.identityState = initial;
@@ -10274,67 +10274,67 @@ async function mockSharedIdentity(page: Page, initial: "unconfigured" | "active"
       const input = args.input; w.__copicuIdentityCalls.push(structuredClone(input));
       if (input.kind === "start") { w.__copicuIdentity.state = "waiting"; w.__copicuIdentity.name = input.name; }
       if (input.kind === "cancel") w.__copicuIdentity.state = "cancelled";
-      if (input.kind === "approve") {
-        if (w.__copicuLoseApproval) { w.__copicuLoseApproval = false; throw Error("Synthetic response lost. Retry this operation."); }
-        w.__copicuIdentity.devices[1].state = "active";
+      if (input.kind === "revoke") {
+        if (w.__copicuLoseRetirement) { w.__copicuLoseRetirement = false; throw Error("Synthetic response lost. Retry this operation."); }
+        w.__copicuIdentity.devices.find((d: any) => d.deviceId === input.deviceId).state = "revoked";
       }
-      if (input.kind === "setupRecovery") { w.__copicuIdentity.recoveryReady = true; w.__copicuIdentity.localRecoveryCode = true; return { ...structuredClone(w.__copicuIdentity), code: "7c".repeat(32) }; }
       return structuredClone(w.__copicuIdentity);
     };
   }, { initial });
 }
 
-test("shared identity first access guides browser approval without enabling connections or effects", async ({ page }, testInfo) => {
+test("shared identity first access links by Google account without enabling connections or effects", async ({ page }, testInfo) => {
   await mockTauriInvoke(page); await mockSharedIdentity(page); await gotoShell(page, "/?window=settings");
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const identity = page.getByRole("region", { name: "Device sign-in" });
   await expect(page.getByText("No device linked", { exact: true })).toBeVisible();
-  await expect(identity.getByRole("button", { name: "Sign in in browser" })).toBeDisabled();
+  await expect(identity.getByRole("button", { name: "Sign in with Google" })).toBeDisabled();
   await expect(identity.getByLabel("Sharing service URL")).toHaveCount(0);
   await identity.getByLabel("Name of this PC").fill("Synthetic Home");
-  await identity.getByRole("button", { name: "Sign in in browser" }).click();
+  await identity.getByRole("button", { name: "Sign in with Google" }).click();
   expect(await page.evaluate(() => (window as any).__copicuIdentityCalls.find((input: any) => input.kind === "start"))).toEqual({ kind: "start", name: "Synthetic Home" });
   await expect(identity.getByText(/Complete sign-in in your system browser/)).toBeVisible();
-  await page.evaluate(() => { (window as any).__copicuIdentity.state = "pending"; });
-  await identity.getByRole("button", { name: "Check approval" }).click();
-  await expect(identity.getByText(/Compare this fingerprint on both PCs/)).toBeVisible();
-  await expect(identity.getByText("a".repeat(64), { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Connect All history…" })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([]);
+  await page.evaluate(() => { (window as any).__copicuIdentity.state = "active"; });
+  await identity.getByRole("button", { name: "Check sign-in" }).click();
+  await expect(identity.getByText(/This PC is linked to your account/)).toBeVisible();
+  await expect(identity.getByRole("button", { name: /Approve|recovery/i })).toHaveCount(0);
   expect(await identity.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
   expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([]);
-  await page.screenshot({ path: `.codex-run/shared-identity-pending-${testInfo.project.name}.png` });
+  await page.screenshot({ path: `.codex-run/shared-identity-linked-${testInfo.project.name}.png` });
 });
 
-test("shared identity approval requires fingerprint comparison and retries the same intention", async ({ page }) => {
+test("shared identity retirement requires explicit consent and retries the same intention", async ({ page }) => {
   await mockTauriInvoke(page); await mockSharedIdentity(page, "active"); await gotoShell(page, "/?window=settings");
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const identity = page.getByRole("region", { name: "Device sign-in" });
-  await expect(identity.getByRole("button", { name: "Approve device" })).toBeDisabled();
-  await identity.getByRole("checkbox", { name: "I compared this fingerprint on the requesting PC" }).check();
-  await page.evaluate(() => { (window as any).__copicuLoseApproval = true; });
-  await identity.getByRole("button", { name: "Approve device" }).click();
+  await identity.getByText("Devices (2 linked)", { exact: true }).click();
+  const row = identity.getByRole("listitem").filter({ hasText: "Synthetic Home" });
+  await row.getByRole("button", { name: "Retire device…" }).click();
+  await expect(row.getByRole("button", { name: "Retire device", exact: true })).toBeDisabled();
+  await row.getByRole("checkbox", { name: "I want to stop this device's access" }).check();
+  await page.evaluate(() => { (window as any).__copicuLoseRetirement = true; });
+  await row.getByRole("button", { name: "Retire device", exact: true }).click();
   await expect(identity.getByRole("alert")).toContainText("response lost");
-  await identity.getByRole("button", { name: "Approve device" }).click();
-  await expect(identity.getByRole("status")).toContainText("Device approved");
-  const operations = await page.evaluate(() => (window as any).__copicuIdentityCalls.filter((input: any) => input.kind === "approve"));
+  await row.getByRole("button", { name: "Retire device", exact: true }).click();
+  await expect(identity.getByRole("status")).toContainText("Device retired");
+  const operations = await page.evaluate(() => (window as any).__copicuIdentityCalls.filter((input: any) => input.kind === "revoke"));
   expect(operations).toHaveLength(2); expect(operations[0]).toEqual(operations[1]);
   expect(operations[0].fingerprint).toBe("b".repeat(64));
   expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([]);
 });
 
-test("shared identity recovery code appears only on request and can be hidden without clipboard writes", async ({ page }, testInfo) => {
+test("shared identity explains service custody and equal devices without recovery or approval actions", async ({ page }, testInfo) => {
   await mockTauriInvoke(page); await mockSharedIdentity(page, "active"); await gotoShell(page, "/?window=settings");
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const identity = page.getByRole("region", { name: "Device sign-in" });
-  await identity.getByText("Set up recovery", { exact: true }).click();
-  await expect(identity.getByText("Keep this code private", { exact: false })).toHaveCount(0);
-  await identity.getByRole("button", { name: "Generate recovery code" }).click();
-  const code = identity.locator(".shared-recovery-code code");
-  await expect(code).toHaveText(/7c7c7c7c/);
-  expect(await code.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
-  await page.screenshot({ path: `.codex-run/shared-identity-recovery-${testInfo.project.name}.png` });
-  await identity.getByRole("button", { name: "I stored the code, hide it" }).click();
-  await expect(code).toHaveCount(0);
+  await expect(identity.getByText(/the service can decrypt it/)).toBeVisible();
+  await expect(identity.getByRole("button", { name: /Approve|recovery|Send available keys/i })).toHaveCount(0);
+  await identity.getByText("Devices (2 linked)", { exact: true }).click();
+  await expect(identity.getByText(/Each PC has the same account access/)).toBeVisible();
+  await expect(identity.getByRole("listitem")).toHaveCount(2);
+  expect(await identity.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await page.screenshot({ path: `.codex-run/shared-identity-custody-${testInfo.project.name}.png` });
   expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => /copy|clipboard_write/.test(call.cmd)))).toEqual([]);
 });
 

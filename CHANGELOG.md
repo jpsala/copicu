@@ -4,6 +4,21 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-04
+
+### Changed
+
+- Link PCs with the same Google account without device approval or recovery codes,
+  using service-managed content keys with signed identity and key packages.
+- Migrate existing shared clipboards without replacing their keys or connections;
+  preserve legacy device packages while PCs are updated.
+
+### Fixed
+
+- Allow simultaneous reads of protected credentials by status and synchronization
+  while continuing to deny writes and deletion.
+  [Full release notes](docs/releases/v0.5.6.md).
+
 ## [0.5.5] - 2026-10-03
 
 ### Fixed

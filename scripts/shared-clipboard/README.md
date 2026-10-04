@@ -15,11 +15,18 @@ Traefik HTTPS and persistent SQLite. Credentials and account configuration stay
 outside Git; this guide grants no future permission. Remote evidence and limits
 are recorded in [identity acceptance](../../specs/016-shared-clipboard/identity-acceptance.md#servicio-remoto-activo).
 
-The next client uses that fixed internal URL; Settings asks for the PC name and
-browser sign-in only. Any authenticated Google account is the target admission
-policy, with all its PCs at the same level. The current deployment still uses the
-initial allowlist and `v0.5.3` device approval. The replacement key-custody model
-needs JP's decision before deployment; do not silently weaken E2EE.
+The fixed internal URL has shipped since `v0.5.4`; Settings asks for the PC name
+and browser sign-in only. Service custody is deployed and the signed `v0.5.6`
+client is verified and awaiting publication. Clients through `v0.5.5` still include the
+legacy approval UI. This cut keeps the existing OIDC admission policy and Google
+Audience; opening admission to any authenticated account remains separate.
+All PCs of an admitted account have the same level.
+JP chose service-managed key custody on 2026-10-03, accepting that the operator
+can decrypt content. This mode does not promise E2EE and requires neither another
+PC's approval nor a recovery code. The contract is in
+[service-key-custody.md](../../specs/016-shared-clipboard/service-key-custody.md).
+Deployment and client evidence are tracked separately in
+[custody acceptance](../../specs/016-shared-clipboard/custody-acceptance.md).
 
 ## Prepare for operator review
 
@@ -36,7 +43,12 @@ needs JP's decision before deployment; do not silently weaken E2EE.
    closed. Identity is keyed by issuer/subject, not email.
 4. Generate a fresh Ed25519 service issuer with
    `bun scripts/shared-clipboard/service.mjs --init-issuer ABSOLUTE_NEW_KEY`.
-   Never replace an existing issuer to fix startup: SQLite pins its public key.
+   This is for a new service only. Preserve the existing production issuer:
+   SQLite pins its public key. Version 2 also requires a separate, durable
+   `custodyKeyPath`; generate it once with `--init-custody ABSOLUTE_NEW_KEY`.
+   Never replace either key to fix startup. Follow the
+   [custody operations guide](../../specs/016-shared-clipboard/custody-operations.md)
+   for permissions, backup, restore and activation.
 5. Protect config/secret files with owner-only permissions (0600 on Linux).
    The service checks these before reading them. Keep them outside Git/build
    context. Do not paste keys, tokens or real clipboard data into diagnostics.
@@ -47,7 +59,7 @@ needs JP's decision before deployment; do not silently weaken E2EE.
 
 `Dockerfile` pins official Bun 1.3.14 to registry digest
 `sha256:e10577f0db68676a7024391c6e5cb4b879ebd17188ab750cf10024a6d700e5c4`.
-Its context includes only the six service modules and Dockerfile, without
+Its context includes only the seven service modules, backup helper and Dockerfile, without
 synthetic bootstrap/issuer fixtures, npm dependencies or private configuration.
 
 Proposed launch commands after approval: `docker compose -f
@@ -76,29 +88,40 @@ page containing a large image and delay later text publications.
 
 Verify HTTPS certificate, `/health`, the configured public origin, OIDC callback,
 SSE streaming (proxy buffering disabled), unauthorized V1/V2 denial, persistence
-after service restart and revocation. The next client uses Settings → Sharing:
-enter the PC name and sign in in the system browser with the same account.
-The distributed `v0.5.3` still asks for the HTTPS URL and requires comparing the
-complete fingerprint on both PCs and approving in Devices. Create/connect a
-clipboard explicitly on each PC; select direction. Windows updates and Actions
-stay off until enabled.
+after service restart and revocation. With custody active, `/v3/info` must report
+`deviceApproval:false`, `recovery:false` and `keyCustody:service`, while preserving
+the service issuer. Use Settings → Sharing: enter the PC name and sign in in the
+system browser with the same account. Create/connect a clipboard explicitly on
+each PC; select direction. Windows updates and Actions stay off until enabled.
 
-Generate and store the recovery code outside Copicu. Recovery needs account login
-and that code, retires older devices and requires key rotation before sending
-resumes. A snapshot contains only available authorized content keys, not desktop
-history. Without an approved PC or saved code the service cannot recover keys.
+For migration, first open an updated PC that already owns the shared resource
+keys so it can deposit them in the service vault. New PCs cannot obtain a key
+that was never deposited. Existing content, connections and downloaded copies
+are preserved; the service does not invent missing legacy keys.
+Existing legacy key packages remain unchanged during migration. Update all PCs
+before creating resources or rotating epochs under service custody; preservation
+of existing packages does not promise older-client support for new keys.
+
+Legacy clients through `v0.5.5` and a service without custody can still require
+fingerprint approval. Legacy E2EE recovery needs account login and the saved
+code, retires older devices and requires rotation before sending resumes. That
+snapshot contains content keys rather than desktop history. Approval and recovery
+are compatibility paths, not steps in the new custody setup.
 
 ## Backup and rollback
 
 Stop the service cleanly for a consistent SQLite copy, or use SQLite's online
 backup mechanism, such as `VACUUM INTO` into a fresh owner-only path. Preserve DB,
-issuer identity, private config and encrypted
-snapshots together. WAL/SHM must not be discarded while the service is running.
-Recovery codes remain user-owned and are not part of server backup.
+issuer identity, private config, provider secret, custody secret and encrypted
+content-key vault together. WAL/SHM must not be discarded while the service is
+running. Use `deploy/backup.mjs` as described in the custody operations guide and
+verify restore in isolation. Legacy recovery codes remain user-owned and are not
+part of server backup.
 
 Before upgrade, keep the previous image/source and a consistent database copy.
-Rollback stops the new service, restores a compatible database/issuer pair and
-starts the previous version. Do not reset identity tables, substitute an issuer,
+Rollback to the legacy service also requires the matching pre-custody DB/config;
+restoring an older snapshot loses subsequent operations and requires a cutover
+plan. Do not reset identity tables, substitute an issuer,
 delete downloaded desktop copies or silently lower retained authorization water.
 Schema compatibility and a rollback rehearsal belong to remote acceptance.
 

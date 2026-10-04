@@ -46,11 +46,25 @@ Contrato en [identity-service-plan.md](identity-service-plan.md).
 - [x] A2 Política explícita de cualquier cuenta autenticada en el broker; conservar
   firma/issuer/audience/nonce/PKCE y separación por subject. Tests locales pasan;
   Google Audience y configuración pública todavía no se cambiaron.
-- [ ] A3 Resolver custodia de claves con JP: servicio o secreto personal E2EE.
-- [ ] A4 Vincular PCs al mismo nivel por cuenta, sin aprobación ni transferencia
+- [x] A3 JP eligió custodia gestionada por el servicio el 2026-10-03, aceptando
+  que el operador puede descifrar. Contrato: [service-key-custody.md](service-key-custody.md).
+- [x] A4 Vincular PCs al mismo nivel por cuenta, sin aprobación ni transferencia
   entre PCs; migración compatible, acceso/retiro y pruebas de aislamiento.
+  Regresiones y cinco casos UI/host Windows con perfiles sintéticos pasan;
+  no acredita el deploy ni dos PCs físicas.
 - [ ] A5 Activar la admisión pública, distribuir el cliente actualizado y completar
   prueba física de envío/recepción sin efectos locales implícitos.
+
+Al iniciar el cierre pedido el 2026-10-03, latest es `v0.5.5` y el servicio
+todavía anuncia aprobación/recovery legados. JP reporta autenticación y uso
+entre Casa y Trabajo y aprobación pendiente en la notebook; no sustituye A4/A5
+ni la aceptación física pendiente. Estado y evidencia del reemplazo en
+[custody-acceptance.md](custody-acceptance.md).
+El corte para la notebook conserva la admisión OIDC/Google existente; no incluye
+abrir Audience/admisión general. A5 permanece separado de su distribución.
+Custodia ya está desplegada con issuer conservado y backup/restore aislado
+comprobado. El cliente `v0.5.6` definitivo está firmado y verificado, incluidos
+cinco casos shipping; publicación/updater e instalación requieren sus recibos efectivos.
 
 I1–I8 no acreditan R1/R2. Mantener V1/V2/SSE y los opt-ins de Windows/Actions.
 Evidencia y reproducción en [identity-acceptance.md](identity-acceptance.md).

@@ -15,6 +15,7 @@ services:
       - service.json
       - copicu-issuer.pem
       - oidc-client-secret
+      - copicu-custody.key
     healthcheck:
       test: ["CMD", "bun", "-e", "const r=await fetch('http://127.0.0.1:5454/health');process.exit(r.ok?0:1)"]
       interval: 30s
@@ -27,5 +28,7 @@ secrets:
     file: ./private/copicu-issuer.pem
   oidc-client-secret:
     file: ./private/oidc-client-secret
+  copicu-custody.key:
+    file: ./private/copicu-custody.key
 volumes:
   sharing-data:

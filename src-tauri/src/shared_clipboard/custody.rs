@@ -207,7 +207,9 @@ mod native {
     pub(super) fn read(path: &Path) -> Result<Vec<u8>> {
         let file = OpenOptions::new()
             .read(true)
-            .share_mode(0)
+            // Status, sync and SSE can read immutable keys concurrently. Keep
+            // writes and deletion denied while allowing these read handles.
+            .share_mode(1) // FILE_SHARE_READ
             .custom_flags(OPEN_REPARSE)
             .open(path)
             .map_err(|e| {
@@ -297,6 +299,7 @@ pub(crate) struct Vault {
     _locks: Vec<File>,
 }
 impl Vault {
+    pub(in crate::shared_clipboard) fn directory(&self) -> &Path { &self.root }
     pub(crate) fn store_credential(&self, b: &Binding, token: &str) -> Result<()> {
         if b.kind != KeyKind::Credential
             || !token
@@ -583,6 +586,28 @@ mod tests {
             native::crypt(&vec![0; MAX_BYTES + 1], true),
             Err(Error::Size)
         ));
+        drop(vault);
+        cleanup(root);
+    }
+    #[test]
+    fn protected_credentials_allow_overlapping_reads_without_write_or_delete_sharing() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let (root, vault) = fixture();
+        let b = binding(KeyKind::Credential);
+        let token = "synthetic_credential_0123456789abcdef";
+        vault.store_credential(&b, token).unwrap();
+        // SSE, identity status and sync may read the same immutable credential
+        // concurrently. Keep one read handle alive to make the overlap exact.
+        let path = root.join("ref-one.key");
+        let reading = OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&path)
+            .unwrap();
+        assert!(OpenOptions::new().write(true).open(&path).is_err());
+        assert!(fs::rename(&path, root.join("moved.key")).is_err());
+        assert!(equal(&vault.load_credential(&b).unwrap().0, token.as_bytes()));
+        drop(reading);
         drop(vault);
         cleanup(root);
     }

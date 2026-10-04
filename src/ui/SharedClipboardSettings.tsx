@@ -171,7 +171,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
   }}>
     <div className="shared-settings-status">
       <div><strong>{!snapshot ? "Checking sharing…" : !snapshot.available ? "Sharing unavailable in this build" : !snapshot.configured ? "No device linked" : identityState === "revoked" ? "Device access retired" : allPaused ? "Sharing paused" : "Device linked"}</strong>
-        <p>{snapshot?.configured ? "Manage this PC's connections and local effects below." : "Sign in and approve this PC to share text and images between your devices."}</p></div>
+        <p>{snapshot?.configured ? "Manage this PC's connections and local effects below." : "Sign in with the same Google account to share text and images between your PCs."}</p></div>
       <div className="shared-settings-actions">
         {snapshot?.configured && <UiButton type="button" variant={allPaused ? "filled" : "default"} size="compact-sm" loading={busy} disabled={linkPending} onClick={() => void run(async () => { accept(await api.setPaused(!allPaused)); })}>{allPaused ? "Resume sharing" : "Pause sharing"}</UiButton>}
         <UiButton type="button" variant="subtle" size="compact-sm" disabled={busy} onClick={() => void run(async () => { accept(await api.status()); })}>Refresh status</UiButton>

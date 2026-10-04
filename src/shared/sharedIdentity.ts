@@ -11,6 +11,7 @@ export type SharedIdentityStatus = {
   revision?: string;
   fingerprint?: string;
   devices: SharedDevice[];
+  keyCustody?: "service" | "endToEnd";
   recoveryReady?: boolean;
   localRecoveryCode?: boolean;
   error?: string;
@@ -31,12 +32,12 @@ export type SharedIdentityApi = typeof sharedIdentityApi;
 export function sharingIdentityMessage(status: SharedIdentityStatus): string {
   switch (status.state) {
     case "waiting": return "Complete sign-in in your system browser, then return here.";
-    case "pending": return "On an approved PC, open Settings → Sharing → Devices. Compare this fingerprint on both PCs before approving.";
+    case "pending": return "The service is updating account access. Check sign-in again when it returns.";
     case "offline": return "The sharing service is unreachable. Your local clipboard remains available. Retry when the connection returns.";
-    case "expired": return "Sign-in or approval expired. Start sign-in again to request access.";
+    case "expired": return "Sign-in expired. Start sign-in again to link this PC.";
     case "revoked": return "This device was retired or its access expired. Sharing is stopped; downloaded copies remain local.";
     case "technical": return "This profile uses technical enrollment. It does not have an account sign-in.";
-    case "active": return "This device is approved. Connect a clipboard to choose what it sends and receives.";
-    default: return "Use the same account and service on your PCs. The first PC creates your private space; another PC needs its approval.";
+    case "active": return "This PC is linked to your account. Connect a clipboard to choose what it sends and receives.";
+    default: return "Sign in with Google to share clipboards across your PCs.";
   }
 }

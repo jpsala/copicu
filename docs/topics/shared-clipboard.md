@@ -1,6 +1,6 @@
 ---
 title: Clipboard compartido y backup futuro
-summary: "Sharing de texto e imágenes con Google/HTTPS activo y servicio interno; custodia de claves y aceptación física de imágenes pendientes."
+summary: "Sharing de texto e imágenes con servicio interno; cuenta Google canónica, PCs iguales y claves gestionadas por el servicio."
 keywords:
   - clipboard compartido
   - shared clipboard
@@ -17,9 +17,11 @@ Runtime, host Windows, UI y SDK están implementados y validados localmente con
 personas/equipos sintéticos; incluye prueba instalada ↔ dev y SSE S1–S6.
 Q1 `liveOnly` y Q3 espacios propios por persona siguen vigentes. JP amplió Q2 de
 texto plano a texto e imágenes; archivos se posponen.
-Primer acceso OIDC y recovery E2EE están implementados con aceptación local;
-Google/HTTPS están activos. JP reportó entrega manual de texto en una dirección
-entre sus PCs; la aceptación sintética física y las imágenes siguen pendientes.
+El servicio de custodia ya está activo y el cliente `v0.5.6` está firmado y
+verificado, pendiente de publicación. Hasta `v0.5.5` el cliente distribuía el flujo
+legado de aprobación/recovery. JP reportó uso y autenticación entre Casa y Trabajo,
+y aprobación pendiente en la notebook. Ese reporte no identifica la versión o
+el modo de claves de cada PC ni sustituye la aceptación sintética física.
 Estado de la candidata, próximo paso y evidencia en
 [track 041](../tracks/041-shared-clipboard.md) y
 [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md).
@@ -36,16 +38,25 @@ de cambios posteriores al tag.
 ## Primer acceso y equipos
 
 El endpoint de producto es único e interno: `https://sharing.jpsala.dev/`.
-El próximo cliente sólo pide nombre de PC y navegador; muestra el endpoint en
+Desde `v0.5.4` el cliente sólo pide nombre de PC y navegador; muestra el endpoint en
 errores de conexión. Un override técnico requiere debug/tests y loopback literal,
 sin campo editable ni hosts remotos alternativos. La política definida por JP
-admite cualquier cuenta Google autenticada, con sus PCs al mismo nivel y sin
-aprobación ni transferencia de claves entre ellas. La custodia espera decisión
-entre claves gestionadas por el servicio o un secreto personal adicional E2EE.
+admite cualquier cuenta Google autenticada, identificada por `issuer + sub`, con
+sus PCs al mismo nivel y sin aprobación ni transferencia de claves entre ellas.
+JP eligió el 2026-10-03 claves gestionadas por nuestro servicio para que baste
+el login, sin código o secreto personal adicional. Aceptó que el operador puede
+descifrar: este modo no promete E2EE. El servicio conserva claves de contenido
+cifradas en su vault y entrega paquetes HPKE sólo a PCs con acceso vigente;
+las claves privadas de cada PC y su bearer permanecen en el host bajo DPAPI.
+Login y custodia no conectan carpetas, importan historial ni habilitan efectos.
+[Contrato y migración](../../specs/016-shared-clipboard/service-key-custody.md).
+Validación, distribución y aceptación física se distinguen en el track.
 
-El flujo distribuido en `v0.5.3` todavía pide servicio/nombre y aprobación de PCs;
-el despliegue inicial conserva una lista privada de admisión.
-OIDC prueba la cuenta; una segunda PC espera comparación de huella y aprobación
+**Compatibilidad legada.** El flujo de equipos de `v0.5.3` a `v0.5.5`
+incluye aprobación; `v0.5.4` ya fija la URL interna. El corte de custodia conserva
+la admisión OIDC/Google existente: la cuenta de JP puede vincular la notebook,
+pero abrir Audience/admisión general queda fuera de este corte.
+En el flujo legado, OIDC prueba la cuenta; una segunda PC espera huella y aprobación
 para recibir claves HPKE. Login, crear recurso y aprobar un equipo no conectan
 carpetas ni importan historial ni habilitan efectos. Secretos permanecen en DPAPI;
 el servidor conserva hashes, claves públicas y ciphertext.
@@ -53,7 +64,7 @@ El login sin terminar expira a los diez minutos; un resultado ya confirmado se
 recupera con prueba local firmada tras offline/restart. Esto no reabre el login,
 extiende la aprobación pendiente de 24 horas ni recupera acceso retirado.
 
-Recuperar exige esa cuenta y el código aleatorio guardado fuera de Copicu.
+Recuperar en el modo legado exige esa cuenta y el código aleatorio guardado fuera de Copicu.
 Restaura claves disponibles en el snapshot cifrado, retira equipos anteriores y
 exige rotación antes de enviar. No es backup del historial local. Sin equipo
 aprobado ni código, login u operador no recuperan las claves.
@@ -109,13 +120,17 @@ y [aceptación](../../specs/016-shared-clipboard/media-acceptance.md).
   republicación automática. Forwarding exige grants explícitos y admite un solo
   salto firmado; no hay routing ilimitado ni ejecución remota de scripts.
 
-Invitaciones, aceptación y aprobación validan cada equipo y transfieren paquetes
-HPKE. Acceso al historial anterior requiere permiso y claves del rango/epoch
+La membresía de una persona determina acceso al recurso; vincular una PC a su
+cuenta no concede membresías nuevas. En el contrato de custodia, el servicio
+entrega paquetes HPKE a sus PCs autorizadas; el legado conserva aprobación y
+paquetes entre equipos sólo para compatibilidad/migración.
+Acceso al historial anterior requiere permiso y claves del rango/epoch
 concedido; autenticar a una persona o conocer un cursor no concede ese acceso.
 Agregar lectores sin historial requiere epoch nuevo. Revocación bloquea grants
 antes de rotar y no borra contenido que ya se descargó. Si falta una clave, la
 recepción queda pendiente visible, sin tratarla como texto vacío ni llegada live.
-Claves y bearer permanecen en host/custodia DPAPI, fuera del renderer y del runner.
+Claves descargadas, claves privadas de la PC y bearer permanecen bajo DPAPI,
+fuera del renderer y del runner; el servicio custodia claves de contenido cifradas.
 
 Actions expone destino configurado (`target`/`publish`), estado local (`state`),
 historial paginado con scope de contenido (`history`) y recepción inmutable
@@ -172,6 +187,8 @@ exacta sí pertenece al producto local implementado.
 ## Procedencia documental
 
 Entrada importada del principal el 2026-10-01; propuesta inicial conservada en
-spec/plan/preflight. Actualizada al contrato local del 2026-10-02. Pruebas locales,
+spec/plan/preflight. Custodia actualizada por decisión directa de JP en esta
+conversación el 2026-10-03; reemplaza el requisito de aprobación/secreto E2EE
+del recorrido normal, conservado como legado para migración. Pruebas locales,
 resultados nativos, servicio remoto y artefactos de release tienen evidencias
 separadas; documentos y autorizaciones históricas no conceden permisos actuales.

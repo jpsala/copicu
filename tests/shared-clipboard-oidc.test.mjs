@@ -71,6 +71,12 @@ test('service admission is explicit and remains compatible with restricted deplo
   expect(validateServiceConfig(config)).toBe(config);
   const publicConfig = {...config,oidc:{...config.oidc,admission:'authenticated',allowedEmails:[]}};
   expect(validateServiceConfig(publicConfig)).toBe(publicConfig);
+  const managed={...publicConfig,version:2,custodyKeyPath:'/secrets/custody.key'};
+  expect(validateServiceConfig(managed)).toBe(managed);
+  expect(()=>validateServiceConfig({...managed,custodyKeyPath:config.issuerKeyPath})).toThrow();
+  expect(()=>validateServiceConfig({...managed,custodyKeyPath:config.databasePath})).toThrow();
+  expect(()=>validateServiceConfig({...managed,custodyKeyPath:config.oidc.clientSecretPath})).toThrow();
+  expect(()=>validateServiceConfig({...managed,custodyKeyPath:'relative.key'})).toThrow();
   for (const oidc of [
     {...config.oidc,allowedEmails:[]},
     {...publicConfig.oidc,admission:'unknown'},

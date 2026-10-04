@@ -8,8 +8,10 @@ use super::super::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use hpke::{
-    aead::ChaCha20Poly1305, kdf::HkdfSha256, kem::X25519HkdfSha256, Deserializable, Kem, OpModeR,
-    OpModeS, Serializable,
+    aead::{AesGcm128, ChaCha20Poly1305},
+    kdf::HkdfSha256,
+    kem::X25519HkdfSha256,
+    Deserializable, Kem, OpModeR, OpModeS, Serializable,
 };
 use serde_json::{json, Value};
 use std::convert::Infallible;
@@ -59,6 +61,51 @@ pub(in crate::shared_clipboard) fn wrap(
     target: &Value,
     entropy: &mut impl Entropy,
 ) -> Result<Value, String> {
+    wrap_with::<ChaCha20Poly1305>(
+        environment,
+        resource,
+        epoch,
+        key,
+        signer,
+        owner_device,
+        target,
+        entropy,
+        false,
+    )
+}
+pub(in crate::shared_clipboard) fn wrap_service(
+    environment: &str,
+    resource: &str,
+    epoch: u64,
+    key: &ChannelKey,
+    signer: &DeviceSigner,
+    owner_device: &str,
+    target: &Value,
+    entropy: &mut impl Entropy,
+) -> Result<Value, String> {
+    wrap_with::<AesGcm128>(
+        environment,
+        resource,
+        epoch,
+        key,
+        signer,
+        owner_device,
+        target,
+        entropy,
+        true,
+    )
+}
+fn wrap_with<A: hpke::aead::Aead>(
+    environment: &str,
+    resource: &str,
+    epoch: u64,
+    key: &ChannelKey,
+    signer: &DeviceSigner,
+    owner_device: &str,
+    target: &Value,
+    entropy: &mut impl Entropy,
+    service: bool,
+) -> Result<Value, String> {
     let target_device = target["deviceId"].as_str().ok_or("Invalid linked device")?;
     let target_signing = target["signingPublicKey"]
         .as_str()
@@ -71,6 +118,9 @@ pub(in crate::shared_clipboard) fn wrap(
     let pk =
         <Suite as Kem>::PublicKey::from_bytes(&kem).map_err(|_| "Invalid linked encryption key")?;
     let mut packet = json!({"environment":environment,"resourceId":resource,"epoch":epoch.to_string(),"ownerDeviceId":owner_device,"ownerSigningPublicKey":STANDARD.encode(signer.public()),"deviceId":target_device,"signingPublicKey":target_signing,"kemPublicKey":target_kem});
+    if service {
+        packet["suite"] = json!("X25519_HKDF_SHA256_AES128GCM");
+    }
     let info = bytes(b"Copicu.shared.key-transcript.v2\0", &packet)?;
     let mut pool = Pool {
         bytes: Sensitive(vec![0; 32]),
@@ -79,13 +129,9 @@ pub(in crate::shared_clipboard) fn wrap(
     entropy
         .fill(&mut pool.bytes.0)
         .map_err(|_| "Key package entropy unavailable")?;
-    let (enc, mut ctx) = hpke::setup_sender_with_rng::<ChaCha20Poly1305, HkdfSha256, Suite>(
-        &OpModeS::Base,
-        &pk,
-        &info,
-        &mut pool,
-    )
-    .map_err(|_| "Key wrapping failed")?;
+    let (enc, mut ctx) =
+        hpke::setup_sender_with_rng::<A, HkdfSha256, Suite>(&OpModeS::Base, &pk, &info, &mut pool)
+            .map_err(|_| "Key wrapping failed")?;
     if !pool.used {
         std::process::abort();
     }
@@ -147,20 +193,21 @@ pub(super) fn unwrap(
         .map_err(|_| "Invalid key encapsulation")?;
     let enc = <Suite as Kem>::EncappedKey::from_bytes(&encoded)
         .map_err(|_| "Invalid key encapsulation")?;
-    let mut ctx = hpke::setup_receiver::<ChaCha20Poly1305, HkdfSha256, Suite>(
-        &OpModeR::Base,
-        &sk,
-        &enc,
-        &info,
-    )
-    .map_err(|_| "Key package rejected")?;
     let cipher = STANDARD
         .decode(packet["ciphertext"].as_str().ok_or("Invalid wrapped key")?)
         .map_err(|_| "Invalid wrapped key")?;
-    let secret = Sensitive(
-        ctx.open(&cipher, &info)
-            .map_err(|_| "Key package could not be authenticated")?,
-    );
+    let service = packet["ownerDeviceId"] == "service_key_custody_v3";
+    let secret = if service {
+        if packet["suite"] != "X25519_HKDF_SHA256_AES128GCM" {
+            return Err("Unsupported service key suite".into());
+        }
+        open::<AesGcm128>(&sk, &enc, &info, &cipher)?
+    } else {
+        if packet.get("suite").is_some() {
+            return Err("Unexpected key suite".into());
+        }
+        open::<ChaCha20Poly1305>(&sk, &enc, &info, &cipher)?
+    };
     let resource = packet["resourceId"]
         .as_str()
         .ok_or("Invalid package resource")?;
@@ -170,6 +217,19 @@ pub(super) fn unwrap(
         .ok_or("Invalid package epoch")?;
     ChannelKey::from_secret(environment.into(), resource.into(), epoch, secret)
         .map_err(|_| "Key package scope rejected".into())
+}
+fn open<A: hpke::aead::Aead>(
+    sk: &<Suite as Kem>::PrivateKey,
+    enc: &<Suite as Kem>::EncappedKey,
+    info: &[u8],
+    cipher: &[u8],
+) -> Result<Sensitive, String> {
+    let mut ctx = hpke::setup_receiver::<A, HkdfSha256, Suite>(&OpModeR::Base, sk, enc, info)
+        .map_err(|_| "Key package rejected")?;
+    Ok(Sensitive(
+        ctx.open(&cipher, &info)
+            .map_err(|_| "Key package could not be authenticated")?,
+    ))
 }
 
 #[cfg(test)]
