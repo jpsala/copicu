@@ -90,7 +90,31 @@ For mixed selections, leave the Folder field unchanged to retain each clip's loc
 Open **picker menu → Organize** for **Saved searches**, **Capture modes**, Inbox and Tags. A Saved search (formerly Saved View) is a passive query. A Capture mode (formerly Scenario) owns its query and can add configured metadata to new captures until stopped. Neither is a folder, and capture modes do not choose the destination folder.
 
 <a id="shared-clipboards-in-v052"></a>
-## Shared Clipboards In v0.5.3
+<a id="shared-clipboards-in-v053"></a>
+## Shared Clipboards In v0.5.6
+
+Sharing supports text and PNG images using Copicu's internal service. Each PC
+signs in with the same admitted Google account; no other PC's approval or
+recovery code is needed. Copicu Sharing manages the content keys, so the service
+operator can decrypt shared content. This mode does not provide end-to-end
+encryption. General public Google admission is a separate rollout.
+
+1. Update and open an already linked PC first so it can migrate existing shared
+   clipboard keys. Update all PCs before creating new resources or rotating keys.
+2. On the new PC, install v0.5.6, open **Settings → Sharing**, name the PC and
+   choose **Sign in in browser** with the same Google account.
+3. Use **Connect shared clipboard…** from the destination folder or browsing
+   scope, select the shared clipboard and choose **Send**, **Receive**, or both.
+   Signing in does not connect folders or send existing history.
+4. Test with a new, non-sensitive text or PNG. Sending and receiving can pause
+   independently. Windows clipboard updates and Actions need separate opt-ins;
+   receiving never pastes into another app.
+
+See the [service custody guide](../topics/shared-clipboard.md#primer-acceso-y-equipos)
+for current linking and migration details. The version-specific reference below
+describes the older approval flow and does not apply to v0.5.6.
+
+### Legacy v0.5.3 workflow
 
 v0.5.3 adds account sign-in, device approval and encrypted recovery to shared plain-text clipboards. It needs a private HTTPS sharing service configured by its operator. A normal unconfigured profile shows **Sharing is off** in **Settings → Sharing**.
 

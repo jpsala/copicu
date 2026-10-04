@@ -39,12 +39,14 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.5](https://github.com/jpsala/copicu/releases/tag/v0.5.5)
-- Asset: `Copicu_0.5.5_x64-setup.exe`
+- [v0.5.6](https://github.com/jpsala/copicu/releases/tag/v0.5.6)
+- Asset: `Copicu_0.5.6_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `DA16C22AD206389D28999E99411B74900FA5C3EDBCAE1D927ACB0E2629A7BBC5`
+- SHA256: `C6BFB4F69A87AE7A02BDCD67F0905DC3012D146AFEB60BF9A109C34A626DEB32`
 
-Fix picker context-menu dismissal, keyboard focus, and secondary-click handling.
+Sign in on another PC with the same admitted Google account, without device
+approval or recovery codes. Update and open an existing PC first to migrate
+previously shared clipboard keys, then update the other PCs.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -105,6 +107,15 @@ Copicu is early-stage, but the core is functional:
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
 
+### New In v0.5.6
+
+The [v0.5.6 release notes](docs/releases/v0.5.6.md) cover account linking without
+another PC's approval, migration of existing keys and concurrent credential reads.
+Copicu Sharing manages the content keys: the service operator can decrypt shared
+content, so this mode does not provide end-to-end encryption. Connections and
+Windows/Actions effects remain explicit. Existing Google account admission is
+unchanged; general public admission is a separate rollout.
+
 ### New In v0.5.5
 
 The [v0.5.5 release notes](docs/releases/v0.5.5.md) cover reliable picker menu
@@ -117,8 +128,9 @@ sharing, thumbnails, manual copy and **Send Windows clipboard**. Images support
 up to 25 MiB and 4096 × 4096 pixels. Update both PCs before sending images; older
 clients can reject large delivery pages. File transfer is deferred.
 In Settings → Sharing, name the PC and sign in with the same account through the
-internal service. The current linking flow uses device approval and encrypted
-recovery; account-wide key custody remains under review. The
+internal service. From v0.5.6, linking uses service-managed keys without device
+approval or recovery codes. Update all PCs before creating new shared clipboards
+or rotating their keys. The
 [service guide](scripts/shared-clipboard/README.md) describes operator setup and
 the initial admission policy; synthetic local checks do not establish two-PC
 image acceptance.
@@ -127,7 +139,7 @@ From a folder or All history, use **Connect shared clipboard** to select or
 create a resource and choose sending, receiving or both. Sharing requires
 account linking and explicit connections. Sending and receiving pause independently;
 opening shared history does not import clips or write the Windows clipboard.
-See the [user guide](docs/user/README.md#shared-clipboards-in-v053)
+See the [user guide](docs/user/README.md#shared-clipboards-in-v056)
 for the sharing workflow.
 
 ## Core Flows

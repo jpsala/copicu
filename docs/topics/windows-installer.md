@@ -16,42 +16,40 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.5](https://github.com/jpsala/copicu/releases/tag/v0.5.5),
-publicado a `2026-10-03T21:22:17Z` desde source/tag inmutable
-`e19babfa299298d28ce18248d7a5fabee8f37f65`. El corte corrige el menú contextual
-del picker; fuentes/config congeladas coinciden con el commit, sin incluir el
-WIP de custody, ventanas o búsqueda. Pasan 16 ejecuciones de renderer, cuatro
-casos del payload nativo con perfil sintético, Rust release offline con tests
-compilados, checks documentales y build frontend normal estricto.
+Release público stable/latest: [v0.5.6](https://github.com/jpsala/copicu/releases/tag/v0.5.6),
+publicado a `2026-10-04T03:08:28Z` desde source/tag inmutable
+`01c0f2e229053d96afc3ab619b3d27080d368eea`. Vincula PCs de la misma cuenta
+Google admitida sin aprobación ni recovery, con custodia de claves en el servicio.
+Actualizar y abrir primero una PC existente para migrar claves; después actualizar
+las demás, antes de crear recursos o rotar claves. El servicio ya está desplegado.
 
-NSIS x64 GUI y recursos verificados; firma updater y trusted comment validados
-contra la public key del proyecto. Instalador, 14.440.625 bytes, SHA256
-`DA16C22AD206389D28999E99411B74900FA5C3EDBCAE1D927ACB0E2629A7BBC5`;
-`latest.json`, 922 bytes, SHA256
-`A4B8EFFF075642AFAE706A64EE807D8016D5AB88ADEA440981ADD3FF44EC6F21`.
-API, tag y los tres assets descargados coinciden; endpoint real latest HTTP 200,
-versión `0.5.5`, URL y firma correctas a `2026-10-03T21:23:17.763Z`.
-[Agentic Validation 37154811289](https://github.com/jpsala/copicu/actions/runs/37154811289)
-SUCCESS para la fuente. [Notas y alcance](../releases/v0.5.5.md).
-La instalación local de este corte queda separada; la aceptación de imágenes y
-proveedores conserva sus evidencias de v0.5.4.
+Pasan 392 Rust (un benchmark omitido), 59 Bun/662 assertions, 32 casos renderer,
+cinco UI/host Windows y cinco del payload final con perfiles sintéticos. NSIS
+x64 GUI y recursos verificados; firma updater y trusted comment válidos contra
+la public key del proyecto. Instalador, 14.470.379 bytes, SHA256
+`C6BFB4F69A87AE7A02BDCD67F0905DC3012D146AFEB60BF9A109C34A626DEB32`;
+`latest.json`, 813 bytes, SHA256
+`DB16AC0EF1298A52C367D1713DD30567BF3DBCCBFAE77262A5F3821B3C4D6F72`.
+API, tag y tres assets descargados coinciden; endpoint real latest HTTP 200,
+versión `0.5.6`, URL y firma correctas a `2026-10-04T03:09:17.674Z`.
+[Agentic Validation 37173130705](https://github.com/jpsala/copicu/actions/runs/37173130705)
+SUCCESS para la fuente. [Notas](../releases/v0.5.6.md) y
+[aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
+La instalación y aceptación en PCs físicas siguen separadas; este corte conserva
+la admisión Google existente. El WIP de ventanas y búsqueda queda fuera del paquete.
+
+Distribución anterior: [v0.5.5](https://github.com/jpsala/copicu/releases/tag/v0.5.5),
+source/tag `e19babfa299298d28ce18248d7a5fabee8f37f65`. Corrige el menú contextual
+del picker, sin incluir custodia ni WIP de ventanas/búsqueda. Firma, payload,
+assets, updater y CI verificados; instalación separada. Hashes, 16 casos renderer,
+cuatro casos nativos y recibos conservados en [notas v0.5.5](../releases/v0.5.5.md).
 
 Distribución anterior: [v0.5.4](https://github.com/jpsala/copicu/releases/tag/v0.5.4),
-publicado a `2026-10-03T03:18:02Z`, source/tag inmutable
-`1fbbf2215f6cebb87e4ab4ea35c450b4528e7ced`. NSIS offline firmado, payload x64 GUI,
-recursos y TypeScript verificados; cinco casos del payload exacto pasan con
-perfiles sintéticos, incluyendo PNG, alpha, previews, dedupe y restart.
-NSIS SHA256 `16389E6BC891EF3CB35564515654901476B8052014BE2AD2BBE261FFCFC3C339`;
-`latest.json`, 920 bytes, SHA256
-`B0737AB9E2EAC66CBE888EE0C304B1EE48E547C19D8105AACA18BBE52769CFBE`.
-Endpoint real latest HTTP 200/version `0.5.4`, API y los tres assets descargados
-coinciden a `2026-10-03T03:18:49.732Z`. Instalado el mismo NSIS; EXE idéntico,
-versión 0.5.4 y arranque confirmados. Google/HTTPS y relay de imágenes activos;
-imágenes físicas en dos PCs pendientes. Actualizar ambas antes de enviarlas.
-[Recibos y límites](../../specs/016-shared-clipboard/media-acceptance.md).
-[Agentic Validation 37091440975](https://github.com/jpsala/copicu/actions/runs/37091440975)
-SUCCESS para la fuente. Los casos shipping sintéticos no acreditan Google real;
-el escritor de Windows tiene aceptación nativa separada.
+source/tag `1fbbf2215f6cebb87e4ab4ea35c450b4528e7ced`. NSIS firmado, payload,
+assets, updater y CI verificados; instalado con EXE idéntico y arranque confirmado.
+Cinco casos del payload sintético cubren PNG/alpha/previews/dedupe/restart;
+Google/HTTPS y relay de imágenes activos. Imágenes físicas en dos PCs pendientes.
+Hashes y recibos conservados en [aceptación de imágenes](../../specs/016-shared-clipboard/media-acceptance.md).
 
 [v0.5.3](https://github.com/jpsala/copicu/releases/tag/v0.5.3) conserva
 [su evidencia de identidad](../../specs/016-shared-clipboard/identity-acceptance.md#publicacion-normal-v053);

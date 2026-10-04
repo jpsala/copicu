@@ -28,6 +28,11 @@ migración está en [service-key-custody.md](service-key-custody.md).
 La aprobación/HPKE y el recovery descritos abajo conservan el contrato legado
 distribuido de `v0.5.3` a `v0.5.5`, sólo para compatibilidad de fixtures y migración.
 Google autentica la cuenta; las claves aleatorias las custodia Copicu.
+Desde `v0.5.6`, custodia está desplegada y el cliente está distribuido como
+stable/latest con firma, assets y updater comprobados. Este corte conserva la
+admisión Google existente; A5 sigue abierto por admisión general y prueba física.
+Actualizar y abrir una PC existente antes de vincular la notebook permite migrar
+sus claves. Evidencia en [custody-acceptance.md](custody-acceptance.md).
 
 ## Solución propuesta y fuentes
 

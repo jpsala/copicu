@@ -17,14 +17,16 @@ Runtime, host Windows, UI y SDK están implementados y validados localmente con
 personas/equipos sintéticos; incluye prueba instalada ↔ dev y SSE S1–S6.
 Q1 `liveOnly` y Q3 espacios propios por persona siguen vigentes. JP amplió Q2 de
 texto plano a texto e imágenes; archivos se posponen.
-El servicio de custodia ya está activo y el cliente `v0.5.6` está firmado y
-verificado, pendiente de publicación. Hasta `v0.5.5` el cliente distribuía el flujo
+El servicio de custodia está activo y el cliente `v0.5.6` está publicado como
+stable/latest, con firma, downloads y updater verificados. Hasta `v0.5.5` el cliente distribuía el flujo
 legado de aprobación/recovery. JP reportó uso y autenticación entre Casa y Trabajo,
 y aprobación pendiente en la notebook. Ese reporte no identifica la versión o
 el modo de claves de cada PC ni sustituye la aceptación sintética física.
-Estado de la candidata, próximo paso y evidencia en
+Actualizar y abrir primero una PC existente para migrar claves, y luego las demás
+con la misma cuenta Google. Actualizar todas antes de crear recursos o rotar claves.
+Estado distribuido, próximo paso y evidencia en
 [track 041](../tracks/041-shared-clipboard.md) y
-[aceptación local](../../specs/016-shared-clipboard/local-acceptance.md).
+[aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
 
 La capacidad se compila por defecto, pero sharing sigue apagado en un perfil
 sin configurar: no inicializa tablas auxiliares ni transporte de sharing ni

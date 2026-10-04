@@ -17,7 +17,10 @@ are recorded in [identity acceptance](../../specs/016-shared-clipboard/identity-
 
 The fixed internal URL has shipped since `v0.5.4`; Settings asks for the PC name
 and browser sign-in only. Service custody is deployed and the signed `v0.5.6`
-client is verified and awaiting publication. Clients through `v0.5.5` still include the
+client is published as stable/latest with verified downloads and updater. Update
+and open an existing PC first to migrate its keys, then update the other PCs.
+Update all PCs before creating shared clipboards or rotating keys.
+Clients through `v0.5.5` still include the
 legacy approval UI. This cut keeps the existing OIDC admission policy and Google
 Audience; opening admission to any authenticated account remains separate.
 All PCs of an admitted account have the same level.

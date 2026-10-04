@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "Custodia desplegada y cliente v0.5.6 definitivo firmado/verificado. Publicación latest, updater e instalación pendientes; admisión existente conservada."
-last_worked: "2026-10-04T02:53:23Z"
-next: "Publicar v0.5.6 y comprobar updater/assets; después actualizar PCs y aceptar la notebook. Admisión pública y prueba física quedan separadas."
+summary: "Custodia desplegada y v0.5.6 publicado stable/latest; firma, assets, CI y updater verificados. Instalación y prueba física pendientes; admisión existente conservada."
+last_worked: "2026-10-04T03:09:17Z"
+next: "Actualizar y abrir una PC existente para migrar claves; después actualizar/vincular la notebook y aceptar tráfico físico. Admisión pública separada."
 topics:
   - shared-clipboard
 ---
@@ -17,12 +17,15 @@ para usarlo en la notebook. Reporta que Casa y Trabajo ya comparten y autentican
 la notebook muestra **Check approval**. Es un reporte humano, sin inspección de
 versiones/perfiles ni nueva aceptación física. Un par de equipos ya vinculados
 puede seguir funcionando con el flujo legado; ese uso no acredita custodia.
-Al iniciar este cierre, latest es `v0.5.5`, source
+Al iniciar este cierre, latest era `v0.5.5`, source
 `e19babfa299298d28ce18248d7a5fabee8f37f65`, y conserva aprobación. El servicio
-publica `deviceApproval:true`, `recovery:true` y no anuncia `keyCustody`.
+publicaba `deviceApproval:true`, `recovery:true` y no anunciaba `keyCustody`.
 El servicio de custodia ya está desplegado: HTTPS/401, issuer conservado y
 backup/restore real aislado comprobados. El cliente `v0.5.6` definitivo está
-firmado/verificado y sus cinco casos shipping pasan; faltan publicación y updater.
+publicado stable/latest desde `01c0f2e229053d96afc3ab619b3d27080d368eea`;
+firma, cinco casos shipping, CI, downloads y updater pasan. No se instaló sobre
+la app de uso diario. Actualizar y abrir primero una PC existente para migrar
+claves; después actualizar/vincular la notebook con la misma cuenta Google.
 Evidencia del cierre en
 [aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
 
@@ -51,7 +54,7 @@ imágenes; la URL fija está distribuida en v0.5.4. Dev conserva el perfil habit
 de Home, sin clonar identidad.
 El servidor confirma Home activo; la captura con etiquetas sintéticas era otro
 binario/perfil. JP eligió el 2026-10-03 claves gestionadas por el servicio,
-aceptando que el operador puede descifrar. Reemplazo en implementación local:
+aceptando que el operador puede descifrar. Reemplazo distribuido en `v0.5.6`:
 cuenta canónica, PCs iguales, vault AES-GCM y paquetes HPKE firmados de custodia,
 migración de claves existentes y UI sin aprobación/códigos. Pruebas Bun y UI
 pasan. JP autorizó descargar las dependencias AES: seis paquetes descargados y
@@ -61,10 +64,10 @@ para ese arranque. La suite de la fuente candidata pasa: 392 Rust, 59 Bun/662
 assertions y 32 visuales; incluye host/migración, anuncio de custodia firmado y
 paquetes legados conservados. Cinco casos de UI/host Windows pasan con tres
 perfiles nuevos; el payload definitivo y cinco casos shipping pasan. Publicación
-y comprobación del updater siguen pendientes.
+latest, firma, assets, CI y updater comprobados. Instalación y tráfico físico separados.
 [Contrato nuevo](../../specs/016-shared-clipboard/service-key-custody.md).
 [Operación y backup/restore](../../specs/016-shared-clipboard/custody-operations.md).
-[Evidencia local y gate restante](../../specs/016-shared-clipboard/custody-acceptance.md).
+[Evidencia de custodia y límites](../../specs/016-shared-clipboard/custody-acceptance.md).
 [Contrato y tareas A1–A5](../../specs/016-shared-clipboard/identity-service-plan.md).
 
 **Primer acceso I1–I8 distribuido en v0.5.3 (2026-10-02).**
@@ -185,10 +188,10 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Publicar el NSIS `v0.5.6` final verificado y comprobar latest, updater y assets
-   contra los hashes/firma del artefacto. Cinco casos UI/host Windows,
-   host/migración y regresiones pasan. El servicio ya está desplegado y su backup
-   de custodia se restauró con el entrypoint real en aislamiento. Evidencia en
+1. Actualizar y abrir primero una PC existente con `v0.5.6` para migrar claves;
+   luego actualizar las demás y vincular la notebook con la misma cuenta Google.
+   Actualizar todas antes de crear recursos o rotar claves. Latest, updater,
+   assets y firma ya están comprobados; servicio y backup/restore también. Evidencia en
    [aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
 2. Actualizar las PCs y completar R2/M7 con envío/recepción sintéticos en dos
    PCs físicas y streaming remoto; no inferir sus versiones de un tag público.

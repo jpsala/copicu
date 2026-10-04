@@ -51,7 +51,7 @@ Contrato en [identity-service-plan.md](identity-service-plan.md).
 - [x] A4 Vincular PCs al mismo nivel por cuenta, sin aprobación ni transferencia
   entre PCs; migración compatible, acceso/retiro y pruebas de aislamiento.
   Regresiones y cinco casos UI/host Windows con perfiles sintéticos pasan;
-  no acredita el deploy ni dos PCs físicas.
+  deploy y distribución verificados por separado; no acredita dos PCs físicas.
 - [ ] A5 Activar la admisión pública, distribuir el cliente actualizado y completar
   prueba física de envío/recepción sin efectos locales implícitos.
 
@@ -64,7 +64,9 @@ El corte para la notebook conserva la admisión OIDC/Google existente; no incluy
 abrir Audience/admisión general. A5 permanece separado de su distribución.
 Custodia ya está desplegada con issuer conservado y backup/restore aislado
 comprobado. El cliente `v0.5.6` definitivo está firmado y verificado, incluidos
-cinco casos shipping; publicación/updater e instalación requieren sus recibos efectivos.
+cinco casos shipping. Publicación stable/latest, assets y updater verificados desde
+`01c0f2e229053d96afc3ab619b3d27080d368eea`; instalación y prueba física pendientes.
+Actualizar y abrir primero una PC existente para migrar claves, después las demás.
 
 I1–I8 no acreditan R1/R2. Mantener V1/V2/SSE y los opt-ins de Windows/Actions.
 Evidencia y reproducción en [identity-acceptance.md](identity-acceptance.md).

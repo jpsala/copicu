@@ -1,10 +1,10 @@
 # Aceptación de custodia del servicio
 
-Estado local al 2026-10-03. Contrato elegido por JP:
+Estado al 2026-10-04. Contrato elegido por JP:
 [service-key-custody.md](service-key-custody.md). El cliente latest al iniciar
-el cierre era `v0.5.5`, con aprobación legada. Custodia está desplegada; el
-empaquetado final del cliente `v0.5.6` y sus comprobaciones están en curso.
-Publicación, updater e instalación conservan comprobaciones separadas.
+el cierre era `v0.5.5`, con aprobación legada. Custodia está desplegada y el
+cliente `v0.5.6` está publicado como stable/latest, con downloads, firma, CI
+y updater verificados. La instalación y aceptación física siguen separadas.
 
 ## Base comprobada del cierre
 
@@ -179,7 +179,25 @@ sin controles de aprobación ni conexiones implícitas. Captura/updater/AI apaga
 en perfil sintético. Screenshot final de Sharing inspeccionado.
 Recibos del candidato: `.codex-run/release-v0.5.6/artifact-manifest.json` y
 `native-final-smoke/results.json`; log primario `payload-smoke.log` en el mismo
-directorio de release. Publicación e instalación todavía no se atribuyen aquí.
+directorio de release. La instalación sobre la app de uso diario no se ejecutó.
+
+### Publicación normal v0.5.6
+
+Publicado a `2026-10-04T03:08:28Z` desde source/tag inmutable
+`01c0f2e229053d96afc3ab619b3d27080d368eea`. Los 256 inputs compilados coinciden
+con los blobs del commit. [Release](https://github.com/jpsala/copicu/releases/tag/v0.5.6)
+normal/latest, sin prerelease, con exactamente NSIS, firma y `latest.json`.
+[Agentic Validation 37173130705](https://github.com/jpsala/copicu/actions/runs/37173130705)
+SUCCESS para esa fuente.
+
+Los tres assets descargados coinciden por bytes y SHA256 con el artefacto
+verificado. El endpoint real `releases/latest/download/latest.json` devolvió
+HTTP 200, versión `0.5.6`, URL del instalador y firma correctas a
+`2026-10-04T03:09:17.674Z`. Recibo local:
+`.codex-run/release-v0.5.6/remote-receipt.json`.
+Actualizar y abrir primero una PC existente para depositar claves legadas;
+después actualizar y vincular la notebook con la misma cuenta. Actualizar todas
+antes de crear recursos o rotar claves. No acredita instalación ni tráfico físico.
 
 ### Compilación y arranque dev (2026-10-03)
 
@@ -201,8 +219,8 @@ arranque dev, sin sustituir la validación de migración, custodia o intercambio
 ## Pendiente, sin atribuir aceptación
 
 Los tests de host, migración y envío de texto/PNG, las regresiones, UI/host
-Windows, payload final y deploy de custodia pasan. Faltan publicación latest,
-comprobación del updater e instalación. Este corte conserva la admisión OIDC y Google existentes;
+Windows, payload final, deploy de custodia, publicación latest y updater pasan.
+La instalación y prueba física siguen pendientes. Este corte conserva la admisión OIDC y Google existentes;
 no abre Audience ni admite cualquier cuenta. La cuenta Google ya admitida de JP
 puede vincular la notebook sin esa apertura. La admisión general queda fuera
 de este corte y conserva su gate separado.
