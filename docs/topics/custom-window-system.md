@@ -72,7 +72,8 @@ Mantener variantes como politica, no como CSS suelto por componente.
 
 El `CustomWindowFrame` compartido delimita la ventana con un borde interior de 1 px usando `--line-strong`; separa la superficie del fondo sin sumar sombras ni cambiar los bounds nativos.
 
-En el picker, el engranaje izquierdo abre Settings fuera del área de arrastre. La X
+En el picker, el icono de controles deslizantes abre Settings como primer botón
+del grupo de controles de la derecha, fuera del área de arrastre. La X
 derecha oculta el picker; `Quit Copicu` se ofrece sólo en el tray. Abrir Settings y
 ocultar conservan los mismos comandos nativos y la política de foco vigente.
 

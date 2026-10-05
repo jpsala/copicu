@@ -5,8 +5,9 @@ Plan aprobado por JP el 2026-10-04; implementación local autorizada en paralelo
 ## Contrato
 
 - Quit Copicu se ofrece sólo en el tray. La X del picker oculta la ventana y
-  conserva el proceso. Settings tiene un engranaje al extremo izquierdo de la
-  barra; sus botones no inician arrastre y conservan foco/lifecycle nativo.
+  conserva el proceso. Settings usa un icono de sliders horizontal y es el primer
+  botón del grupo de controles a la derecha de la barra; sus botones no inician
+  arrastre y conservan foco/lifecycle nativo.
 - Menú de texto: Quick edit y Edit metadata primero; copiar, pegar y preview
   siguen accesibles. Organize agrupa carpeta, marcas e Inbox; More actions agrupa
   editores avanzados, Assistant y scripts. Delete va al final. Imágenes y selección
@@ -28,6 +29,23 @@ Plan aprobado por JP el 2026-10-04; implementación local autorizada en paralelo
   Windows, permisos, pausa, ausencia de backfill/eco y cambios de duplicados por
   carpeta. Una reorganización visual no activa opciones por inferencia ni pierde
   borradores durante refresh/retiro de acceso.
+
+### Diagnóstico de Sharing
+
+- Un fallo del worker muestra qué operación falló, cómo afecta al envío/recepción
+  y qué puede hacer la persona. «Device linked» describe la vinculación, no la salud
+  de la sincronización. Check status consulta estado; no envía contenido ni altera
+  pausa, conexiones o efectos.
+- Technical details revela código estable, etapa, causa segura, hora del último
+  fallo y recurso afectado cuando existe. Copy diagnostic copia sólo ese resumen
+  bajo acción explícita; ofrece selección manual si el clipboard del navegador falla.
+  No lee payloads, credenciales, claves, respuestas HTTP ni rutas del perfil.
+- Distinguir custodia local, almacenamiento, configuración, servicio inaccesible,
+  denegación y rechazo. El retry automático no promete reenviar publicaciones ya
+  rechazadas y respeta la pausa. El próximo ciclo exitoso limpia el fallo de sync y
+  el aviso legacy del worker, conservando errores independientes de efectos.
+- Reusar el mismo aviso en Settings y recepciones; detalles cerrados inicialmente,
+  foco visible, wrapping en ventana angosta y actualización sin toast repetitivo.
 
 ## Verificación
 

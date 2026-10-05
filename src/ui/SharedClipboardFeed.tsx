@@ -5,6 +5,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.mjs";
 import Settings2 from "lucide-react/dist/esm/icons/settings-2.mjs";
 import { createSharedReceiptLoader, sharedClipboardApi, sharedReceiptCanCopy, sharedReceiptKey, sharedReceiptStatus, sharedReceptionRows, type SharedClipboardApi, type SharedClipboardSnapshot, type SharedReceiptPreview, type SharedReceiptSummary } from "../shared/sharedClipboard";
 import { UiButton, UiIconButton, UiTextInput } from "./controls";
+import { SharedSyncNotice } from "./SharedSyncNotice";
 import "./sharedClipboard.css";
 
 export type SharedClipboardFeedProps = {
@@ -80,7 +81,7 @@ export function SharedClipboardFeed({ api = sharedClipboardApi, onClose, onOpenS
       <div className="shared-settings-actions"><UiIconButton type="button" variant="subtle" aria-label="Refresh receptions" onClick={() => void refresh()}><RefreshCw size={16} aria-hidden="true" /></UiIconButton>{onOpenSettings && <UiIconButton type="button" variant="subtle" aria-label="Open Sharing settings" onClick={onOpenSettings}><Settings2 size={16} aria-hidden="true" /></UiIconButton>}</div>
     </header>
     {error && <p className="shared-feed-error" role="alert">{error}</p>}
-    {snapshot?.lastError && <p className="shared-feed-error" role="alert">{snapshot.lastError}</p>}
+    {snapshot && <SharedSyncNotice snapshot={snapshot} onCheckStatus={() => void refresh()} />}
     <div className="shared-feed-workspace">
       <div className="shared-feed-browser">
         <UiTextInput type="search" aria-label="Filter receptions by channel or device" placeholder="Filter by channel or device" value={query} onChange={event => setQuery(event.currentTarget.value)} />

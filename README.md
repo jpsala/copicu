@@ -39,13 +39,13 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.7](https://github.com/jpsala/copicu/releases/tag/v0.5.7)
-- Asset: `Copicu_0.5.7_x64-setup.exe`
+- [v0.5.8](https://github.com/jpsala/copicu/releases/tag/v0.5.8)
+- Asset: `Copicu_0.5.8_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `34162E8E0FEB960458ECD7EE4E03BAEB4FF89214C7BC568D854C625CEF56724A`
+- SHA256: `9983CD014E9B58F12DE1E5F266DCBA51EAC8332B67A54876957CE67E6620C9E3`
 
-Keep independent folder copies, see repeated shared receptions, and use clearer
-Sharing controls, compact menus and coordinated picker windows. When updating
+Get useful Sharing error messages and a safe diagnostic report to copy. Settings
+is now the first slider button in the picker's right control group. When updating
 from before v0.5.6, open an existing PC first to migrate shared clipboard keys,
 then update the other PCs.
 

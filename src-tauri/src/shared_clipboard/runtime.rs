@@ -5,6 +5,7 @@ use super::{
     config::*,
     crypto::{self, ChannelKey, DeviceSigner, Entropy, ReceivePolicy, SystemEntropy, VerifiedContent},
     custody::{Binding, KeyKind, Vault},
+    diagnostics::{SyncDiagnostic, SyncError},
     transport::{self, LeaseProof, RelayClient, Report},
     wire::{self, Envelope, Freshness},
 };
@@ -1449,6 +1450,7 @@ pub(crate) struct SharedSnapshot {
     pub outbox: Vec<Value>,
     pub receipts: Vec<Value>,
     pub last_error: Option<String>,
+    pub sync_diagnostic: Option<SyncDiagnostic>,
     pub send_active_shortcut: Option<String>,
     pub send_clipboard_shortcut: Option<String>,
 }
@@ -1473,11 +1475,12 @@ pub(crate) fn snapshot(storage: &AppStorage) -> Result<SharedSnapshot, String> {
             outbox: vec![],
             receipts: vec![],
             last_error: None,
+            sync_diagnostic: None,
             send_active_shortcut: None,
             send_clipboard_shortcut: None,
         });
     };
-    let (outbox, receipts, last_error) = store(storage)?.summaries().map_err(error)?;
+    let (outbox, receipts, last_error, sync_diagnostic) = store(storage)?.summaries().map_err(error)?;
     let control_sync_state = store(storage)?.control_status(None).map_err(error)?;
     let catalog = store(storage)?
         .control_cache(&super::control_sync::identity(&c))
@@ -1510,6 +1513,7 @@ pub(crate) fn snapshot(storage: &AppStorage) -> Result<SharedSnapshot, String> {
         outbox,
         receipts,
         last_error,
+        sync_diagnostic,
         send_active_shortcut: c.send_active_shortcut,
         send_clipboard_shortcut: c.send_clipboard_shortcut,
     })
@@ -1774,6 +1778,13 @@ pub(crate) fn record_error(storage: &AppStorage, reason: &str) {
         }
     }
 }
+pub(crate) fn record_sync_error(storage: &AppStorage, failure: SyncError) {
+    if let Ok(s) = store(storage) {
+        if let Ok(json) = serde_json::to_string(&failure.diagnostic(now().ok(), None)) {
+            let _ = s.record_network_error(Some(&json));
+        }
+    }
+}
 pub(crate) fn publish_channels(storage: &AppStorage) -> Result<Value, String> {
     let c = required(storage)?;
     Ok(json!(c
@@ -2003,21 +2014,21 @@ pub(crate) struct PollResult {
     pub effects: Vec<IncomingEffect>,
     pub history_changed: bool,
 }
-pub(crate) fn poll_once(storage: &AppStorage) -> Result<PollResult, String> {
+pub(crate) fn poll_once(storage: &AppStorage) -> Result<PollResult, SyncError> {
     let Ok(_worker) = NETWORK.try_lock() else {
         return Ok(PollResult {
             effects: vec![],
             history_changed: false,
         });
     };
-    let Some(c) = config(storage)? else {
+    let Some(c) = config(storage).map_err(|reason| SyncError::at("Read sharing configuration", reason))? else {
         return Ok(PollResult {
             effects: vec![],
             history_changed: false,
         });
     };
-    let s = store(storage)?;
-    recover_startup_once(storage)?;
+    let s = store(storage).map_err(|reason| SyncError::at("Open local sharing storage", reason))?;
+    recover_startup_once(storage).map_err(|reason| SyncError::at("Recover local sharing state", reason))?;
     let mut result = PollResult {
         effects: vec![],
         history_changed: false,
@@ -2030,22 +2041,24 @@ pub(crate) fn poll_once(storage: &AppStorage) -> Result<PollResult, String> {
             .is_none_or(|last| last.elapsed() > Duration::from_secs(60))
         {
             let _admission = WORKER.lock().map_err(error)?;
-            s.prune_product(now()?).map_err(error)?;
+            s.prune_product(now()?).map_err(|cause| SyncError::at("Clean up expired sharing data", error(cause)))?;
             pruned.insert(profile, Instant::now());
         }
     }
     if c.paused {
         return Ok(result);
     }
-    let v = vault(&s, &c)?;
-    let relay = client(&v, &c)?;
-    let signing = signer(&v, &c)?;
-    let issuer = bytes32(&c.issuer_public_key)?;
-    let mut failed = false;
+    let v = Vault::reopen(&s.profile_dir().join(&c.vault_name))
+        .map_err(|cause| SyncError::keys("Open protected sharing keys", cause))?;
+    let relay = client(&v, &c).map_err(|reason| SyncError::at("Prepare sharing service credentials", reason))?;
+    let signing = v.load_signer(&binding(&c, KeyKind::Signing, &c.signing_reference, 1))
+        .map_err(|cause| SyncError::keys("Open protected device identity", cause))?;
+    let issuer = bytes32(&c.issuer_public_key).map_err(|_| SyncError::at("Read sharing service identity", "Invalid shared clipboard configuration".into()))?;
+    let mut failed = None;
     for ch in &c.channels {
         let outcome = poll_channel(&s, &c, ch, &v, &relay, &signing, &issuer, &mut result);
-        if outcome.is_err() {
-            failed = true;
+        if let Err(failure) = outcome {
+            failed = Some(failure.diagnostic(now().ok(), Some(ch.policy.id.clone())));
             CONNECTED
                 .get_or_init(Default::default)
                 .lock()
@@ -2059,12 +2072,8 @@ pub(crate) fn poll_once(storage: &AppStorage) -> Result<PollResult, String> {
             break;
         }
     }
-    s.record_network_error(if failed {
-        Some("Relay unavailable or publication rejected; queued items will retry")
-    } else {
-        None
-    })
-    .map_err(error)?;
+    let diagnostic_json = failed.as_ref().map(serde_json::to_string).transpose().map_err(error)?;
+    s.record_network_error(diagnostic_json.as_deref()).map_err(error)?;
     Ok(result)
 }
 fn poll_channel(
@@ -2076,7 +2085,7 @@ fn poll_channel(
     signing: &DeviceSigner,
     issuer: &[u8; 32],
     result: &mut PollResult,
-) -> Result<(), String> {
+) -> Result<(), SyncError> {
     {
         let _admission = WORKER.lock().map_err(error)?;
         let current = required(s.storage_ref())?;
@@ -2117,16 +2126,16 @@ fn poll_channel(
                         wire::counter(&ack.server_sequence).map_err(error)?,
                     )
                     .map_err(error)?,
-                Err(
+                Err(cause @ (
                     transport::Error::Denied
                     | transport::Error::Conflict
                     | transport::Error::Rejected
-                    | transport::Error::TooLarge,
-                ) => {
+                    | transport::Error::TooLarge
+                )) => {
                     s.reject_queued(&e.publication_id).map_err(error)?;
-                    return Err("Relay rejected a queued publication".into());
+                    return Err(SyncError::transport("Send queued publication", cause));
                 }
-                Err(_) => return Err("Relay is unavailable".into()),
+                Err(cause) => return Err(SyncError::transport("Send queued publication", cause)),
             }
         }
         let cache = LEASES.get_or_init(Default::default);
@@ -2139,7 +2148,7 @@ fn poll_channel(
             let started = Instant::now();
             let lease = relay
                 .lease(&ch.policy.id, issuer)
-                .map_err(|_| "Cannot acquire live publication lease")?;
+                .map_err(|cause| SyncError::transport("Acquire live publication lease", cause))?;
             let _admission = WORKER.lock().map_err(error)?;
             let current = required(s.storage_ref())?;
             let current_channel = channel(&current, &ch.policy.id)?;
@@ -2159,7 +2168,7 @@ fn poll_channel(
     let received = Instant::now();
     let page = relay
         .sync(&ch.policy.id, fence.cursor)
-        .map_err(|_| "Cannot receive channel publications")?;
+        .map_err(|cause| SyncError::transport("Receive shared publications", cause))?;
     let admission = WORKER.lock().map_err(error)?;
     let current = required(s.storage_ref())?;
     if receive_is_paused(&current, channel(&current, &ch.policy.id)?)
@@ -2213,7 +2222,8 @@ fn poll_channel(
             )
             .map_err(error)?;
     }
-    let k = key(v, c, ch)?;
+    let k = v.load_channel(&binding(c, KeyKind::Channel { channel: ch.policy.id.clone() }, &ch.key_reference, ch.epoch))
+        .map_err(|cause| SyncError::keys("Open protected reception key", cause))?;
     let bootstrap = s.bootstrap_head(&subscription).map_err(error)?;
     for entry in page.entries {
         let sequence = wire::counter(&entry.server_sequence).map_err(error)?;
@@ -2316,7 +2326,7 @@ fn poll_channel(
             .map_err(error)?;
         relay
             .report(&p.channel, &report)
-            .map_err(|_| "Cannot acknowledge local delivery report")?;
+            .map_err(|cause| SyncError::transport("Acknowledge delivery report", cause))?;
         s.ack_report(&subscription, &p.attempt_id).map_err(error)?;
     }
     // One latest writer per channel/sink; intermediate eligible publications

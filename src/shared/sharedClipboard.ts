@@ -41,6 +41,13 @@ export type SharedReceiptSummary = {
   originDeviceId: string;
   expiresAtUnixMs: string;
 };
+export type SharedSyncDiagnostic = {
+  code: string;
+  stage: string;
+  reason: string;
+  occurredAtUnixMs: number | null;
+  channelId: string | null;
+};
 export type SharedClipboardSnapshot = {
   identityState?: string;
   controlSyncState?: string;
@@ -60,6 +67,7 @@ export type SharedClipboardSnapshot = {
   outbox: SharedPublicationSummary[];
   receipts: SharedReceiptSummary[];
   lastError?: string;
+  syncDiagnostic?: SharedSyncDiagnostic | null;
   sendActiveShortcut?: string | null;
   sendClipboardShortcut?: string | null;
 };

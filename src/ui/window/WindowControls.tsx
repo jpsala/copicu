@@ -6,6 +6,7 @@ import UnlockKeyhole from "lucide-react/dist/esm/icons/unlock-keyhole.mjs";
 import Pin from "lucide-react/dist/esm/icons/pin.mjs";
 import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
+import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.mjs";
 import { type MouseEvent, useCallback, useEffect, useState } from "react";
 import { listen, type Event } from "@tauri-apps/api/event";
 import { UiIconButton, UiTooltip } from "../controls";
@@ -30,6 +31,7 @@ type WindowControlsProps = {
   keepOpen?: boolean;
   onHide?: () => void;
   onKeepOpenChange?: (keepOpen: boolean) => void;
+  onOpenSettings?: () => void;
   onPinChange?: (pinned: boolean) => void;
   pinShortcutLabel?: string;
 };
@@ -41,6 +43,7 @@ export function WindowControls({
   keepOpen = false,
   onHide,
   onKeepOpenChange,
+  onOpenSettings,
   onPinChange,
   pinShortcutLabel,
 }: WindowControlsProps) {
@@ -143,12 +146,25 @@ export function WindowControls({
     }
   }, [onHide]);
 
-  if (controls.length === 0) {
+  if (controls.length === 0 && !onOpenSettings) {
     return null;
   }
 
   return (
     <div className="window-controls" aria-label="Window controls">
+      {onOpenSettings ? (
+        <UiTooltip label="Settings">
+          <UiIconButton
+            type="button"
+            className="window-control-button"
+            aria-label="Settings"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={onOpenSettings}
+          >
+            <SlidersHorizontal size={15} aria-hidden="true" />
+          </UiIconButton>
+        </UiTooltip>
+      ) : null}
       {controls.includes("pin") ? (
         <UiTooltip
           label={(

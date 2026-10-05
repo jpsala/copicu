@@ -69,6 +69,20 @@
 .shared-settings-feed { height: min(620px, calc(100vh - 210px)); min-height: 340px; }
 .shared-draft-note { color: var(--warning); font-size: 0.76rem; }
 .shared-clipboard-settings .shared-error { color: var(--danger); background: var(--error-bg); border: 1px solid var(--error-line); padding: 8px 10px; border-radius: 5px; overflow-wrap: anywhere; }
+.shared-sync-notice { display: grid; gap: 9px; min-width: 0; padding: 12px; background: var(--error-bg); border: 1px solid var(--error-line); border-radius: 5px; color: var(--ink); }
+.shared-sync-heading { display: flex; align-items: flex-start; gap: 9px; }
+.shared-sync-heading > svg { flex-shrink: 0; margin-top: 2px; color: var(--danger); }
+.shared-sync-heading > div { min-width: 0; }
+.shared-sync-heading strong { font-size: .89rem; font-weight: 650; line-height: 1.4; }
+.shared-sync-notice p { margin: 0; max-width: 70ch; line-height: 1.5; overflow-wrap: anywhere; }
+.shared-sync-heading p { margin-top: 4px; }
+.shared-sync-notice .shared-sync-retry { color: var(--ink-soft); font-size: .76rem; }
+.shared-sync-details { min-width: 0; border-top: 1px solid var(--error-line); padding-top: 9px; }
+.shared-sync-details summary { cursor: pointer; font-size: .76rem; font-weight: 600; }
+.shared-sync-details summary:focus-visible, .shared-sync-details textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shared-sync-details textarea { display: block; width: 100%; min-width: 0; margin: 10px 0; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, "Cascadia Code", monospace; font-size: .75rem; line-height: 1.6; resize: vertical; user-select: text; }
+.shared-sync-details .shared-settings-actions > span, .shared-sync-notice .shared-sync-other { font-size: .76rem; overflow-wrap: anywhere; }
+.shared-clipboard-feed > .shared-sync-notice { margin: 10px 14px; flex-shrink: 0; max-height: 45%; overflow: auto; }
 .shared-clipboard-settings .shared-inline-notice { color: var(--ink-soft); background: var(--surface-muted); padding: 8px 10px; border-radius: 5px; }
 .shared-enrollment-review { display: grid; gap: 12px; padding: 12px 0 0; }
 .shared-enrollment-review dl { display: grid; gap: 8px; margin: 0; }

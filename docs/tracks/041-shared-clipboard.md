@@ -1,8 +1,8 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "v0.5.7 distribuida normal/latest con duplicados por carpeta, UX de Sharing y coordinación de ventanas; aceptación física entre PCs pendiente."
-last_worked: "2026-10-05T10:54:08Z"
+summary: "v0.5.7 distribuida normal/latest; diagnóstico de Sharing preparado localmente. Aceptación física entre PCs pendiente."
+last_worked: "2026-10-05T11:32:14Z"
 next: "Actualizar las PCs a v0.5.7 y comprobar conexiones, texto/imágenes y repeticiones en ambos sentidos con datos sintéticos."
 topics:
   - shared-clipboard
@@ -11,6 +11,16 @@ topics:
 # Clipboard compartido: arquitectura y spec
 
 ## Estado actual
+
+**Diagnóstico de Sharing (local, 2026-10-05).** El worker conserva código,
+etapa, causa segura y hora del fallo, con errores de custodia y transporte
+diferenciados. Settings y recepciones comparten un aviso con orientación,
+consulta de estado y diagnóstico copiable por botón o teclado. La recuperación
+limpia sólo errores de sync; conserva fallos independientes de efectos.
+Contrato y smoke en [diagnóstico de Sharing](../../specs/016-shared-clipboard/settings-and-picker-ux.md#diagnóstico-de-sharing).
+Regresión Rust con vault sintético faltante y recuperación; Playwright
+`--grep 'Sharing sync diagnostic'` cubre ambas ventanas, pausa, rechazo, errores
+legacy y copia fallida. Cambio en código local, pendiente de distribución.
 
 **Publicación Windows v0.5.7 (2026-10-05).** Publicada normal/latest desde
 source/tag `ac5ebccdaa102434381b1c7d1151ce8fec94aa3e`, con las fuentes del

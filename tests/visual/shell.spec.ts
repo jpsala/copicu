@@ -10422,6 +10422,92 @@ async function mockSharedIdentity(page: Page, initial: "unconfigured" | "active"
   }, { initial });
 }
 
+test("Sharing sync diagnostic explains protected key failure, copies safe metadata and clears on recovery", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { appearance: { theme: "dark", themeId: "default" } }); await mockSharedProduct(page);
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.__copicuSharedSnapshot.lastError = "Protected key storage failed (Missing)";
+    w.__copicuSharedSnapshot.syncDiagnostic = { code: "protectedKeys", stage: "Open protected sharing keys", reason: w.__copicuSharedSnapshot.lastError, occurredAtUnixMs: Date.parse("2026-10-05T12:00:00Z"), channelId: null };
+    // Values excluded from the diagnostic even when present in status.
+    w.__copicuSharedSnapshot.endpoint = "https://synthetic.invalid/?token=DO_NOT_COPY";
+    w.__copicuSharedSnapshot.deviceId = "DO_NOT_COPY_DEVICE";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { w.__copicuCopiedDiagnostic = text; } } });
+  });
+  await gotoShell(page, "/?window=settings"); await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const notice = page.getByRole("region", { name: "Sharing issue" });
+  await expect(notice.getByText("Sharing can't open its protected keys", { exact: true })).toBeVisible();
+  await expect(notice.getByText("Copicu checks sharing again automatically.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sharing needs attention", { exact: true })).toBeVisible();
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toBeHidden();
+  await page.screenshot({ path: `.codex-run/sharing-sync-overview-${testInfo.project.name}.png` });
+  await notice.locator("summary").focus(); await page.keyboard.press("Enter");
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toHaveValue(/Cause: Protected key storage failed \(Missing\)/);
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toHaveValue(/2026-10-05T12:00:00.000Z/);
+  expect(await notice.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await notice.getByRole("button", { name: "Copy diagnostic", exact: true }).click();
+  await expect(notice.getByRole("status")).toHaveText("Diagnostic copied.");
+  const copied = await page.evaluate(() => (window as any).__copicuCopiedDiagnostic);
+  expect(copied).toContain("Code: protectedKeys");
+  expect(copied).toContain("Step: Open protected sharing keys");
+  expect(copied).not.toMatch(/DO_NOT_COPY|COPICU_SYNTH|http/);
+  await page.screenshot({ path: `.codex-run/sharing-sync-diagnostic-${testInfo.project.name}.png` });
+  await page.evaluate(() => { const w = window as any; w.__copicuSharedSnapshot.lastError = null; w.__copicuSharedSnapshot.syncDiagnostic = null; });
+  await notice.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(page.getByText("Device linked", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuProductOperations)).toEqual([]);
+  expect(await page.evaluate(() => (window as any).__copicuSharedReads)).toEqual([]);
+});
+
+test("Sharing sync diagnostic respects pause, distinguishes rejection and keeps unrelated failures", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page);
+  await page.addInitScript(() => {
+    const snapshot = (window as any).__copicuSharedSnapshot;
+    snapshot.paused = true;
+    snapshot.lastError = "Reception action queue is full; reception remains available";
+    snapshot.syncDiagnostic = { code: "serviceUnavailable", stage: "Receive shared publications", reason: "The sharing service could not be reached", occurredAtUnixMs: null, channelId: "synthetic-channel" };
+  });
+  await gotoShell(page, "/?window=settings"); await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const notice = page.getByRole("region", { name: "Sharing issue" });
+  await expect(notice.getByText("Sharing can't reach the service", { exact: true })).toBeVisible();
+  await expect(notice.getByText("Sharing is paused. Resume it when you're ready to try again.", { exact: true })).toBeVisible();
+  await expect(notice.getByText(/Another reported issue: Reception action queue/)).toBeVisible();
+  await notice.locator("summary").click();
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toHaveValue(/Time unavailable/);
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toHaveValue(/Shared clipboard: Synthetic channel/);
+  await page.screenshot({ path: `.codex-run/sharing-sync-paused-${testInfo.project.name}.png` });
+  await page.evaluate(() => {
+    const snapshot = (window as any).__copicuSharedSnapshot;
+    snapshot.paused = false;
+    snapshot.syncDiagnostic = { code: "publicationRejected", stage: "Send queued publication", reason: "The publication exceeds the sharing service size limit", occurredAtUnixMs: 1, channelId: "synthetic-channel" };
+  });
+  await notice.getByRole("button", { name: "Check status", exact: true }).click();
+  await expect(notice.getByText("The service rejected a sharing request", { exact: true })).toBeVisible();
+  await expect(notice.getByText(/Rejected publications are not resent automatically/)).toBeVisible();
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toHaveValue(/size limit/);
+  await expect(notice.getByText(/Another reported issue: Reception action queue/)).toBeVisible();
+});
+
+test("Sharing sync diagnostic retains legacy error details and offers manual copy after clipboard failure", async ({ page }) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page);
+  await page.addInitScript(() => {
+    (window as any).__copicuSharedSnapshot.lastError = "Sharing worker could not process this tick";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw Error("Synthetic clipboard blocked"); } } });
+  });
+  await gotoShell(page, "/?window=settings"); await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const notice = page.getByRole("region", { name: "Sharing issue" });
+  await expect(notice.getByText("Sharing couldn't complete its last operation", { exact: true })).toBeVisible();
+  await notice.locator("summary").click();
+  await expect(notice.getByLabel("Sharing diagnostic", { exact: true })).toHaveValue(/Sharing worker could not process this tick/);
+  await notice.getByRole("button", { name: "Copy diagnostic", exact: true }).click();
+  await expect(notice.getByRole("status")).toContainText("copy it manually");
+  await expect(notice.getByRole("button", { name: "Copy diagnostic", exact: true })).toBeEnabled();
+  const field = notice.getByLabel("Sharing diagnostic", { exact: true });
+  await field.focus(); await page.keyboard.press("Control+A");
+  expect(await field.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart)).toBe((await field.inputValue()).length);
+  await expect(field).toHaveAttribute("readonly", "");
+});
+
 test("shared identity first access links by Google account without enabling connections or effects", async ({ page }, testInfo) => {
   await mockTauriInvoke(page); await mockSharedIdentity(page); await gotoShell(page, "/?window=settings");
   await page.getByRole("tab", { name: /^Sharing/ }).click();
@@ -10874,10 +10960,19 @@ test("shared clipboard reception action writer requires an explicit mutually exc
   expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0].receiveActionWritesClipboard)).toBe(false);
 });
 
-test("picker chrome opens Settings from the first button and only hides from the last", async ({ page }, testInfo) => {
+test("picker chrome groups the Settings sliders first on the right and only hides from the last", async ({ page }, testInfo) => {
   await mockTauriInvoke(page); await gotoShell(page); await waitForDefaultHistoryReady(page);
   const chrome = page.locator(".custom-window-frame.is-floatingPicker > .window-chrome");
-  await expect(chrome.getByRole("button").first()).toHaveAccessibleName("Settings");
+  const controls = chrome.locator(".window-controls");
+  const settings = controls.getByRole("button", { name: "Settings", exact: true });
+  await expect(chrome.getByRole("button").first()).toHaveAccessibleName("Move Copicu");
+  await expect(controls.getByRole("button").first()).toHaveAccessibleName("Settings");
+  await expect(settings.locator("svg")).toHaveClass(/sliders-horizontal/);
+  const frame = (await chrome.boundingBox())!;
+  expect((await settings.boundingBox())!.x).toBeGreaterThan(frame.x + frame.width / 2);
+  await chrome.getByRole("button", { name: "Move Copicu", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(settings).toBeFocused();
   await expect(chrome.getByRole("button").last()).toHaveAccessibleName("Hide Copicu");
   await expect(page.getByRole("button", { name: /Quit Copicu/i })).toHaveCount(0);
   await chrome.getByRole("button", { name: "Settings", exact: true }).click();

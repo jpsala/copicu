@@ -535,8 +535,8 @@ pub(crate) fn start<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
                     continue;
                 }
                 if status.paused {
-                    if runtime::poll_once(&storage).is_err() {
-                        runtime::record_error(&storage, "Sharing retention could not complete");
+                    if let Err(failure) = runtime::poll_once(&storage) {
+                        runtime::record_sync_error(&storage, failure);
                     }
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     continue;
@@ -649,10 +649,7 @@ pub(crate) fn start<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
                             }
                         }
                     }
-                    Err(_) => runtime::record_error(
-                        &storage,
-                        "Sharing worker could not process this tick",
-                    ),
+                    Err(failure) => runtime::record_sync_error(&storage, failure),
                 }
                 // Coalesce publication hints into the existing guarded V1 tick.
                 // The timeout still handles outbox, retention and legacy relays.

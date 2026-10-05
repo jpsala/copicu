@@ -215,6 +215,27 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
     );
     assert!(owner_status.receipts.is_empty());
     assert!(receiver_status.receipts.is_empty());
+    // A real missing custody directory must remain diagnosable and clear after recovery.
+    // Both paths belong to this fixture's fresh synthetic profile.
+    let stored = runtime::config(&owner_storage).unwrap().unwrap();
+    let profile = RuntimeStore::init(&owner_storage).unwrap();
+    let vault = profile.profile_dir().join(&stored.vault_name);
+    let held_vault = profile.profile_dir().join("synthetic-diagnostic-vault-held");
+    fs::rename(&vault, &held_vault).unwrap();
+    let failure = runtime::poll_once(&owner_storage).err().expect("missing synthetic vault");
+    fs::rename(&held_vault, &vault).unwrap();
+    runtime::record_sync_error(&owner_storage, failure);
+    let diagnostic = runtime::snapshot(&owner_storage).unwrap().sync_diagnostic.unwrap();
+    assert_eq!(diagnostic.code, "protectedKeys");
+    assert_eq!(diagnostic.stage, "Open protected sharing keys");
+    assert!(diagnostic.reason.starts_with("Protected key storage failed ("));
+    assert!(diagnostic.occurred_at_unix_ms.is_some());
+    let serialized = serde_json::to_string(&diagnostic).unwrap();
+    assert!(!serialized.contains(OWNER_TOKEN));
+    assert!(!serialized.contains(&stored.vault_name));
+    runtime::poll_once(&owner_storage).unwrap();
+    let recovered = runtime::snapshot(&owner_storage).unwrap();
+    assert!(recovered.sync_diagnostic.is_none() && recovered.last_error.is_none());
     let existing = receiver_storage
         .create_text_item(CreateHistoryItemRequest {
             text: "synthetic product shared text".into(),

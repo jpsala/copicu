@@ -1,6 +1,4 @@
 import { type ReactNode, useCallback } from "react";
-import Settings from "lucide-react/dist/esm/icons/settings.mjs";
-import { UiIconButton, UiTooltip } from "../controls";
 import { WindowControls } from "./WindowControls";
 import {
   startCurrentWindowDrag,
@@ -50,20 +48,7 @@ export function CustomWindowFrame({
 
   return (
     <div className={`custom-window-frame is-${variant}`} aria-label={title}>
-      <div className={`window-chrome${onOpenSettings ? " has-settings" : ""}`}>
-        {onOpenSettings ? (
-          <UiTooltip label="Settings">
-            <UiIconButton
-              type="button"
-              className="window-control-button"
-              aria-label="Settings"
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={onOpenSettings}
-            >
-              <Settings size={15} aria-hidden="true" />
-            </UiIconButton>
-          </UiTooltip>
-        ) : null}
+      <div className="window-chrome">
         <WindowDragStrip title={title} />
         <WindowControls
           closeLabel={closeLabel}
@@ -71,6 +56,7 @@ export function CustomWindowFrame({
           hideLabel={hideLabel}
           keepOpen={keepOpen}
           onKeepOpenChange={onKeepOpenChange}
+          onOpenSettings={onOpenSettings}
           onHide={onHide}
           onPinChange={onPinChange}
           pinShortcutLabel={pinShortcutLabel}

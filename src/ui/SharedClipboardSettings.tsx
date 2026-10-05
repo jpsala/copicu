@@ -13,6 +13,7 @@ import { sharedControlMessage, useSharedCatalogInvalidation } from "../shared/us
 import { SharedIdentitySettings } from "./SharedIdentitySettings";
 import type { SharedIdentityStatus } from "../shared/sharedIdentity";
 import { folderFullPath } from "./folderModel";
+import { SharedSyncNotice } from "./SharedSyncNotice";
 
 export type SharedClipboardSettingsProps = {
   api?: SharedClipboardApi;
@@ -198,7 +199,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
     }
   }}>
     <div className="shared-settings-status">
-      <div><strong>{!snapshot ? "Checking sharing…" : !snapshot.available ? "Sharing unavailable in this build" : !snapshot.configured ? "No device linked" : identityState === "revoked" ? "Device access retired" : allPaused ? "Sharing paused" : "Device linked"}</strong>
+      <div><strong>{!snapshot ? "Checking sharing…" : !snapshot.available ? "Sharing unavailable in this build" : !snapshot.configured ? "No device linked" : identityState === "revoked" ? "Device access retired" : allPaused ? "Sharing paused" : snapshot.syncDiagnostic || snapshot.lastError ? "Sharing needs attention" : "Device linked"}</strong>
         <p>{snapshot?.configured ? "Share text and images between your PCs through connected folders." : "Sign in with the same Google account to share text and images between your PCs."}</p></div>
       <div className="shared-settings-actions">
         {snapshot?.configured && <UiButton type="button" variant={allPaused ? "filled" : "default"} size="compact-sm" loading={busy} disabled={linkPending} onClick={() => void run(async () => { accept(await api.setPaused(!allPaused)); })}>{allPaused ? "Resume sharing" : "Pause sharing"}</UiButton>}
@@ -206,7 +207,7 @@ export function SharedClipboardSettings({ api = sharedClipboardApi, folders: sup
       </div>
     </div>
     {error && <p className="shared-error" role="alert">{error}</p>}
-    {snapshot?.lastError && <p className="shared-error" role="alert">{snapshot.lastError}</p>}
+    {snapshot && <SharedSyncNotice snapshot={snapshot} busy={busy} onCheckStatus={() => void run(async () => { accept(await api.status()); })} />}
     {sharedControlMessage(snapshot?.controlSyncState) && <p role="status">{sharedControlMessage(snapshot?.controlSyncState)}</p>}
     {notice && <p className="shared-inline-notice" role="status">{notice}</p>}
     {snapshot?.available && <SharedIdentitySettings onChanged={next => { setIdentityState(next.state); setDeviceNames(Object.fromEntries(next.devices.map(device => [device.deviceId, device.name]))); if (next.state === "active" || next.state === "revoked") void api.status().then(accept); }} />}

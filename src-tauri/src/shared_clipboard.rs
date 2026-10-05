@@ -17,6 +17,8 @@ pub(crate) mod config;
 #[cfg(feature = "shared-clipboard")]
 pub(crate) mod runtime;
 #[cfg(feature = "shared-clipboard")]
+pub(crate) mod diagnostics;
+#[cfg(feature = "shared-clipboard")]
 pub(crate) mod product;
 #[cfg(feature = "shared-clipboard")]
 pub(crate) mod control_sync;

@@ -1740,6 +1740,8 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
         pub(crate) fn record_network_error(&self, error: Option<&str>) -> Result<()> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
             conn.execute("INSERT INTO shared_network_status(id,last_error) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET last_error=excluded.last_error",[error]).map_err(db)?;
+            // Retire only legacy worker notices; unrelated effect errors stay visible.
+            conn.execute("UPDATE shared_product_config SET last_error=NULL WHERE id=1 AND last_error IN ('Sharing worker could not process this tick','Sharing retention could not complete')", []).map_err(db)?;
             Ok(())
         }
         pub(crate) fn bootstrap_head(&self, sid: &str) -> Result<u64> {
@@ -1759,6 +1761,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             Vec<serde_json::Value>,
             Vec<serde_json::Value>,
             Option<String>,
+            Option<crate::shared_clipboard::diagnostics::SyncDiagnostic>,
         )> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
             let out = {
@@ -1833,7 +1836,9 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                 .optional()
                 .map_err(db)?
                 .flatten();
-            Ok((out, receipts, error.or(network_error)))
+            let diagnostic = network_error.as_deref().and_then(|raw| serde_json::from_str::<crate::shared_clipboard::diagnostics::SyncDiagnostic>(raw).ok());
+            let network_reason = diagnostic.as_ref().map(|issue| issue.reason.clone()).or(network_error);
+            Ok((out, receipts, error.or(network_reason), diagnostic))
         }
         pub(crate) fn history_policy(
             &self,
@@ -3909,6 +3914,43 @@ mod tests {
             assert_eq!(f.storage().get_item(received).unwrap().last_received_at_unix_ms,Some(300),"replay must not promote the item again");
         }
         #[test]
+        fn sync_diagnostic_recovery_clears_worker_errors_without_hiding_effect_failures() {
+            use crate::shared_clipboard::{diagnostics::SyncError, transport};
+            let f = fresh();
+            let store = RuntimeStore::init(f.storage()).unwrap();
+            store.ensure_product_schema().unwrap();
+            store.save_config("{}").unwrap();
+            store.record_error(Some("Sharing worker could not process this tick")).unwrap();
+            let diagnostic = SyncError::transport("Receive shared publications", transport::Error::Denied)
+                .diagnostic(Some(1234), Some("synthetic-channel".into()));
+            let json = serde_json::to_string(&diagnostic).unwrap();
+            store.record_network_error(Some(&json)).unwrap();
+            let (_, _, reason, issue) = store.summaries().unwrap();
+            assert_eq!(reason.as_deref(), Some(diagnostic.reason.as_str()));
+            let issue = issue.unwrap();
+            assert_eq!(issue.code, "serviceDenied");
+            assert_eq!(issue.stage, "Receive shared publications");
+            assert_eq!(issue.occurred_at_unix_ms, Some(1234));
+            store.record_network_error(None).unwrap();
+            let (_, _, reason, issue) = store.summaries().unwrap();
+            assert!(reason.is_none() && issue.is_none());
+
+            store.record_error(Some("Reception action queue is full; reception remains available")).unwrap();
+            store.record_network_error(Some(&json)).unwrap();
+            let (_, _, reason, issue) = store.summaries().unwrap();
+            assert!(reason.unwrap().contains("queue is full"));
+            assert!(issue.is_some());
+            store.record_network_error(None).unwrap();
+            assert!(store.summaries().unwrap().2.unwrap().contains("queue is full"));
+
+            store.record_error(None).unwrap();
+            store.record_network_error(Some("Relay unavailable or publication rejected; queued items will retry")).unwrap();
+            let (_, _, reason, issue) = store.summaries().unwrap();
+            assert!(reason.unwrap().contains("Relay unavailable"));
+            assert!(issue.is_none());
+        }
+
+        #[test]
         fn summary_does_not_compare_ordinals_from_different_channels() {
             let f = fresh();
             let store = RuntimeStore::init(f.storage()).unwrap();
@@ -3919,7 +3961,7 @@ mod tests {
                 store.abandon_preparing(&id).unwrap();
             }
             assert_eq!(store.reserve("synthetic_new", "test", "new_channel", "device_A").unwrap(), 1);
-            let (rows, _, _) = store.summaries().unwrap();
+            let (rows, _, _, _) = store.summaries().unwrap();
             assert_eq!(rows.len(), 100);
             assert_eq!(rows[0]["publicationId"], "synthetic_new");
             assert_eq!(rows[0]["channelId"], "new_channel");

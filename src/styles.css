@@ -328,10 +328,6 @@ button {
   padding: 4px 5px 4px 8px;
 }
 
-.window-chrome.has-settings {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
 .window-drag-strip {
   display: flex;
   min-width: 0;
