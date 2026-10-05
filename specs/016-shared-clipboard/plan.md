@@ -320,14 +320,18 @@ clip nuevo y movimiento efectivo conservan reglas exactas actuales: sin backfill
 descendientes, edición/tags ni eco de importaciones. Enviar existentes es selección
 manual o Action explícita, con resumen de cantidad y destinatarios.
 
-El único destino de recepción por canal/perfil evita dos importaciones que pelean
-con la deduplicación global. Elegir otro muestra dónde está conectado y permite
-trasladar esa entrada, conservando otras salidas de envío. El modelo admite futuro
-fan-out, pero no lo promete sin resolver clip único y metadata por carpeta.
+Se conserva un único destino de recepción por canal/perfil. Elegir otro muestra
+dónde está conectado y permite trasladar esa entrada, conservando otras salidas
+de envío. No hay fan-out implícito.
 
-Feed siempre conserva la publicación visible aun cuando el clip ya existe en otra
-carpeta. Importar automáticamente no mueve ni modifica ese clip. Guardar manualmente
-muestra esa coincidencia y permite abrirlo o moverlo con consentimiento explícito.
+Desde la revisión de JP del 2026-10-04, la unicidad local es carpeta + hash:
+guardar en otro destino crea una copia independiente; una coincidencia en el mismo
+destino preserva metadatos y actualiza `last_received_at_unix_ms`. El orden reciente
+considera recepción y captura sin cambiar los órdenes explícitos ni `copy_count`.
+Un resultado durable por receipt distingue creación/repetición y la carpeta usada;
+la conexión y el feed lo muestran. Copiar a carpeta conserva el original; mover
+con colisión se rechaza atómicamente. La procedencia por ítem sobrevive a copiar y
+editar para impedir eco. [Contrato y verificación](folder-deduplication.md).
 
 Conservar worker fuera de locks de UI/admisión, cola acotada, escrituras nativas
 cercadas por sequence, lease y generación, barrera de pausa y procedencia durable.

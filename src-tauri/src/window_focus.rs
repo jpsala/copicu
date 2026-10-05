@@ -227,6 +227,50 @@ pub fn foreground_window_snapshot() -> Option<ForegroundWindowSnapshot> {
     platform::foreground_window_snapshot()
 }
 
+pub(crate) fn is_process_foreground() -> bool {
+    platform::foreground_window_id()
+        .and_then(platform::window_process_id)
+        .is_some_and(|process_id| process_id == std::process::id())
+}
+
+#[cfg(all(not(test), target_os = "windows"))]
+pub(crate) fn raise_tauri_window_no_activate<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    let window_id =
+        own_window_id(window).ok_or_else(|| "window native handle unavailable".to_string())?;
+    platform::raise_window_no_activate(window_id)
+}
+
+#[cfg(not(test))]
+pub(crate) fn set_tauri_window_topmost_no_activate<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    topmost: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let window_id =
+            own_window_id(window).ok_or_else(|| "window native handle unavailable".to_string())?;
+        platform::set_window_topmost_no_activate(window_id, topmost)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if window.is_always_on_top().unwrap_or(false) != topmost {
+            window
+                .set_always_on_top(topmost)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(not(test), not(target_os = "windows")))]
+pub(crate) fn raise_tauri_window_no_activate<R: tauri::Runtime>(
+    _window: &tauri::WebviewWindow<R>,
+) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(not(target_os = "windows"))]
 #[cfg(not(test))]
 pub fn focus_tauri_window<R: tauri::Runtime>(
@@ -300,10 +344,12 @@ mod platform {
                 VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
             },
             WindowsAndMessaging::{
-                BringWindowToTop, GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW,
-                GetWindowThreadProcessId, IsWindow, IsWindowVisible, SetForegroundWindow,
-                SetWindowPos, ShowWindow, HWND_NOTOPMOST, HWND_TOPMOST, SHOW_WINDOW_CMD,
-                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE,
+                BringWindowToTop, GetForegroundWindow, GetWindowLongPtrW, GetWindowTextLengthW,
+                GetWindowTextW, GetWindowThreadProcessId, IsWindow, IsWindowVisible,
+                SetForegroundWindow, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_NOTOPMOST,
+                HWND_TOP, HWND_TOPMOST, SHOW_WINDOW_CMD, SWP_NOACTIVATE, SWP_NOMOVE,
+                SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE,
+                WS_EX_TOPMOST,
             },
         },
     };
@@ -368,15 +414,40 @@ mod platform {
             dev_log(format_args!("show no-activate returned false"));
         }
 
-        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW;
-        unsafe {
-            SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags)
-                .map_err(|error| format!("SetWindowPos topmost no-activate failed: {error}"))?;
-            SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags)
-                .map_err(|error| format!("SetWindowPos notopmost no-activate failed: {error}"))?;
-        }
+        raise_window_no_activate(window_id)
+    }
 
-        Ok(())
+    pub fn raise_window_no_activate(window_id: NativeWindowId) -> Result<(), String> {
+        let hwnd = hwnd_from_id(window_id);
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW;
+        // HWND_TOP preserves the existing TOPMOST band; toggling TOPMOST here
+        // would silently unpin the picker or demote a preview above a pinned picker.
+        unsafe { SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, flags) }
+            .map_err(|error| format!("SetWindowPos no-activate failed: {error}"))
+    }
+
+    pub fn set_window_topmost_no_activate(
+        window_id: NativeWindowId,
+        topmost: bool,
+    ) -> Result<(), String> {
+        let hwnd = hwnd_from_id(window_id);
+        if !live_window(hwnd) {
+            return Err("window is no longer valid".to_string());
+        }
+        let current = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST.0 != 0;
+        if current == topmost {
+            return Ok(());
+        }
+        // Tao's style setter can hide a HWND shown only by SW_SHOWNOACTIVATE.
+        // Change only its native band; preserve visibility, geometry and focus.
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+        let after = if topmost {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        };
+        unsafe { SetWindowPos(hwnd, Some(after), 0, 0, 0, 0, flags) }
+            .map_err(|error| format!("SetWindowPos topmost failed: {error}"))
     }
 
     pub fn hide_window(window_id: NativeWindowId) -> Result<(), String> {

@@ -5,7 +5,6 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.mjs";
 import UnlockKeyhole from "lucide-react/dist/esm/icons/unlock-keyhole.mjs";
 import Pin from "lucide-react/dist/esm/icons/pin.mjs";
 import PinOff from "lucide-react/dist/esm/icons/pin-off.mjs";
-import Power from "lucide-react/dist/esm/icons/power.mjs";
 import X from "lucide-react/dist/esm/icons/x.mjs";
 import { type MouseEvent, useCallback, useEffect, useState } from "react";
 import { listen, type Event } from "@tauri-apps/api/event";
@@ -32,9 +31,7 @@ type WindowControlsProps = {
   onHide?: () => void;
   onKeepOpenChange?: (keepOpen: boolean) => void;
   onPinChange?: (pinned: boolean) => void;
-  onQuit?: () => void;
   pinShortcutLabel?: string;
-  quitLabel?: string;
 };
 
 export function WindowControls({
@@ -45,9 +42,7 @@ export function WindowControls({
   onHide,
   onKeepOpenChange,
   onPinChange,
-  onQuit,
   pinShortcutLabel,
-  quitLabel = "Quit",
 }: WindowControlsProps) {
   const [isPinned, setIsPinned] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
@@ -137,17 +132,6 @@ export function WindowControls({
     });
   }, []);
 
-  const handleQuit = useCallback(() => {
-    void recordWindowChromeEvent("window-control-quit-click");
-    try {
-      onQuit?.();
-      void recordWindowChromeEvent("window-control-quit-dispatched");
-    } catch (error) {
-      void recordWindowChromeEvent("window-control-quit-error", String(error));
-      throw error;
-    }
-  }, [onQuit]);
-
   const handleHide = useCallback(() => {
     void recordWindowChromeEvent("window-control-hide-click");
     try {
@@ -236,19 +220,6 @@ export function WindowControls({
             onClick={handleHide}
           >
             <X size={15} strokeWidth={2.4} />
-          </UiIconButton>
-        </UiTooltip>
-      ) : null}
-      {controls.includes("quit") ? (
-        <UiTooltip label={quitLabel}>
-          <UiIconButton
-            type="button"
-            className="window-control-button is-close"
-            aria-label={quitLabel}
-            onMouseDown={preventDrag}
-            onClick={handleQuit}
-          >
-            <Power size={14} strokeWidth={2.4} />
           </UiIconButton>
         </UiTooltip>
       ) : null}

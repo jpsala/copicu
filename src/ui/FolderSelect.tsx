@@ -20,6 +20,7 @@ export type FolderSelectProps = {
   disabled?: boolean;
   excludeIds?: number[];
   allowCreate?: boolean;
+  zIndex?: number;
 };
 const rowKey = (folderId: number | null) => String(folderId);
 const folderIdFromKey = (key: string) => key === "null" ? null : Number(key);
@@ -45,7 +46,7 @@ function MatchingName({ name, query }: { name: string; query: string }) {
 }
 
 /** A destination tree. Selection and creation are committed only to the caller's draft. */
-export function FolderSelect({ folders, value, onChange, label = "Folder", placeholder = "Choose folder", disabled = false, excludeIds = [], allowCreate = true }: FolderSelectProps) {
+export function FolderSelect({ folders, value, onChange, label = "Folder", placeholder = "Choose folder", disabled = false, excludeIds = [], allowCreate = true, zIndex }: FolderSelectProps) {
   const id = useId();
   const treeId = `${id}-tree`;
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -199,7 +200,7 @@ export function FolderSelect({ folders, value, onChange, label = "Folder", place
       setNewName(draftPlan?.missingSegments.join("/") ?? "");
       setPosition({ visibility: "hidden" }); setOpen(true);
     }}><Folder size={15} aria-hidden="true" /><span id={`${id}-value`} title={displayPath}>{displayPath}</span>{value?.kind === "create" && <small>New</small>}<ChevronDown size={15} aria-hidden="true" /></button>
-    {open && createPortal(<div id={`${id}-panel`} ref={panelRef} className="folder-select-panel" role="dialog" aria-label={`Choose ${label.toLocaleLowerCase()}`} style={position} onKeyDown={event => {
+    {open && createPortal(<div id={`${id}-panel`} ref={panelRef} className="folder-select-panel" role="dialog" aria-label={`Choose ${label.toLocaleLowerCase()}`} style={{ ...position, zIndex }} onKeyDown={event => {
       event.stopPropagation();
       if (event.key === "Escape") { event.preventDefault(); if (creation) cancelCreation(); else close(); }
       if (event.key === "Tab") {

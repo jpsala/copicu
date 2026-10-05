@@ -28,6 +28,10 @@ Estado distribuido, próximo paso y evidencia en
 [track 041](../tracks/041-shared-clipboard.md) y
 [aceptación de custodia](../../specs/016-shared-clipboard/custody-acceptance.md).
 
+Infra conserva el [mapa transversal del servicio VPS](C:/dev/infra/docs/runbooks/constelaciones-only-vps.md#copicu-sharing-dependencia-activa--verificada-2026-10-04):
+runtime, volumen, configuración/issuer/custodia y criterio de conservación.
+El contrato técnico de operación y restore permanece en este proyecto.
+
 La capacidad se compila por defecto, pero sharing sigue apagado en un perfil
 sin configurar: no inicializa tablas auxiliares ni transporte de sharing ni
 publica sus copias. Una conexión explícita determina el flujo; Windows y Actions
@@ -97,9 +101,25 @@ y [aceptación](../../specs/016-shared-clipboard/media-acceptance.md).
 
 ## Identidades, conexiones y efectos
 
+Settings ordena General → Sharing. Sharing muestra cuenta/equipo, conexiones
+`carpeta local ↔ portapapeles compartido` y actividad; Windows, atajos y scripts se
+despliegan aparte con un resumen de configuración. Guardar en Copicu no modifica
+lo que pega Ctrl+V. Las conexiones se crean/editan sólo con el diálogo de conexión,
+conservando su ID (también legacy), contexto Root/All history y confirmación para
+trasladar recepción. Los borradores de comportamiento contienen sólo efectos:
+al guardar se aplican únicamente los campos cambiados sobre la policy más reciente,
+sin restaurar destinos antiguos. Sharing tiene guardado propio; el footer global
+explicita cualquier borrador pendiente de otras categorías.
+
 - Recurso compartido, carpeta local y clip deduplicado tienen identidades distintas.
   Publicaciones son inmutables; reintentos del host conservan su ID. Renombrar una
   carpeta o recurso no cambia el destino configurado.
+- Deduplicación revisada el 2026-10-04: contenido igual en carpetas distintas son
+  ítems independientes. Recibirlo crea una copia en el destino; si ya estaba allí,
+  conserva metadatos y sube por actividad recibida en el orden reciente, sin sumar
+  copias de Windows. Conexión y feed muestran el destino y distinguen guardado de
+  recibido nuevamente. Copiar a carpeta conserva el original; mover con colisión
+  se rechaza sin cambios parciales. [Contrato](../../specs/016-shared-clipboard/folder-deduplication.md).
 - Una conexión explícita puede enviar, recibir o ambas desde una carpeta exacta,
   Root o All history. El scope general se elige en Settings: Todo Copicu o Sólo
   clips sin carpeta. El envío general admite ingresos locales nuevos al perfil;

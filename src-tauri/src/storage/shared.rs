@@ -861,8 +861,8 @@ impl AppStorage {
             }
             let existing: Option<i64> = conn
                 .query_row(
-                    "SELECT id FROM clipboard_items WHERE normalized_hash=?1",
-                    [&hash],
+                    "SELECT id FROM clipboard_items WHERE normalized_hash=?1 AND folder_id IS ?2",
+                    params![hash,folder],
                     |r| r.get(0),
                 )
                 .optional()
@@ -911,6 +911,7 @@ CREATE TABLE IF NOT EXISTS shared_product_config(id INTEGER PRIMARY KEY CHECK(id
 CREATE TABLE IF NOT EXISTS shared_identity_state(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shared_identity_intents(id TEXT PRIMARY KEY,json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shared_remote_provenance(hash TEXT PRIMARY KEY,item_id INTEGER);
+CREATE TABLE IF NOT EXISTS shared_remote_items(item_id INTEGER PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS shared_network_status(id INTEGER PRIMARY KEY CHECK(id=1),last_error TEXT);
 CREATE TABLE IF NOT EXISTS shared_effect_notes(attempt TEXT PRIMARY KEY,reason TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS shared_receipt_origins(subscription TEXT NOT NULL,publication TEXT NOT NULL,origin TEXT NOT NULL,PRIMARY KEY(subscription,publication));
@@ -1128,6 +1129,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                     conn.execute_batch(SCHEMA).map_err(db)?;
                     conn.execute_batch(EXTRA_SCHEMA).map_err(db)?;
                 }
+                conn.execute_batch("CREATE TABLE IF NOT EXISTS shared_history_results(subscription TEXT NOT NULL,publication TEXT NOT NULL,folder_id INTEGER,folder_name TEXT NOT NULL,outcome TEXT NOT NULL CHECK(outcome IN ('created','existing')),received_at INTEGER NOT NULL,PRIMARY KEY(subscription,publication),FOREIGN KEY(subscription,publication) REFERENCES shared_receipts(subscription,publication))").map_err(db)?;
                 Ok(())
             })?;
             Ok(Self { storage })
@@ -1448,14 +1450,14 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                 } else {
                     false
                 };
-                let (result, created, prune) = if missing {
+                let (result, changed, prune) = if missing {
                     conn.execute("UPDATE shared_receipts SET history_outcome='failed',history_reason='missingFolder' WHERE subscription=?1 AND publication=?2",params![sid,e.publication_id]).map_err(db)?;
                     (HistoryOutcome::MissingFolder, false, None)
                 } else {
                     let existing: Option<i64> = conn
                         .query_row(
-                            "SELECT id FROM clipboard_items WHERE normalized_hash=?1",
-                            [&hash],
+                            "SELECT id FROM clipboard_items WHERE normalized_hash=?1 AND folder_id IS ?2",
+                            params![hash, folder],
                             |r| r.get(0),
                         )
                         .optional()
@@ -1466,17 +1468,23 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                             insert_content(conn, self.storage, text, &hash, folder, now)?
                         }
                     };
+                    conn.execute("UPDATE clipboard_items SET last_received_at_unix_ms=MAX(COALESCE(last_received_at_unix_ms,0),?2) WHERE id=?1", params![item,now]).map_err(db)?;
+                    let folder_name = match folder {
+                        Some(folder) => super::super::folders::summaries(conn).map_err(|_| Error::Storage)?.into_iter().find(|f| f.id==folder).ok_or(Error::Missing)?.path,
+                        None => "/".into(),
+                    };
+                    conn.execute("INSERT INTO shared_history_results(subscription,publication,folder_id,folder_name,outcome,received_at) VALUES(?1,?2,?3,?4,?5,?6)",params![sid,e.publication_id,folder,folder_name,if existing.is_some() {"existing"} else {"created"},now]).map_err(db)?;
                     conn.execute("UPDATE shared_receipts SET history_outcome='applied',local_item_id=?3 WHERE subscription=?1 AND publication=?2",params![sid,e.publication_id,item]).map_err(db)?;
                     (
                         HistoryOutcome::Applied { item: Some(item) },
-                        existing.is_none(),
+                        true,
                         Some(prune_history_from_conn(conn).map_err(|_| Error::Storage)?),
                     )
                 };
                 let status = if missing { "failed" } else { "applied" };
                 conn.execute("INSERT INTO shared_attempts(id,subscription,publication,generation,sink,manual,outcome,report) VALUES(?1,?2,?3,?4,'history',0,?5,'pending')",params![attempt,sid,e.publication_id,counter(fence.generation),status]).map_err(|_|Error::Conflict)?;
                 conn.execute("INSERT INTO shared_effect_water VALUES(?1,'history',?2) ON CONFLICT(subscription,sink) DO UPDATE SET sequence=excluded.sequence",params![sid,sequence]).map_err(db)?;
-                Ok((result, created, prune))
+                Ok((result, changed, prune))
             })?;
             if outcome.1 || outcome.2.as_ref().is_some_and(|p| p.removed_items > 0) {
                 self.storage.bump_mutation_epoch();
@@ -1686,8 +1694,14 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             })
         }
         pub(crate) fn ensure_product_schema(&self) -> Result<()> {
-            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
-            conn.execute_batch(PRODUCT_SCHEMA).map_err(db)
+            tx(self.storage, |conn| {
+                let has_items: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_remote_items')", [], |r| r.get(0)).map_err(db)?;
+                conn.execute_batch(PRODUCT_SCHEMA).map_err(db)?;
+                if !has_items {
+                    conn.execute("INSERT OR IGNORE INTO shared_remote_items(item_id) SELECT item_id FROM shared_remote_provenance WHERE item_id IS NOT NULL UNION SELECT local_item_id FROM shared_receipts WHERE self_origin=0 AND local_item_id IS NOT NULL", []).map_err(db)?;
+                }
+                Ok(())
+            })
         }
         pub(crate) fn control_cache(&self, identity: &str) -> Result<Option<String>> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
@@ -1796,7 +1810,8 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                     let sink_outcome = |sink: &str| -> Result<Option<String>> {
                         conn.query_row("SELECT outcome FROM shared_attempts WHERE subscription=?1 AND publication=?2 AND sink=?3 ORDER BY rowid DESC LIMIT 1",params![sid,publication,sink],|r|r.get(0)).optional().map_err(db)
                     };
-                    values.push(serde_json::json!({"subscriptionId":sid,"publicationId":publication,"channelId":channel,"sequence":number(sequence)?.to_string(),"delivery":delivery,"acquisition":acquisition,"historyOutcome":history,"localItemId":item,"originDeviceId":origin,"expiresAtUnixMs":expiry.to_string(),"clipboardOutcome":sink_outcome("clipboard")?,"actionOutcome":sink_outcome("action")?}));
+                    let saved: Option<serde_json::Value> = conn.query_row("SELECT outcome,folder_id,folder_name,received_at FROM shared_history_results WHERE subscription=?1 AND publication=?2", params![sid,publication], |r| Ok(serde_json::json!({"outcome":r.get::<_,String>(0)?,"folderId":r.get::<_,Option<i64>>(1)?,"folderName":r.get::<_,String>(2)?,"receivedAtUnixMs":r.get::<_,i64>(3)?}))).optional().map_err(db)?;
+                    values.push(serde_json::json!({"subscriptionId":sid,"publicationId":publication,"channelId":channel,"sequence":number(sequence)?.to_string(),"delivery":delivery,"acquisition":acquisition,"historyOutcome":history,"historyResult":saved,"localItemId":item,"originDeviceId":origin,"expiresAtUnixMs":expiry.to_string(),"clipboardOutcome":sink_outcome("clipboard")?,"actionOutcome":sink_outcome("action")?}));
                 }
                 values
             };
@@ -2032,9 +2047,13 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
             self.provenance_hash(&hash, item)
         }
         pub(crate) fn provenance_hash(&self, hash: &str, item: Option<i64>) -> Result<()> {
-            let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
-            conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=COALESCE(excluded.item_id,shared_remote_provenance.item_id)",params![hash,item]).map_err(db)?;
-            Ok(())
+            tx(self.storage, |conn| {
+                conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=COALESCE(excluded.item_id,shared_remote_provenance.item_id)",params![hash,item]).map_err(db)?;
+                if let Some(item) = item {
+                    conn.execute("INSERT OR IGNORE INTO shared_remote_items(item_id) VALUES(?1)",[item]).map_err(db)?;
+                }
+                Ok(())
+            })
         }
         /// Explicit user import, independent from delivery cursors, capture and
         /// automatic Actions. Dedupe preserves an existing item's metadata.
@@ -2064,8 +2083,8 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                 }
                 let existing: Option<(i64, Option<i64>)> = conn
                     .query_row(
-                        "SELECT id,folder_id FROM clipboard_items WHERE normalized_hash=?1",
-                        [&hash],
+                        "SELECT id,folder_id FROM clipboard_items WHERE normalized_hash=?1 AND folder_id IS ?2",
+                        params![hash,folder],
                         |r| Ok((r.get(0)?, r.get(1)?)),
                     )
                     .optional()
@@ -2075,11 +2094,13 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
                 } else {
                     (insert_content(conn, self.storage, text, &hash, folder, now)?, folder)
                 };
+                conn.execute("UPDATE clipboard_items SET last_received_at_unix_ms=MAX(COALESCE(last_received_at_unix_ms,0),?2) WHERE id=?1",params![item,now]).map_err(db)?;
                 conn.execute("INSERT INTO shared_remote_provenance(hash,item_id) VALUES(?1,?2) ON CONFLICT(hash) DO UPDATE SET item_id=excluded.item_id",params![hash,item]).map_err(db)?;
+                conn.execute("INSERT OR IGNORE INTO shared_remote_items(item_id) VALUES(?1)",[item]).map_err(db)?;
                 let prune = if existing.is_none() { Some(prune_history_from_conn(conn).map_err(|_| Error::Storage)?) } else { None };
                 Ok((serde_json::json!({"itemId":item,"folderId":destination,"alreadyExists":existing.is_some()}), prune))
             })?;
-            if result.0["alreadyExists"] == false || result.1.as_ref().is_some_and(|p| p.removed_items > 0) { self.storage.bump_mutation_epoch(); }
+            self.storage.bump_mutation_epoch();
             if let Some(prune) = result.1 { self.storage.remove_blob_paths(prune.blob_paths); }
             Ok(result.0)
         }
@@ -2089,7 +2110,7 @@ CREATE TABLE IF NOT EXISTS shared_control_status(id INTEGER PRIMARY KEY CHECK(id
         }
         pub(crate) fn is_remote_hash(&self, item: Option<i64>, hash: &str) -> Result<bool> {
             let conn = self.storage.conn.lock().map_err(|_| Error::Storage)?;
-            conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_remote_provenance WHERE hash=?1 OR (item_id=?2 AND ?2 IS NOT NULL))",params![hash,item],|r|r.get(0)).map_err(db)
+            conn.query_row("SELECT EXISTS(SELECT 1 FROM shared_remote_provenance WHERE hash=?1 OR (item_id=?2 AND ?2 IS NOT NULL)) OR EXISTS(SELECT 1 FROM shared_remote_items WHERE item_id=?2)",params![hash,item],|r|r.get(0)).map_err(db)
         }
         pub(crate) fn claim_clipboard(
             &self,
@@ -2640,7 +2661,7 @@ mod tests {
         );
     }
     #[test]
-    fn import_dedupes_without_moving_metadata_or_capture_bookkeeping() {
+    fn import_dedupes_in_destination_without_moving_other_copies_or_capture_bookkeeping() {
         let f = Fixture::new();
         let s = f.storage();
         let local = s.create_folder(None, "Local").unwrap();
@@ -2661,15 +2682,13 @@ mod tests {
             ],
         )
         .unwrap();
-        assert_eq!(
-            s.shared_import_fixture("sub-A", "pub-A", generation, "same", 0)
-                .unwrap(),
-            item
-        );
+        let received = s.shared_import_fixture("sub-A", "pub-A", generation, "same", 0).unwrap();
+        assert_ne!(received, item);
+        assert_eq!(s.get_item(received).unwrap().folder_id,Some(remote.id));
         assert_eq!(
             s.shared_import_fixture("sub-A", "pub-B", generation, "same", 0)
                 .unwrap(),
-            item
+            received
         );
         let after = s.get_item(item).unwrap();
         assert_eq!(after.folder_id, Some(local.id));
@@ -3828,6 +3847,66 @@ mod tests {
                 store.history_import("auth", after, &v, "history-two", 2),
                 Err(Error::Ineligible)
             ));
+        }
+        #[test]
+        fn folder_receptions_create_independent_copies_refresh_recency_and_persist_feedback() {
+            let mut f=fresh();
+            let (signer,key)=keys();
+            let original=f.storage().insert_text("synthetic authenticated text", &hash_text("synthetic authenticated text")).unwrap();
+            let parent=f.storage().create_folder(None,"Sharing").unwrap();
+            let destination=f.storage().create_folder(Some(parent.id),"Received").unwrap();
+            let fence=setup_auth(f.storage(),&signer,Some(destination.id));
+            let store=RuntimeStore::init(f.storage()).unwrap();
+            store.ensure_product_schema().unwrap();
+            let first=verified(&signer,&key,"folder-first",1,1000);
+            let fence=store.admit_page("auth",fence,&[VerifiedArrival{server_sequence:1,text:&first}],100).unwrap();
+            let HistoryOutcome::Applied{item:Some(received)}=store.history_import("auth",fence,&first,"save-first",100).unwrap() else {panic!("expected saved reception")};
+            assert_ne!(received,original);
+            assert_eq!(f.storage().get_item(original).unwrap().folder_id,None);
+            assert_eq!(f.storage().get_item(received).unwrap().folder_id,Some(destination.id));
+            let before=f.storage().get_item(original).unwrap();
+            f.storage().conn.lock().unwrap().execute("UPDATE clipboard_items SET title='Preserved',notes='Local notes' WHERE id=?1",[received]).unwrap();
+            f.storage().conn.lock().unwrap().execute("UPDATE clipboard_items SET created_at_unix_ms=1,last_copied_at_unix_ms=10 WHERE id=?1",[original]).unwrap();
+            let other=f.storage().insert_text("another clip","another-clip-hash").unwrap();
+            f.storage().conn.lock().unwrap().execute("UPDATE clipboard_items SET created_at_unix_ms=200,last_copied_at_unix_ms=200 WHERE id=?1",[other]).unwrap();
+            assert_eq!(f.storage().list_recent().unwrap()[0].id,other);
+            let repeat=verified(&signer,&key,"folder-repeat",2,1000);
+            let fence=store.admit_page("auth",fence,&[VerifiedArrival{server_sequence:2,text:&repeat}],300).unwrap();
+            let epoch=f.storage().mutation_epoch().load(Ordering::Relaxed);
+            assert_eq!(store.history_import("auth",fence,&repeat,"save-repeat",300).unwrap(),HistoryOutcome::Applied{item:Some(received)});
+            assert!(f.storage().mutation_epoch().load(Ordering::Relaxed)>epoch);
+            let item=f.storage().get_item(received).unwrap();
+            assert_eq!(item.last_received_at_unix_ms,Some(300));
+            assert_eq!(item.title.as_deref(),Some("Preserved"));
+            assert_eq!(item.notes.as_deref(),Some("Local notes"));
+            assert_eq!(item.copy_count,0);
+            assert_eq!(f.storage().get_item(original).unwrap().copy_count,before.copy_count);
+            assert_eq!(f.storage().list_recent().unwrap()[0].id,received);
+            let first_page=f.storage().list_page(super::super::super::HistoryPageRequest{query:"".into(),limit:Some(1),cursor:None}).unwrap();
+            assert_eq!(first_page.items[0].id,received);
+            let next=f.storage().list_page(super::super::super::HistoryPageRequest{query:"".into(),limit:Some(1),cursor:first_page.next_cursor}).unwrap();
+            assert_eq!(next.items[0].id,other);
+            let summaries=store.summaries().unwrap().1;
+            assert_eq!(summaries[0]["historyResult"]["outcome"],"existing");
+            assert_eq!(summaries[0]["historyResult"]["folderName"],"Sharing/Received");
+            assert_eq!(summaries[1]["historyResult"]["outcome"],"created");
+            assert_eq!(scalar::<i64>(f.storage(),"SELECT COUNT(*) FROM clipboard_item_capture_events"),2);
+            // Upgrading a legacy profile remembers the item IDs in retained receipts.
+            f.storage().conn.lock().unwrap().execute_batch("DROP TABLE shared_remote_items").unwrap();
+            store.ensure_product_schema().unwrap();
+            assert!(store.is_remote_hash(Some(received),"edited-after-old-reception").unwrap());
+            store.provenance_hash(&first.content().hash(),Some(received)).unwrap();
+            let another_folder=f.storage().create_folder(None,"Forward guard").unwrap();
+            let copy=f.storage().copy_history_items_to_folder(vec![received],Some(another_folder.id),None).unwrap().item_ids[0];
+            f.storage().update_item_text(copy,"edited remote copy".into()).unwrap();
+            assert!(store.is_remote(Some(copy),"edited remote copy").unwrap());
+            drop(store);
+            f.reopen();
+            let store=RuntimeStore::init(f.storage()).unwrap();
+            store.ensure_product_schema().unwrap();
+            assert_eq!(store.summaries().unwrap().1[0]["historyResult"]["receivedAtUnixMs"],300);
+            store.history_import("auth",fence,&repeat,"save-repeat",400).unwrap();
+            assert_eq!(f.storage().get_item(received).unwrap().last_received_at_unix_ms,Some(300),"replay must not promote the item again");
         }
         #[test]
         fn summary_does_not_compare_ordinals_from_different_channels() {

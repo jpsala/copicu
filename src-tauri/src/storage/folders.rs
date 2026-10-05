@@ -1,4 +1,4 @@
-use rusqlite::{params, params_from_iter, Connection};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
@@ -43,6 +43,28 @@ fn folder_exists(conn: &Connection, id: i64) -> Result<(), String> {
 pub(super) fn validate_parent(conn: &Connection, parent_id: Option<i64>) -> Result<(), String> {
     if let Some(id) = parent_id { folder_exists(conn, id)?; }
     Ok(())
+}
+
+// A move must never silently merge independent metadata from two copies.
+pub(super) fn validate_item_moves(conn: &Connection, item_ids: &[i64], folder: Option<i64>) -> Result<(), String> {
+    let mut hashes = HashSet::new();
+    for id in item_ids.iter().copied().collect::<HashSet<_>>() {
+        let hash: Option<String> = conn.query_row("SELECT normalized_hash FROM clipboard_items WHERE id=?1", [id], |r| r.get(0)).optional().map_err(db)?;
+        let Some(hash) = hash else { continue; };
+        let collision: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM clipboard_items WHERE normalized_hash=?1 AND folder_id IS ?2 AND id!=?3)", params![hash, folder, id], |r| r.get(0)).map_err(db)?;
+        if collision || !hashes.insert(hash) {
+            return Err("This folder already contains the same content. No clips were moved. Use Copy to folder to keep the originals and reuse the destination copy.".into());
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderCopyResult {
+    pub created: usize,
+    pub existing: usize,
+    pub item_ids: Vec<i64>,
 }
 
 pub(super) fn folder_name(name: &str) -> Result<&str, String> {
@@ -176,6 +198,10 @@ impl AppStorage {
             drop(statement);
             tx.execute(&format!("DELETE FROM clipboard_items WHERE folder_id IN ({placeholders})"), params_from_iter(&ids)).map_err(db)?;
         } else {
+            let mut statement = tx.prepare(&format!("SELECT id FROM clipboard_items WHERE folder_id IN ({placeholders})")).map_err(db)?;
+            let moved = statement.query_map(params_from_iter(&ids), |r| r.get(0)).map_err(db)?.collect::<Result<Vec<i64>, _>>().map_err(db)?;
+            drop(statement);
+            validate_item_moves(&tx, &moved, None)?;
             tx.execute(&format!("UPDATE clipboard_items SET folder_id = NULL WHERE folder_id IN ({placeholders})"), params_from_iter(&ids)).map_err(db)?;
         }
         if !delete_descendants {
@@ -198,6 +224,7 @@ impl AppStorage {
         let mut conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
         let tx = conn.transaction().map_err(db)?;
         validate_parent(&tx, folder_id)?;
+        validate_item_moves(&tx, &item_ids, folder_id)?;
         let mut changed = 0;
         let mut moved_items = Vec::new();
         for id in item_ids.into_iter().collect::<HashSet<_>>() {
@@ -213,6 +240,48 @@ impl AppStorage {
     }
 
     pub fn get_capture_folder_destination(&self) -> Result<Option<i64>, String> { self.capture_folder_destination() }
+
+    pub fn copy_history_items_to_folder(&self, item_ids: Vec<i64>, folder_id: Option<i64>, folder_path: Option<&str>) -> Result<FolderCopyResult, String> {
+        let item_ids = super::normalize_metadata_selection_ids(&item_ids)?;
+        let mut conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
+        let tx = conn.transaction().map_err(db)?;
+        let folder = match folder_path {
+            Some(path) => Some(super::resolve_folder_path_from_conn(&tx, path)?),
+            None => { validate_parent(&tx, folder_id)?; folder_id },
+        };
+        let now = super::now_unix_ms();
+        let mut result = FolderCopyResult { created: 0, existing: 0, item_ids: vec![] };
+        let mut created_ids = vec![];
+        let has_provenance: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='shared_remote_items')", [], |r| r.get(0)).map_err(db)?;
+        for source in item_ids {
+            super::ensure_item_exists(&tx, source)?;
+            let existing: Option<i64> = tx.query_row("SELECT id FROM clipboard_items WHERE folder_id IS ?1 AND normalized_hash=(SELECT normalized_hash FROM clipboard_items WHERE id=?2)", params![folder, source], |r| r.get(0)).optional().map_err(db)?;
+            let item = if let Some(item) = existing {
+                result.existing += 1;
+                item
+            } else {
+                tx.execute("INSERT INTO clipboard_items(content_kind,text,normalized_hash,created_at_unix_ms,last_used_at_unix_ms,last_copied_at_unix_ms,copy_count,mime_primary,blob_path,thumbnail_path,byte_size,width,height,title,notes,tags,is_marked,marked_at_unix_ms,is_inbox,inbox_at_unix_ms,folder_id)
+                    SELECT content_kind,text,normalized_hash,?1,?1,NULL,0,mime_primary,blob_path,thumbnail_path,byte_size,width,height,title,notes,tags,is_marked,marked_at_unix_ms,is_inbox,inbox_at_unix_ms,?2 FROM clipboard_items WHERE id=?3", params![now,folder,source]).map_err(db)?;
+                let item = tx.last_insert_rowid();
+                tx.execute("INSERT INTO clipboard_item_tags(item_id,tag_id,created_at_unix_ms,source,confidence) SELECT ?1,tag_id,?2,source,confidence FROM clipboard_item_tags WHERE item_id=?3", params![item,now,source]).map_err(db)?;
+                tx.execute("INSERT INTO clipboard_item_tag_suppressions(item_id,value,normalized_value,created_at_unix_ms) SELECT ?1,value,normalized_value,?2 FROM clipboard_item_tag_suppressions WHERE item_id=?3", params![item,now,source]).map_err(db)?;
+                if has_provenance {
+                    tx.execute("INSERT OR IGNORE INTO shared_remote_items(item_id) SELECT ?1 WHERE EXISTS(SELECT 1 FROM shared_remote_items WHERE item_id=?2) OR EXISTS(SELECT 1 FROM shared_remote_provenance WHERE item_id=?2 OR hash=(SELECT normalized_hash FROM clipboard_items WHERE id=?2))", params![item,source]).map_err(db)?;
+                }
+                result.created += 1;
+                created_ids.push(item);
+                item
+            };
+            if !result.item_ids.contains(&item) { result.item_ids.push(item); }
+        }
+        let prune = if result.created > 0 { Some(super::prune_history_from_conn(&tx)?) } else { None };
+        tx.commit().map_err(db)?;
+        drop(conn);
+        if result.created > 0 { self.bump_mutation_epoch(); }
+        if let Some(prune) = prune { self.remove_blob_paths(prune.blob_paths); }
+        for item in created_ids { self.notify_shared_folder_ingress(item, true); }
+        Ok(result)
+    }
 
     pub fn get_capture_folder_destination_state(&self) -> Result<CaptureFolderDestinationState, String> {
         let state = self.capture_folder_destination.lock().map_err(|_| "capture destination mutex poisoned")?;

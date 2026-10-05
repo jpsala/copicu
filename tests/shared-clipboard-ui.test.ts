@@ -75,6 +75,12 @@ describe("shared clipboard controls", () => {
     expect(sharedReceiptStatus(receipt(), 1800000000000)).toBe("Expired");
     expect(sharedReceiptStatus(receipt({ acquisition: "pendingKey" }), 1799999999999)).toBe("Awaiting key");
   });
+  test("receipt feedback distinguishes a new folder copy from repeated content", () => {
+    const saved = receipt({ historyOutcome: "applied", historyResult: { outcome: "created", folderId: 7, folderName: "Notebook", receivedAtUnixMs: 123 } });
+    expect(sharedReceiptStatus(saved, 1799999999999)).toBe("Ready · Saved in Notebook");
+    expect(sharedReceiptStatus({ ...saved, historyResult: { ...saved.historyResult!, outcome: "existing" } }, 1799999999999)).toBe("Ready · Received again in Notebook");
+    expect(sharedReceiptStatus(receipt({ historyOutcome: "failed" }), 1799999999999)).toBe("Ready · Could not save in the receiving folder");
+  });
   test("reception action chooser requires the exact channel and guarded inputs", () => {
     expect(sharedReceptionActionEligible(action(), "synthetic-channel")).toBe(true);
     expect(sharedReceptionActionEligible(action(), "other-channel")).toBe(false);

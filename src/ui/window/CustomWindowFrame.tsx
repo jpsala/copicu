@@ -1,4 +1,6 @@
 import { type ReactNode, useCallback } from "react";
+import Settings from "lucide-react/dist/esm/icons/settings.mjs";
+import { UiIconButton, UiTooltip } from "../controls";
 import { WindowControls } from "./WindowControls";
 import {
   startCurrentWindowDrag,
@@ -19,9 +21,8 @@ type CustomWindowFrameProps = {
   hideLabel?: string;
   onHide?: () => void;
   onKeepOpenChange?: (keepOpen: boolean) => void;
+  onOpenSettings?: () => void;
   onPinChange?: (pinned: boolean) => void;
-  onQuit?: () => void;
-  quitLabel?: string;
   keepOpen?: boolean;
   pinShortcutLabel?: string;
   resizable?: boolean;
@@ -36,11 +37,10 @@ export function CustomWindowFrame({
   hideLabel,
   onHide,
   onKeepOpenChange,
+  onOpenSettings,
   onPinChange,
-  onQuit,
   keepOpen,
   pinShortcutLabel,
-  quitLabel,
   resizable,
   title,
   variant,
@@ -50,7 +50,20 @@ export function CustomWindowFrame({
 
   return (
     <div className={`custom-window-frame is-${variant}`} aria-label={title}>
-      <div className="window-chrome">
+      <div className={`window-chrome${onOpenSettings ? " has-settings" : ""}`}>
+        {onOpenSettings ? (
+          <UiTooltip label="Settings">
+            <UiIconButton
+              type="button"
+              className="window-control-button"
+              aria-label="Settings"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onOpenSettings}
+            >
+              <Settings size={15} aria-hidden="true" />
+            </UiIconButton>
+          </UiTooltip>
+        ) : null}
         <WindowDragStrip title={title} />
         <WindowControls
           closeLabel={closeLabel}
@@ -60,9 +73,7 @@ export function CustomWindowFrame({
           onKeepOpenChange={onKeepOpenChange}
           onHide={onHide}
           onPinChange={onPinChange}
-          onQuit={onQuit}
           pinShortcutLabel={pinShortcutLabel}
-          quitLabel={quitLabel}
         />
       </div>
       <div className="window-frame-content">{children}</div>

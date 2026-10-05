@@ -34,6 +34,7 @@ export type SharedReceiptSummary = {
   delivery: "live" | "recovery" | "deferred";
   acquisition: string;
   historyOutcome: string;
+  historyResult?: { outcome: "created" | "existing"; folderId: number | null; folderName: string; receivedAtUnixMs: number } | null;
   clipboardOutcome?: string | null;
   actionOutcome?: string | null;
   localItemId: number | null;
@@ -127,13 +128,21 @@ export function sharedPublicationState(publication: SharedPublicationSummary): s
   return ({ pending: "Queued", queued: "Queued", committed: "Accepted by service", delivered: "Delivered", expired: "Expired", rejected: "Rejected", cancelled: "Cancelled" } as Record<string, string>)[publication.state] ?? publication.state;
 }
 
+export function sharedReceiptSaveLabel(receipt: SharedReceiptSummary): string | null {
+  if (receipt.historyOutcome === "failed") return "Could not save in the receiving folder";
+  if (receipt.historyOutcome !== "applied") return null;
+  const saved = receipt.historyResult;
+  if (!saved) return "Saved in Copicu";
+  return saved.outcome === "existing" ? `Received again in ${saved.folderName}` : `Saved in ${saved.folderName}`;
+}
+
 export function sharedReceiptStatus(receipt: SharedReceiptSummary, now = Date.now()): string {
   if (Number(receipt.expiresAtUnixMs) <= now || receipt.acquisition === "expired") return "Expired";
   const acquisition = ({ ready: "Ready", pendingKey: "Awaiting key", pendingFetch: "Awaiting download", rejected: "Rejected" } as Record<string, string>)[receipt.acquisition] ?? receipt.acquisition;
   if (receipt.acquisition !== "ready") return acquisition;
   const states = [acquisition];
-  if (receipt.historyOutcome === "applied") states.push("Saved in Copicu");
-  if (receipt.historyOutcome === "failed") states.push("Could not save");
+  const saved = sharedReceiptSaveLabel(receipt);
+  if (saved) states.push(saved);
   if (receipt.clipboardOutcome === "applied") states.push("Windows clipboard updated");
   if (receipt.clipboardOutcome === "claimed") states.push("Clipboard update pending");
   if (receipt.clipboardOutcome === "failed") states.push("Clipboard update failed");

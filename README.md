@@ -39,14 +39,15 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.6](https://github.com/jpsala/copicu/releases/tag/v0.5.6)
-- Asset: `Copicu_0.5.6_x64-setup.exe`
+- [v0.5.7](https://github.com/jpsala/copicu/releases/tag/v0.5.7)
+- Asset: `Copicu_0.5.7_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `C6BFB4F69A87AE7A02BDCD67F0905DC3012D146AFEB60BF9A109C34A626DEB32`
+- SHA256: `34162E8E0FEB960458ECD7EE4E03BAEB4FF89214C7BC568D854C625CEF56724A`
 
-Sign in on another PC with the same admitted Google account, without device
-approval or recovery codes. Update and open an existing PC first to migrate
-previously shared clipboard keys, then update the other PCs.
+Keep independent folder copies, see repeated shared receptions, and use clearer
+Sharing controls, compact menus and coordinated picker windows. When updating
+from before v0.5.6, open an existing PC first to migrate shared clipboard keys,
+then update the other PCs.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 

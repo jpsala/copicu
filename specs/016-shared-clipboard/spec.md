@@ -100,7 +100,7 @@ Origen: conversación de diseño con JP y pedido explícito de implementar en un
 - Conectar una carpeta no publica su contenido previo. Un eventual envío de existentes requiere acción explícita. Preservar procedencia: recibir/importar o escribir el clipboard desde una recepción nunca dispara republicación automática ni bucles.
 - Publicar desde Actions/scripts no requiere pasar por una carpeta. Incluir una acción configurable para enviar el ítem activo a un canal mediante hotkey, distinguiéndola explícitamente de enviar el clipboard actual de Windows. Scripts pueden seleccionar canales autorizados, transformar/generar texto y enviar varios ítems con el mismo servicio de publicación; no administran credenciales ni conexiones por su cuenta.
 - La suscripción configura por separado recepción, guardado en carpeta y actualización opcional del clipboard de Windows. Conservar `liveOnly`, un único escritor automático inicial, permisos por canal y controles de pausa/revocación.
-- Se comparten publicaciones inmutables de texto plano; no se sincronizan ediciones, borrados, tags ni estructura de carpetas. Mantener deduplicación y metadata locales, incluido el caso de contenido ya existente en otra carpeta.
+- Se comparten publicaciones inmutables de texto e imágenes; no se sincronizan ediciones, borrados, tags ni estructura de carpetas. Deduplicar sólo dentro del destino: el mismo contenido en otra carpeta queda como copia independiente. Contrato revisado por JP el 2026-10-04: [duplicados por carpeta](folder-deduplication.md).
 - Integrar una UI usable con los controles de carpetas compartidos existentes; probar el recorrido con datos sintéticos y Computer Use cuando haya capacidad real. No presentar mock/UI ni pruebas locales como validación entre dos PCs.
 
 Contratos de implementación en el plan: envío general de ingresos locales nuevos al perfil, carpeta exacta sin descendientes, scope general configurable y colapso del solapamiento antes de admitir. El envío general excluye movimientos de clips existentes; una carpeta exacta con envío habilitado sí publica movimientos locales efectivos de entrada. Mover al mismo destino, editar contenido/metadata o recapturar un duplicado sin ingreso nuevo no publica; conectar o cambiar alcance tampoco hace backfill. Origen remoto queda excluido aun si se mueve a una carpeta emisora. Duplicados, cola y errores mantienen estado visible. No retransmitir recepciones entre canales por inferencia.
@@ -131,7 +131,7 @@ Acceptance scenarios:
 1. Una suscripción sin escritura automática conserva la recepción visible en Copicu y no cambia el clipboard del sistema.
 2. Encender recepción automática no habilita publicación de futuras copias locales. Pausarla invalida escrituras automáticas pendientes.
 3. Guardar en una carpeta no exige que exista una carpeta equivalente en Trabajo. Renombrar o mover la carpeta local no cambia el canal.
-4. Si el contenido ya existe localmente en otra carpeta, la recepción sigue visible en la suscripción sin duplicar el clip ni moverlo o sobrescribir su metadata silenciosamente.
+4. Si el contenido sólo existe en otra carpeta, la recepción crea una copia independiente en el destino. Si ya existe en el destino, conserva sus metadatos y registra una nueva recepción: sube en el orden reciente y muestra «recibido nuevamente», sin aumentar el contador de copias de Windows.
 5. Borrar la carpeta destino deja esa salida señalada como inválida; no redirige contenido silenciosamente a Root.
 
 ### US3. Usar Actions como extensión local (P1)
@@ -232,7 +232,7 @@ Acceptance scenarios:
 - **FR-11:** conservar procedencia remota y evitar que una escritura receptora sea tratada como captura externa local, postprocesamiento ordinario o nueva publicación automática.
 - **FR-12:** conservar en almacenamiento durable el envío aceptado localmente antes de informar "en cola"; respetar límites y expiraciones visibles.
 - **FR-13:** aplicar `liveOnly` (Q1) a reconexión, reinicio, pausa/reanudación y backlog: recuperación sin escritura automática, copia manual disponible; no prometer ejecución exactamente una vez de efectos externos.
-- **FR-14:** conservar deduplicación y ubicación locales existentes. Una recepción no sobrescribe title, notes, tags, marcas, Inbox ni destino de captura armado.
+- **FR-14:** deduplicar por carpeta y contenido; permitir copias independientes entre carpetas. Una recepción repetida actualiza actividad y feedback persistente sin sobrescribir title, notes, tags, marcas, Inbox ni destino de captura armado; el contador de copias de Windows no cambia.
 - **FR-15:** usar como entrada de acciones receptoras la publicación inmutable, no el contenido editable de un clip local leído más tarde.
 - **FR-16:** pausar inmediatamente la recepción automática de una suscripción, invalidar trabajo pendiente y no tratar su reactivación como llegada nueva.
 - **FR-17:** limitar colas, tamaño de payload, recuperación y ejecución de scripts; un fallo no bloquea captura, búsqueda, UI o recepción de otros eventos.
@@ -271,7 +271,7 @@ Acceptance scenarios:
 - Recepciones duplicadas, fuera de orden, corruptas, expiradas o posteriores a un cursor perdido por retención.
 - Crash antes/después de guardar la recepción o de escribir Windows; servidor acepta pero el emisor pierde la respuesta.
 - Suscripción pausada, eliminada o modificada mientras se ejecuta una acción; carpeta destino borrada.
-- Clip local deduplicado en otra carpeta, editado después o eliminado por retención; recepción aún visible.
+- Copias independientes en otras carpetas, editadas después o eliminadas por retención; recepción y destino guardado aún visibles.
 - Equipo clonado, restauración de backup, reloj incorrecto, pérdida de todas las claves o revocación durante un envío.
 - Red corporativa sin WebSocket, sesión Windows bloqueada, suspend/reanudar o Copicu cerrado.
 - Respuesta perdida al crear recurso; creación remota confirmada y vínculo local fallido.

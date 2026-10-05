@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { FolderWorkspace, folderScopeLabel, folderScopeQuery } from "./ui/FolderWorkspace";
+import { ItemContextMenu, ItemContextSubmenu } from "./ui/ItemContextMenu";
 import { SharedClipboardConnect } from "./ui/SharedClipboardConnect";
 import { SharedClipboardLibrary } from "./ui/SharedClipboardLibrary";
 import { SharedConnectionStatus } from "./ui/SharedConnectionStatus";
@@ -286,6 +287,7 @@ type HistoryItem = {
   created_at_unix_ms: number;
   last_used_at_unix_ms: number;
   last_copied_at_unix_ms: number;
+  last_received_at_unix_ms?: number | null;
   copy_count: number;
   mime_primary: string | null;
   blob_path: string | null;
@@ -1307,7 +1309,7 @@ function App() {
     if (appearanceViewport.narrow) setFolderTreeOpen(false);
   }, [appearanceViewport.narrow]);
   const [folderSwitcherOpen, setFolderSwitcherOpen] = useState(false);
-  const [folderMoveRequest, setFolderMoveRequest] = useState<{ itemIds: number[]; trigger: HTMLElement | null } | null>(null);
+  const [folderMoveRequest, setFolderMoveRequest] = useState<{ itemIds: number[]; trigger: HTMLElement | null; copy?: boolean } | null>(null);
   const folderTreeRef = useRef<HTMLDivElement>(null);
   const draggedItemIdsRef = useRef<number[] | null>(null);
   const [draggingItemId, setDraggingItemId] = useState<number | null>(null);
@@ -1395,7 +1397,6 @@ function App() {
   const catalogItemIdRef = useRef<number | null>(null);
   const editTextRef = useRef<HTMLTextAreaElement>(null);
   const inlineEditTextRef = useRef<HTMLTextAreaElement>(null);
-  const itemMenuRef = useRef<HTMLDivElement>(null);
   const itemMenuReturnFocusRef = useRef<HTMLElement | null>(null);
   const historyScrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryItem[]>([]);
@@ -2931,14 +2932,6 @@ function App() {
       });
   }, [markPickerHidden, resetPickerSession]);
 
-  const quitCopicu = useCallback(() => {
-    void recordWindowChromeEvent("quit-app-command-start");
-    void invoke("quit_app").catch((error) => {
-      void recordWindowChromeEvent("quit-app-command-error", String(error));
-      console.warn("quit app failed", error);
-    });
-  }, []);
-
   const setPickerKeepOpenMode = useCallback((keepOpen: boolean) => {
     const previousSettings = settings;
     const optimisticSettings: AppSettings = {
@@ -3449,6 +3442,7 @@ function App() {
       let searchInput = originalSearchInput;
       const appliedDescriptorForRequest = descriptorOverride
         ?? (source === "background" ? appliedDescriptorRef.current : null);
+      const appliedGenerationForRequest = appliedSnapshotGenerationRef.current;
       const foreground = source === "foreground";
       const intentGeneration = searchIntentGenerationRef.current;
       const rememberFailure = () => {
@@ -3663,11 +3657,14 @@ function App() {
       const snapshotGeneration = foreground
         ? appliedSnapshotGenerationRef.current + 1
         : appliedSnapshotGenerationRef.current;
+      // A foreground commit updates these refs before React renders new callbacks.
+      const currentAppliedDescriptor = appliedDescriptorRef.current;
       if (
         !foreground
         && (
-          !searchState.applied
-          || searchState.applied.generation !== snapshotGeneration
+          !currentAppliedDescriptor
+          || appliedGenerationForRequest !== snapshotGeneration
+          || currentAppliedDescriptor.fingerprint !== appliedDescriptorForRequest?.fingerprint
         )
       ) {
         const snapshotError = "Background refresh lost the visible applied snapshot.";
@@ -3684,7 +3681,7 @@ function App() {
       }
       const committedDescriptor = foreground
         ? appliedDescriptor
-        : searchState.applied?.descriptor ?? appliedDescriptor;
+        : currentAppliedDescriptor ?? appliedDescriptor;
 
       const scrollTop = historyScrollRef.current?.scrollTop ?? 0;
       const incomingFirstId = page.items[0]?.id ?? null;
@@ -6078,14 +6075,6 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [feedLoading]);
 
-  useLayoutEffect(() => {
-    if (!openItemMenu) {
-      return;
-    }
-    const firstMenuItem = itemMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)');
-    firstMenuItem?.focus();
-  }, [openItemMenu]);
-
   const selectionAnnouncement = [
     selectedItem ? `Current clip ${selectedItem.id}.` : history.length > 0 ? "No current clip." : "No clips available.",
     selectedItems.length > 0
@@ -6814,16 +6803,17 @@ function App() {
   return (
     <main className="app-shell">
       <CustomWindowFrame
-        controls={["pin", "keep-open", "minimize", "maximize", "hide", "quit"]}
+        controls={settings.picker.hideOnFocusLost
+          ? ["pin", "keep-open", "maximize", "hide"]
+          : ["pin", "keep-open", "minimize", "maximize", "hide"]}
         hideLabel="Hide Copicu"
-        quitLabel="Quit Copicu"
         keepOpen={!settings.picker.hideOnFocusLost}
         pinShortcutLabel={settings.picker.pinToggleShortcut}
         title="Copicu"
         variant="floatingPicker"
         onHide={hidePickerWindow}
         onKeepOpenChange={setPickerKeepOpenMode}
-        onQuit={quitCopicu}
+        onOpenSettings={() => void openSettingsWindow().catch((error) => setActionError(String(error)))}
         onPinChange={setPickerPinned}
       >
       <section
@@ -7787,6 +7777,7 @@ function App() {
             await reloadFolders();
           }}
           onError={(error) => setActionError(error)}
+          onNotice={(message) => pushToast({ title: "Copied to folder", message, tone: "info" })}
           deleteDefaults={{
             clips: settings.history.deleteFolderClipsDefault,
             descendants: settings.history.deleteFolderDescendantsDefault,
@@ -8087,6 +8078,7 @@ function App() {
                     }}
                   >
                     <span className="item-main">
+                      {item.last_received_at_unix_ms != null && <span key={item.last_received_at_unix_ms} className={`item-received-status${Date.now() - item.last_received_at_unix_ms < 10_000 ? " is-new" : ""}`} title={`Last received ${new Date(item.last_received_at_unix_ms).toLocaleString()}`}>Received</span>}
                       <HistorySearchMatches matches={item.search_matches} />
                       {item.title ? (
                         <FindHighlightedText
@@ -8303,311 +8295,127 @@ function App() {
                   >
                     <MoreVertical size={16} strokeWidth={2.3} aria-hidden="true" />
                   </UiIconButton>
-                  {openItemMenu?.itemId === item.id ? createPortal(
-                    <div
-                      className="item-menu"
-                      role="menu"
-                      aria-label="Item actions"
-                      ref={itemMenuRef}
-                      style={{ left: openItemMenu.x, top: openItemMenu.y }}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (event.target instanceof Element && event.target.closest('[role="menuitem"]')) {
-                          setOpenItemMenu(null);
-                        }
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onKeyDown={(event) => {
-                        const menuItems = Array.from(
-                          itemMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
-                        );
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          const returnTarget = itemMenuReturnFocusRef.current;
-                          setOpenItemMenu(null);
-                          window.setTimeout(() => {
-                            if (returnTarget?.isConnected) {
-                              returnTarget.focus();
-                            } else {
-                              focusSearch();
-                            }
-                          }, 0);
-                          return;
-                        }
-                        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || menuItems.length === 0) {
-                          return;
-                        }
-                        event.preventDefault();
-                        const currentIndex = menuItems.indexOf(document.activeElement as HTMLElement);
-                        const nextIndex = event.key === "Home"
-                          ? 0
-                          : event.key === "End"
-                            ? menuItems.length - 1
-                            : event.key === "ArrowDown"
-                              ? (currentIndex + 1 + menuItems.length) % menuItems.length
-                              : (currentIndex - 1 + menuItems.length) % menuItems.length;
-                        menuItems[nextIndex]?.focus();
-                      }}
-                    >
-                      <UiUnstyledButton type="button" role="menuitem" tabIndex={-1} className="item-menu-action" onClick={() => {
-                        setFolderMoveRequest({
-                          itemIds: hasExplicitSelection ? effectiveSelection.map((selected) => selected.id) : [item.id],
-                          trigger: itemMenuReturnFocusRef.current,
-                        });
-                        setOpenItemMenu(null);
-                      }}>
-                        Move {hasExplicitSelection ? `${effectiveSelection.length} selected clips` : "clip"} to folder…
-                      </UiUnstyledButton>
-                      {hasExplicitSelection ? (
-                        <div className="item-menu-group" role="group" aria-label="Principal">
-                          <span className="item-menu-group-label">Principal</span>
-                          {renderBatchItemActions({
-                            items: effectiveSelection,
-                            noun: "selected",
-                            surface: "context",
-                            onClear: () => {
-                              setOpenItemMenu(null);
-                              clearExplicitSelection(true);
-                            },
-                          })}
-                        </div>
-                      ) : (
+                  {openItemMenu?.itemId === item.id ? (
+                    <ItemContextMenu x={openItemMenu.x} y={openItemMenu.y}
+                      onClose={() => setOpenItemMenu(null)} returnFocus={itemMenuReturnFocusRef.current}
+                      fallbackFocus={focusSearch}>
+                      {!hasMultiSelection && item.content_kind === "text" ? (
+                        <Menu.Item leftSection={<Pencil size={14} aria-hidden="true" />}
+                          onClick={() => void beginInlineEdit(item)}>Quick edit</Menu.Item>
+                      ) : null}
+                      {!hasMultiSelection && item.content_kind === "image" ? (
+                        <Menu.Item leftSection={<Search size={14} aria-hidden="true" />}
+                          rightSection={<ShortcutBadge shortcut={settings.picker.previewShortcut} />}
+                          onClick={() => void openItemPreview(item.id).catch((error) => setActionError(String(error)))}>
+                          Preview
+                        </Menu.Item>
+                      ) : null}
+                      <Menu.Item leftSection={<Pencil size={14} aria-hidden="true" />}
+                        rightSection={<ShortcutBadge shortcut="Shift+F2" />}
+                        onClick={() => void openMetadataForItems(itemDeleteTargets, "overview")}>
+                        {hasMultiSelection ? "Edit metadata · " + itemDeleteTargets.length + " clips" : "Edit metadata"}
+                      </Menu.Item>
+                      {!hasMultiSelection ? (
                         <>
-                          <div className="item-menu-group" role="group" aria-label="Principal">
-                            <span className="item-menu-group-label">Principal</span>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => {
-                              setOpenItemMenu(null);
-                              void openAssistantForItems([item]);
-                            }}
-                          >
-                            <Sparkles size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Open assistant</span>
-                          </UiUnstyledButton>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => void activateItem(item, COPY_AND_HIDE_ACTIVATION)}
-                          >
-                            <ClipboardCheck size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Activate</span>
-                          </UiUnstyledButton>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => void activateItem(item, PASTE_AND_HIDE_ACTIVATION)}
-                          >
-                            <ClipboardPaste size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Paste</span>
-                          </UiUnstyledButton>
-                          {actionRunnableForTrigger(
-                            actionById.get(BUILTIN_ACTIONS.pastePlain) ?? NULL_ACTION,
-                            "itemMenu",
-                            [item],
-                          ) ? (
-                            <UiUnstyledButton
-                              type="button"
-                              role="menuitem"
-                              tabIndex={-1}
-                              className="item-menu-action"
-                              onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.pastePlain, [item])}
-                            >
-                              <Command size={14} strokeWidth={2.2} aria-hidden="true" />
-                              <span>Paste plain</span>
-                            </UiUnstyledButton>
+                          <Menu.Divider />
+                          <Menu.Item leftSection={<ClipboardCheck size={14} aria-hidden="true" />}
+                            onClick={() => void activateItem(item, COPY_AND_HIDE_ACTIVATION)}>Copy</Menu.Item>
+                          <Menu.Item leftSection={<ClipboardPaste size={14} aria-hidden="true" />}
+                            onClick={() => void activateItem(item, PASTE_AND_HIDE_ACTIVATION)}>Paste</Menu.Item>
+                          {item.content_kind !== "image" ? (
+                            <Menu.Item leftSection={<Search size={14} aria-hidden="true" />}
+                              rightSection={<ShortcutBadge shortcut={settings.picker.previewShortcut} />}
+                              onClick={() => void openItemPreview(item.id).catch((error) => setActionError(String(error)))}>
+                              Preview
+                            </Menu.Item>
                           ) : null}
-                          {actionRunnableForTrigger(
-                            actionById.get(BUILTIN_ACTIONS.openUrl) ?? NULL_ACTION,
-                            "itemMenu",
-                            [item],
-                          ) ? (
-                            <UiUnstyledButton
-                              type="button"
-                              role="menuitem"
-                              tabIndex={-1}
-                              className="item-menu-action"
-                              onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.openUrl, [item])}
-                            >
-                              <Command size={14} strokeWidth={2.2} aria-hidden="true" />
-                              <span>Open URL</span>
-                            </UiUnstyledButton>
-                          ) : null}
-                          </div>
-                          <div className="item-menu-group" role="group" aria-label="Editar">
-                            <span className="item-menu-group-label">Editar</span>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => void setItemsMarked([item], !item.is_marked)}
-                          >
-                            <Flag
-                              size={14}
-                              strokeWidth={2.2}
-                              fill={item.is_marked ? "currentColor" : "none"}
-                              aria-hidden="true"
-                            />
-                            <span>{item.is_marked ? "Unmark" : "Mark"}</span>
-                          </UiUnstyledButton>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action is-danger"
-                            onClick={() => {
-                              setOpenItemMenu(null);
-                              void deleteItems(itemDeleteTargets);
-                            }}
-                          >
-                            <Trash2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>{itemDeleteTargets.length > 1 ? `Delete ${itemDeleteTargets.length} selected items` : "Delete item"}</span>
-                          </UiUnstyledButton>
-                          {item.content_kind === "text" ? (
-                            <>
-                              <UiUnstyledButton
-                                type="button"
-                                role="menuitem"
-                                tabIndex={-1}
-                                className="item-menu-action"
-                                onClick={() => void beginInlineEdit(item)}
-                              >
-                                <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
-                                <span>Quick edit</span>
-                              </UiUnstyledButton>
-                              <UiUnstyledButton
-                                type="button"
-                                role="menuitem"
-                                tabIndex={-1}
-                                className="item-menu-action"
-                                onClick={() => void beginEdit(item)}
-                              >
-                                <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                                <span>Open full editor</span>
-                                <ShortcutBadge shortcut="F2" />
-                              </UiUnstyledButton>
-                              <UiUnstyledButton
-                                type="button"
-                                role="menuitem"
-                                tabIndex={-1}
-                                className="item-menu-action"
-                                onClick={() => void openExternalEditor(item.id)}
-                              >
-                                <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                                <span>Edit externally</span>
-                                <ShortcutBadge shortcut="Ctrl+F2" />
-                              </UiUnstyledButton>
-                            </>
-                          ) : null}
-                          {item.is_inbox ? (
-                            <>
-                              <UiUnstyledButton
-                                type="button"
-                                role="menuitem"
-                                tabIndex={-1}
-                                className="item-menu-action"
-                                onClick={() => catalogItem(item)}
-                              >
-                                <Bookmark size={14} strokeWidth={2.2} aria-hidden="true" />
-                                <span>Catalog Inbox item</span>
-                              </UiUnstyledButton>
-                              <UiUnstyledButton
-                                type="button"
-                                role="menuitem"
-                                tabIndex={-1}
-                                className="item-menu-action"
-                                onClick={() => void removeFromInbox(item)}
-                              >
-                                <X size={14} strokeWidth={2.2} aria-hidden="true" />
-                                <span>Remove from Inbox</span>
-                              </UiUnstyledButton>
-                            </>
-                          ) : (
-                            <UiUnstyledButton
-                              type="button"
-                              role="menuitem"
-                              tabIndex={-1}
-                              className="item-menu-action"
-                              onClick={() => void addToInbox(item)}
-                            >
-                              <Bookmark size={14} strokeWidth={2.2} aria-hidden="true" />
-                              <span>Add to Inbox</span>
-                            </UiUnstyledButton>
-                          )}
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => void openMetadataForItems([item], "tags")}
-                          >
-                            <Tags size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Edit tags</span>
-                            <ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />
-                          </UiUnstyledButton>
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => void openMetadataForItems([item], "overview")}
-                          >
-                            <Pencil size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Edit metadata</span>
-                            <ShortcutBadge shortcut="Shift+F2" />
-                          </UiUnstyledButton>
-                          </div>
-                          <div className="item-menu-group" role="group" aria-label="Más">
-                            <span className="item-menu-group-label">Más</span>
-                          {itemMenuRegistryActions(actionDefinitions, [item], item).map((action) => (
-                            <UiUnstyledButton
-                              key={action.id}
-                              type="button"
-                              role="menuitem"
-                              tabIndex={-1}
-                              className="item-menu-action"
-                              onClick={() => void runActionDefinition(action, [item], "itemMenu")}
-                            >
-                              {action.source === "script"
-                                ? <FileCode2 size={14} strokeWidth={2.2} aria-hidden="true" />
-                                : <Command size={14} strokeWidth={2.2} aria-hidden="true" />}
-                              <span>{action.title}</span>
-                              <ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />
-                            </UiUnstyledButton>
-                          ))}
-                          <UiUnstyledButton
-                            type="button"
-                            role="menuitem"
-                            tabIndex={-1}
-                            className="item-menu-action"
-                            onClick={() => {
-                              setOpenItemMenu(null);
-                              void openItemPreview(item.id).catch((previewError) => {
-                                setActionError(String(previewError));
-                              });
-                            }}
-                          >
-                            <Search size={14} strokeWidth={2.2} aria-hidden="true" />
-                            <span>Preview</span>
-                            <ShortcutBadge shortcut={settings.picker.previewShortcut} />
-                          </UiUnstyledButton>
-                          </div>
                         </>
-                      )}
-                    </div>,
-                    document.body,
+                      ) : null}
+                      <Menu.Divider />
+                      <ItemContextSubmenu label="Organize" icon={<Folder size={14} aria-hidden="true" />}>
+                        <Menu.Item leftSection={<Folder size={14} aria-hidden="true" />}
+                          onClick={() => setFolderMoveRequest({ itemIds: itemDeleteTargets.map((target) => target.id), trigger: itemMenuReturnFocusRef.current })}>
+                          Move {hasMultiSelection ? itemDeleteTargets.length + " selected clips" : "clip"} to folder…
+                        </Menu.Item>
+                        <Menu.Item leftSection={<Copy size={14} aria-hidden="true" />}
+                          onClick={() => setFolderMoveRequest({ itemIds: itemDeleteTargets.map((target) => target.id), trigger: itemMenuReturnFocusRef.current, copy: true })}>
+                          Copy {hasMultiSelection ? itemDeleteTargets.length + " selected clips" : "clip"} to folder…
+                        </Menu.Item>
+                        <Menu.Item leftSection={<Tags size={14} aria-hidden="true" />}
+                          rightSection={<ShortcutBadge shortcut={TAG_EDIT_SHORTCUT} />}
+                          onClick={() => void openMetadataForItems(itemDeleteTargets, "tags")}>
+                          {hasMultiSelection ? "Edit tags for selected" : "Edit tags"}
+                        </Menu.Item>
+                        <Menu.Item leftSection={<Flag size={14} aria-hidden="true" />}
+                          onClick={() => void setItemsMarked(itemDeleteTargets, !itemDeleteTargets.every((target) => target.is_marked))}>
+                          {itemDeleteTargets.every((target) => target.is_marked) ? "Unmark" : "Mark"}{hasMultiSelection ? " selected" : ""}
+                        </Menu.Item>
+                        {!hasMultiSelection ? (
+                          <>
+                            <Menu.Divider />
+                            {item.is_inbox ? (
+                              <>
+                                <Menu.Item leftSection={<Bookmark size={14} aria-hidden="true" />}
+                                  onClick={() => catalogItem(item)}>Catalog Inbox item</Menu.Item>
+                                <Menu.Item leftSection={<X size={14} aria-hidden="true" />}
+                                  onClick={() => void removeFromInbox(item)}>Remove from Inbox</Menu.Item>
+                              </>
+                            ) : (
+                              <Menu.Item leftSection={<Bookmark size={14} aria-hidden="true" />}
+                                onClick={() => void addToInbox(item)}>Add to Inbox</Menu.Item>
+                            )}
+                          </>
+                        ) : null}
+                        {hasExplicitSelection ? (
+                          <>
+                            <Menu.Divider />
+                            <Menu.Item leftSection={<X size={14} aria-hidden="true" />}
+                              onClick={() => clearExplicitSelection(true)}>Clear selection</Menu.Item>
+                          </>
+                        ) : null}
+                      </ItemContextSubmenu>
+                      <ItemContextSubmenu label="More actions" icon={<Command size={14} aria-hidden="true" />}>
+                        {!hasMultiSelection && item.content_kind === "text" ? (
+                          <>
+                            <Menu.Item leftSection={<FileCode2 size={14} aria-hidden="true" />}
+                              rightSection={<ShortcutBadge shortcut="F2" />}
+                              onClick={() => void beginEdit(item)}>Open full editor</Menu.Item>
+                            <Menu.Item leftSection={<FileCode2 size={14} aria-hidden="true" />}
+                              rightSection={<ShortcutBadge shortcut="Ctrl+F2" />}
+                              onClick={() => void openExternalEditor(item.id)}>Edit externally</Menu.Item>
+                          </>
+                        ) : null}
+                        <Menu.Item leftSection={<Sparkles size={14} aria-hidden="true" />}
+                          onClick={() => void openAssistantForItems(itemDeleteTargets)}>Open assistant</Menu.Item>
+                        {hasMultiSelection && actionById.has(BUILTIN_ACTIONS.joinSelected) ? (
+                          <Menu.Item leftSection={<Command size={14} aria-hidden="true" />}
+                            onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.joinSelected, itemDeleteTargets)}>
+                            Join selected
+                          </Menu.Item>
+                        ) : null}
+                        {!hasMultiSelection && actionRunnableForTrigger(actionById.get(BUILTIN_ACTIONS.pastePlain) ?? NULL_ACTION, "itemMenu", [item]) ? (
+                          <Menu.Item leftSection={<ClipboardPaste size={14} aria-hidden="true" />}
+                            onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.pastePlain, [item])}>Paste plain</Menu.Item>
+                        ) : null}
+                        {!hasMultiSelection && actionRunnableForTrigger(actionById.get(BUILTIN_ACTIONS.openUrl) ?? NULL_ACTION, "itemMenu", [item]) ? (
+                          <Menu.Item leftSection={<Command size={14} aria-hidden="true" />}
+                            onClick={() => void runBuiltinAction(BUILTIN_ACTIONS.openUrl, [item])}>Open URL</Menu.Item>
+                        ) : null}
+                        {itemMenuRegistryActions(actionDefinitions, itemDeleteTargets, item).map((action) => (
+                          <Menu.Item key={action.id}
+                            leftSection={action.source === "script" ? <FileCode2 size={14} aria-hidden="true" /> : <Command size={14} aria-hidden="true" />}
+                            rightSection={<ShortcutBadge shortcut={normalizeShortcutString(action.shortcut)} />}
+                            onClick={() => void runActionDefinition(action, itemDeleteTargets, "itemMenu")}>
+                            {action.title}
+                          </Menu.Item>
+                        ))}
+                      </ItemContextSubmenu>
+                      <Menu.Divider />
+                      <Menu.Item className="is-danger" leftSection={<Trash2 size={14} aria-hidden="true" />}
+                        onClick={() => void deleteItems(itemDeleteTargets)}>
+                        {itemDeleteTargets.length > 1 ? "Delete " + itemDeleteTargets.length + " selected items" : "Delete item"}
+                      </Menu.Item>
+                    </ItemContextMenu>
                   ) : null}
                   </div>
                   </li>

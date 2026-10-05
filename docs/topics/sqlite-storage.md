@@ -24,7 +24,15 @@ Guardar historial normalizado de texto, buscarlo, recargarlo al reiniciar y limi
 
 ## Modelo Actual De Carpetas
 
-La migración agrega `folders` y `clipboard_items.folder_id` nullable: `NULL` representa Root y conserva allí las filas preexistentes; no transforma tags, Inbox ni vistas guardadas. El ID de carpeta es estable y la ruta se deriva de sus ancestros. Crear, renombrar, reparentar y borrar validan hermanos y ciclos desde Rust; el borrado de árbol, su destino de clips y los conteos se resuelven en transacción. Los blobs de imágenes borradas se limpian después del commit. La retención automática excluye clips marcados, Inbox y clips en carpetas; mover a Root vuelve a hacerlos elegibles sólo si tampoco son marcados ni Inbox. El destino de captura armado vive en memoria del host, no en SQLite, y la deduplicación global conserva el `folder_id` del clip existente. Contrato: [`014-folders`](../../specs/014-folders/spec.md).
+La migración de carpetas agrega `folders` y `clipboard_items.folder_id` nullable: `NULL` representa Root y conserva allí las filas preexistentes; no transforma tags, Inbox ni vistas guardadas. El ID de carpeta es estable y la ruta se deriva de sus ancestros. Crear, renombrar, reparentar y borrar validan hermanos y ciclos desde Rust; el borrado de árbol, su destino de clips y los conteos se resuelven en transacción. Los blobs de imágenes borradas se limpian después del commit sólo si no quedan referencias. La retención automática excluye clips marcados, Inbox y clips en carpetas; mover a Root vuelve a hacerlos elegibles sólo si tampoco son marcados ni Inbox. El destino de captura armado vive en memoria del host, no en SQLite. Contrato: [`014-folders`](../../specs/014-folders/spec.md).
+
+La revisión del 2026-10-04 reemplaza la unicidad global por un índice único en
+`COALESCE(folder_id, 0), normalized_hash`, preservando IDs y metadatos. Captura,
+creación manual y recepción reutilizan sólo el ítem del mismo destino; otras
+carpetas tienen copias independientes. Mover o trasladar a Root por borrado de
+carpeta rechaza colisiones antes de cualquier cambio. La recepción actualiza
+`last_received_at_unix_ms`, incluido en recencia/paginación/retención, sin inventar
+eventos de captura. [Contrato](../../specs/016-shared-clipboard/folder-deduplication.md).
 
 ## Retención Del Conjunto Marcado
 

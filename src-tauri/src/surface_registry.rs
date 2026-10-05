@@ -299,6 +299,12 @@ pub fn hides_on_close(label: &str) -> bool {
         .unwrap_or(false)
 }
 
+pub fn is_interactive(label: &str) -> bool {
+    get(label)
+        .map(|surface| surface.kind != SurfaceKind::Toast)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

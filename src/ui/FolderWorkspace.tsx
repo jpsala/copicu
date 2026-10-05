@@ -13,7 +13,7 @@ import { UiTooltip } from "./controls";
 export const folderScopeQuery = (scope: FolderScope) => scope.kind === "all" ? "" : scope.kind === "root" ? "folder:/" : `folder-id:${scope.folderId}`;
 export const folderScopeLabel = (scope: FolderScope, folders: FolderSummary[]) => scope.kind === "all" ? "All history" : scope.kind === "root" ? "/" : folders.find((folder) => folder.id === scope.folderId)?.path ?? "Folder";
 
-export function FolderWorkspace({ folders, reload, scope, onScopeChange, destination, destinationArmed, onDestinationChange, selectedItemIds, draggedItemIdsRef, moveRequest, onMoveRequestDone, onMoved, onError, deleteDefaults, narrow, treeOpen, onTreeOpenChange, treeRef, switcher, onSwitcherChange, rootItemCount, onConnectShared }: {
+export function FolderWorkspace({ folders, reload, scope, onScopeChange, destination, destinationArmed, onDestinationChange, selectedItemIds, draggedItemIdsRef, moveRequest, onMoveRequestDone, onMoved, onError, onNotice, deleteDefaults, narrow, treeOpen, onTreeOpenChange, treeRef, switcher, onSwitcherChange, rootItemCount, onConnectShared }: {
   folders: FolderSummary[];
   reload: () => Promise<void>;
   scope: FolderScope;
@@ -23,10 +23,11 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
   onDestinationChange: (id: number | null, armed?: boolean) => Promise<void>;
   selectedItemIds: number[];
   draggedItemIdsRef: RefObject<number[] | null>;
-  moveRequest: { itemIds: number[]; trigger: HTMLElement | null } | null;
+  moveRequest: { itemIds: number[]; trigger: HTMLElement | null; copy?: boolean } | null;
   onMoveRequestDone: () => void;
   onMoved: () => Promise<void>;
   onError: (error: string) => void;
+  onNotice?: (message: string) => void;
   deleteDefaults: { clips: boolean; descendants: boolean };
   narrow: boolean;
   treeOpen: boolean;
@@ -160,7 +161,11 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
         if (destination === dialog.id || (deleteDescendants && folders.some((f) => f.id === destination && f.path.startsWith(`${folders.find((x) => x.id === dialog.id)?.path}/`)))) await onDestinationChange(null);
       }
       if (dialog.action === "moveItems") {
-        await invoke<number>("move_history_items_to_folder", { itemIds: moveItemIds, folderId: destinationChoice.kind === "existing" ? destinationChoice.folderId : null, folderPath: destinationChoice.kind === "create" ? destinationChoice.path : null });
+        const args = { itemIds: moveItemIds, folderId: destinationChoice.kind === "existing" ? destinationChoice.folderId : null, folderPath: destinationChoice.kind === "create" ? destinationChoice.path : null };
+        if (moveRequest?.copy) {
+          const result = await invoke<{created: number; existing: number}>("copy_history_items_to_folder", args);
+          onNotice?.(result.created === 0 ? "Already in this folder. Originals and destination metadata were kept." : `${result.created} copied${result.existing ? `; ${result.existing} already in this folder` : ""}. Originals were kept.`);
+        } else await invoke<number>("move_history_items_to_folder", args);
         await onMoved();
       }
       await reload();
@@ -253,18 +258,19 @@ export function FolderWorkspace({ folders, reload, scope, onScopeChange, destina
       </div>
     </div>}
     {dialog && <div className="folder-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) close(); }}>
-      <div className="folder-dialog" role="dialog" aria-modal="true" aria-label={`${dialog.action} folder`} ref={dialogRef} onKeyDown={(event) => {
+      <div className="folder-dialog" role="dialog" aria-modal="true" aria-label={`${moveRequest?.copy && dialog.action === "moveItems" ? "copyItems" : dialog.action} folder`} ref={dialogRef} onKeyDown={(event) => {
         trapDialogFocus(event);
         if (event.key === "Escape" && !busy) { event.preventDefault(); close(); }
         if (event.key === "Enter" && ((event.target instanceof HTMLInputElement && event.target.type === "text") || (event.ctrlKey && !(event.target instanceof HTMLButtonElement)))) { event.preventDefault(); void run(); }
       }}>
         <h2>{dialog.action === "moveItems"
-          ? `Move ${moveItemIds.length} clip${moveItemIds.length === 1 ? "" : "s"}`
+          ? `${moveRequest?.copy ? "Copy" : "Move"} ${moveItemIds.length} clip${moveItemIds.length === 1 ? "" : "s"}`
           : `${dialog.action === "delete" ? "Delete" : dialog.action === "reparent" ? "Move" : dialog.action === "create" ? "New" : "Rename"} folder`}</h2>
       {(dialog.action === "create" || dialog.action === "rename") && <label>Name<input aria-label="Folder name" value={name} onChange={(event) => setName(event.target.value)} maxLength={160} /></label>}
       {(dialog.action === "reparent" || dialog.action === "moveItems") && <FolderSelect label="Destination" folders={folders} value={destinationChoice} onChange={setDestinationChoice} excludeIds={excludedDestinations} allowCreate={dialog.action === "moveItems"} disabled={busy} />}
+      {dialog.action === "moveItems" && moveRequest?.copy && <p>Keep the originals. Content already in the destination is reused without changing its metadata.</p>}
       {dialog.action === "delete" && (preview ? <><p>{preview.directItemCount} direct clips; {preview.descendantFolderCount} descendant folders; {preview.subtreeItemCount} clips in subtree.</p><label><input type="checkbox" checked={deleteClips} onChange={(event) => setDeleteClips(event.target.checked)} /> Delete clips {deleteDescendants ? "in the entire subtree" : "directly in this folder"} ({deleteDescendants ? preview.subtreeItemCount : preview.directItemCount}) instead of moving them to /</label><label><input type="checkbox" checked={deleteDescendants} onChange={(event) => setDeleteDescendants(event.target.checked)} /> Delete {preview.descendantFolderCount} descendant folders instead of reparenting them</label><p>{deleteDescendants ? "The whole subtree is removed." : "Child folders move to this folder’s parent; their clips stay in place."} {deleteClips ? "Selected clips are permanently deleted." : "Affected clips are moved to /."}</p></> : <p>Loading exact counts…</p>)}
       {dialog.action === "moveItems" && destinationChoice.kind === "existing" && destinationChoice.folderId === null && <p>Unmarked clips outside Inbox become eligible for automatic retention on the next pruning pass.</p>}
-      <div className="folder-dialog-actions"><button type="button" disabled={busy} onClick={close}>Cancel</button><button type="button" disabled={busy || (dialog.action === "delete" && !preview) || ((dialog.action === "create" || dialog.action === "rename") && !name.trim())} onClick={() => void run()}>{busy ? "Working…" : dialog.action === "delete" ? "Delete folder" : dialog.action === "moveItems" ? "Move clips" : dialog.action === "reparent" ? "Move folder" : dialog.action === "rename" ? "Rename folder" : "Create folder"}</button></div></div></div>}
+      <div className="folder-dialog-actions"><button type="button" disabled={busy} onClick={close}>Cancel</button><button type="button" disabled={busy || (dialog.action === "delete" && !preview) || ((dialog.action === "create" || dialog.action === "rename") && !name.trim())} onClick={() => void run()}>{busy ? "Working…" : dialog.action === "delete" ? "Delete folder" : dialog.action === "moveItems" ? (moveRequest?.copy ? "Copy clips" : "Move clips") : dialog.action === "reparent" ? "Move folder" : dialog.action === "rename" ? "Rename folder" : "Create folder"}</button></div></div></div>}
   </>;
 }

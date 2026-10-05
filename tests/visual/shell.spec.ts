@@ -997,10 +997,12 @@ async function mockTauriInvoke(
       const sorted = [...source];
       const sorts = plan.sort.length > 0
         ? plan.sort.slice(0, 3)
-        : [{ field: "lastCopied", direction: "desc" }];
+        : [{ field: "recent", direction: "desc" }];
       const sortValue = (item: any, field: string) => Number(
         field === "created"
           ? item.created_at_unix_ms ?? 0
+          : field === "recent"
+            ? Math.max(item.last_copied_at_unix_ms ?? item.created_at_unix_ms ?? 0, item.last_received_at_unix_ms ?? 0)
           : field === "lastUsed"
             ? item.last_used_at_unix_ms ?? 0
             : item.last_copied_at_unix_ms ?? item.created_at_unix_ms ?? 0,
@@ -2601,6 +2603,22 @@ async function mockTauriInvoke(
             (window as any).__copicuTestHistoryItems = (window as any).__copicuTestHistoryItems.map((item: any) => args.itemIds.includes(item.id) ? { ...item, folderId } : item);
             return args.itemIds.length;
           }
+          case "copy_history_items_to_folder": {
+            const folderId = args.folderPath ? resolveFolderIntent({ op: "create", path: args.folderPath }) : args.folderId;
+            const items = (window as any).__copicuTestHistoryItems;
+            const result = { created: 0, existing: 0, itemIds: [] as number[] };
+            for (const sourceId of args.itemIds) {
+              const source = items.find((item: any) => item.id === sourceId);
+              const existing = items.find((item: any) => item.folderId === folderId && item.normalized_hash === source.normalized_hash);
+              if (existing) { result.existing++; result.itemIds.push(existing.id); }
+              else {
+                const id = Math.max(...items.map((item: any) => item.id)) + 1;
+                items.push({ ...structuredClone(source), id, folderId });
+                result.created++; result.itemIds.push(id);
+              }
+            }
+            return result;
+          }
           default:
             throw new Error(`Unhandled mocked Tauri command: ${cmd}`);
         }
@@ -2650,6 +2668,14 @@ async function broadcastAppearance(
 async function openPickerOverflow(page: Page) {
   await page.getByRole("button", { name: "Open picker menu" }).click();
   const menu = page.getByRole("menu", { name: "Picker menu" });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+async function openItemSubmenu(page: Page, name: "Organize" | "More actions") {
+  await page.getByRole("menu", { name: "Item actions", exact: true })
+    .getByRole("menuitem", { name, exact: true }).click();
+  const menu = page.getByRole("menu", { name, exact: true });
   await expect(menu).toBeVisible();
   return menu;
 }
@@ -3124,7 +3150,7 @@ test("Find rebase keeps the nearest anchor through edit and advances on delete",
   await firstRow.hover();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   const firstMenu = page.getByRole("menu", { name: "Item actions" });
-  await firstMenu.getByRole("group", { name: "Editar" }).getByRole("menuitem", { name: "Quick edit" }).click();
+  await firstMenu.getByRole("menuitem", { name: "Quick edit", exact: true }).click();
   const firstEditor = firstRow.getByRole("textbox", { name: "Quick edit item 7001" });
   await firstEditor.fill("NEEDLE");
   await firstEditor.press("Control+Enter");
@@ -3162,7 +3188,7 @@ test("Find large rebase resolves its anchor with one bounded IPC", async ({ page
   await firstRow.hover();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
   const firstMenu = page.getByRole("menu", { name: "Item actions" });
-  await firstMenu.getByRole("group", { name: "Editar" }).getByRole("menuitem", { name: "Quick edit" }).click();
+  await firstMenu.getByRole("menuitem", { name: "Quick edit", exact: true }).click();
   const firstEditor = firstRow.getByRole("textbox", { name: "Quick edit item 8000" });
   await firstEditor.fill("NEEDLE large fixture 0");
   await firstEditor.press("Control+Enter");
@@ -3204,7 +3230,7 @@ test("picker shell keeps semantic feed state and only mounts active context stri
   await expect(page.getByTestId("saved-view-bar")).toContainText("Work clips");
 });
 
-test("picker row kebab and grouped menu stay keyboard reachable at 420 px", async ({ page }) => {
+test("picker row compact menu and submenus stay keyboard reachable at 420 px", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 640 });
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -3217,9 +3243,9 @@ test("picker row kebab and grouped menu stay keyboard reachable at 420 px", asyn
 
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Principal" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Editar" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Más" })).toBeVisible();
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Quick edit");
+  await expect(menu.getByRole("menuitem").nth(1)).toContainText("Edit metadata");
+  expect(await menu.getByRole("menuitem").count()).toBe(8);
   await expect(menu.getByRole("menuitem").first()).toBeFocused();
 
   const menuItems = menu.getByRole("menuitem");
@@ -3237,6 +3263,24 @@ test("picker row kebab and grouped menu stay keyboard reachable at 420 px", asyn
     return rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 && rect.bottom <= window.innerHeight;
   });
   expect(fitsViewport).toBe(true);
+
+  const organize = menu.getByRole("menuitem", { name: "Organize", exact: true });
+  await organize.focus();
+  await page.keyboard.press("ArrowRight");
+  const submenu = page.getByRole("menu", { name: "Organize", exact: true });
+  await expect(submenu).toBeVisible();
+  await expect(submenu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(submenu.getByRole("menuitem").nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(submenu).toBeHidden();
+  await expect(organize).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(submenu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(submenu).toBeHidden();
+  await expect(menu).toBeVisible();
+  await expect(organize).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
@@ -3555,7 +3599,7 @@ test("context menu adds a history item to Inbox", async ({ page }) => {
 
   const row = page.locator(".history-feed > li").first();
   await row.getByRole("group").click({ button: "right" });
-  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Add to Inbox" }).click();
+  await (await openItemSubmenu(page, "Organize")).getByRole("menuitem", { name: "Add to Inbox" }).click();
 
   await expect(row.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
   const inboxTransitions = await page.evaluate(() => {
@@ -3587,7 +3631,7 @@ test("Inbox item stays pending on catalog cancel and leaves after catalog save",
   await firstRow.hover();
   await expect(firstRow.getByRole("button", { name: "Remove from Inbox" })).toBeVisible();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
-  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
+  await (await openItemSubmenu(page, "Organize")).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
   await expect.poll(async () => page.evaluate(() => {
     const runtime = window as MetadataVisualRuntime;
     return (runtime.__copicuTestInvocations ?? []).filter((call) => call.cmd === "open_metadata_window").length;
@@ -3602,7 +3646,7 @@ test("Inbox item stays pending on catalog cancel and leaves after catalog save",
 
   await firstRow.hover();
   await firstRow.getByRole("button", { name: "Open item actions" }).click();
-  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
+  await (await openItemSubmenu(page, "Organize")).getByRole("menuitem", { name: "Catalog Inbox item" }).click();
   await page.evaluate(async (itemId) => {
     const runtime = window as MetadataVisualRuntime;
     const emitEvent = runtime.__copicuTestEmitEvent;
@@ -3634,7 +3678,7 @@ test("Remove from Inbox preserves the history row", async ({ page }) => {
   const row = page.locator(".history-feed > li").first();
   await row.hover();
   await row.getByRole("button", { name: "Open item actions" }).click();
-  await page.getByRole("menu", { name: "Item actions" }).getByRole("menuitem", { name: "Remove from Inbox" }).click();
+  await (await openItemSubmenu(page, "Organize")).getByRole("menuitem", { name: "Remove from Inbox" }).click();
 
   await expect(row).toBeVisible();
   await expect(row.getByRole("button", { name: "Remove from Inbox" })).toHaveCount(0);
@@ -5014,9 +5058,11 @@ test("F2 unifies content and metadata while Ctrl+F2 and Shift+F2 keep focused ro
   const metadataMenuItem = page.getByRole("menuitem", { name: /Edit metadata/ });
   await expect(metadataMenuItem).toBeVisible();
   await expect(metadataMenuItem.getByLabel("Shift+F2")).toBeVisible();
+  await openItemSubmenu(page, "More actions");
   const externalMenuItem = page.getByRole("menuitem", { name: /Edit externally/ });
   await expect(externalMenuItem).toBeVisible();
   await expect(externalMenuItem.getByLabel("Ctrl+F2")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(metadataMenuItem).toBeHidden();
   const firstItem = page.locator(".feed-item").first();
@@ -5564,6 +5610,7 @@ test("explicit search survives a delayed picker reset snapshot", async ({ page }
   await page.waitForTimeout(180);
   await expect(search).toHaveText("unbroken");
   await expect(page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 test("keyboard selection survives delayed picker reset refresh", async ({ page }) => {
@@ -6840,17 +6887,23 @@ test("right click on item opens item actions menu", async ({ page }) => {
   );
   expect(Math.abs(menuBox!.x - expected.x)).toBeLessThanOrEqual(48);
   expect(Math.abs(menuBox!.y - expected.y)).toBeLessThanOrEqual(16);
-  await expect(menu.getByRole("menuitem", { name: "Activate" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Copy", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Paste", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Paste plain" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Open URL" })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "copy-current-title" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Principal" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Editar" })).toBeVisible();
-  await expect(menu.getByRole("group", { name: "Más" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Edit tags" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete item" })).toBeVisible();
+  const more = await openItemSubmenu(page, "More actions");
+  await expect(more.getByRole("menuitem", { name: "Paste plain" })).toBeVisible();
+  await expect(more.getByRole("menuitem", { name: "Open URL" })).toHaveCount(0);
+  await expect(more.getByRole("menuitem", { name: "copy-current-title" })).toBeVisible();
+  await expect(more.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  const organize = await openItemSubmenu(page, "Organize");
+  await expect(organize.getByRole("menuitem", { name: "Edit tags" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu.getByRole("menuitem", { name: "Organize", exact: true })).toBeFocused();
+  // Closing a flyout can expose its trigger beneath the stationary pointer.
+  // It must remain dismissed after the former hover timers would have fired.
+  await page.waitForTimeout(250);
+  await expect(organize).toBeHidden();
 
   await menu.getByRole("menuitem", { name: "Paste", exact: true }).click();
   await expect(menu).toBeHidden();
@@ -6872,7 +6925,7 @@ test("item context menu ignores secondary clicks inside its portal", async ({ pa
       (window as any).__copicuTestMenuContextEvent = event;
     }, { capture: true, once: true });
   });
-  await menu.locator(".item-menu-group-label").first().click({ button: "right" });
+  await menu.locator(".mantine-Menu-divider").first().click({ button: "right" });
   expect(await page.evaluate(() => (window as any).__copicuTestMenuContextEvent.defaultPrevented)).toBe(true);
   await expect(menu).toBeVisible();
   const currentBox = await menu.boundingBox();
@@ -6880,7 +6933,7 @@ test("item context menu ignores secondary clicks inside its portal", async ({ pa
   expect(currentBox!.x).toBe(initialBox!.x);
   expect(currentBox!.y).toBe(initialBox!.y);
 
-  await menu.locator(".item-menu-group-label").first().click();
+  await menu.locator(".mantine-Menu-divider").first().click();
   await expect(menu).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
@@ -6894,7 +6947,7 @@ test("item context menu closes after marking a clip", async ({ page }) => {
   await item.click({ button: "right", position: { x: 76, y: 18 } });
   const menu = page.getByRole("menu", { name: "Item actions" });
   await expect(menu).toBeVisible();
-  await menu.getByRole("menuitem", { name: "Mark", exact: true }).click();
+  await (await openItemSubmenu(page, "Organize")).getByRole("menuitem", { name: "Mark", exact: true }).click();
   await expect(item).toHaveClass(/is-marked/);
   await expect(menu).toBeHidden();
 
@@ -6921,7 +6974,7 @@ test("URL action appears only when selected text contains an URL", async ({ page
   const item = page.getByRole("group", { name: /https:\/\/example\.test\/copicu/ });
   await item.click({ button: "right" });
 
-  const menu = page.getByRole("menu", { name: "Item actions" });
+  const menu = await openItemSubmenu(page, "More actions");
   await expect(menu.getByRole("menuitem", { name: "Paste plain" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Open URL" })).toBeVisible();
 });
@@ -6968,22 +7021,27 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   await selected.click({ button: "right" });
 
   const menu = page.getByRole("menu", { name: "Item actions" });
-  await expect(menu.getByRole("menuitem", { name: "Join selected", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Edit tags for selected" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Delete 2 selected", exact: true })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "Clear selection", exact: true })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Activate", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem").first()).toContainText("Edit metadata · 2 clips");
+  await expect(menu.getByRole("menuitem", { name: "Delete 2 selected items", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Copy", exact: true })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Paste", exact: true })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "Paste plain", exact: true })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "copy-current-title", exact: true })).toHaveCount(0);
-  await expect(menu.getByRole("menuitem", { name: "Edit", exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: "Quick edit", exact: true })).toHaveCount(0);
+  const organize = await openItemSubmenu(page, "Organize");
+  await expect(organize.getByRole("menuitem", { name: "Edit tags for selected" })).toBeVisible();
+  await expect(organize.getByRole("menuitem", { name: "Clear selection", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  const more = await openItemSubmenu(page, "More actions");
+  await expect(more.getByRole("menuitem", { name: "Join selected", exact: true })).toBeVisible();
+  await expect(more.getByRole("menuitem", { name: "join-selected-with-log-name" })).toBeVisible();
+  await expect(more.getByRole("menuitem", { name: "Paste plain", exact: true })).toHaveCount(0);
+  await expect(more.getByRole("menuitem", { name: "copy-current-title", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
   // A row outside the group must use the safe single-item route and clear the group.
   const unselected = page.getByRole("group", { name: /COPICU_SYNTH_MARKDOWN/ });
   await unselected.click({ button: "right" });
-  await expect(menu.getByRole("menuitem", { name: "Activate", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Copy", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Paste", exact: true })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Join selected", exact: true })).toHaveCount(0);
   await expect(menu.getByRole("menuitem", { name: "Edit tags for selected" })).toHaveCount(0);
@@ -6991,6 +7049,49 @@ test("multi selection context menu only shows shared actions", async ({ page }) 
   await expect(page.locator(".selection-menu-button")).toHaveAccessibleName(
     "Open selected clips menu, 0 selected",
   );
+});
+
+test("image context menu prioritizes preview and metadata without text editing", async ({ page }) => {
+  await mockTauriInvoke(page, [syntheticCompactPreviewHistory[2]]);
+  await gotoShell(page);
+  await page.locator(".feed-item").first().click({ button: "right" });
+  const menu = page.getByRole("menu", { name: "Item actions", exact: true });
+  await expect(menu.getByRole("menuitem").first()).toContainText("Preview");
+  await expect(menu.getByRole("menuitem").nth(1)).toContainText("Edit metadata");
+  await expect(menu.getByRole("menuitem", { name: "Quick edit", exact: true })).toHaveCount(0);
+  const more = await openItemSubmenu(page, "More actions");
+  await expect(more.getByRole("menuitem", { name: "Open assistant", exact: true })).toBeVisible();
+  await expect(more.getByRole("menuitem", { name: "Open full editor", exact: true })).toHaveCount(0);
+  await expect(more.getByRole("menuitem", { name: "Edit externally", exact: true })).toHaveCount(0);
+});
+
+test("item context menu keeps touch targets and opens submenus by tapping", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL, viewport: { width: 420, height: 640 }, hasTouch: true });
+  const page = await context.newPage();
+  try {
+    await mockTauriInvoke(page, [syntheticLongHistory[1]]);
+    await gotoShell(page);
+    await page.locator(".feed-item").first().tap();
+    await page.getByRole("button", { name: "Open item actions" }).tap();
+    const menu = page.getByRole("menu", { name: "Item actions", exact: true });
+    const heights = await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+    expect(heights.length).toBe(8);
+    expect(heights.every((height) => height >= 44)).toBe(true);
+    await menu.getByRole("menuitem", { name: "Organize", exact: true }).tap();
+    const organize = page.getByRole("menu", { name: "Organize", exact: true });
+    await expect(organize).toBeVisible();
+    expect(await organize.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= window.innerWidth
+        && bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+    })).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await organize.getByRole("menuitem", { name: "Copy clip to folder…", exact: true }).tap();
+    await expect(page.getByRole("dialog", { name: "copyItems folder", exact: true })).toBeVisible();
+    await expect(menu).toBeHidden();
+  } finally {
+    await context.close();
+  }
 });
 
 test("built-in action uses ids only and shows stacked toast", async ({ page }) => {
@@ -7001,6 +7102,7 @@ test("built-in action uses ids only and shows stacked toast", async ({ page }) =
   await page.getByRole("group", { name: /COPICU_SYNTH_LONG_UNBROKEN/ }).click({
     button: "right",
   });
+  await openItemSubmenu(page, "More actions");
   await page.getByRole("menuitem", { name: "Join selected" }).click();
 
   await expect(page.getByLabel("Notifications")).toBeVisible();
@@ -7754,7 +7856,7 @@ test("Appearance autosaves immediately from confirmed settings and broadcasts", 
   await captureSwitch.click();
   await page.getByRole("tab", { name: /Appearance/ }).click();
   await expect(page.getByText(
-    "Changes here save automatically. Save and Cancel apply to all other preferences.",
+    "Changes here save automatically. Sharing has its own save buttons. Save and Cancel apply to other preferences.",
   )).toBeVisible();
   await page.getByRole("radiogroup", { name: "Color mode" })
     .getByText("Dark", { exact: true })
@@ -8198,8 +8300,9 @@ test("desktop and narrow item action modes keep the complete menu reachable", as
   await currentRow.hover();
   await currentRow.getByRole("button", { name: "Open item actions" }).click();
   const menu = page.getByRole("menu", { name: "Item actions" });
-  await expect(menu.getByRole("menuitem", { name: "Mark" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Delete item" })).toBeVisible();
+  await expect((await openItemSubmenu(page, "Organize")).getByRole("menuitem", { name: "Mark", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(currentRow.getByRole("button", { name: "Open item actions" })).toBeFocused();
@@ -8542,7 +8645,7 @@ test("Appearance geometry remeasures a mixed virtual feed without moving its vis
   });
 });
 
-test("item actions stay behind the stable kebab and expose complete grouped labels", async ({ page }) => {
+test("item actions prioritize editing and fit compact labels without clipping", async ({ page }, testInfo) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
   await waitForDefaultHistoryReady(page);
@@ -8556,16 +8659,17 @@ test("item actions stay behind the stable kebab and expose complete grouped labe
 
   const itemMenu = page.getByRole("menu", { name: "Item actions" });
   await expect(itemMenu).toBeVisible();
-  await expect(itemMenu.getByRole("group", { name: "Principal" })).toBeVisible();
-  await expect(itemMenu.getByRole("group", { name: "Editar" })).toBeVisible();
-  await expect(itemMenu.getByRole("group", { name: "Más" })).toBeVisible();
-  const groupOrder = await itemMenu.locator(":scope > .item-menu-group").evaluateAll((groups) =>
-    groups.map((group) => group.getAttribute("aria-label")),
+  const actionOrder = await itemMenu.locator(".mantine-Menu-itemLabel").allTextContents();
+  expect(actionOrder).toEqual([
+    "Quick edit", "Edit metadata", "Copy", "Paste", "Preview", "Organize", "More actions", "Delete item",
+  ]);
+  const rowHeights = await itemMenu.getByRole("menuitem").evaluateAll((items) =>
+    items.map((item) => item.getBoundingClientRect().height),
   );
-  expect(groupOrder).toEqual(["Principal", "Editar", "Más"]);
+  expect(rowHeights.every((height) => height >= 28 && height <= 30)).toBe(true);
   const menuLayout = await itemMenu.evaluate((menu) => ({
     fitsViewport: menu.getBoundingClientRect().right <= window.innerWidth - 7,
-    labelsWrapWithoutClipping: Array.from(menu.querySelectorAll<HTMLElement>(".item-menu-action > span:not(.shortcut-badge)"))
+    labelsWrapWithoutClipping: Array.from(menu.querySelectorAll<HTMLElement>(".mantine-Menu-itemLabel"))
       .every((label) => label.scrollHeight <= label.clientHeight + 1),
     shortcutBadgesFit: Array.from(menu.querySelectorAll<HTMLElement>(".shortcut-badge"))
       .every((badge) => badge.scrollWidth <= badge.clientWidth + 1),
@@ -8575,6 +8679,7 @@ test("item actions stay behind the stable kebab and expose complete grouped labe
     labelsWrapWithoutClipping: true,
     shortcutBadgesFit: true,
   });
+  await page.screenshot({ path: `.codex-run/compact-menu-${testInfo.project.name}.png` });
 
   await itemMenu.getByRole("menuitem", { name: /Preview/ }).click();
   await page.waitForFunction(() =>
@@ -9541,6 +9646,7 @@ test("moving one item to Root warns and changes only that item's feed", async ({
   await page.getByRole("treeitem", { name: /Projects/ }).click();
   await page.locator(".feed-item").first().hover();
   await page.getByRole("button", { name: "Open item actions" }).first().click();
+  await openItemSubmenu(page, "Organize");
   await page.getByRole("menuitem", { name: "Move clip to folder…" }).click();
   const dialog = page.getByRole("dialog", { name: "moveItems folder" });
   await expect(dialog).toContainText("eligible for automatic retention");
@@ -9877,6 +9983,7 @@ test("shared folder selector moves clips to a new path from the existing destina
   await gotoShell(page);
   await page.locator(".feed-item").first().hover();
   await page.getByRole("button", { name: "Open item actions" }).first().click();
+  await openItemSubmenu(page, "Organize");
   await page.getByRole("menuitem", { name: "Move clip to folder…" }).click();
   const move = page.getByRole("dialog", { name: "moveItems folder", exact: true });
   await move.locator(".folder-select-trigger").click();
@@ -9893,6 +10000,38 @@ test("shared folder selector moves clips to a new path from the existing destina
   await move.getByRole("button", { name: "Move clips", exact: true }).click();
   await expect(move).toBeHidden();
   expect(await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "move_history_items_to_folder").args.folderPath)).toBe("/Projects/Moved clips");
+});
+
+test("folder copy keeps the original and reports an existing destination without duplicates", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page, [{ ...syntheticLongHistory[1], id: 501, text: "Synthetic independent copy", folderId: 7 }]);
+  await gotoShell(page);
+  const source = page.locator("#history-item-501");
+  const openCopy = async () => {
+    await source.hover();
+    await source.getByRole("button", { name: "Open item actions" }).click();
+    await openItemSubmenu(page, "Organize");
+    await page.getByRole("menuitem", { name: "Copy clip to folder…", exact: true }).click();
+  };
+  const dialog = page.getByRole("dialog", { name: "copyItems folder", exact: true });
+  await openCopy();
+  await expect(dialog.getByRole("heading", { name: "Copy 1 clip" })).toBeVisible();
+  await expect(dialog.locator(".folder-select-trigger")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(source.getByRole("button", { name: "Open item actions" })).toBeFocused();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "copy_history_items_to_folder"))).toEqual([]);
+  await openCopy();
+  await dialog.getByRole("button", { name: "Copy clips", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText("1 copied. Originals were kept.", { exact: true })).toBeVisible();
+  await expect(page.locator(".feed-item")).toHaveCount(2);
+  expect(await page.evaluate(() => (window as any).__copicuTestHistoryItems.map((item: any) => ({ id: item.id, folderId: item.folderId })))).toEqual([{ id: 501, folderId: 7 }, { id: 502, folderId: null }]);
+  await openCopy();
+  await expect(dialog.getByText(/Content already in the destination is reused/)).toBeVisible();
+  await page.screenshot({ path: `.codex-run/folder-copy-${testInfo.project.name}.png` });
+  await dialog.getByRole("button", { name: "Copy clips", exact: true }).click();
+  await expect(page.getByText("Already in this folder. Originals and destination metadata were kept.", { exact: true })).toBeVisible();
+  await expect(page.locator(".feed-item")).toHaveCount(2);
 });
 
 async function openResizableSidebar(page: Page) {
@@ -10328,6 +10467,7 @@ test("shared identity explains service custody and equal devices without recover
   await mockTauriInvoke(page); await mockSharedIdentity(page, "active"); await gotoShell(page, "/?window=settings");
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const identity = page.getByRole("region", { name: "Device sign-in" });
+  await identity.getByText("How your shared content is protected", { exact: true }).click();
   await expect(identity.getByText(/the service can decrypt it/)).toBeVisible();
   await expect(identity.getByRole("button", { name: /Approve|recovery|Send available keys/i })).toHaveCount(0);
   await identity.getByText("Devices (2 linked)", { exact: true }).click();
@@ -10383,8 +10523,10 @@ test("shared product Settings removal preserves drafts and retained connection w
   await mockTauriInvoke(page); await mockSharedProduct(page); await gotoShell(page, "/?window=settings");
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const sharing = page.locator(".shared-clipboard-settings");
-  const receive = sharing.getByRole("checkbox", { name: "Receive publications", exact: true });
-  await receive.uncheck();
+  await sharing.locator("summary").filter({ hasText: "Clipboard behavior and automation" }).click();
+  const receive = sharing.getByRole("checkbox", { name: "Automatically copy new arrivals to Windows", exact: true });
+  await receive.check();
+  await sharing.locator("summary").filter({ hasText: /^Send shortcuts/ }).click();
   const shortcut = sharing.getByLabel("Send active Copicu clip", { exact: true });
   await shortcut.fill("Ctrl+Alt+Y");
   await page.evaluate(async () => {
@@ -10398,9 +10540,9 @@ test("shared product Settings removal preserves drafts and retained connection w
   await expect(sharing.getByText(/This clipboard was removed or your access was revoked/)).toBeVisible();
   await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("Synthetic retained clipboard");
   await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("cannot send or receive");
-  await expect(sharing.getByLabel("Channel", { exact: true })).toHaveValue("Synthetic retained clipboard · Unavailable");
-  await expect(receive).toBeDisabled(); await expect(receive).not.toBeChecked();
-  await expect(sharing.getByRole("button", { name: "Save channel settings", exact: true })).toBeDisabled();
+  await expect(sharing.getByLabel("Shared clipboard", { exact: true })).toHaveValue("Synthetic retained clipboard · Unavailable");
+  await expect(receive).toBeDisabled(); await expect(receive).toBeChecked();
+  await expect(sharing.getByRole("button", { name: "Save clipboard behavior", exact: true })).toBeDisabled();
   await expect(shortcut).toHaveValue("Ctrl+Alt+Y"); await expect(shortcut).toBeFocused();
   const state = await page.evaluate(() => ({ connections: (window as any).__copicuSharedSnapshot.connections, saved: (window as any).__copicuSharedSavedPolicies, operations: (window as any).__copicuProductOperations }));
   expect(state.connections).toHaveLength(1); expect(state.saved ?? []).toHaveLength(0); expect(state.operations).toHaveLength(0);
@@ -10451,7 +10593,7 @@ test("shared product lost create retries immutable intent and history has only e
   const effects=await page.evaluate(()=>(window as any).__copicuTestInvocations.filter((call:any)=>["shared_clipboard_history_action","shared_clipboard_copy_receipt","create_history_item"].includes(call.cmd)));
   expect(effects).toEqual([]);
   await library.getByRole("button",{name:"Save in folder",exact:true}).click();
-  await expect(library.getByRole("status")).toContainText("Already exists in Root");
+  await expect(library.getByRole("status")).toContainText("Already in this folder. Received again");
   await page.screenshot({path:testInfo.outputPath("shared-product-history.png")});
   await library.getByRole("button",{name:"Close",exact:true}).click();
   await expect(page.getByRole("button",{name:"Shared clipboards",exact:true})).toBeFocused();
@@ -10499,6 +10641,54 @@ test("shared product folder connection explains disabled confirmation and requir
   const calls = await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call:any) => call.cmd === "shared_clipboard_connection" && call.args.action === "connect"));
   expect(calls).toHaveLength(2);
   expect(calls[1].args.input).toEqual({id:"folder_7",channelId:"synthetic-channel",kind:"folder",folderId:7,direction:"both",moveReception:true});
+});
+
+test("folder reception feedback survives reopening and a repeated arrival preserves selection", async ({ page }, testInfo) => {
+  const now = Date.now();
+  await mockTauriInvoke(page, [
+    { ...syntheticLongHistory[1], id: 601, text: "Synthetic newer local clip", normalized_hash: "newer-local", folderId: 7, created_at_unix_ms: now, last_copied_at_unix_ms: now },
+    { ...syntheticLongHistory[1], id: 602, text: "Synthetic received clip", normalized_hash: "received", folderId: 7, created_at_unix_ms: now - 2000, last_copied_at_unix_ms: now - 2000, last_received_at_unix_ms: now - 1000 },
+  ]);
+  await mockSharedProduct(page);
+  await page.addInitScript(({ now }) => {
+    const snapshot = (window as any).__copicuSharedSnapshot;
+    snapshot.connections = [{ id: "folder_7", kind: "folder", folderId: 7, channelId: "synthetic-channel", direction: "both" }];
+    snapshot.receipts = [{ ...snapshot.receipts[1], localItemId: 602, historyResult: { outcome: "created", folderId: 7, folderName: "Projects", receivedAtUnixMs: now - 1000 } }];
+  }, { now });
+  await gotoShell(page);
+  const enterProjects = async () => {
+    await revealFolderTree(page);
+    await page.locator('[data-folder-row="7"]').click();
+  };
+  await enterProjects();
+  const activity = page.locator(".shared-folder-activity");
+  await expect(activity).toHaveText("Saved in Projects");
+  await page.reload();
+  if (!(await activity.isVisible())) await enterProjects();
+  await expect(activity).toHaveText("Saved in Projects");
+  await page.locator("#history-item-601 .feed-item").click();
+  await expect(page.locator("#history-item-601 .feed-item")).toHaveClass(/is-selected/);
+  const search = page.getByLabel("Search clipboard history");
+  await search.focus();
+  await page.evaluate(async () => {
+    const w = window as any;
+    const received = w.__copicuTestHistoryItems.find((item: any) => item.id === 602);
+    received.last_received_at_unix_ms = Date.now();
+    w.__copicuTestHistoryItems = [received, ...w.__copicuTestHistoryItems.filter((item: any) => item.id !== 602)];
+    w.__copicuSharedSnapshot.receipts[0].historyResult = { outcome: "existing", folderId: 7, folderName: "Projects", receivedAtUnixMs: received.last_received_at_unix_ms };
+    await w.__copicuTestEmitEvent("copicu://history/changed", { itemId: 602, contentKind: "text" });
+    await w.__copicuTestEmitEvent("shared-catalog-invalidated", { state: "connected" });
+  });
+  await expect(activity).toHaveText("Received again in Projects");
+  await expect(page.locator(".feed-item")).toHaveCount(2);
+  await expect(page.locator(".feed-item").first()).toContainText("Synthetic received clip");
+  await expect(page.locator("#history-item-601 .feed-item")).toHaveClass(/is-selected/);
+  await expect(search).toBeFocused();
+  await expect(page.locator("#history-item-602 .item-received-status")).toHaveText("Received");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: `.codex-run/folder-reception-${testInfo.project.name}.png` });
+  await page.getByRole("button", { name: "Shared clipboard", exact: true }).click();
+  await expect(page.getByTestId("shared-clipboard-feed").getByRole("option")).toContainText("Received again in Projects");
 });
 
 test("shared clipboard previews immutable recovered text only on selection and copies manually", async ({ page }, testInfo) => {
@@ -10600,24 +10790,28 @@ test("shared clipboard keyboard selection rejects stale previews and keeps expir
 
 test("shared clipboard settings keep folder reception Windows and send shortcuts independent", async ({ page }, testInfo) => {
   await mockTauriInvoke(page);
-  await mockSharedClipboard(page);
+  await mockSharedProduct(page);
   await gotoShell(page, "/?window=settings");
   await expect(page.getByLabel("Search settings")).toBeVisible();
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const sharing = page.locator(".shared-clipboard-settings");
   await expect(sharing.getByText("Device linked", { exact: true })).toBeVisible();
   await expect(sharing.locator("form")).toHaveCount(0);
-  await sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true }).check();
-  await sharing.getByRole("checkbox", { name: "Save received content in Copicu", exact: true }).check();
-  await expect(sharing.getByRole("checkbox", { name: "Receive publications", exact: true })).not.toBeChecked();
-  await expect(sharing.getByRole("checkbox", { name: "Update Windows clipboard on live arrivals", exact: true })).not.toBeChecked();
-  await expect(sharing.getByRole("button", { name: "Publication folder /", exact: true })).toBeVisible();
-  await expect(sharing.getByRole("button", { name: "Reception folder /", exact: true })).toBeVisible();
-  await sharing.getByRole("button", { name: "Save channel settings", exact: true }).click();
+  await sharing.getByRole("button", { name: "Connect a folder…", exact: true }).click();
+  const connection = page.getByRole("dialog", { name: "Connect shared clipboard" });
+  await expect(connection.getByRole("button", { name: "Local folder /", exact: true })).toBeVisible();
+  await connection.getByRole("option", { name: /Synthetic clipboard/ }).click();
+  await connection.getByLabel("Direction", { exact: true }).click();
+  await page.getByRole("option", { name: "Send and receive", exact: true }).click();
+  await connection.getByRole("button", { name: "Connect clipboard", exact: true }).click();
+  await expect(connection).toHaveCount(0);
+  await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("Root");
   const configured = await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0]);
-  expect(configured.publishFolderEnabled).toBe(true); expect(configured.publishFolderId).toBeNull();
-  expect(configured.saveToFolder).toBe(true); expect(configured.receiveFolderId).toBeNull();
-  expect(configured.receiveEnabled).toBe(false); expect(configured.updateClipboard).toBe(false);
+  expect(configured.updateClipboard).toBe(false); expect(configured.receiveActionEnabled).toBe(false);
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([expect.objectContaining({ kind: "folder", folderId: null, direction: "both" })]);
+  await sharing.locator("summary").filter({ hasText: "Clipboard behavior and automation" }).click();
+  await expect(sharing.getByRole("checkbox", { name: "Automatically copy new arrivals to Windows", exact: true })).not.toBeChecked();
+  await sharing.locator("summary").filter({ hasText: /^Send shortcuts/ }).click();
   await sharing.getByLabel("Send active Copicu clip", { exact: true }).fill("F8");
   await sharing.getByLabel("Send Windows clipboard", { exact: true }).fill("Ctrl+Alt+Y");
   const generalSaves = await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => ["update_settings", "close_settings_window"].includes(call.cmd)).length);
@@ -10630,7 +10824,7 @@ test("shared clipboard settings keep folder reception Windows and send shortcuts
   await sharing.getByLabel("Send active Copicu clip", { exact: true }).press("Control+Enter");
   await expect.poll(() => page.evaluate(() => (window as any).__copicuSharedSnapshot.sendActiveShortcut)).toBe("F9");
   expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => ["update_settings", "close_settings_window"].includes(call.cmd)).length)).toBe(generalSaves);
-  await sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true }).uncheck();
+  await sharing.getByRole("checkbox", { name: "Automatically copy new arrivals to Windows", exact: true }).check();
   await sharing.getByRole("button", { name: "View receptions", exact: true }).click();
   const feed = page.getByTestId("shared-clipboard-feed");
   await expect(feed.getByRole("option")).toHaveCount(3);
@@ -10638,7 +10832,7 @@ test("shared clipboard settings keep folder reception Windows and send shortcuts
   await expect(feed.getByLabel("Received plain text")).toContainText("COPICU_SYNTH_RECOVERY_TEXT");
   await feed.getByRole("button", { name: "Back to Sharing settings", exact: true }).click();
   await expect(feed).toHaveCount(0);
-  await expect(sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true })).not.toBeChecked();
+  await expect(sharing.getByRole("checkbox", { name: "Automatically copy new arrivals to Windows", exact: true })).toBeChecked();
   await expect(sharing.getByText("Not saved", { exact: true })).toBeVisible();
   await sharing.getByRole("button", { name: "Pause sharing", exact: true }).click();
   await expect(sharing.getByText("Sharing paused", { exact: true })).toBeVisible();
@@ -10653,8 +10847,10 @@ test("shared clipboard reception action writer requires an explicit mutually exc
   await expect(page.getByLabel("Search settings")).toBeVisible();
   await page.getByRole("tab", { name: /^Sharing/ }).click();
   const sharing = page.locator(".shared-clipboard-settings");
-  const originalWriter = sharing.getByRole("checkbox", { name: "Update Windows clipboard on live arrivals", exact: true });
+  await sharing.locator("summary").filter({ hasText: "Clipboard behavior and automation" }).click();
+  const originalWriter = sharing.getByRole("checkbox", { name: "Automatically copy new arrivals to Windows", exact: true });
   await originalWriter.check();
+  await sharing.locator("summary").filter({ hasText: "Run a script when content arrives" }).click();
   await sharing.getByRole("checkbox", { name: "Run a local action on live arrivals", exact: true }).check();
   await sharing.getByLabel("Reception action", { exact: true }).click();
   await page.getByRole("option", { name: "Synthetic uppercase reception", exact: true }).click();
@@ -10665,7 +10861,7 @@ test("shared clipboard reception action writer requires an explicit mutually exc
   await expect(actionWriter).toBeEnabled();
   await actionWriter.check();
   await expect(originalWriter).toBeDisabled();
-  await sharing.getByRole("button", { name: "Save channel settings", exact: true }).click();
+  await sharing.getByRole("button", { name: "Save clipboard behavior", exact: true }).click();
   const configured = await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0]);
   expect(configured.receiveActionEnabled).toBe(true);
   expect(configured.receiveActionId).toBe("synthetic-receiver-action");
@@ -10674,6 +10870,166 @@ test("shared clipboard reception action writer requires an explicit mutually exc
   await sharing.getByRole("checkbox", { name: "Run a local action on live arrivals", exact: true }).uncheck();
   await expect(actionWriter).toHaveCount(0);
   await expect(originalWriter).toBeEnabled();
-  await sharing.getByRole("button", { name: "Save channel settings", exact: true }).click();
+  await sharing.getByRole("button", { name: "Save clipboard behavior", exact: true }).click();
   expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.channels[0].receiveActionWritesClipboard)).toBe(false);
+});
+
+test("picker chrome opens Settings from the first button and only hides from the last", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await gotoShell(page); await waitForDefaultHistoryReady(page);
+  const chrome = page.locator(".custom-window-frame.is-floatingPicker > .window-chrome");
+  await expect(chrome.getByRole("button").first()).toHaveAccessibleName("Settings");
+  await expect(chrome.getByRole("button").last()).toHaveAccessibleName("Hide Copicu");
+  await expect(page.getByRole("button", { name: /Quit Copicu/i })).toHaveCount(0);
+  await chrome.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "open_settings_window"))).toBe(true);
+  await chrome.getByRole("button", { name: "Hide Copicu", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestInvocations.some((call: any) => call.cmd === "hide_picker"))).toBe(true);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => /quit_app|start_dragging/.test(call.cmd)))).toEqual([]);
+  await page.screenshot({ path: `.codex-run/picker-settings-chrome-${testInfo.project.name}.png` });
+});
+
+test("Sharing follows General and makes independent saves clear without losing other preference drafts", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page); await gotoShell(page, "/?window=settings");
+  await expect(page.getByRole("tab").nth(0)).toHaveText(/General/);
+  await expect(page.getByRole("tab").nth(1)).toHaveText(/Sharing/);
+  await expect(page.getByRole("tab").nth(2)).toHaveText(/Hotkeys/);
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  await expect(page.getByRole("button", { name: "Close settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+  await page.getByLabel("Search settings").press("Control+Enter");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => /update_settings|close_settings_window/.test(call.cmd)))).toEqual([]);
+  await page.getByRole("tab", { name: /^General/ }).click();
+  await page.getByRole("switch", { name: "Capture clipboard changes", exact: true }).uncheck();
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  await expect(page.getByText(/You have unsaved changes in other categories/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save other preferences", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: /^General/ }).click();
+  await expect(page.getByRole("switch", { name: "Capture clipboard changes", exact: true })).not.toBeChecked();
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  await page.locator(".shared-clipboard-settings summary").filter({ hasText: "Clipboard behavior and automation" }).click();
+  await page.getByRole("combobox", { name: "Shared clipboard", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("form", { name: "Settings", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "close_settings_window"))).toEqual([]);
+  await page.screenshot({ path: `.codex-run/sharing-save-scope-${testInfo.project.name}.png` });
+  await page.getByRole("button", { name: "Save other preferences", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestSettings.general.captureEnabled)).toBe(false);
+});
+
+test("Sharing edits a legacy folder connection without duplicating it or replaying stale behavior topology", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page);
+  await page.addInitScript(() => {
+    const w = window as any, s = w.__copicuSharedSnapshot;
+    s.channels[0].receiveEnabled = true; s.channels[0].saveToFolder = true; s.channels[0].receiveFolderId = 7;
+    s.connections = [{ id: "legacy_receive_synthetic-channel", channelId: "synthetic-channel", kind: "folder", folderId: 7, direction: "receive" }];
+  });
+  await gotoShell(page, "/?window=settings"); await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const sharing = page.locator(".shared-clipboard-settings");
+  const connections = sharing.getByRole("list", { name: "Shared connections" });
+  await expect(connections).toContainText("/Projects");
+  await expect(sharing.getByRole("checkbox", { name: "Publish new local arrivals", exact: true })).toHaveCount(0);
+  await sharing.locator("summary").filter({ hasText: "Clipboard behavior and automation" }).click();
+  const writer = sharing.getByRole("checkbox", { name: "Automatically copy new arrivals to Windows", exact: true });
+  await writer.check();
+  await connections.getByRole("button", { name: "Edit", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit connection", exact: true });
+  await expect(editor.getByRole("option", { name: /Synthetic clipboard/ })).toHaveAttribute("aria-selected", "true");
+  await expect(editor.getByLabel("Direction", { exact: true })).toHaveValue("Receive");
+  await expect(editor.getByRole("checkbox", { name: /Move automatic reception/ })).toHaveCount(0);
+  await editor.getByLabel("Direction", { exact: true }).click();
+  await page.getByRole("option", { name: "Send and receive", exact: true }).click();
+  await editor.getByRole("button", { name: "Save connection", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(writer).toBeChecked();
+  await expect(connections.getByRole("listitem")).toHaveCount(1);
+  await expect(connections).toContainText("Send and receive");
+  // Model a new receiving destination from another window while the effect draft is open.
+  await page.evaluate(async () => {
+    const w = window as any, s = w.__copicuSharedSnapshot;
+    s.channels[0].publishFolderEnabled = true; s.channels[0].publishFolderId = 7;
+    s.channels[0].receiveFolderId = null;
+    await w.__copicuTestEmitEvent("shared-catalog-invalidated", { state: "live" });
+  });
+  // The save-time refresh must also keep effects changed by another window since the last UI refresh.
+  await page.evaluate(() => { (window as any).__copicuSharedSnapshot.channels[0].defaultSendChannel = true; });
+  await sharing.getByRole("button", { name: "Save clipboard behavior", exact: true }).click();
+  await expect(sharing.getByText("Clipboard behavior saved.", { exact: true })).toBeVisible();
+  const saved = await page.evaluate(() => ({ snapshot: (window as any).__copicuSharedSnapshot, calls: (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "shared_clipboard_update_channel") }));
+  expect(saved.snapshot.connections).toHaveLength(1);
+  expect(saved.snapshot.connections[0].id).toBe("legacy_receive_synthetic-channel");
+  expect(saved.calls.at(-1).args.policy).toMatchObject({ updateClipboard: true, defaultSendChannel: true, receiveFolderId: null, publishFolderEnabled: true, publishFolderId: 7 });
+  await page.screenshot({ path: `.codex-run/sharing-connection-edit-${testInfo.project.name}.png` });
+});
+
+test("Sharing folder chooser connects an exact folder and preserves Root versus All history", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page); await gotoShell(page, "/?window=settings");
+  await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const sharing = page.locator(".shared-clipboard-settings");
+  await sharing.getByRole("button", { name: "Connect a folder…", exact: true }).click();
+  const connection = page.getByRole("dialog", { name: "Connect shared clipboard" });
+  await connection.getByRole("button", { name: "Local folder /", exact: true }).click();
+  const folders = page.getByRole("dialog", { name: "Choose local folder", exact: true });
+  await folders.locator('.folder-tree-name[title="/Projects"]').click();
+  await folders.getByRole("button", { name: "Choose folder", exact: true }).click();
+  await expect(connection.getByRole("button", { name: "Local folder /Projects", exact: true })).toBeVisible();
+  await connection.getByRole("option", { name: /Shared research/ }).click();
+  await connection.getByLabel("Direction", { exact: true }).click();
+  await expect(page.getByRole("option", { name: "Send and receive", exact: true })).toHaveAttribute("data-combobox-disabled", "true");
+  await page.keyboard.press("Escape");
+  await expect(connection).toBeVisible();
+  await connection.getByRole("button", { name: "Connect clipboard", exact: true }).click();
+  await expect(connection).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toEqual([expect.objectContaining({ kind: "folder", folderId: 7, direction: "receive", channelId: "synthetic-reader" })]);
+  await expect(sharing.getByRole("button", { name: "Connect a folder…", exact: true })).toBeFocused();
+  expect(await sharing.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await page.screenshot({ path: `.codex-run/sharing-connected-folder-${testInfo.project.name}.png` });
+});
+
+test("Sharing overview separates this PC, folder connections and recent destinations", async ({ page }, testInfo) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page);
+  await page.addInitScript(() => {
+    const w = window as any, s = w.__copicuSharedSnapshot, previous = w.__copicuSharedTestInvoke;
+    s.identityState = "active";
+    Object.assign(s.channels[0], { name: "notebook", receiveEnabled: true, saveToFolder: true, receiveFolderId: 7, publishFolderEnabled: true, publishFolderId: 7 });
+    s.connections = [{ id: "folder_7", channelId: "synthetic-channel", kind: "folder", folderId: 7, direction: "both" }];
+    s.receipts = [{ ...s.receipts[1], originDeviceId: "synthetic-notebook", historyResult: { outcome: "existing", folderId: 7, folderName: "Projects", receivedAtUnixMs: 1791130000000 } }];
+    w.__copicuSharedTestInvoke = async (cmd: string, args: any) => cmd === "shared_clipboard_identity"
+      ? { state: "active", name: "Synthetic PC", deviceId: "synthetic-pc", keyCustody: "service", devices: [{ deviceId: "synthetic-pc", name: "Synthetic PC", state: "active" }, { deviceId: "synthetic-notebook", name: "Synthetic Notebook", state: "active" }] }
+      : previous(cmd, args);
+  });
+  await gotoShell(page, "/?window=settings"); await page.getByRole("tab", { name: /^Sharing/ }).click();
+  const sharing = page.locator(".shared-clipboard-settings");
+  await expect(sharing.getByRole("heading", { name: "Account and this PC", exact: true })).toBeVisible();
+  await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("/Projects");
+  await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("notebook");
+  await expect(sharing.getByRole("list", { name: "Shared connections" })).toContainText("Send and receive");
+  await expect(sharing.getByRole("list", { name: "Received publications" })).toContainText("From Synthetic Notebook");
+  await expect(sharing.getByRole("list", { name: "Received publications" })).toContainText("Received again in Projects");
+  await expect(sharing.locator(".shared-settings-advanced")).not.toHaveAttribute("open");
+  expect(await sharing.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await page.locator(".settings-list").evaluate(node => { node.scrollTop = 0; });
+  await page.screenshot({ path: `.codex-run/sharing-overview-${testInfo.project.name}.png` });
+});
+
+test("shared product keyboard resource changes require a fresh reception move confirmation", async ({ page }) => {
+  await mockTauriInvoke(page); await mockSharedProduct(page);
+  await page.addInitScript(() => {
+    (window as any).__copicuSharedSnapshot.connections = [
+      { id: "folder_7", channelId: "synthetic-channel", kind: "folder", folderId: 7, direction: "receive" },
+      { id: "folder_8", channelId: "synthetic-reader", kind: "folder", folderId: 8, direction: "receive" },
+    ];
+  });
+  await gotoShell(page); await waitForDefaultHistoryReady(page);
+  await page.getByRole("button", { name: "Connect shared clipboard", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Connect shared clipboard", exact: true });
+  await editor.getByRole("option", { name: /Synthetic clipboard/ }).click();
+  await editor.getByRole("checkbox", { name: /Move automatic reception/ }).check();
+  await expect(editor.getByRole("button", { name: "Connect clipboard", exact: true })).toBeEnabled();
+  await editor.getByRole("option", { name: /Synthetic clipboard/ }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(editor.getByRole("option", { name: /Shared research/ })).toBeFocused();
+  await expect(editor.getByRole("checkbox", { name: /Move automatic reception/ })).not.toBeChecked();
+  await expect(editor.getByRole("button", { name: "Connect clipboard", exact: true })).toBeDisabled();
+  await expect(editor.getByLabel("Direction", { exact: true })).toHaveValue("Receive");
+  expect(await page.evaluate(() => (window as any).__copicuSharedSnapshot.connections)).toHaveLength(2);
 });

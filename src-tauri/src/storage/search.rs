@@ -1115,7 +1115,7 @@ pub(super) fn history_item_select_columns(include_content: bool) -> String {
          normalized_hash, created_at_unix_ms, last_used_at_unix_ms,
          COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),
          mime_primary, blob_path, thumbnail_path, byte_size, width, height,
-         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id"
+         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id, last_received_at_unix_ms"
     )
 }
 
@@ -1138,7 +1138,7 @@ fn clean_values(values: &[String]) -> impl Iterator<Item = &str> {
 }
 fn compile_order_sql(sort: &[SearchPlanSortV1]) -> String {
     if sort.is_empty() {
-        return "(is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC"
+        return "(is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC"
             .to_string();
     }
 
@@ -1846,7 +1846,7 @@ pub(super) fn finish_history_page(
     let next_cursor = if items.len() as i64 > limit {
         items.truncate(limit as usize);
         items.last().map(|item| HistoryPageCursor {
-            after_sort_unix_ms: item.last_copied_at_unix_ms,
+            after_sort_unix_ms: item.last_copied_at_unix_ms.max(item.last_received_at_unix_ms.unwrap_or(0)),
             after_id: item.id,
             after_is_inbox: item.is_inbox,
             after_inbox_at_unix_ms: item.inbox_at_unix_ms,

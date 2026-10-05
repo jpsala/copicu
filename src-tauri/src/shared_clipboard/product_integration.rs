@@ -246,9 +246,13 @@ fn images_cross_encrypted_relay_save_preview_and_copy_without_capture_echo() {
     assert_eq!(history["entries"][0]["kind"], "image");
     assert!(history["entries"][0]["text"].is_null());
     let duplicate = runtime::historical_import(&receiver,"bootstrap",&effect.publication_id,None).unwrap();
-    assert_eq!(duplicate["itemId"],local_id);
-    assert_eq!(duplicate["folderId"],folder.id);
-    assert_eq!(duplicate["alreadyExists"],true);
+    assert_ne!(duplicate["itemId"],local_id);
+    assert!(duplicate["folderId"].is_null());
+    assert_eq!(duplicate["alreadyExists"],false);
+    assert_eq!(serde_json::to_value(receiver.get_item(local_id).unwrap()).unwrap()["folderId"], folder.id);
+    let repeated = runtime::historical_import(&receiver,"bootstrap",&effect.publication_id,None).unwrap();
+    assert_eq!(repeated["itemId"],duplicate["itemId"]);
+    assert_eq!(repeated["alreadyExists"],true);
     assert_eq!(owner.get_item(item).unwrap().content_kind(), "image");
     runtime::set_flow_paused(&receiver,None,None,Some(true)).unwrap();
     assert!(runtime::claim_clipboard(&receiver,effect).is_err());

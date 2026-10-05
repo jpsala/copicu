@@ -64,6 +64,7 @@ pub mod storage;
 mod surface_registry;
 mod ui_host;
 mod window_focus;
+mod window_interaction;
 #[cfg(not(test))]
 mod window_state;
 
@@ -904,6 +905,7 @@ fn set_main_window_pin_state_on_main_thread<R: tauri::Runtime>(
     let actual_pinned = window
         .is_always_on_top()
         .map_err(|error| format!("failed to read main window pin state after set: {error}"))?;
+    window_interaction::sync_layers(app, false);
     emit_picker_pin_state(app, actual_pinned);
 
     Ok(actual_pinned)
@@ -1738,9 +1740,7 @@ fn close_settings_window(window: tauri::WebviewWindow) -> Result<(), String> {
         return Err("close_settings_window can only be called from settings".to_string());
     }
 
-    window
-        .hide()
-        .map_err(|error| format!("settings window hide failed: {error}"))
+    close_product_surface(&window)
 }
 
 #[cfg(not(test))]
@@ -1894,7 +1894,7 @@ impl MetadataEditorState {
 
 #[cfg(not(test))]
 #[tauri::command]
-fn open_markdown_output(
+async fn open_markdown_output(
     app: tauri::AppHandle,
     payload: MarkdownOutputPayload,
 ) -> Result<(), String> {
@@ -1967,9 +1967,7 @@ fn pending_metadata_editor(
 fn close_metadata_window(window: tauri::WebviewWindow) -> Result<(), String> {
     require_surface_window(&window, &[METADATA_WINDOW_LABEL], "close_metadata_window")?;
     let started_at = Instant::now();
-    window
-        .hide()
-        .map_err(|error| format!("metadata window hide failed: {error}"))?;
+    close_product_surface(&window)?;
     diag_log(
         "metadata.close.hide.done",
         format!("elapsed_ms={}", started_at.elapsed().as_millis()),
@@ -2163,9 +2161,7 @@ fn resolve_ui_host_request(
     require_surface_window(&window, &[UI_HOST_WINDOW_LABEL], "resolve_ui_host_request")?;
     ui_host.resolve(request, || {
         if let Some(window) = app.get_webview_window(UI_HOST_WINDOW_LABEL) {
-            window
-                .hide()
-                .map_err(|error| format!("ui-host hide failed: {error}"))?;
+            close_product_surface(&window)?;
         }
         Ok(())
     })
@@ -2395,6 +2391,15 @@ fn move_history_items_to_folder(window: tauri::WebviewWindow, app: tauri::AppHan
     };
     let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
     Ok(changed)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn copy_history_items_to_folder(window: tauri::WebviewWindow, app: tauri::AppHandle, storage: State<'_, storage::AppStorage>, item_ids: Vec<i64>, folder_id: Option<i64>, folder_path: Option<String>) -> Result<serde_json::Value, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "copy_history_items_to_folder")?;
+    let result = storage.copy_history_items_to_folder(item_ids, folder_id, folder_path.as_deref())?;
+    let _ = app.emit(HISTORY_CHANGED_EVENT, serde_json::json!({ "foldersChanged": true }));
+    serde_json::to_value(result).map_err(|e| e.to_string())
 }
 
 #[cfg(not(test))]
@@ -3826,6 +3831,22 @@ pub fn run() {
                 .build(),
         )
         .on_window_event(|window, event| {
+            if surface_registry::is_interactive(window.label()) {
+                if let WindowEvent::Focused(focused) = event {
+                    if let Some(policy) = window.app_handle().try_state::<PickerFocusPolicy>() {
+                        if *focused {
+                            policy.cancel_pending_hide();
+                            window_interaction::sync_layers(window.app_handle(), false);
+                        } else if let Some(main) = window.app_handle().get_webview_window(MAIN_WINDOW_LABEL)
+                            .filter(|main| main.is_visible().unwrap_or(false))
+                        {
+                            // Evaluate after the focus transition settles, including
+                            // leaving Settings while the picker is already unfocused.
+                            policy.schedule_hide(main.as_ref().window());
+                        }
+                    }
+                }
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if surface_registry::hides_on_close(window.label())
                     && window.label() != METADATA_WINDOW_LABEL
@@ -3844,6 +3865,7 @@ pub fn run() {
                         diag_log("window.event", format!("main {event:?}"));
                         if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_)) {
                             save_window_bounds_from_event(window);
+                            window_interaction::sync_layers(window.app_handle(), false);
                         }
                         if matches!(event, WindowEvent::Focused(true))
                             && window
@@ -3857,14 +3879,8 @@ pub fn run() {
                         let focus_policy = window.app_handle().state::<PickerFocusPolicy>();
                         focus_policy.cancel_pending_hide();
                     }
-                    WindowEvent::Focused(false) if should_hide_on_focus_lost(window) => {
-                        diag_log("window.event", "main focused false schedule hide");
-                        save_window_bounds_from_event(window);
-                        let focus_policy = window.app_handle().state::<PickerFocusPolicy>();
-                        focus_policy.schedule_hide(window.clone());
-                    }
                     WindowEvent::Focused(false) => {
-                        diag_log("window.event", "main focused false hide disabled");
+                        diag_log("window.event", "main focused false evaluate app focus");
                         save_window_bounds_from_event(window);
                     }
                     _ => {}
@@ -3913,15 +3929,7 @@ pub fn run() {
                             thread::sleep(HIDE_ON_FOCUS_LOST_DELAY);
                             let app_for_main_thread = app.clone();
                             if let Err(error) = app.run_on_main_thread(move || {
-                                let main_focused = app_for_main_thread
-                                    .get_webview_window(MAIN_WINDOW_LABEL)
-                                    .map(|main| main.is_focused().unwrap_or(false))
-                                    .unwrap_or(false);
-                                let preview_focused = app_for_main_thread
-                                    .get_webview_window(ITEM_PREVIEW_WINDOW_LABEL)
-                                    .map(|preview| preview.is_focused().unwrap_or(false))
-                                    .unwrap_or(false);
-                                if !main_focused && !preview_focused {
+                                if !window_interaction::has_interactive_focus(&app_for_main_thread) {
                                     hide_item_preview_for_app(&app_for_main_thread);
                                 }
                             }) {
@@ -4126,6 +4134,7 @@ pub fn run() {
             folder_delete_preview,
             delete_folder,
             move_history_items_to_folder,
+            copy_history_items_to_folder,
             get_capture_folder_destination,
             get_capture_folder_destination_state,
             set_capture_folder_destination,
@@ -4214,6 +4223,7 @@ pub fn run() {
             let window_registry = window_state::WindowStateRegistry::open(app_data_dir.clone());
 
             app.manage(PickerFocusPolicy::default());
+            app.manage(window_interaction::WindowInteraction::default());
             app.manage(PickerSessionController::default());
             app.manage(find::FindSessionStore::default());
             let initial_main_window_hide = InitialMainWindowHide::default();
@@ -4371,25 +4381,52 @@ fn spawn_prewarm_metadata_window<R: tauri::Runtime + 'static>(app: tauri::AppHan
 fn open_settings_window_on_main_thread<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<(), String> {
-    let window = match app.get_webview_window(SETTINGS_WINDOW_LABEL) {
-        Some(window) => window,
-        None => build_surface_window(app, SETTINGS_WINDOW_LABEL)?,
-    };
+    open_product_surface(app, SETTINGS_WINDOW_LABEL, true).map(|_| ())
+}
 
-    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
-        registry
-            .restore(&window, window_state::RestoreTarget::CursorMonitor)
-            .map_err(|error| format!("settings window state restore failed: {error}"))?;
+#[cfg(not(test))]
+fn open_product_surface<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    label: &str,
+    activate: bool,
+) -> Result<tauri::WebviewWindow<R>, String> {
+    window_interaction::prepare_open(app, label);
+    let window = match app.get_webview_window(label) {
+        Some(window) => window,
+        None => build_surface_window(app, label)?,
+    };
+    if !window.is_visible().unwrap_or(false) {
+        if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+            registry.restore(&window, window_state::RestoreTarget::CursorMonitor)?;
+        }
     }
-    window
-        .show()
-        .map_err(|error| format!("settings window show failed: {error}"))?;
-    window
-        .unminimize()
-        .map_err(|error| format!("settings window unminimize failed: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("settings window focus failed: {error}"))?;
+    if activate || !window.is_minimized().unwrap_or(false) {
+        window_interaction::prepare_layer(app, &window)?;
+    }
+    if activate {
+        window.show().map_err(|error| error.to_string())?;
+        window.unminimize().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        window_focus::focus_tauri_window(&window)?;
+    } else {
+        // Results arriving while another application is active do not take focus.
+        if !window.is_minimized().unwrap_or(false) {
+            window_focus::show_tauri_window_no_activate(&window)?;
+        }
+        window.request_user_attention(Some(tauri::UserAttentionType::Informational))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(window)
+}
+
+#[cfg(not(test))]
+fn close_product_surface<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> Result<(), String> {
+    let app = window.app_handle();
+    let was_foreground = window_focus::is_tauri_window_foreground(window);
+    save_window_bounds_from_event(&window.as_ref().window());
+    window_focus::hide_tauri_webview_window(window)?;
+    window_interaction::sync_layers(app, false);
+    window_interaction::return_after_close(app, window.label(), was_foreground);
     Ok(())
 }
 
@@ -4441,25 +4478,8 @@ pub(crate) fn open_ai_output_window<R: tauri::Runtime>(
         state.set_latest(payload.clone())?;
     }
 
-    let window = match app.get_webview_window(AI_OUTPUT_WINDOW_LABEL) {
-        Some(window) => window,
-        None => build_surface_window(app, AI_OUTPUT_WINDOW_LABEL)?,
-    };
-
-    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
-        registry
-            .restore(&window, window_state::RestoreTarget::CursorMonitor)
-            .map_err(|error| format!("ai-output window state restore failed: {error}"))?;
-    }
-    window
-        .show()
-        .map_err(|error| format!("ai-output window show failed: {error}"))?;
-    window
-        .unminimize()
-        .map_err(|error| format!("ai-output window unminimize failed: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("ai-output window focus failed: {error}"))?;
+    let activate = window_interaction::has_interactive_focus(app);
+    let window = open_product_surface(app, AI_OUTPUT_WINDOW_LABEL, activate)?;
     window
         .emit(AI_OUTPUT_OPEN_EVENT, payload)
         .map_err(|error| format!("ai-output emit failed: {error}"))?;
@@ -4471,6 +4491,7 @@ fn open_item_preview_window<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     payload: storage::ItemPreviewPayload,
 ) -> Result<(), String> {
+    window_interaction::prepare_open(app, ITEM_PREVIEW_WINDOW_LABEL);
     let window_was_visible = if let Some(state) = app.try_state::<ItemPreviewState>() {
         state.set_latest(payload.clone())?;
         state.is_visible()
@@ -4492,6 +4513,7 @@ fn open_item_preview_window<R: tauri::Runtime>(
     window
         .unminimize()
         .map_err(|error| format!("item preview window unminimize failed: {error}"))?;
+    window_interaction::prepare_layer(app, &window)?;
     if let Err(error) = window_focus::show_tauri_window_no_activate(&window) {
         window.show().map_err(|show_error| {
             format!("item preview show failed: {show_error}; no-activate failed: {error}")
@@ -4512,10 +4534,13 @@ pub(crate) fn hide_item_preview_for_app<R: tauri::Runtime>(app: &tauri::AppHandl
         state.set_visible(false);
     }
     if let Some(window) = app.get_webview_window(ITEM_PREVIEW_WINDOW_LABEL) {
+        let was_foreground = window_focus::is_tauri_window_foreground(&window);
         if let Err(error) = window_focus::hide_tauri_webview_window(&window) {
             eprintln!("item preview hide failed: {error}");
         } else {
             diag_log("item-preview.hide", "hidden");
+            window_interaction::sync_layers(app, false);
+            window_interaction::return_after_close(app, ITEM_PREVIEW_WINDOW_LABEL, was_foreground);
         }
     }
 }
@@ -4525,6 +4550,7 @@ fn open_metadata_editor_window<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     payload: MetadataEditorPayload,
 ) -> Result<(), String> {
+    window_interaction::prepare_open(app, METADATA_WINDOW_LABEL);
     let started_at = Instant::now();
     let item_id = payload.snapshot.item_ids[0];
     let cache_hit = app.get_webview_window(METADATA_WINDOW_LABEL).is_some();
@@ -4558,7 +4584,9 @@ fn open_metadata_editor_window<R: tauri::Runtime>(
         ),
     );
 
-    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>()
+        .filter(|_| !window.is_visible().unwrap_or(false))
+    {
         let restore_started_at = Instant::now();
         registry
             .restore(&window, window_state::RestoreTarget::CursorMonitor)
@@ -4574,6 +4602,7 @@ fn open_metadata_editor_window<R: tauri::Runtime>(
         );
     }
     let show_started_at = Instant::now();
+    window_interaction::prepare_layer(app, &window)?;
     window
         .show()
         .map_err(|error| format!("metadata window show failed: {error}"))?;
@@ -4860,6 +4889,7 @@ fn setup_tray(app: &mut tauri::App, settings_value: &storage::AppSettings) -> ta
 
 #[cfg(not(test))]
 pub(crate) fn mark_picker_transient_hidden<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    window_interaction::sync_layers(app, true);
     if let Some(session) = app.try_state::<PickerSessionController>() {
         session.mark_transient_hidden();
     }
@@ -4908,7 +4938,9 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
         initial_hide.cancel();
     }
 
-    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>() {
+    if let Some(registry) = app.try_state::<window_state::WindowStateRegistry>()
+        .filter(|_| !was_visible)
+    {
         if let Err(error) = registry.restore(&window, window_state::RestoreTarget::CursorMonitor) {
             eprintln!("main window state restore failed: {error}");
         }
@@ -4921,6 +4953,7 @@ fn show_main_window_with_focus<R: tauri::Runtime>(
         return Err(format!("window unminimize failed: {error}"));
     }
     diag_log("window.show.step", "unminimize ok");
+    window_interaction::sync_layers(app, false);
 
     if focus_window {
         if let Err(error) = window.set_focus() {
@@ -5031,6 +5064,8 @@ fn save_window_bounds_from_event<R: tauri::Runtime>(window: &tauri::Window<R>) {
 
 #[cfg(not(test))]
 fn hide_cached_surface_on_close<R: tauri::Runtime>(window: &tauri::Window<R>) {
+    let was_foreground = window.app_handle().get_webview_window(window.label())
+        .is_some_and(|webview| window_focus::is_tauri_window_foreground(&webview));
     save_window_bounds_from_event(window);
     diag_log(
         "window.close.cached-hide",
@@ -5051,6 +5086,9 @@ fn hide_cached_surface_on_close<R: tauri::Runtime>(window: &tauri::Window<R>) {
     }
     if window.label() == MAIN_WINDOW_LABEL {
         hide_item_preview_for_app(window.app_handle());
+    } else {
+        window_interaction::sync_layers(window.app_handle(), false);
+        window_interaction::return_after_close(window.app_handle(), window.label(), was_foreground);
     }
 }
 
@@ -5081,12 +5119,7 @@ fn should_hide_on_focus_lost<R: tauri::Runtime>(window: &tauri::Window<R>) -> bo
     if window.is_always_on_top().unwrap_or(false) {
         return false;
     }
-    if window
-        .app_handle()
-        .get_webview_window(ITEM_PREVIEW_WINDOW_LABEL)
-        .map(|preview| preview.is_focused().unwrap_or(false))
-        .unwrap_or(false)
-    {
+    if window_interaction::has_interactive_focus(window.app_handle()) {
         return false;
     }
 
@@ -5234,6 +5267,11 @@ fn toggle_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<()
         format!("visible={}", window.is_visible().unwrap_or(false)),
     );
     if window.is_visible().unwrap_or(false) {
+        if window.is_minimized().unwrap_or(false)
+            || !window_focus::is_tauri_window_foreground(&window)
+        {
+            return show_main_window(app, true);
+        }
         cancel_find_owner(app, MAIN_WINDOW_LABEL);
         host::hide_picker(&window)?;
         eprintln!("main window toggle ok: hidden");
@@ -5253,7 +5291,7 @@ fn toggle_main_window_without_focus<R: tauri::Runtime>(
     };
     let visible = window.is_visible().unwrap_or(false);
     let focused = window.is_focused().unwrap_or(false);
-    let foreground = visible && (focused || window_focus::is_tauri_window_foreground(&window));
+    let foreground = visible && window_focus::is_tauri_window_foreground(&window);
 
     diag_log(
         "window.toggle.no_focus",
@@ -5266,7 +5304,7 @@ fn toggle_main_window_without_focus<R: tauri::Runtime>(
             .and_then(|storage| storage.get_settings().ok())
             .map(|settings| !settings.picker.hide_on_focus_lost)
             .unwrap_or(false);
-        if (pinned || keep_open) && !focused {
+        if !foreground || window.is_minimized().unwrap_or(false) {
             eprintln!("main window no-focus toggle ok: focused persistent picker");
             diag_log(
                 "window.toggle.no_focus",
@@ -5300,10 +5338,7 @@ fn toggle_main_window_pin<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Resul
     let next_pinned = !window
         .is_always_on_top()
         .map_err(|error| format!("failed to read main window pin state: {error}"))?;
-    window
-        .set_always_on_top(next_pinned)
-        .map_err(|error| format!("failed to set main window pin state: {error}"))?;
-    emit_picker_pin_state(app, next_pinned);
+    set_main_window_pin_state_on_main_thread(app, next_pinned)?;
     Ok(())
 }
 
@@ -5328,16 +5363,7 @@ fn spawn_open_assistant_window<R: tauri::Runtime + 'static>(app: tauri::AppHandl
         let target = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
             let result = (|| -> Result<(), String> {
-                let window = match target.get_webview_window(ASSISTANT_WINDOW_LABEL) {
-                    Some(window) => window,
-                    None => build_surface_window(&target, ASSISTANT_WINDOW_LABEL)?,
-                };
-                if let Some(registry) = target.try_state::<window_state::WindowStateRegistry>() {
-                    registry.restore(&window, window_state::RestoreTarget::CursorMonitor)?;
-                }
-                window.show().map_err(|error| error.to_string())?;
-                window.unminimize().map_err(|error| error.to_string())?;
-                window.set_focus().map_err(|error| error.to_string())?;
+                open_product_surface(&target, ASSISTANT_WINDOW_LABEL, true)?;
                 Ok(())
             })();
             if let Err(error) = result {

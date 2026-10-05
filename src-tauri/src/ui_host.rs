@@ -330,6 +330,8 @@ fn cancel_request<R: Runtime>(app: &AppHandle<R>, state: &UiHostState, request_i
 }
 
 fn show_ui_host_window<R: Runtime>(app: &AppHandle<R>, height: u32) -> Result<(), String> {
+    #[cfg(not(test))]
+    crate::window_interaction::prepare_open(app, UI_HOST_WINDOW_LABEL);
     let surface = surface_registry::require(UI_HOST_WINDOW_LABEL)?;
     let window = match app.get_webview_window(UI_HOST_WINDOW_LABEL) {
         Some(window) => window,

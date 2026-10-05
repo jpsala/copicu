@@ -523,5 +523,17 @@ pub(super) const MIGRATIONS_SLICE: &[M<'_>] = &[
     CREATE INDEX idx_clipboard_items_folder ON clipboard_items(folder_id);
     "#,
     ),
+    M::up(
+        r#"
+    DROP INDEX idx_clipboard_items_normalized_hash;
+    CREATE UNIQUE INDEX idx_clipboard_items_folder_hash
+        ON clipboard_items(COALESCE(folder_id, 0), normalized_hash);
+    CREATE INDEX idx_clipboard_items_normalized_hash ON clipboard_items(normalized_hash);
+    ALTER TABLE clipboard_items ADD COLUMN last_received_at_unix_ms INTEGER;
+    CREATE INDEX idx_clipboard_items_recent_activity ON clipboard_items(
+        (is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC,
+        MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC);
+    "#,
+    ),
 ];
 pub(super) const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);

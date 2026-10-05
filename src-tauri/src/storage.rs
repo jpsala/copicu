@@ -167,6 +167,7 @@ pub struct HistoryItem {
     created_at_unix_ms: i64,
     last_used_at_unix_ms: i64,
     last_copied_at_unix_ms: i64,
+    last_received_at_unix_ms: Option<i64>,
     copy_count: i64,
     mime_primary: Option<String>,
     blob_path: Option<String>,
@@ -1730,7 +1731,7 @@ impl AppStorage {
                 .map_err(|error| format!("failed to start clipboard text capture: {error}"))?;
             let destination = self.capture_folder_destination()?;
 
-            let existing_id = bump_existing_capture(&tx, normalized_hash, now)?;
+            let existing_id = bump_existing_capture(&tx, normalized_hash, destination, now)?;
             let before_projection = existing_id
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
@@ -1916,8 +1917,8 @@ impl AppStorage {
                 .query_row(
                     "SELECT id, title, notes, mime_primary
                      FROM clipboard_items
-                     WHERE normalized_hash = ?1",
-                    params![normalized_hash],
+                     WHERE normalized_hash = ?1 AND folder_id IS ?2",
+                    params![normalized_hash, destination],
                     |row| {
                         Ok((
                             row.get::<_, i64>(0)?,
@@ -2092,7 +2093,7 @@ impl AppStorage {
                 .map_err(|error| format!("failed to start clipboard image capture: {error}"))?;
             let destination = self.capture_folder_destination()?;
 
-            let existing_id = bump_existing_capture(&tx, &image.normalized_hash, now)?;
+            let existing_id = bump_existing_capture(&tx, &image.normalized_hash, destination, now)?;
             let before_projection = existing_id
                 .map(|id| item_projection_signature(&tx, id))
                 .transpose()?;
@@ -2206,7 +2207,7 @@ impl AppStorage {
                 &format!(
                     "SELECT {}
                      FROM clipboard_items
-                     ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                     ORDER BY MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC
                      LIMIT ?1",
                     history_item_select_columns(true)
                 ),
@@ -2343,7 +2344,7 @@ impl AppStorage {
                 (is_inbox != 0),
                 (CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END IS NOT NULL),
                 COALESCE(CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END, 0),
-                COALESCE(last_copied_at_unix_ms, created_at_unix_ms), id
+                MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)), id
             ) < (?, ?, ?, ?, ?)";
             let next_where_sql = if where_sql.is_empty() {
                 format!("WHERE {cursor_clause}")
@@ -2884,6 +2885,7 @@ impl AppStorage {
         let mut tag_relation_changes = 0;
 
         if let Some(folder_id) = resolve_metadata_folder_intent(&transaction, intent.folder.as_ref())? {
+            folders::validate_item_moves(&transaction, &item_ids, folder_id)?;
             for item_id in &item_ids {
                 let changed = transaction.execute(
                     "UPDATE clipboard_items SET folder_id = ?1 WHERE id = ?2 AND folder_id IS NOT ?1",
@@ -4147,6 +4149,7 @@ impl AppStorage {
         let mut conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
         let transaction = conn.transaction().map_err(|error| format!("failed to begin folder move: {error}"))?;
         let folder_id = resolve_folder_path_from_conn(&transaction, path)?;
+        folders::validate_item_moves(&transaction, &item_ids, Some(folder_id))?;
         let mut changed = 0;
         let mut moved_items = Vec::new();
         for item_id in item_ids.into_iter().collect::<BTreeSet<_>>() {
@@ -4608,6 +4611,7 @@ where
                 created_at_unix_ms: row.get(7)?,
                 last_used_at_unix_ms: row.get(8)?,
                 last_copied_at_unix_ms: row.get(9)?,
+                last_received_at_unix_ms: row.get(25)?,
                 copy_count: row.get(10)?,
                 mime_primary: row.get(11)?,
                 blob_path: row.get(12)?,
@@ -4861,7 +4865,7 @@ fn update_item_text_from_conn(conn: &Connection, id: i64, text: &str) -> Result<
     if let Some(hash) = next_hash.as_deref() {
         let duplicate_id: Option<i64> = conn
             .query_row(
-                "SELECT id FROM clipboard_items WHERE normalized_hash = ?1 AND id != ?2 LIMIT 1",
+                "SELECT id FROM clipboard_items WHERE normalized_hash = ?1 AND id != ?2 AND folder_id IS (SELECT folder_id FROM clipboard_items WHERE id = ?2) LIMIT 1",
                 params![hash, id],
                 |row| row.get(0),
             )
@@ -5408,16 +5412,17 @@ fn token_domain(token: &str) -> Option<String> {
 fn bump_existing_capture(
     conn: &Connection,
     normalized_hash: &str,
+    folder_id: Option<i64>,
     copied_at_unix_ms: i64,
 ) -> Result<Option<i64>, String> {
     let existing_id = conn
         .query_row(
             "SELECT id
              FROM clipboard_items
-             WHERE normalized_hash = ?1
-             ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+             WHERE normalized_hash = ?1 AND folder_id IS ?2
+             ORDER BY MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC
              LIMIT 1",
-            params![normalized_hash],
+            params![normalized_hash, folder_id],
             |row| row.get::<_, i64>(0),
         )
         .map(Some)
@@ -5722,7 +5727,7 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
                 SELECT id FROM (
                     SELECT id FROM clipboard_items
                     WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
-                    ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                    ORDER BY MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC
                     LIMIT ?1
                 )
              )",
@@ -5741,7 +5746,7 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
             SELECT id FROM (
                 SELECT id FROM clipboard_items
                 WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
-                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                ORDER BY MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC
                 LIMIT ?1
             )
          )",
@@ -5757,7 +5762,7 @@ fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
             SELECT id FROM (
                 SELECT id FROM clipboard_items
                 WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
-                ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                ORDER BY MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC
                 LIMIT ?1
             )
          )",
@@ -5785,7 +5790,7 @@ fn pruned_blob_paths_from_conn(
                 SELECT id FROM (
                     SELECT id FROM clipboard_items
                     WHERE is_marked = 0 AND is_inbox = 0 AND folder_id IS NULL
-                    ORDER BY COALESCE(last_copied_at_unix_ms, created_at_unix_ms) DESC, id DESC
+                    ORDER BY MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC
                     LIMIT ?1
                 )
              )
@@ -6022,8 +6027,9 @@ mod tests {
             text: "manual chosen folder".into(), title: None, notes: None, tags: Vec::new(), mime_primary: None,
             folder: Some(MetadataFolderIntent::Set { folder_id: None }),
         }).unwrap();
-        assert_eq!(first.id, duplicate.id);
-        assert_eq!(storage.get_item(first.id).unwrap().folder_id, None);
+        assert_ne!(first.id, duplicate.id);
+        assert_eq!(storage.get_item(first.id).unwrap().folder_id, Some(chosen.id));
+        assert_eq!(storage.get_item(duplicate.id).unwrap().folder_id, None);
         storage.conn.lock().unwrap().execute_batch("CREATE TRIGGER fail_manual_folder BEFORE INSERT ON clipboard_items BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END;").unwrap();
         assert!(storage.create_text_item(request("failed manual clip", "/Rollback/New")).is_err());
         assert_eq!(storage.list_folders().unwrap().len(), 2);
@@ -10156,7 +10162,7 @@ mod tests {
     fn scenario_query_migration_preserves_existing_scenarios_and_saved_views() {
         let mut conn = Connection::open_in_memory().expect("in-memory sqlite should open");
         let migrations_before_independent_scenarios =
-            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 4]);
+            Migrations::from_slice(&MIGRATIONS_SLICE[..MIGRATIONS_SLICE.len() - 5]);
         migrations_before_independent_scenarios
             .to_latest(&mut conn)
             .expect("legacy scenario migrations should run");

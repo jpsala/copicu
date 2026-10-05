@@ -1464,6 +1464,7 @@ export function SettingsWindowApp() {
       <main className="settings-window-app">
         <SettingsPanel
           draft={draft}
+          hasUnsavedPreferences={JSON.stringify({ ...draft, appearance: settings.appearance }) !== JSON.stringify(settings)}
           query={query}
           error={error}
           actionSummary={actionSummary}
@@ -1697,6 +1698,7 @@ export function UiHostApp() {
 
 type SettingsPanelProps = {
   draft: AppSettings;
+  hasUnsavedPreferences: boolean;
   query: string;
   error: string | null;
   actionSummary: {
@@ -1782,6 +1784,7 @@ function initialSettingsSection(): SettingSection {
   window.localStorage.removeItem(SETTINGS_FOCUS_SECTION_STORAGE_KEY);
   const sections: SettingSection[] = [
     "general",
+    "sharing",
     "hotkeys",
     "picker",
     "history",
@@ -1799,6 +1802,7 @@ function initialSettingsSection(): SettingSection {
 
 function SettingsPanel({
   draft,
+  hasUnsavedPreferences,
   query,
   error,
   actionSummary,
@@ -1882,6 +1886,12 @@ function SettingsPanel({
     "auto update",
     "check hourly download install signed github release",
   ].join(" ");
+  const sharingSearchText = [
+    "account sign in sign out login device this computer name connection status",
+    "shared clipboard channel connect disconnect local folders send receive copy save history",
+    "received activity recent saved again errors windows clipboard ctrl+v paste",
+    "advanced settings shortcuts scripts automation pause resume sync",
+  ].join(" ");
   const hotkeySearchText = [
     draft.general.globalShortcut,
     draft.general.inboxShortcut,
@@ -1952,11 +1962,15 @@ function SettingsPanel({
     )
     .join(" ");
   const settingSections: SettingSectionDefinition[] = [
-    { id: "sharing", label: "Sharing", description: "Channels, folders and receptions" },
     {
       id: "general",
       label: "General",
       description: "Core entry points",
+    },
+    {
+      id: "sharing",
+      label: "Sharing",
+      description: "Account, devices and connected folders",
     },
     {
       id: "hotkeys",
@@ -2018,6 +2032,7 @@ function SettingsPanel({
     normalizedQuery.length === 0 ||
     `${section.id} ${section.label} ${section.description}`.toLocaleLowerCase().includes(normalizedQuery) ||
     (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "sharing" && sharingSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "picker" && pickerSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "appearance" && appearanceSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
@@ -2029,6 +2044,7 @@ function SettingsPanel({
     normalizedQuery.length === 0
       ? settingSections.filter((section) => section.id === activeSection)
       : settingSections.filter(sectionMatches);
+  const onlySharingVisible = displayedSections.length === 1 && displayedSections[0].id === "sharing";
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -2060,18 +2076,19 @@ function SettingsPanel({
       aria-label="Settings"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
+          if (event.target instanceof Element && event.target.closest('[data-mantine-stop-propagation], [aria-haspopup="listbox"][aria-expanded="true"]')) return;
           event.preventDefault();
           onCancel();
           return;
         }
         if (isSubmitShortcut(event)) {
           event.preventDefault();
-          onSave();
+          if (!onlySharingVisible) onSave();
         }
       }}
       onSubmit={(event) => {
         event.preventDefault();
-        onSave();
+        if (!onlySharingVisible) onSave();
       }}
     >
         <div className="settings-header">
@@ -2131,10 +2148,6 @@ function SettingsPanel({
           </Tabs.List>
 
           <div className="settings-list">
-            {displayedSections.some((section) => section.id === "sharing") ? <>
-              <div hidden={sharingFeedOpen}><SharedClipboardSettings onViewReceptions={() => setSharingFeedOpen(true)} /></div>
-              {sharingFeedOpen ? <div className="shared-settings-feed"><SharedClipboardFeed onClose={() => setSharingFeedOpen(false)} closeLabel="Back to Sharing settings" /></div> : null}
-            </> : null}
             {displayedSections.some((section) => section.id === "general") ? (
               <SettingsSection title="General" description="Core app behavior and entry points.">
                 {visible("general", "Clipboard capture", "Pause monitoring new clipboard changes without changing the clipboard") ? (
@@ -2203,6 +2216,11 @@ function SettingsPanel({
                 ) : null}
               </SettingsSection>
             ) : null}
+
+            {displayedSections.some((section) => section.id === "sharing") ? <>
+              <div hidden={sharingFeedOpen}><SharedClipboardSettings onViewReceptions={() => setSharingFeedOpen(true)} /></div>
+              {sharingFeedOpen ? <div className="shared-settings-feed"><SharedClipboardFeed onClose={() => setSharingFeedOpen(false)} closeLabel="Back to Sharing settings" /></div> : null}
+            </> : null}
 
             {displayedSections.some((section) => section.id === "hotkeys") ? (
               <SettingsSection title="Hotkeys" description="Inventory first, editing only where the source of truth is safe.">
@@ -2500,7 +2518,7 @@ function SettingsPanel({
             {displayedSections.some((section) => section.id === "appearance") ? (
               <SettingsSection
                 title="Appearance"
-                description="Changes here save automatically. Save and Cancel apply to all other preferences."
+                description="Changes here save automatically. Sharing has its own save buttons. Save and Cancel apply to other preferences."
               >
                 {visible("appearance", "Color mode Theme Density Image preview Image hover zoom Item actions Action size Text preview Item details Preview", appearanceSearchText) ? (
                   <AppearanceSettingsControl
@@ -3098,13 +3116,19 @@ function SettingsPanel({
         {error ? <UiAlert className="error-text" color="red" variant="light">{error}</UiAlert> : null}
         <div className="settings-footer">
           <p className="settings-save-note">
-            Appearance saves automatically. Sharing has its own save buttons. Save and Cancel apply to the remaining preferences.
+            {onlySharingVisible
+              ? hasUnsavedPreferences
+                ? "You have unsaved changes in other categories. Sharing uses its own save buttons."
+                : "Save Sharing changes with the buttons above."
+              : "Appearance saves automatically. Sharing has its own save buttons. Save and Cancel apply to the remaining preferences."}
           </p>
           <div className="settings-buttons">
             <UiButton type="button" variant="default" onClick={onCancel}>
-              Cancel
+              {onlySharingVisible ? hasUnsavedPreferences ? "Discard other changes" : "Close settings" : "Cancel"}
             </UiButton>
-            <UiButton type="submit" variant="filled">Save</UiButton>
+            {onlySharingVisible ? (
+              hasUnsavedPreferences ? <UiButton type="button" variant="filled" onClick={onSave}>Save other preferences</UiButton> : null
+            ) : <UiButton type="submit" variant="filled">Save</UiButton>}
           </div>
         </div>
     </form>

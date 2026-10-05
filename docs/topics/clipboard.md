@@ -81,7 +81,9 @@ Hardening implementado:
 
 - UTF-16 termina dentro de `GlobalSize`; marker se compara en el bloque acotado
   sin copiarlo entero. El probe no fuerza lectura de payloads para medir tamano.
-- Solo se deduplica contenido consecutivo, sin coalescing temporal de distintos.
+- El watcher sólo coalesce contenido consecutivo, sin descartar contenidos distintos
+  por proximidad temporal. Storage deduplica por contenido dentro de la carpeta de
+  destino, incluido Root; las copias en otras carpetas son independientes.
 - Enrichment/scripts corren en FIFO acotado de 128 jobs con ID/hash/tipo.
   Saturacion omite postprocesamiento con diagnostico, no la captura persistida.
   Enrichment vuelve a verificar hash dentro de la transaccion de escritura.

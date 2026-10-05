@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "Custodia desplegada y v0.5.6 publicado stable/latest; firma, assets, CI y updater verificados. Instalación y prueba física pendientes; admisión existente conservada."
-last_worked: "2026-10-04T03:09:17Z"
-next: "Actualizar y abrir una PC existente para migrar claves; después actualizar/vincular la notebook y aceptar tráfico físico. Admisión pública separada."
+summary: "v0.5.7 preparada y firmada con duplicados por carpeta, UX de Sharing y coordinación de ventanas; publicación e instalación pendientes."
+last_worked: "2026-10-05T10:44:24Z"
+next: "Completar el commit, push y publicación v0.5.7 normal/latest autorizados en este corte; comprobar después las dos PCs actualizadas."
 topics:
   - shared-clipboard
 ---
@@ -11,6 +11,39 @@ topics:
 # Clipboard compartido: arquitectura y spec
 
 ## Estado actual
+
+**Candidata Windows v0.5.7 (2026-10-05).** Preparado el instalador normal desde
+WIP con base `ba73db2347daa3dec24c37040417d88191023288`; ese HEAD no identifica
+por sí solo las fuentes compiladas. Incluye duplicados/recencia por carpeta,
+Sharing/Settings/menús, coordinación de ventanas y la guardia de snapshot de
+búsqueda documentada en picker-interaction. Pasan 401 Rust, 532 renderer,
+42 unitarias UI/modelo, 63 Sharing, 83 Node y los checks documentales.
+Firma, manifest, recursos y 258 entradas congeladas verificados; seis checks del
+payload y once casos nativos pasan con perfiles sintéticos. Artefactos, hashes,
+comando/toolchain y límites en [notas v0.5.7](../releases/v0.5.7.md).
+JP autorizó el commit, push y publicación normal/latest del corte verificado;
+el recibo remoto queda pendiente hasta completar esos efectos. No se autorizó
+instalación. Paste nativo y aceptación física entre PCs mantienen su alcance separado.
+
+**UX de Sharing y picker (2026-10-04).** General precede Sharing; la pantalla
+expone equipo, conexiones carpeta/recurso y actividad, con Windows y automatización
+desplegables. Un único editor conserva IDs legacy y borradores; los efectos se
+guardan sobre la configuración más reciente. El picker abre Settings desde el
+engranaje izquierdo; la X oculta y Quit queda en tray. Menús compactos priorizan
+edición, con submenús por teclado y toque. Contrato y verificación en
+[UX de Settings y picker](../../specs/016-shared-clipboard/settings-and-picker-ux.md).
+Pasan 214 pruebas de interfaz, 30 repeticiones focales de menús y build/checks.
+Estos cambios siguen pendientes de publicación/instalación.
+
+**Duplicados por carpeta (2026-10-04).** JP aprobó copias independientes entre
+carpetas y deduplicación dentro del destino. Migración, recepción repetida con
+recencia propia, feedback persistente y «Copy to folder» están implementados en
+la fuente local; la app instalada todavía no incluye este cambio. El mismo
+contenido en otra carpeta no debe ocultar una recepción nueva. Contrato vigente
+y verificación en [duplicados por carpeta](../../specs/016-shared-clipboard/folder-deduplication.md).
+Pasan 401 pruebas Rust (1 omitida), 48 visuales, 31 unitarias de UI/carpetas,
+build frontend, chequeo del host Windows y checks documentales. No acredita una
+nueva prueba física PC ↔ notebook ni publicación/instalación del cambio.
 
 **Cierre de custodia (2026-10-03).** JP pidió terminar el flujo sin aprobación
 para usarlo en la notebook. Reporta que Casa y Trabajo ya comparten y autentican;
@@ -210,8 +243,9 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 La implementación de custodia incluye `scripts/shared-clipboard/custody.mjs`,
 `scripts/shared-clipboard/deploy/backup.mjs` y
 `src-tauri/src/shared_clipboard/product_custody.rs`, además del contrato,
-operación y aceptación enlazados arriba. El candidato excluye el WIP de
-GPUI/CopyQ y `src-tauri/src/storage/search.rs`, conservado en el checkout primario.
+operación y aceptación enlazados arriba. El corte distribuido `v0.5.6` excluyó el
+WIP de GPUI/CopyQ y `src-tauri/src/storage/search.rs`. Esa exclusión histórica no
+alcanza los cambios posteriores de recencia por carpeta del siguiente candidato.
 
 Al retomar, verificar checkout/HEAD/WIP y archivos sin seguimiento contra la
 fuente distribuida del tag; no atribuirle cambios posteriores. Revalidar executable,

@@ -23,7 +23,7 @@ function DeviceRow({ device, current, revision, busy, onRetire }: { device: Shar
   </li>;
 }
 
-export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onConnect }: { api?: SharedIdentityApi; onChanged?: (status: SharedIdentityStatus) => void; onConnect: () => void }) {
+export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onConnect }: { api?: SharedIdentityApi; onChanged?: (status: SharedIdentityStatus) => void; onConnect?: () => void }) {
   const [status, setStatus] = useState<SharedIdentityStatus | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -62,7 +62,7 @@ export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onC
   const pending = state === "pending" || (state === "offline" && status?.previousState === "pending");
   if (state === "technical") return <p className="shared-inline-notice">Synthetic service profile. Account sign-in is not configured for this technical enrollment.</p>;
   return <section className="shared-settings-group shared-identity" aria-label="Device sign-in">
-    <h3>{state === "active" ? "Your account and devices" : "Link this device"}</h3>
+    <h3>{state === "active" ? "Account and this PC" : "Link this device"}</h3>
     {!status ? <p role="status">Checking device sign-in…</p> : <p>{sharingIdentityMessage(status)}</p>}
     {initial && <>
       <UiTextInput label="Name of this PC" placeholder="Work PC" value={name} disabled={busy} maxLength={80} autoComplete="off" onChange={event => setName(event.currentTarget.value)} />
@@ -74,14 +74,14 @@ export function SharedIdentitySettings({ api = sharedIdentityApi, onChanged, onC
       <div className="shared-settings-actions">{waiting && <UiButton type="button" variant="default" size="compact-sm" disabled={busy} onClick={() => act(api.reopen)}>Open sign-in again</UiButton>}<UiButton type="button" variant="default" size="compact-sm" disabled={busy} onClick={() => act(api.status)}>Check sign-in</UiButton><UiButton type="button" variant="subtle" size="compact-sm" disabled={busy} onClick={() => act(api.cancel)}>Cancel linking</UiButton></div>
     </>}
     {status && state === "active" && <>
-      <p>{status.name}</p>
-      <UiButton type="button" size="compact-sm" variant="default" onClick={onConnect}>Create or connect a clipboard…</UiButton>
+      <p><strong>{status.name}</strong> · This PC</p>
+      {onConnect && <UiButton type="button" size="compact-sm" variant="default" onClick={onConnect}>Create or connect a clipboard…</UiButton>}
       <details className="shared-device-review"><summary>Devices ({status.devices.filter(d => d.state === "active").length} linked)</summary>
         <p>Each PC has the same account access. Its folder connections and clipboard updates are configured separately.</p>
         <ul className="shared-device-list" aria-label="Account devices">{status.devices.map(device => <DeviceRow key={device.deviceId + ":" + device.fingerprint} device={device} current={device.deviceId === status.deviceId} revision={status.revision ?? ""} busy={busy} onRetire={async intent => { await run(() => api.device(intent), "Device retired. Review affected clipboard key rotation."); }} />)}</ul>
       </details>
     </>}
-    {(initial || status?.keyCustody === "service") && <p className="shared-custody-notice">Copicu Sharing manages your content keys so you can sign in on another PC without a code or device approval. Content is encrypted in transit and storage; the service can decrypt it.</p>}
+    {(initial || status?.keyCustody === "service") && <details className="shared-custody-notice"><summary>How your shared content is protected</summary><p>Copicu Sharing manages your content keys so you can sign in on another PC without a code or device approval. Content is encrypted in transit and storage; the service can decrypt it.</p></details>}
     {state === "active" && status?.keyCustody === "endToEnd" && <p className="shared-inline-notice">The service is being updated for account access. Refresh after the update to link PCs without approvals.</p>}
     {state === "offline" && <UiButton type="button" size="compact-sm" variant="default" disabled={busy} onClick={() => act(api.status)}>Retry service connection</UiButton>}
     {state === "revoked" && <p>Sign in again with this profile's original account. Local copies stay; previous connections and effects are not reactivated.</p>}

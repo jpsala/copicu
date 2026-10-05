@@ -263,7 +263,10 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
     assert_eq!(effect.content.text().unwrap(), "synthetic product shared text");
     let status = runtime::snapshot(&receiver_storage).unwrap();
     assert_eq!(status.receipts.len(), 1);
-    assert_eq!(status.receipts[0]["localItemId"], existing.id);
+    assert_ne!(status.receipts[0]["localItemId"], existing.id);
+    let received_item_id = status.receipts[0]["localItemId"].as_i64().unwrap();
+    assert_eq!(status.receipts[0]["historyResult"]["outcome"], "created");
+    assert_eq!(status.receipts[0]["historyResult"]["folderName"], "/");
     assert_eq!(
         receiver_storage.get_item_tags(existing.id).unwrap(),
         vec!["local"]
@@ -457,12 +460,26 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
         before + 2,
         "Existing dedupe does not create ingress"
     );
+    let source_folder = owner_storage.create_folder(None, "Copy source").unwrap();
+    let source = make(&owner_storage, "synthetic copied folder ingress", Some(MetadataFolderIntent::Set { folder_id: Some(source_folder.id) }));
+    let copied = owner_storage.copy_history_items_to_folder(vec![source.id], None, None).unwrap();
+    assert_eq!(copied.created, 1);
+    assert_eq!(runtime::snapshot(&owner_storage).unwrap().outbox.len(), before + 3, "Copying local content into an emitting folder publishes once");
+    assert_eq!(owner_storage.copy_history_items_to_folder(vec![source.id], None, None).unwrap().existing, 1);
+    assert_eq!(runtime::snapshot(&owner_storage).unwrap().outbox.len(), before + 3);
+    let forward_folder = receiver_storage.create_folder(None, "Remote copies").unwrap();
     let mut receive_publish = runtime::snapshot(&receiver_storage).unwrap().channels[0].clone();
     receive_publish.publish_folder_enabled = true;
-    receive_publish.publish_folder_id = None;
+    receive_publish.publish_folder_id = Some(forward_folder.id);
+    runtime::update_channel(&receiver_storage, receive_publish).unwrap();
+    receiver_storage.copy_history_items_to_folder(vec![received_item_id], Some(forward_folder.id), None).unwrap();
+    assert!(runtime::snapshot(&receiver_storage).unwrap().outbox.is_empty(), "Copying remote-origin content must not echo");
+    let moved_folder = receiver_storage.create_folder(None, "Remote moves").unwrap();
+    let mut receive_publish = runtime::snapshot(&receiver_storage).unwrap().channels[0].clone();
+    receive_publish.publish_folder_id = Some(moved_folder.id);
     runtime::update_channel(&receiver_storage, receive_publish).unwrap();
     receiver_storage
-        .move_history_items_to_folder(vec![existing.id], None)
+        .move_history_items_to_folder(vec![received_item_id], Some(moved_folder.id))
         .unwrap();
     assert!(
         runtime::snapshot(&receiver_storage)
@@ -509,9 +526,9 @@ fn product_runtime_enrollment_folder_dedupe_live_claim_pause_and_recovery() {
         "Changing writer policy invalidates prior reception generations"
     );
     runtime::poll_once(&receiver_storage).unwrap(); // Set the new recovery barrier.
-    runtime::poll_once(&owner_storage).unwrap(); // Drain the two queued new clips.
+    runtime::poll_once(&owner_storage).unwrap(); // Drain new, moved and copied folder ingress.
     let action_reception = runtime::poll_once(&receiver_storage).unwrap();
-    assert_eq!(action_reception.effects.len(), 2);
+    assert_eq!(action_reception.effects.len(), 3);
     assert!(runtime::claim_clipboard(&receiver_storage, &action_reception.effects[0]).is_err());
     let action_effect = action_reception.effects.last().unwrap();
     assert!(!action_effect.update_clipboard);

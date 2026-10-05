@@ -4,6 +4,15 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-10-05
+
+- Keep independent copies across folders, deduplicate within each destination,
+  and show repeated shared receptions with their own recency and destination.
+- Clarify Sharing connections and saved settings, compact item menus, and keep
+  picker and auxiliary-window focus, positions and stacking consistent.
+- Preserve explicit search results across a delayed background picker refresh.
+  [Full release notes](docs/releases/v0.5.7.md).
+
 ## [0.5.6] - 2026-10-04
 
 ### Changed
