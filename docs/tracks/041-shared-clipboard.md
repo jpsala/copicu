@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "v0.5.7 preparada y firmada con duplicados por carpeta, UX de Sharing y coordinación de ventanas; publicación e instalación pendientes."
-last_worked: "2026-10-05T10:44:24Z"
-next: "Completar el commit, push y publicación v0.5.7 normal/latest autorizados en este corte; comprobar después las dos PCs actualizadas."
+summary: "v0.5.7 distribuida normal/latest con duplicados por carpeta, UX de Sharing y coordinación de ventanas; aceptación física entre PCs pendiente."
+last_worked: "2026-10-05T10:54:08Z"
+next: "Actualizar las PCs a v0.5.7 y comprobar conexiones, texto/imágenes y repeticiones en ambos sentidos con datos sintéticos."
 topics:
   - shared-clipboard
 ---
@@ -12,18 +12,19 @@ topics:
 
 ## Estado actual
 
-**Candidata Windows v0.5.7 (2026-10-05).** Preparado el instalador normal desde
-WIP con base `ba73db2347daa3dec24c37040417d88191023288`; ese HEAD no identifica
-por sí solo las fuentes compiladas. Incluye duplicados/recencia por carpeta,
+**Publicación Windows v0.5.7 (2026-10-05).** Publicada normal/latest desde
+source/tag `ac5ebccdaa102434381b1c7d1151ce8fec94aa3e`, con las fuentes del
+instalador comprobadas contra ese commit. Incluye duplicados/recencia por carpeta,
 Sharing/Settings/menús, coordinación de ventanas y la guardia de snapshot de
 búsqueda documentada en picker-interaction. Pasan 401 Rust, 532 renderer,
 42 unitarias UI/modelo, 63 Sharing, 83 Node y los checks documentales.
 Firma, manifest, recursos y 258 entradas congeladas verificados; seis checks del
 payload y once casos nativos pasan con perfiles sintéticos. Artefactos, hashes,
 comando/toolchain y límites en [notas v0.5.7](../releases/v0.5.7.md).
-JP autorizó el commit, push y publicación normal/latest del corte verificado;
-el recibo remoto queda pendiente hasta completar esos efectos. No se autorizó
-instalación. Paste nativo y aceptación física entre PCs mantienen su alcance separado.
+CI de la fuente aprobada; tres assets descargados idénticos y endpoint real del
+updater HTTP 200 con `0.5.7`, URL y firma correctas. Dev recompilada y reiniciada.
+No se ejecutó instalación. Paste nativo y aceptación física entre PCs mantienen
+su alcance separado; las notas enlazadas contienen el recibo de distribución.
 
 **UX de Sharing y picker (2026-10-04).** General precede Sharing; la pantalla
 expone equipo, conexiones carpeta/recurso y actividad, con Windows y automatización
@@ -33,17 +34,17 @@ engranaje izquierdo; la X oculta y Quit queda en tray. Menús compactos prioriza
 edición, con submenús por teclado y toque. Contrato y verificación en
 [UX de Settings y picker](../../specs/016-shared-clipboard/settings-and-picker-ux.md).
 Pasan 214 pruebas de interfaz, 30 repeticiones focales de menús y build/checks.
-Estos cambios siguen pendientes de publicación/instalación.
+Distribuidos en `v0.5.7`; la instalación y aceptación entre PCs siguen separadas.
 
 **Duplicados por carpeta (2026-10-04).** JP aprobó copias independientes entre
 carpetas y deduplicación dentro del destino. Migración, recepción repetida con
 recencia propia, feedback persistente y «Copy to folder» están implementados en
-la fuente local; la app instalada todavía no incluye este cambio. El mismo
+la fuente local y distribuidos en `v0.5.7`; no se ejecutó instalación en este corte. El mismo
 contenido en otra carpeta no debe ocultar una recepción nueva. Contrato vigente
 y verificación en [duplicados por carpeta](../../specs/016-shared-clipboard/folder-deduplication.md).
 Pasan 401 pruebas Rust (1 omitida), 48 visuales, 31 unitarias de UI/carpetas,
 build frontend, chequeo del host Windows y checks documentales. No acredita una
-nueva prueba física PC ↔ notebook ni publicación/instalación del cambio.
+nueva prueba física PC ↔ notebook; publicación verificada en el cierre `v0.5.7`.
 
 **Cierre de custodia (2026-10-03).** JP pidió terminar el flujo sin aprobación
 para usarlo en la notebook. Reporta que Casa y Trabajo ya comparten y autentican;
@@ -221,7 +222,8 @@ Conocimiento reusable: [Shared Clipboard](../topics/shared-clipboard.md),
 
 ## Próximo paso y límites
 
-1. Actualizar y abrir primero una PC existente con `v0.5.6` para migrar claves;
+1. Actualizar y abrir primero una PC existente con `v0.5.7` para migrar claves
+   si todavía venía de una versión anterior a `v0.5.6`;
    luego actualizar las demás y vincular la notebook con la misma cuenta Google.
    Actualizar todas antes de crear recursos o rotar claves. Latest, updater,
    assets y firma ya están comprobados; servicio y backup/restore también. Evidencia en

@@ -16,7 +16,26 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.6](https://github.com/jpsala/copicu/releases/tag/v0.5.6),
+Release público stable/latest: [v0.5.7](https://github.com/jpsala/copicu/releases/tag/v0.5.7),
+publicado a `2026-10-05T10:53:54Z` desde source/tag inmutable
+`ac5ebccdaa102434381b1c7d1151ce8fec94aa3e`. Incluye copias independientes por
+carpeta, recencia de recepciones repetidas, Sharing/Settings y menús compactos,
+coordinación de ventanas y corrección de refresh de búsqueda.
+
+Pasan 401 Rust, 532 renderer, 42 unitarias UI/modelo, 63 Sharing, 83 Node,
+checks documentales, seis checks del payload y once casos nativos Windows.
+NSIS x64 GUI, recursos, firma updater/trusted comment y 258 entradas de fuentes
+verificados. Instalador, 14.522.672 bytes, SHA256
+`34162E8E0FEB960458ECD7EE4E03BAEB4FF89214C7BC568D854C625CEF56724A`.
+Los tres assets descargados coinciden; endpoint real latest HTTP 200, versión
+`0.5.7`, URL y firma correctas a `2026-10-05T10:54:08.985Z`.
+[Agentic Validation 37299245753](https://github.com/jpsala/copicu/actions/runs/37299245753)
+SUCCESS para la fuente. [Notas y recibos](../releases/v0.5.7.md).
+Dev recompilada/reiniciada; instalación, paste nativo y aceptación entre PCs
+permanecen separados. Desde una versión anterior a `v0.5.6`, abrir primero una
+PC existente para migrar claves antes de actualizar/vincular las restantes.
+
+Distribución anterior: [v0.5.6](https://github.com/jpsala/copicu/releases/tag/v0.5.6),
 publicado a `2026-10-04T03:08:28Z` desde source/tag inmutable
 `01c0f2e229053d96afc3ab619b3d27080d368eea`. Vincula PCs de la misma cuenta
 Google admitida sin aprobación ni recovery, con custodia de claves en el servicio.
