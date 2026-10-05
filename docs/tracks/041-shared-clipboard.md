@@ -1,9 +1,9 @@
 ---
 title: "Clipboard compartido: arquitectura y spec"
 status: active
-summary: "v0.5.7 distribuida normal/latest; diagnóstico de Sharing preparado localmente. Aceptación física entre PCs pendiente."
-last_worked: "2026-10-05T11:32:14Z"
-next: "Actualizar las PCs a v0.5.7 y comprobar conexiones, texto/imágenes y repeticiones en ambos sentidos con datos sintéticos."
+summary: "v0.5.8 normal/latest e instalada localmente; diagnóstico de Sharing y Settings a la derecha. Aceptación física entre PCs pendiente."
+last_worked: "2026-10-05T12:04:00Z"
+next: "Actualizar la otra PC a v0.5.8 y comprobar conexiones, texto/imágenes y repeticiones en ambos sentidos con datos sintéticos; ante fallo, copiar Technical details."
 topics:
   - shared-clipboard
 ---
@@ -12,7 +12,17 @@ topics:
 
 ## Estado actual
 
-**Diagnóstico de Sharing (local, 2026-10-05).** El worker conserva código,
+**Publicación e instalación v0.5.8 (2026-10-05).** Normal/latest desde
+source/tag `825266d78c5f7504e821344e832070d63ff19f8a`, con CI de fuente aprobada,
+assets descargados idénticos y updater HTTP 200 para `0.5.8`. Settings usa
+sliders primero en el grupo derecho del picker. El mismo NSIS está instalado
+localmente: EXE `0.5.8` idéntico al payload y proceso responsive; seis casos de
+smoke pasan también desde la instalación con perfil sintético. Pasan 402 Rust,
+538 renderer, 42 UI/modelo, 63 Sharing, 83 Node, firma/recursos, seis casos
+shipping y once nativos. [Notas, hashes y recibos](../releases/v0.5.8.md).
+La aceptación física de la otra PC permanece pendiente.
+
+**Diagnóstico de Sharing (v0.5.8, 2026-10-05).** El worker conserva código,
 etapa, causa segura y hora del fallo, con errores de custodia y transporte
 diferenciados. Settings y recepciones comparten un aviso con orientación,
 consulta de estado y diagnóstico copiable por botón o teclado. La recuperación
@@ -20,7 +30,7 @@ limpia sólo errores de sync; conserva fallos independientes de efectos.
 Contrato y smoke en [diagnóstico de Sharing](../../specs/016-shared-clipboard/settings-and-picker-ux.md#diagnóstico-de-sharing).
 Regresión Rust con vault sintético faltante y recuperación; Playwright
 `--grep 'Sharing sync diagnostic'` cubre ambas ventanas, pausa, rechazo, errores
-legacy y copia fallida. Cambio en código local, pendiente de distribución.
+legacy y copia fallida. Distribuido en `v0.5.8` e instalado localmente.
 
 **Publicación Windows v0.5.7 (2026-10-05).** Publicada normal/latest desde
 source/tag `ac5ebccdaa102434381b1c7d1151ce8fec94aa3e`, con las fuentes del

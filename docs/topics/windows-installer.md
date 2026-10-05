@@ -16,7 +16,22 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Release público stable/latest: [v0.5.7](https://github.com/jpsala/copicu/releases/tag/v0.5.7),
+Release público stable/latest: [v0.5.8](https://github.com/jpsala/copicu/releases/tag/v0.5.8),
+publicado a `2026-10-05T12:02:04Z` desde source/tag inmutable
+`825266d78c5f7504e821344e832070d63ff19f8a`. Incluye mensajes de Sharing con
+causa segura/diagnóstico copiable y Settings con sliders primero en el grupo
+derecho del picker. Pasan 402 Rust, 538 renderer, 42 UI/modelo, 63 Sharing,
+83 Node y checks documentales. Firma/trusted comment, recursos y 260 entradas
+congeladas comprobados; seis checks del payload y once nativos Windows pasan.
+Instalador, 14.521.430 bytes, SHA256
+`9983CD014E9B58F12DE1E5F266DCBA51EAC8332B67A54876957CE67E6620C9E3`.
+Los tres assets descargados coinciden; updater real HTTP 200, versión `0.5.8`,
+URL/firma correctas. CI de la fuente aprobada. El mismo NSIS está instalado
+localmente: EXE `0.5.8` idéntico al payload, proceso responsive y seis checks
+con perfil sintético instalado pasan. [Notas y recibos](../releases/v0.5.8.md).
+Paste nativo y aceptación entre PCs conservan alcance separado.
+
+Distribución anterior: [v0.5.7](https://github.com/jpsala/copicu/releases/tag/v0.5.7),
 publicado a `2026-10-05T10:53:54Z` desde source/tag inmutable
 `ac5ebccdaa102434381b1c7d1151ce8fec94aa3e`. Incluye copias independientes por
 carpeta, recencia de recepciones repetidas, Sharing/Settings y menús compactos,
