@@ -1,6 +1,30 @@
 # Copicu Script Examples
 
-These files are contract examples for the trusted TS/JS runner.
+These files are contract examples and bundled user scripts for the trusted TS/JS runner.
+
+## Installer Defaults
+
+The Windows installer packages this whole directory and installs all 35 scripts.
+Combining clips (003, 012, 031), metadata (002, 005, 006, 025, 026), search
+(007, 008, 020–024), copy/paste (009, 013, 032, 033), sharing (034–036), and
+technical examples (001, 015, 017–019, 027) go into `Documents/Copicu/Scripts`
+and are active with their existing triggers. This includes global shortcuts
+(subject to conflict checks) and clipboard-change examples 015/027.
+
+Text/URL tools (004, 010, 011, 028–030, 037) go into `Scripts/disabled`.
+Discovery is non-recursive, so these are installed but inactive. Move a script
+between the root and `disabled` to enable/disable it, then refresh discovery.
+Existing files in either location are never overwritten or moved on upgrade.
+Do not delete a script to disable it: an upgrade reinstalls missing files.
+Custom script folders require moving the installed structure to the configured
+folder; NSIS always targets Documents. Uninstall leaves user scripts alone.
+
+Sharing scripts still require channel IDs, grants and explicit subscription/
+writer setup. Installation does not enroll a channel or authorize sharing.
+Types are installed alongside active and inactive scripts. Example 004 still declares the unsupported legacy `shell:open-url` capability:
+it is an inactive reference, not a ready native URL opener. See the
+[installer contract](../../docs/topics/windows-installer.md#scripts-incluidos).
+Run `npm run scripts:installer:test` for a temporary-folder NSIS integration test.
 
 Canonical user scripts folder on this machine:
 
@@ -21,6 +45,28 @@ These examples are the launch-readiness path for showing that Copicu is more tha
 | `010-normalize-whitespace-copy.ts` | `Ctrl+Alt+N` | Messy pasted text with extra spaces and blank lines | Copies cleaned text with trimmed lines. |
 | `030-extract-urls-copy.ts` | `Ctrl+Alt+L` | Notes containing one or more `http(s)` URLs | Copies one URL per line. |
 | `031-join-selected-markdown-copy.ts` | `Ctrl+Alt+M` | Multiple selected text clips with titles/tags | Copies one Markdown document with headings and tag metadata. |
+
+## Automatic YouTube Titles
+
+`037-youtube-title-clipboard-change.ts` fills an empty title when a captured text
+item is a whole YouTube video URL (`watch`, `youtu.be`, `shorts`, `live`, `embed`).
+Copying this script into the configured scripts folder enables its
+`clipboardChange` trigger after discovery refresh. This is opt-in network access:
+it sends a canonical video URL (ID only, no tracking parameters) to YouTube's
+HTTPS oEmbed endpoint, without API keys, cookies or AI. It never writes the clipboard.
+
+Existing titles skip the lookup; a second read before writing respects changes
+made during the request. The host API has no compare-and-set for title, so that
+read/write pair is not an atomic protection against simultaneous manual edits.
+Only `title` is patched; notes, tags and URL remain unchanged. Requests time out
+after five seconds, do not follow redirects, and fail with sanitized diagnostics
+for unavailable/private videos or network errors. There are no automatic retries.
+To disable it, move the script out of the scripts folder and refresh discovery.
+The Windows installer puts this script in `disabled` by default, without a
+special prompt. Move it into the active folder to opt in to the network lookup.
+Existing active or inactive copies are never overwritten or moved on upgrade.
+Tests use mocked fetch and synthetic history:
+`npm run scripts:examples:test`.
 
 ## Global History Cycling
 
@@ -64,7 +110,8 @@ clipboard. Do not put enrollment credentials or keys into scripts.
 through the guarded reception writer. It requires its own explicit subscription
 permission, **Allow Action to update Windows clipboard**, with the built-in
 Windows output disabled. Local copies during the script, pauses, lease expiry
-and failed runs prevent deferred clipboard writes. No example enables itself.
+and failed runs prevent deferred clipboard writes. Installation makes the Action
+discoverable; no example enables a subscription or authorizes its own effects.
 
 The dev mock runner is still useful for fast shape checks and for examples that need APIs not implemented by the real bridge yet, such as URL opening:
 

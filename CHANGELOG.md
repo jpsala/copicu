@@ -4,6 +4,16 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-10-16
+
+- Install all 35 bundled scripts with explicit activation defaults: 28 active
+  across combining, metadata, search, copy/paste, sharing and technical examples;
+  seven text/URL tools installed inactive. Preserve user edits and activation
+  choices across upgrades.
+- Add an opt-in YouTube title lookup that fills empty metadata titles without
+  modifying copied URLs. Sharing permissions remain explicit.
+  [Full release notes](docs/releases/v0.5.9.md).
+
 ## [0.5.7] - 2026-10-05
 
 - Keep independent copies across folders, deduplicate within each destination,

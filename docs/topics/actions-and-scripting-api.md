@@ -155,8 +155,9 @@ host anteriores, como forwarding, siguen registrados y no se revierten.
 Contratos y evidencia local en [Shared Clipboard](shared-clipboard.md) y
 [aceptación local](../../specs/016-shared-clipboard/local-acceptance.md). Los
 ejemplos 034–036 cubren envío de seleccionados, inspección de recepción y salida
-transformada de una recepción. Son ejemplos de desarrollo; el instalador sólo
-distribuye la selección indicada en [Windows Installer](windows-installer.md#scripts-incluidos).
+transformada de una recepción. El instalador los distribuye activos para discovery,
+sin configurar canales ni grants/suscripciones. Todos los scripts y defaults de
+activación están en [Windows Installer](windows-installer.md#scripts-incluidos).
 
 ## Shortcuts
 

@@ -303,18 +303,33 @@ La ventana Settings incluye seccion `About` desde `v0.2.7`, con descripcion, ver
 
 ## Scripts Incluidos
 
-El instalador NSIS distribuye una seleccion minima de scripts utiles:
+El instalador NSIS empaqueta todo `scripts/examples/` en `bundled-scripts` e instala los 35 scripts actuales, más `copicu-action.d.ts`. La política de copia/defaults vive en [`bundled-scripts.nsh`](../../src-tauri/bundled-scripts.nsh), invocada por el hook postinstall.
 
-- `030-extract-urls-copy.ts`;
-- `031-join-selected-markdown-copy.ts`;
-- `copicu-action.d.ts`, necesario para tipos/autocomplete al editarlos.
+En instalaciones nuevas, estos grupos quedan activos por defecto en `$DOCUMENTS\Copicu\Scripts`:
 
-El hook copia estos archivos a `$DOCUMENTS\Copicu\Scripts` solo cuando cada destino no existe. Una actualizacion nunca sobrescribe scripts modificados por el usuario y el uninstall no los borra. Los demas archivos bajo `scripts/examples/` son fixtures y contratos de desarrollo, no contenido instalado.
+| Grupo | IDs de scripts |
+| --- | --- |
+| Combinar clips | 003, 012, 031 |
+| Metadata | 002, 005, 006, 025, 026 |
+| Búsqueda | 007, 008, 020–024 |
+| Copiar y pegar | 009, 013, 032, 033 |
+| Clipboard compartido | 034–036 |
+| Ejemplos técnicos | 001, 015, 017–019, 027 |
+
+Los de texto/URLs (004, 010, 011, 028–030, 037) se instalan en `Scripts\disabled`, fuera del discovery no recursivo. No registran atajos ni ejecutan triggers allí. YouTube queda instalado pero no consulta red hasta que se lo active moviéndolo a la raíz. No hay prompt especial del instalador para YouTube; instalaciones interactivas y silenciosas usan los mismos defaults. Se copian tipos a ambos directorios para conservar autocomplete.
+
+**Activo no significa ejecutado al instalar:** se conservan los triggers de cada manifest. Los atajos globales declarados se intentan registrar con las validaciones normales de conflictos. Los técnicos 015 y 027 sí declaran `clipboardChange` y correrán al capturar texto según sus condiciones; logs redacted, sin contenido real. Los de sharing se descubren, pero mantienen `example_channel`: requieren reemplazarlo por un canal enrolado y sus grants; recepción exige asociar/habilitar la suscripción y 036 exige además permiso de escritura y deshabilitar el writer built-in. No se configuran canales ni se autoriza publicación/recepción al instalar. El ejemplo 004 conserva su limitación legacy: `shell:open-url` no está soportado por el host/tipos vigentes; se distribuye inactivo como referencia, no como integración nativa lista para abrir URLs.
+
+Para habilitar/deshabilitar, mover el `.ts` entre la raíz y `disabled` y refrescar discovery (automático o desde Settings). Con carpeta personalizada en `scripts.folderPath`, trasladar la estructura a esa carpeta: NSIS sigue usando Documents y no inspecciona SQLite privado.
+
+**Actualizaciones:** si un nombre ya existe en la raíz **o** en `disabled`, no se copia, mueve ni sobrescribe. Se conservan modificaciones y elecciones previas, incluido YouTube activo o 030 activo de instalaciones anteriores. Un archivo ausente de ambas ubicaciones se repone con su default; para desactivar de forma durable, mover, no borrar. Uninstall no elimina scripts de Documents.
+
+Validación: `npm run scripts:installer:test` compila y ejecuta sólo una fixture NSIS con destinos temporales; comprueba instalación completa, defaults, preservación de contenido y cambios de estado en upgrades. Requiere Windows y NSIS ya disponible (o `COPICU_TEST_MAKENSIS`); si falta, se omite sin instalar herramientas. No equivale a probar el instalador completo ni el registro real de hotkeys.
 
 El paquete incluye los runners de scripts/assistant, `assistant-tools.json`, tipos
 y runtime TypeScript necesarios para Actions. El perfil, historial, enrollment,
 credenciales y claves de sharing permanecen fuera de los recursos del instalador.
-Instalar la capacidad no configura un servicio ni habilita efectos automáticos.
+Instalar sharing no configura un servicio ni habilita sus efectos automáticos; esto es independiente de los triggers locales de los scripts activos.
 
 ## Launch On Windows Startup
 

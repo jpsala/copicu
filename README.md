@@ -1,4 +1,4 @@
-# Copicu
+﻿# Copicu
 
 **Copicu is a local-first, scriptable clipboard manager for Windows power users.**
 
@@ -39,15 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.8](https://github.com/jpsala/copicu/releases/tag/v0.5.8)
-- Asset: `Copicu_0.5.8_x64-setup.exe`
+- [v0.5.9](https://github.com/jpsala/copicu/releases/tag/v0.5.9)
+- Asset: `Copicu_0.5.9_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `9983CD014E9B58F12DE1E5F266DCBA51EAC8332B67A54876957CE67E6620C9E3`
+- SHA256: `56DD7901C37B2A3F940DA335CC1A9040840DD3A373FCCB7645103E3B4219BA17`
 
-Get useful Sharing error messages and a safe diagnostic report to copy. Settings
-is now the first slider button in the picker's right control group. When updating
-from before v0.5.6, open an existing PC first to migrate shared clipboard keys,
-then update the other PCs.
+All 35 bundled scripts, explicit activation defaults and optional YouTube video titles.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -223,7 +220,7 @@ The repo already includes runnable showcase examples under [scripts/examples/](s
 - [extract URLs from selected text](scripts/examples/030-extract-urls-copy.ts) — `Ctrl+Alt+L`;
 - [join selected clips as Markdown](scripts/examples/031-join-selected-markdown-copy.ts) — `Ctrl+Alt+M`.
 
-The Windows installer seeds only **Extract URLs** (`030`) and **Join Selected as Markdown** (`031`) into the default scripts folder, and only when those files are missing. Existing or customized scripts are never overwritten. The other files remain development examples and API fixtures in the repository.
+The Windows installer installs all 35 scripts. Combining clips, metadata, search, copy/paste, sharing and technical examples are active by default (28 scripts); seven text/URL tools, including optional YouTube titles, start in `Scripts/disabled`. Move scripts between that folder and its parent to change activation. Upgrades preserve files in either location without overwriting edits or changing activation choices. Sharing still requires explicit channel grants and subscription/writer setup. See [activation details](docs/user/scripts.md#installed-scripts-and-activation).
 
 Press `Ctrl+Alt+Q` in the picker to open **Quick Actions**, a context-aware action picker that shows runnable scripts/actions for the current selection so you do not need to memorize every shortcut.
 

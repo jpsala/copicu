@@ -48,6 +48,32 @@ Agents and tooling should resolve the destination folder in this order:
 
 The app uses persisted Settings once present. `COPICU_SCRIPTS_DIR` only changes the initial default folder for fresh/default settings.
 
+## Installed Scripts and Activation
+
+The Windows installer installs all shipped scripts. Combining clips, metadata,
+search, copy/paste, shared clipboard and technical examples are active by default.
+They retain their declared triggers: manual actions do not execute at install;
+global shortcuts register subject to normal conflict validation, and technical
+examples 015/027 run on clipboard changes according to their conditions.
+Sharing still requires real channel IDs/grants and explicit subscription/writer
+setup; installation alone never authorizes sending or receiving.
+
+Text/URL tools (004, 010, 011, 028–030 and YouTube 037) are installed in
+`Documents/Copicu/Scripts/disabled`. This directory is not scanned recursively.
+To enable one, move its `.ts` into the parent Scripts folder; to disable one,
+move it back into `disabled`. Refresh diagnostics in Settings or wait for folder
+refresh. Enabling YouTube permits automatic requests to YouTube with the video
+ID of matching captures; clipboard content itself is not modified.
+
+Upgrades preserve a script already present in either location, including edits
+and its activation state. Removing both copies permits reinstall on upgrade;
+use `disabled` rather than deletion for durable opt-out. Uninstall keeps scripts.
+If you use a custom `scripts.folderPath`, move the installed structure there;
+the installer targets Documents, not the private settings database.
+
+See [the installer contract](../topics/windows-installer.md#scripts-incluidos)
+for the exact default groups and IDs.
+
 ## File Types
 
 Copicu discovers:
