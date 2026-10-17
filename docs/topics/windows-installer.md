@@ -14,21 +14,29 @@ keywords:
 
 Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores](../DECISIONS.md) y [config Tauri](../../src-tauri/tauri.conf.json). Los procedimientos de distribución requieren autorización explícita y actual; este topic y sus resultados históricos no la conceden.
 
-## Candidato en preparación
-
-**v0.5.10**, core `0.5.10`, canal normal/latest resuelto por el helper. Incluye
-exportación TXT/PNG/ZIP y naming AI de texto opt-in, modelos por nombre y diálogo
-transitorio. Firma, paquete final, GitHub e instalación se acreditarán en
-[notas v0.5.10](../releases/v0.5.10.md); no inferirlos de checks de implementación.
-
 ## Distribución Vigente
 
-Stable/latest comprobado antes de este corte: [v0.5.9](https://github.com/jpsala/copicu/releases/tag/v0.5.9),
-publicado a `2026-10-16T09:47:36Z` desde source/tag
-`aa04577ef17cc09d8be9143f086261ae9317def8`. Distribuye los 35 scripts con defaults
-de activación, preservación de elecciones/ediciones y herramienta YouTube opcional.
-Firma, payload, tres assets, endpoint real e instalación local conservan sus
-[notas y recibos](../releases/v0.5.9.md); otra PC/proveedor siguen separados.
+Stable/latest: [v0.5.10](https://github.com/jpsala/copicu/releases/tag/v0.5.10), publicado
+`2026-10-17T02:01:37Z` desde source/tag inmutable
+`a492175ffda4f00e9949867308f234e64565208b`. Incluye selección/marcados a TXT/PNG/ZIP,
+naming AI de texto opt-in, modelos por nombre y progreso/resultado en diálogo limpio.
+
+Firma updater/trusted comment, recursos, 271 entradas congeladas y tres assets
+públicos verificados. Endpoint latest real HTTP 200 con versión/URL/firma correctas;
+CI de la fuente aprobada. NSIS 14.658.871 bytes, SHA256
+`8774C3848D60D2BEABCCD6D3EE48A92E3047FC02D0F30A7C60A2019315058898`.
+
+El mismo instalador está instalado localmente: EXE `0.5.10` idéntico al payload,
+181 recursos comparados y proceso responsive relanzado. Diez casos del payload,
+once nativos y diez del binario instalado pasan con perfiles sintéticos; 423 Rust,
+578 renderer, 97 Node, 63 Sharing y 57 Bun pasan (omisiones explicitadas en notas).
+No acredita proveedor real, paste universal ni que otra PC ya se haya actualizado.
+[Notas y recibos v0.5.10](../releases/v0.5.10.md).
+
+Anterior [v0.5.9](https://github.com/jpsala/copicu/releases/tag/v0.5.9), source/tag
+`aa04577ef17cc09d8be9143f086261ae9317def8`: 35 scripts con defaults de activación,
+preservación de ediciones/elecciones y YouTube opcional, con
+[recibos propios](../releases/v0.5.9.md).
 
 Anterior [v0.5.8](https://github.com/jpsala/copicu/releases/tag/v0.5.8), source/tag
 `825266d78c5f7504e821344e832070d63ff19f8a`: diagnóstico Sharing, Settings y distribución

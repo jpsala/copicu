@@ -1,9 +1,9 @@
 ---
 title: Guardar clips como archivos o ZIP con nombres AI opcionales
 status: active
-summary: Selección y marcados a TXT/PNG o ZIP, naming AI de texto y diálogo limpio implementados; preparación del release estable 0.5.10.
-last_worked: "2026-10-17T01:24:19Z"
-next: Verificar paquete firmado, publicar stable/latest e instalar el mismo artefacto; mantener separada la aceptación AI/otra PC.
+summary: Selección/marcados a TXT/PNG o ZIP, naming AI de texto y diálogo limpio publicados en stable/latest v0.5.10 e instalados localmente.
+last_worked: "2026-10-17T02:05:13Z"
+next: Evaluar proveedor/modelo real y otra PC con autorización y datos sintéticos; nuevos alcances/visión permanecen separados.
 topics:
   - actions-and-scripting-api
   - ai-search-and-actions
@@ -59,11 +59,14 @@ preservó; su diff son tests/documentación, no runtime del exportador.
 JP autorizó ahora documentación, GitHub/release estable, instalación local y cierre
 de procesos Copicu. Candidato resuelto una sola vez por el helper: **v0.5.10**, core
 **0.5.10**, canal normal/latest. Firma y publicación no se infieren de builds previos.
-Recibos finales y gates del paquete: [notas v0.5.10](../releases/v0.5.10.md).
+Publicado stable/latest desde `a492175ffda4f00e9949867308f234e64565208b`, con firma,
+recursos, assets descargados, endpoint real y CI verificados. Mismo NSIS instalado
+localmente: EXE 0.5.10 idéntico y responsive; diez casos sintéticos instalados pasan.
+Recibos y límites: [notas v0.5.10](../releases/v0.5.10.md).
 
 ## Pendientes
 
-- [ ] Recibos del paquete/release/instalación actual y comprobación del endpoint updater.
+- [x] Paquete/release/instalación local y endpoint updater comprobados con recibos.
 - [ ] Calidad de nombres/proveedor real y naming visual con capacidades acreditadas.
 - [ ] Recuperación directa si desaparece la carpeta sugerida; hoy se informa el error.
 - [ ] Carpeta/búsqueda completa y API pública de Actions según el plan, sin ampliar
