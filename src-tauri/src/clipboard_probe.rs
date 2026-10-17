@@ -324,6 +324,37 @@ mod windows_probe {
         };
 
         #[test]
+        fn transient_exclusion_requires_exact_format_payload_and_owner() {
+            // An explicit copy by Fixvox (no marker), or the foreground app's
+            // Ctrl+Insert response, must not inherit an earlier exclusion.
+            for (name, bytes, owner) in [
+                (
+                    "CF_UNICODETEXT",
+                    TRANSIENT_PASTE_MARKER,
+                    Some("dictation-tauri.exe"),
+                ),
+                (TRANSIENT_PASTE_FORMAT_NAME, TRANSIENT_PASTE_MARKER, None),
+                (
+                    TRANSIENT_PASTE_FORMAT_NAME,
+                    TRANSIENT_PASTE_MARKER,
+                    Some("windowsterminal.exe"),
+                ),
+                (
+                    TRANSIENT_PASTE_FORMAT_NAME,
+                    &b"dictation-tauri/v1"[..],
+                    Some("dictation-tauri.exe"),
+                ),
+                (
+                    TRANSIENT_PASTE_FORMAT_NAME,
+                    &b"dictation-tauri/v1\0extra"[..],
+                    Some("dictation-tauri.exe"),
+                ),
+            ] {
+                assert!(!trusted_transient_transport_parts(name, bytes, owner));
+            }
+        }
+
+        #[test]
         fn trusts_only_dictation_owned_transient_paste_markers() {
             assert!(trusted_transient_transport_parts(
                 TRANSIENT_PASTE_FORMAT_NAME,

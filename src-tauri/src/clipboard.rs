@@ -1308,6 +1308,49 @@ mod tests {
     }
 
     #[test]
+    fn transient_diagnostics_preserve_capture_state_and_do_not_include_content() {
+        for has_image in [false, true] {
+            let state = Arc::new(Mutex::new(ClipboardCaptureState {
+                last_hash: Some("previous-external-copy".into()),
+                ..Default::default()
+            }));
+            let probe = crate::clipboard_probe::ClipboardProbe {
+                platform: "synthetic",
+                sequence_number: Some(42),
+                format_count: 2,
+                has_text: !has_image,
+                has_html: false,
+                has_rtf: false,
+                has_image,
+                has_files: false,
+                file_count: None,
+                formats: Vec::new(),
+                trusted_transient_transport: true,
+            };
+            record_event(
+                &state,
+                CaptureOutcome::TrustedTransientTransportSuppressed,
+                Ok(probe),
+                None,
+            );
+            let state = state.lock().unwrap();
+            assert_eq!(state.last_hash.as_deref(), Some("previous-external-copy"));
+            assert_eq!(state.captured_count, 0);
+            assert_eq!(state.captured_image_count, 0);
+            assert_eq!(state.ignored_duplicate_count, 0);
+            assert_eq!(state.trusted_transient_transport_suppressed_count, 1);
+            assert_eq!(state.event_count, 1);
+            let event = state.events.back().unwrap();
+            assert!(event.text_preview.is_none());
+            assert!(event.text_char_count.is_none());
+            assert!(matches!(
+                event.outcome,
+                CaptureOutcome::TrustedTransientTransportSuppressed
+            ));
+        }
+    }
+
+    #[test]
     fn capture_enabled_state_can_pause_and_resume_without_stopping_watcher() {
         let capture = ClipboardCapture {
             state: Arc::new(Mutex::new(ClipboardCaptureState::default())),

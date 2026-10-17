@@ -175,12 +175,19 @@ Esta decision debe validarse temprano en scaffold antes de invertir en picker UI
 - Persistencia: SQLite guarda `content_kind='text'` o `content_kind='image'`, texto/label seguro, hash, timestamps y metadata opcional de imagen. Imagenes usan blob store bajo app data para PNG principal y thumbnail.
 - Contexto oculto de captura 2026-06-22: cada captura/recaptura registra un evento en `clipboard_item_capture_events` con app/proceso foreground, ruta de exe, titulo de ventana, hwnd, PID, plataforma/sequence/formatos del clipboard, tamanos aproximados, line count y dominio detectado para URLs. `clipboard_items.context_search_text` denormaliza ese contexto para busqueda plain sin contaminar `title`/`notes`/`tags`. El editor de metadata muestra este contexto abajo como panel read-only para que el usuario pueda inspeccionarlo sin mezclarlo con metadata editable.
 - Write-back: el host escribe texto con `tauri-plugin-clipboard-manager` e imagenes con `clipboard-rs`.
-- Transporte transitorio Dictation 2026-08-07: el watcher omite antes de leer
-  texto cualquier clipboard que combine formato registrado
-  `Fixvox.TransientPaste.v1`, payload exacto `dictation-tauri/v1` y owner
-  `dictation-tauri.exe`. Una marca aislada, payload distinto u otro proceso no
-  recibe confianza. El restore posterior conserva la deduplicación normal y las
-  copias explícitas sin marca continúan entrando al historial.
+- Transporte transitorio Fixvox: antes de leer contenido (texto o imagen), el
+  watcher omite cualquier clipboard que combine formato registrado
+  `Fixvox.TransientPaste.v1`, payload exacto `dictation-tauri/v1\0` y proceso
+  propietario `dictation-tauri.exe`. Sin historial, recencia ni actions; sólo
+  contador/diagnóstico metadata-only. No se confunde propietario con ventana
+  foreground. Marca aislada, payload distinto u otro proceso no reciben confianza.
+  El contrato del productor ahora incluye sentinel de selección y restauraciones
+  de texto/imagen, además del paste temporal; las copias explícitas quedan sin
+  marca. Reemplaza el supuesto anterior de tratar restore como copia ordinaria:
+  restaurar estado previo es una operación interna, no intención de copiar.
+  La respuesta de otra app a Ctrl+Insert no lleva esa marca y sigue fuera de la
+  exclusión. No hay pausa por tiempo, IPC ni exclusión global de Fixvox/Terminal.
+  [Ciclos, comprobaciones y estado de instalación](../tracks/fixvox-transient-clipboard-exclusion.md).
 
 ## Estado De Imagenes
 
