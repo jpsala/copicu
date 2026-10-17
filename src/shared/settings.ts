@@ -60,6 +60,7 @@ export function editorLineHeightValue(lineHeight: EditorLineHeight): number {
 
 export type AppSettings = {
   schemaVersion: 1;
+  export: { defaultFolder: string; openDestinationAfterSave: boolean; aiNames: boolean; namingModel: string };
   general: {
     globalShortcut: string;
     inboxShortcut: string;
@@ -117,6 +118,7 @@ export type AppSettings = {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   schemaVersion: 1,
+  export: { defaultFolder: "", openDestinationAfterSave: false, aiNames: false, namingModel: "" },
   general: {
     globalShortcut: "Ctrl+Shift+,",
     inboxShortcut: "Ctrl+Alt+I",
@@ -246,6 +248,12 @@ export function normalizeSettings(settings: Partial<AppSettings> = {}): AppSetti
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
+    export: {
+      defaultFolder: typeof settings.export?.defaultFolder === "string" ? settings.export.defaultFolder : "",
+      openDestinationAfterSave: settings.export?.openDestinationAfterSave === true,
+      aiNames: settings.export?.aiNames === true,
+      namingModel: typeof settings.export?.namingModel === "string" ? settings.export.namingModel : "",
+    },
     general: { ...DEFAULT_SETTINGS.general, ...settings.general },
     autoUpdate: { ...DEFAULT_SETTINGS.autoUpdate, ...settings.autoUpdate },
     picker: {

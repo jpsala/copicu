@@ -87,6 +87,8 @@ import { ToastStack } from "../ui/ToastStack";
 import { SavedHistoryViews } from "./SavedHistoryViews";
 import { Scenarios } from "./Scenarios";
 import { SharedClipboardSettings } from "../ui/SharedClipboardSettings";
+import { ExportNamingSettings } from "../ui/ExportNamingSettings";
+import { AiModelSelect } from "../ui/AiModelSelect";
 import { SharedClipboardFeed } from "../ui/SharedClipboardFeed";
 import { checkDownloadInstallAndRelaunch, checkForAvailableUpdate, type AutoUpdateStatus } from "../autoUpdate";
 
@@ -1851,6 +1853,7 @@ function SettingsPanel({
 }: SettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<SettingSection>(initialSettingsSection);
   const [sharingFeedOpen, setSharingFeedOpen] = useState(false);
+  const [exportFolderError, setExportFolderError] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visible = (section: SettingSection, label: string, description: string) =>
     normalizedQuery.length === 0 ||
@@ -1880,6 +1883,9 @@ function SettingsPanel({
     .join(" ");
   const generalSearchText = [
     "clipboard capture pause monitoring new clipboard changes",
+    "export destination folder save files default destination folder",
+    "open destination folder after saving",
+    "AI export names generate export names with AI export naming model load export models",
     "launch on windows startup",
     "start copicu when windows starts",
     "automatic updates",
@@ -2032,6 +2038,7 @@ function SettingsPanel({
     normalizedQuery.length === 0 ||
     `${section.id} ${section.label} ${section.description}`.toLocaleLowerCase().includes(normalizedQuery) ||
     (section.id === "general" && generalSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
+    (section.id === "ai" && "enable ai ai api key credentials ai endpoint ai model id load ai models provider catalog".includes(normalizedQuery)) ||
     (section.id === "sharing" && sharingSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "hotkeys" && hotkeySearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
     (section.id === "picker" && pickerSearchText.toLocaleLowerCase().includes(normalizedQuery)) ||
@@ -2168,6 +2175,32 @@ function SettingsPanel({
                         })
                       }
                     />
+                  </SettingRow>
+                ) : null}
+                {visible("general", "Export destination folder", "Save files default destination folder") ? (
+                  <SettingRow label="Export destination folder" description="Optional starting folder for Save selection as files. The destination is always confirmed. Choosing another folder does not change this setting.">
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <UiTextInput aria-label="Export destination folder" value={draft.export.defaultFolder}
+                        placeholder="Use last successful destination"
+                        onChange={(event) => onDraftChange({ ...draft, export: { ...draft.export, defaultFolder: event.currentTarget.value } })} />
+                      <UiButton type="button" variant="subtle" size="compact-xs" onClick={() => {
+                        void openDialog({ directory: true, multiple: false, title: "Default export destination", defaultPath: draft.export.defaultFolder || undefined })
+                          .then((path) => { if (typeof path === "string") onDraftChange({ ...draft, export: { ...draft.export, defaultFolder: path } }); })
+                          .catch(() => setExportFolderError("Could not open the destination folder selector. Enter an absolute folder path instead."));
+                      }}>Choose folder…</UiButton>
+                      {exportFolderError ? <p role="alert">{exportFolderError}</p> : null}
+                    </div>
+                  </SettingRow>
+                ) : null}
+                {visible("general", "Open destination folder after saving", "Export files open folder after save") ? (
+                  <SettingRow label="Open destination folder after saving" description="Open the destination after at least one file is saved, including when a batch is stopped. You can also open it manually from the export completion dialog.">
+                    <UiSwitch label="Open destination folder after saving" checked={draft.export.openDestinationAfterSave}
+                      onChange={(checked) => onDraftChange({ ...draft, export: { ...draft.export, openDestinationAfterSave: checked } })} />
+                  </SettingRow>
+                ) : null}
+                {visible("general", "AI export names", "Generate export names with AI export naming model load export models") ? (
+                  <SettingRow wide label="AI export names" description="Optional names for exported files and ZIP entries. Off by default; no background naming.">
+                    <ExportNamingSettings value={draft.export} ai={draft.ai} onChange={(value) => onDraftChange({ ...draft, export: value })} />
                   </SettingRow>
                 ) : null}
                 {visible("general", "Launch on Windows startup", "Start Copicu when Windows starts") ? (
@@ -3037,21 +3070,10 @@ function SettingsPanel({
                     />
                   </SettingRow>
                 ) : null}
-                {visible("ai", "Model", "AI model id") ? (
-                  <SettingRow label="Model" description=".env COPICU_AI_MODEL overrides this field when present.">
-                    <UiTextInput
-                      aria-label="AI model"
-                      value={draft.ai.model}
-                      onChange={(event) =>
-                        onDraftChange({
-                          ...draft,
-                          ai: {
-                            ...draft.ai,
-                            model: event.currentTarget.value,
-                          },
-                        })
-                      }
-                    />
+                {visible("ai", "Model", "AI model id load AI models provider catalog") ? (
+                  <SettingRow wide label="Model" description="Load the provider catalog and choose by name. .env COPICU_AI_MODEL overrides this general model when present; export naming has its own model.">
+                    <AiModelSelect label="AI model" value={draft.ai.model} ai={draft.ai} loadLabel="Load AI models"
+                      onChange={(model) => onDraftChange({ ...draft, ai: { ...draft.ai, model } })} />
                   </SettingRow>
                 ) : null}
               </SettingsSection>

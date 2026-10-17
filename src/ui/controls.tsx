@@ -95,11 +95,13 @@ export const UiSwitch = forwardRef<
   HTMLInputElement,
   Omit<SwitchProps, "checked" | "onChange" | "label" | "aria-label"> & {
     label: string;
+    showLabel?: boolean;
     checked: boolean;
     onChange: (checked: boolean) => void;
   }
 >(function UiSwitch({
   label,
+  showLabel = false,
   checked,
   onChange,
   ...props
@@ -108,6 +110,7 @@ export const UiSwitch = forwardRef<
     <Switch
       ref={ref}
       aria-label={label}
+      label={showLabel ? label : undefined}
       checked={checked}
       onChange={(event) => onChange(event.currentTarget.checked)}
       {...props}

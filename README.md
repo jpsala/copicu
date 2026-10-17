@@ -39,12 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.9](https://github.com/jpsala/copicu/releases/tag/v0.5.9)
-- Asset: `Copicu_0.5.9_x64-setup.exe`
+- [v0.5.10](https://github.com/jpsala/copicu/releases/tag/v0.5.10)
+- Asset: `Copicu_0.5.10_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `56DD7901C37B2A3F940DA335CC1A9040840DD3A373FCCB7645103E3B4219BA17`
+- SHA256: `8774C3848D60D2BEABCCD6D3EE48A92E3047FC02D0F30A7C60A2019315058898`
 
-All 35 bundled scripts, explicit activation defaults and optional YouTube video titles.
+Export selected or marked clips to files or ZIP, optional AI text names, clean export dialog and model selectors.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -87,6 +87,7 @@ Copicu is early-stage, but the core is functional:
 - browse All history, unfiled Root (`/`), or the direct clips in a folder, and search within that scope;
 - explicitly arm a folder as the capture destination, move clips by menu or drag, and manage nested folders;
 - keep persistent marks across searches and restarts, separate from temporary batch selection;
+- save selected or all marked clips as UTF-8 TXT/PNG files or a compressed ZIP, with safe names and no overwrite;
 - navigate primarily with the keyboard;
 - search plain text or scoped fields like `meta:`, `title:`, `notes:`, `ctx:`, `tag:`, `kind:`, and `is:marked`;
 - save the current search as a named **Saved search**;
@@ -104,6 +105,22 @@ Copicu is early-stage, but the core is functional:
 - use a command palette and local/global shortcut routes;
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
+
+### New In v0.5.10
+
+Use **Save as files…** or **Save as ZIP…** in the selection, item context or marked
+clips menu. Destination is always confirmed; Settings → General can suggest a
+default folder and optionally open it after saving. Progress/results stay in a
+closable dialog, not in the picker header.
+
+AI text filenames are optional, off by default and use their own model. Load a
+provider catalog explicitly and choose by name, even while configuring unsaved AI
+settings. Each export asks before sending a bounded text excerpt. Never include
+secrets, credentials or personal data; automatic detection is not exhaustive.
+Images are not sent, and unsupported formats/AI fallbacks are reported. Scripts,
+assistant and model-catalog lookup need Node.js on PATH (not installed by NSIS);
+native TXT/PNG/ZIP export does not. See
+[release notes](docs/releases/v0.5.10.md) and the [export contract](specs/018-clip-file-export/spec.md).
 
 ### New In v0.5.6
 

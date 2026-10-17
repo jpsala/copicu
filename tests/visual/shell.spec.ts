@@ -1312,7 +1312,9 @@ async function mockTauriInvoke(
             return null;
           case "assistant_snapshot":
             return structuredClone((window as any).__copicuTestAssistantSnapshot);
+          case "clip_export_models":
           case "assistant_list_models":
+            if (cmd === "clip_export_models" && (window as any).__copicuTestFailModelLookup) throw new Error("Synthetic model catalog unavailable");
             return {
               endpoint: "https://example.invalid/v1",
               models: [{ id: "openai/gpt-5.6-luna", name: "OpenAI: GPT-5.6 Luna", reasoningEfforts: ["high"] }],
@@ -1828,6 +1830,36 @@ async function mockTauriInvoke(
             findActiveSessionId = null;
             syncFindState();
             return { cancelled: true };
+          }
+          case "choose_clip_export_folder":
+            if ((window as any).__copicuTestWaitForExportFolder) return new Promise((resolve) => { (window as any).__copicuTestResolveExportFolder = resolve; });
+            return (window as any).__copicuTestExportFolder ?? null;
+          case "open_clip_export_folder":
+            if ((window as any).__copicuTestOpenFolderFail) throw new Error("Synthetic Explorer failure");
+            return null;
+          case "confirm_clip_export_ai":
+            return (window as any).__copicuTestApproveExportAi === true;
+          case "begin_clip_export":
+            (window as any).__copicuTestExportBatch = { ids: [...args.ids], cursor: 0, compressed: args.compressed, successes: 0 };
+            (window as any).__copicuTestExportWrites = [];
+            return "synthetic-export-token";
+          case "next_clip_export": {
+            const state = window as any;
+            const batch = state.__copicuTestExportBatch;
+            const ordinal = ++batch.cursor;
+            const itemId = batch.ids[ordinal - 1];
+            if (state.__copicuTestHoldExportItem) await new Promise((resolve) => { state.__copicuTestResolveExportItem = resolve; });
+            const status = state.__copicuTestExportStatus ?? (batch.compressed ? "prepared" : "saved");
+            if (status === "prepared" || status === "saved") batch.successes++;
+            state.__copicuTestExportWrites.push({ itemId, ordinal });
+            return { itemId, status, detail: `synthetic-${ordinal}.txt`, warning: null };
+          }
+          case "finish_clip_export": {
+            const state = window as any;
+            if (state.__copicuTestFailZipFinish) throw new Error("Synthetic ZIP publication failure");
+            const batch = state.__copicuTestExportBatch;
+            const published = batch.successes > 0 && (!batch.compressed || args.publish);
+            return { archive: batch.compressed && published ? "synthetic-clips.zip" : null, published, warning: null };
           }
           case "history_search":
           case "list_history_page": {
@@ -3245,7 +3277,7 @@ test("picker row compact menu and submenus stay keyboard reachable at 420 px", a
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("menuitem").first()).toHaveText("Quick edit");
   await expect(menu.getByRole("menuitem").nth(1)).toContainText("Edit metadata");
-  expect(await menu.getByRole("menuitem").count()).toBe(8);
+  expect(await menu.getByRole("menuitem").count()).toBe(10);
   await expect(menu.getByRole("menuitem").first()).toBeFocused();
 
   const menuItems = menu.getByRole("menuitem");
@@ -4428,6 +4460,259 @@ test("WhichKey overlay fits narrow picker window", async ({ page }) => {
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   expect(horizontalOverflow).toBe(false);
+});
+
+async function setExportAutoOpen(page: Page, enabled: boolean) {
+  await page.evaluate(async (enabled) => {
+    const state = window as any;
+    state.__copicuTestSettings.export = { defaultFolder: "", openDestinationAfterSave: enabled };
+    await state.__copicuTestEmitEvent("copicu://settings/updated", state.__copicuTestSettings);
+  }, enabled);
+}
+
+for (const status of ["saved", "skipped"]) {
+  test(`file export automatic destination opening requires saved files (${status})`, async ({ page }) => {
+    await mockTauriInvoke(page);
+    await gotoShell(page);
+    await setExportAutoOpen(page, true);
+    await page.evaluate((status) => {
+      (window as any).__copicuTestExportFolder = "C:\\synthetic-export";
+      (window as any).__copicuTestExportStatus = status;
+    }, status);
+    const row = page.locator(".feed-item").first();
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+    const expected = status === "saved" ? "1 saved, 0 omitted" : "0 saved, 1 omitted";
+    await expect(page.getByRole("region", { name: "File export results" })).toContainText(expected);
+    const open = page.getByRole("button", { name: "Open destination folder", exact: true });
+    if (status === "saved") await expect(open).toBeEnabled();
+    else await expect(open).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "open_clip_export_folder").length)).toBe(status === "saved" ? 1 : 0);
+  });
+}
+
+test("file export destination opening preference is frozen before the native dialog", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await setExportAutoOpen(page, true);
+  await page.evaluate(() => { (window as any).__copicuTestWaitForExportFolder = true; });
+  await page.locator(".feed-item").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+  await page.waitForFunction(() => typeof (window as any).__copicuTestResolveExportFolder === "function");
+  await setExportAutoOpen(page, false);
+  await page.evaluate(() => { (window as any).__copicuTestResolveExportFolder("C:\\synthetic-export"); });
+  await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "open_clip_export_folder").length)).toBe(1);
+});
+
+test("file export manual destination opening works independently and failure preserves saved results", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; });
+  await page.locator(".feed-item").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+  const result = page.getByRole("region", { name: "File export results" });
+  await expect(result).toContainText("1 saved, 0 omitted");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "open_clip_export_folder").length)).toBe(0);
+  await result.getByRole("button", { name: "Open destination folder", exact: true }).click();
+  await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "open_clip_export_folder").length)).toBe(1);
+  await page.evaluate(() => { (window as any).__copicuTestOpenFolderFail = true; });
+  await result.getByRole("button", { name: "Open destination folder", exact: true }).click();
+  await expect(result).toContainText("Synthetic Explorer failure");
+  await expect(result).toContainText("1 saved, 0 omitted");
+});
+
+test("file export dialog closes cleanly and restores picker focus and layout", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page);
+  const headerHeight = await page.locator(".picker-header").evaluate((element) => element.getBoundingClientRect().height);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; });
+  await page.locator(".feed-item").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Export complete", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Open destination folder", exact: true })).toBeVisible();
+  await expect(dialog).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: test.info().outputPath("export-completion.png") });
+  await expect(page.locator(".picker-header").getByRole("region", { name: "File export results" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open destination folder", exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Search clipboard history")).toBeFocused();
+  expect(await page.locator(".picker-header").evaluate((element) => element.getBoundingClientRect().height)).toBeCloseTo(headerHeight, 0);
+});
+
+test("file export progress dialog cannot dismiss an active operation into the picker", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; (window as any).__copicuTestHoldExportItem = true; });
+  await page.locator(".feed-item").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Saving files", exact: true });
+  await expect(dialog.getByRole("progressbar", { name: "Export progress" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
+  await page.waitForFunction(() => typeof (window as any).__copicuTestResolveExportItem === "function");
+  await page.evaluate(() => { (window as any).__copicuTestResolveExportItem(); });
+  await expect(page.getByRole("dialog", { name: "Export complete", exact: true })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("file export ZIP publishes only after all entries finish", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; });
+  let menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true }).click();
+  menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Save 4 selected as ZIP…", exact: true }).click();
+  const result = page.getByRole("region", { name: "File export results" });
+  await expect(result).toContainText("4 saved, 0 omitted, 0 failed");
+  await expect(result).toContainText("ZIP saved: synthetic-clips.zip");
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.find((call: any) => call.cmd === "begin_clip_export").args.compressed).toBe(true);
+  expect(calls.filter((call: any) => call.cmd === "next_clip_export")).toHaveLength(4);
+  expect(calls.find((call: any) => call.cmd === "finish_clip_export").args.publish).toBe(true);
+  expect(calls.filter((call: any) => call.cmd === "confirm_clip_export_ai")).toHaveLength(0);
+});
+
+test("file export ZIP cancellation discards prepared entries without announcing saved files", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page); await setExportAutoOpen(page, true);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; (window as any).__copicuTestHoldExportItem = true; });
+  let menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true }).click();
+  menu = await openSelectionMenu(page);
+  await menu.getByRole("menuitem", { name: "Save 4 selected as ZIP…", exact: true }).click();
+  await page.waitForFunction(() => typeof (window as any).__copicuTestResolveExportItem === "function");
+  await page.getByRole("button", { name: "Cancel ZIP", exact: true }).click();
+  await page.evaluate(() => { (window as any).__copicuTestResolveExportItem(); });
+  const result = page.getByRole("region", { name: "File export results" });
+  await expect(result).toContainText("Cancelled. 0 saved, 1 omitted, 0 failed");
+  await expect(result).not.toContainText("ZIP saved:");
+  await expect(page.getByRole("button", { name: "Open destination folder", exact: true })).toHaveCount(0);
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.filter((call: any) => call.cmd === "next_clip_export")).toHaveLength(1);
+  expect(calls.find((call: any) => call.cmd === "finish_clip_export").args.publish).toBe(false);
+  expect(calls.filter((call: any) => call.cmd === "open_clip_export_folder")).toHaveLength(0);
+});
+
+test("file export ZIP publication failure reports every prepared entry as failed", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; (window as any).__copicuTestFailZipFinish = true; });
+  await page.locator(".feed-item").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Save as ZIP…", exact: true }).click();
+  const result = page.getByRole("region", { name: "File export results" });
+  await expect(result).toContainText("0 saved, 0 omitted, 1 failed");
+  await expect(result).toContainText("Synthetic ZIP publication failure");
+  await expect(result).not.toContainText("ZIP saved:");
+});
+
+for (const approved of [false, true]) {
+  test(`file export AI requires explicit per-operation approval (${approved})`, async ({ page }) => {
+    await mockTauriInvoke(page); await gotoShell(page);
+    await page.evaluate(async (approved) => {
+      const state = window as any;
+      state.__copicuTestSettings.export = { defaultFolder: "", openDestinationAfterSave: false, aiNames: true, namingModel: "synthetic-naming-model" };
+      state.__copicuTestApproveExportAi = approved;
+      state.__copicuTestExportFolder = "C:\\synthetic-export";
+      await state.__copicuTestEmitEvent("copicu://settings/updated", state.__copicuTestSettings);
+    }, approved);
+    await page.locator(".feed-item").first().click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+    await expect(page.getByRole("region", { name: "File export results" })).toContainText("1 saved");
+    const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+    expect(calls.filter((call: any) => call.cmd === "confirm_clip_export_ai")).toHaveLength(1);
+    expect(calls.find((call: any) => call.cmd === "confirm_clip_export_ai").args.count).toBe(1);
+    expect(calls.find((call: any) => call.cmd === "begin_clip_export").args.allowAi).toBe(approved);
+    expect(calls.filter((call: any) => call.cmd === "assistant_set_model")).toHaveLength(0);
+  });
+}
+
+test("file export AI has no confirmation or requests when destination is cancelled", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page);
+  await page.evaluate(async () => {
+    const state = window as any;
+    state.__copicuTestSettings.export = { defaultFolder: "", openDestinationAfterSave: false, aiNames: true, namingModel: "synthetic-model" };
+    await state.__copicuTestEmitEvent("copicu://settings/updated", state.__copicuTestSettings);
+  });
+  await page.locator(".feed-item").first().click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "File export results" })).toHaveCount(0);
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.filter((call: any) => ["begin_clip_export", "confirm_clip_export_ai", "clip_export_models"].includes(call.cmd))).toHaveLength(0);
+});
+
+test("file export lives in the selection menu and cancelling writes nothing", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await setExportAutoOpen(page, true);
+  await expect(page.getByRole("button", { name: /Save selection as files/ })).toHaveCount(0);
+  let menu = await openSelectionMenu(page);
+  await expect(menu.getByRole("menuitem", { name: "Save 0 selected as files…", exact: true })).toBeDisabled();
+  await menu.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true }).click();
+  menu = await openSelectionMenu(page);
+  const save = menu.getByRole("menuitem", { name: "Save 4 selected as files…", exact: true });
+  await save.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "File export results" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open destination folder", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "open_clip_export_folder").length)).toBe(0);
+  await expect(page.locator(".selection-menu-count")).toHaveText("4");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "begin_clip_export" || call.cmd === "next_clip_export"))).toEqual([]);
+});
+
+test("file export context action uses the explicit single clip or the complete selection", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; });
+  const row = page.locator(".feed-item").first();
+  const singleId = await row.evaluate((element) => Number(element.closest("li")!.id.replace("history-item-", "")));
+  await row.click({ button: "right" });
+  let menu = page.getByRole("menu", { name: "Item actions", exact: true });
+  await menu.getByRole("menuitem", { name: "Save as file…", exact: true }).click();
+  await expect(page.getByRole("region", { name: "File export results" })).toContainText("1 saved, 0 omitted, 0 failed of 1 selected clips.");
+  let writes = await page.evaluate(() => (window as any).__copicuTestExportWrites.map((item: any) => item.itemId));
+  expect(writes).toEqual([singleId]);
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const selection = await openSelectionMenu(page);
+  await selection.getByRole("menuitem", { name: "Select 4 loaded clips", exact: true }).click();
+  await page.evaluate(() => { (window as any).__copicuTestInvocations = []; });
+  await row.click({ button: "right" });
+  menu = page.getByRole("menu", { name: "Item actions", exact: true });
+  await menu.getByRole("menuitem", { name: "Save 4 selected as files…", exact: true }).click();
+  await expect(page.getByRole("region", { name: "File export results" })).toContainText("4 saved, 0 omitted, 0 failed of 4 selected clips.");
+  writes = await page.evaluate(() => (window as any).__copicuTestExportWrites.map((item: any) => item.itemId));
+  expect(new Set(writes)).toEqual(new Set(syntheticLongHistory.map((item) => item.id)));
+  await expect(page.locator(".selection-menu-count")).toHaveText("4");
+});
+
+test("file export marked menu includes every page outside the current filter", async ({ page }) => {
+  const fixtures = Array.from({ length: 125 }, (_, index) => ({
+    ...syntheticPagedHistory[0], id: 8000 - index, is_marked: true,
+    text: `SYNTH_EXPORT_MARKED_${String(index + 1).padStart(3, "0")}`,
+    normalized_hash: `export-marked-${index}`,
+    created_at_unix_ms: 1_900_000_000_000 - index,
+    last_used_at_unix_ms: 1_900_000_000_000 - index,
+  }));
+  await mockTauriInvoke(page, fixtures, null, { historyPageSizeOverride: 25 });
+  await gotoShell(page);
+  await expect(page.locator(".mark-menu-count")).toHaveText("125");
+  await page.getByLabel("Search clipboard history").fill("SYNTH_EXPORT_MARKED_125");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 125 matches");
+  await page.evaluate(() => { (window as any).__copicuTestExportFolder = "C:\\synthetic-export"; });
+  const menu = await openMarksMenu(page);
+  const save = menu.getByRole("menuitem", { name: "Save all 125 marked as files…", exact: true });
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByRole("region", { name: "File export results" })).toContainText("125 saved, 0 omitted, 0 failed of 125 marked clips.");
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  const writes = await page.evaluate(() => (window as any).__copicuTestExportWrites);
+  expect(writes.map((item: any) => item.itemId)).toEqual(fixtures.map((item) => item.id));
+  expect(writes.map((item: any) => item.ordinal)).toEqual(fixtures.map((_, index) => index + 1));
+  expect(calls.filter((call: any) => call.cmd === "history_search" && call.args.request.query === "is:marked").length).toBeGreaterThan(1);
+  await expect(page.locator(".mark-menu-count")).toHaveText("125");
+  await expect(page.locator(".selection-menu-count")).toHaveText("0");
 });
 
 test("selection menu stays transient and independent from persistent marks", async ({ page }) => {
@@ -7075,7 +7360,7 @@ test("item context menu keeps touch targets and opens submenus by tapping", asyn
     await page.getByRole("button", { name: "Open item actions" }).tap();
     const menu = page.getByRole("menu", { name: "Item actions", exact: true });
     const heights = await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
-    expect(heights.length).toBe(8);
+    expect(heights.length).toBe(10);
     expect(heights.every((height) => height >= 44)).toBe(true);
     await menu.getByRole("menuitem", { name: "Organize", exact: true }).tap();
     const organize = page.getByRole("menu", { name: "Organize", exact: true });
@@ -7699,6 +7984,89 @@ test("picker local settings shortcut opens settings", async ({ page }) => {
   );
 });
 
+test("settings export AI model lookup is explicit and independent of assistant model", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page, "/?window=settings");
+  await page.getByLabel("Search settings").fill("Enable AI");
+  await page.getByRole("switch", { name: "Enable AI", exact: true }).click();
+  await page.getByLabel("Search settings").fill("export naming model");
+  const toggle = page.getByRole("switch", { name: "Generate export names with AI", exact: true });
+  await expect(toggle).not.toBeChecked();
+  const load = page.getByRole("button", { name: "Load export models", exact: true });
+  await expect(load).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "clip_export_models").length)).toBe(0);
+  await load.click();
+  const lookup = await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "clip_export_models"));
+  expect(lookup.args.ai.enabled).toBe(true);
+  expect(await page.evaluate(() => (window as any).__copicuTestSettings.ai.enabled)).toBe(false);
+  await page.getByRole("combobox", { name: "Export naming model", exact: true }).click();
+  await page.getByRole("option", { name: "OpenAI: GPT-5.6 Luna (openai/gpt-5.6-luna)", exact: true }).click();
+  await toggle.click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestSettings.export.namingModel)).toBe("openai/gpt-5.6-luna");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "assistant_set_model").length)).toBe(0);
+});
+
+test("settings general AI model can load from unsaved provider settings and choose by name", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page, "/?window=settings");
+  await page.getByLabel("Search settings").fill("Enable AI");
+  await page.getByRole("switch", { name: "Enable AI", exact: true }).click();
+  await page.getByLabel("Search settings").fill("Endpoint");
+  await page.getByLabel("AI endpoint", { exact: true }).fill("https://example.invalid/v1");
+  await page.getByLabel("Search settings").fill("AI model");
+  await page.getByRole("button", { name: "Load AI models", exact: true }).click();
+  const call = await page.evaluate(() => (window as any).__copicuTestInvocations.find((call: any) => call.cmd === "clip_export_models"));
+  expect(call.args.ai.enabled).toBe(true);
+  expect(call.args.ai.endpoint).toBe("https://example.invalid/v1");
+  expect(await page.evaluate(() => (window as any).__copicuTestSettings.ai.enabled)).toBe(false);
+  await page.getByRole("combobox", { name: "AI model", exact: true }).click();
+  await page.getByRole("option", { name: "OpenAI: GPT-5.6 Luna (openai/gpt-5.6-luna)", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestSettings.ai.model)).toBe("openai/gpt-5.6-luna");
+});
+
+test("settings model lookup failure is retryable without entering a model ID", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page, "/?window=settings");
+  await page.getByLabel("Search settings").fill("Enable AI");
+  await page.getByRole("switch", { name: "Enable AI", exact: true }).click();
+  await page.getByLabel("Search settings").fill("AI model");
+  const load = page.getByRole("button", { name: "Load AI models", exact: true });
+  await page.evaluate(() => { (window as any).__copicuTestFailModelLookup = true; });
+  await load.click();
+  await expect(page.getByRole("alert")).toContainText("Check the AI provider and API key");
+  await expect(load).toBeEnabled();
+  await page.evaluate(() => { (window as any).__copicuTestFailModelLookup = false; });
+  await load.click();
+  await page.getByRole("combobox", { name: "AI model", exact: true }).click();
+  const option = page.getByRole("option", { name: "OpenAI: GPT-5.6 Luna (openai/gpt-5.6-luna)", exact: true });
+  await expect(option).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath("model-selector.png") });
+  await option.click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestSettings.ai.model)).toBe("openai/gpt-5.6-luna");
+});
+
+test("settings model lookup explains disabled AI without making a request", async ({ page }) => {
+  await mockTauriInvoke(page); await gotoShell(page, "/?window=settings");
+  await page.getByLabel("Search settings").fill("export naming model");
+  const load = page.getByRole("button", { name: "Load export models", exact: true });
+  await expect(load).toBeEnabled(); await load.click();
+  await expect(page.getByRole("alert")).toContainText("Enable AI in AI settings first");
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "clip_export_models").length)).toBe(0);
+});
+
+test("settings save the export destination opening preference independently of its path", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?window=settings");
+  await page.getByLabel("Search settings").fill("open destination");
+  const toggle = page.getByRole("switch", { name: "Open destination folder after saving", exact: true });
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
+  await page.getByLabel("Search settings").fill("export destination folder");
+  await page.getByLabel("Export destination folder", { exact: true }).fill("C:\\synthetic-export");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => page.evaluate(() => (window as any).__copicuTestSettings.export)).toEqual({ defaultFolder: "C:\\synthetic-export", openDestinationAfterSave: true, aiNames: false, namingModel: "" });
+});
+
 test("settings panel is searchable and saves theme", async ({ page }) => {
   await mockTauriInvoke(page);
   await gotoShell(page);
@@ -7844,7 +8212,7 @@ test("settings panel is searchable and saves theme", async ({ page }) => {
 
   await page.getByLabel("Search settings").fill("ai");
   await expect(page.getByLabel("AI endpoint")).toBeVisible();
-  await expect(page.getByLabel("AI model")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "AI model", exact: true })).toBeVisible();
   await expect(page.getByLabel("AI API key")).toBeVisible();
 });
 
@@ -8661,7 +9029,7 @@ test("item actions prioritize editing and fit compact labels without clipping", 
   await expect(itemMenu).toBeVisible();
   const actionOrder = await itemMenu.locator(".mantine-Menu-itemLabel").allTextContents();
   expect(actionOrder).toEqual([
-    "Quick edit", "Edit metadata", "Copy", "Paste", "Preview", "Organize", "More actions", "Delete item",
+    "Quick edit", "Edit metadata", "Save as file…", "Save as ZIP…", "Copy", "Paste", "Preview", "Organize", "More actions", "Delete item",
   ]);
   const rowHeights = await itemMenu.getByRole("menuitem").evaluateAll((items) =>
     items.map((item) => item.getBoundingClientRect().height),
@@ -9225,6 +9593,7 @@ test("UiHost retains editable input after a failed response and ignores duplicat
 });
 
 async function revealFolderTree(page: Page) {
+  await expect(page.locator(".folder-tree.is-open").or(page.getByRole("button", { name: "Show folders", exact: true }))).toBeVisible();
   if (!(await page.locator(".folder-tree.is-open").count())) {
     await page.getByRole("button", { name: "Show folders" }).click();
   }

@@ -1066,18 +1066,22 @@ fn find_runner_path(name: &str) -> Result<PathBuf, String> {
         "scripts/{name} not found; package the assistant runner as an application resource"
     ))
 }
-fn list_models_blocking(
+pub(crate) fn list_models_blocking(
     storage: &crate::storage::AppStorage,
 ) -> Result<AssistantModelCatalog, String> {
     let settings = storage
         .get_settings()
         .map_err(|error| format!("failed to read AI settings: {error}"))?;
-    let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let runtime = crate::ai_planner::resolve_ai_runtime_settings(&settings.ai, &project_root)
-        .map_err(|error| redact_error(&error))?;
-    if !settings.ai.enabled {
-        return Err("AI assistant is disabled in settings.".to_string());
+    list_models_for_settings(&settings.ai)
+}
+
+pub(crate) fn list_models_for_settings(settings: &crate::storage::AiSettings) -> Result<AssistantModelCatalog, String> {
+    if !settings.enabled {
+        return Err("Enable AI in Settings before loading models.".to_string());
     }
+    let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let runtime = crate::ai_planner::resolve_ai_runtime_settings(settings, &project_root)
+        .map_err(|error| redact_error(&error))?;
     if runtime.endpoint.is_empty() {
         return Err("AI endpoint must be configured.".to_string());
     }

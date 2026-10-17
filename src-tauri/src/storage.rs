@@ -202,6 +202,14 @@ impl HistoryItem {
         &self.text
     }
 
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    pub fn mime_primary(&self) -> Option<&str> {
+        self.mime_primary.as_deref()
+    }
+
     pub fn normalized_hash(&self) -> &str {
         &self.normalized_hash
     }
@@ -892,6 +900,8 @@ pub enum HistoryNeighborDirection {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub schema_version: u32,
+    #[serde(default)]
+    pub export: ExportSettings,
     pub general: GeneralSettings,
     #[serde(default)]
     pub auto_update: AutoUpdateSettings,
@@ -908,6 +918,19 @@ pub struct AppSettings {
     pub enrichment: crate::enrichment::EnrichmentSettings,
     #[serde(default)]
     pub ai: AiSettings,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSettings {
+    #[serde(default)]
+    pub default_folder: String,
+    #[serde(default)]
+    pub open_destination_after_save: bool,
+    #[serde(default)]
+    pub ai_names: bool,
+    #[serde(default)]
+    pub naming_model: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -1286,6 +1309,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
+            export: ExportSettings::default(),
             general: GeneralSettings {
                 global_shortcut: default_global_shortcut(),
                 inbox_shortcut: default_inbox_shortcut(),
@@ -3116,6 +3140,21 @@ impl AppStorage {
             "data:image/png;base64,{}",
             BASE64_STANDARD.encode(png)
         ))
+    }
+
+    pub fn last_export_folder(&self) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
+        let value: Option<String> = conn.query_row("SELECT value_json FROM app_settings WHERE key = 'last_export_folder'", [], |row| row.get(0))
+            .optional().map_err(|e| format!("failed to read last export folder: {e}"))?;
+        value.map(|value| serde_json::from_str(&value).map_err(|_| "Invalid last export folder state".into())).transpose()
+    }
+
+    pub fn remember_export_folder(&self, path: &str) -> Result<(), String> {
+        let value = serde_json::to_string(path).map_err(|_| "Cannot encode export folder")?;
+        let conn = self.conn.lock().map_err(|_| "sqlite connection mutex poisoned")?;
+        conn.execute("INSERT INTO app_settings (key, value_json, updated_at_unix_ms) VALUES ('last_export_folder', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at_unix_ms = excluded.updated_at_unix_ms", params![value, now_unix_ms()])
+            .map_err(|e| format!("failed to remember export folder: {e}"))?;
+        Ok(())
     }
 
     pub fn get_settings(&self) -> Result<AppSettings, String> {

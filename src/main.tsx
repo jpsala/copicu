@@ -24,6 +24,7 @@ import { SharedClipboardConnect } from "./ui/SharedClipboardConnect";
 import { SharedClipboardLibrary } from "./ui/SharedClipboardLibrary";
 import { SharedConnectionStatus } from "./ui/SharedConnectionStatus";
 import { FolderSidebarLayout } from "./ui/FolderSidebarLayout";
+import { ClipFileExportDialog, useClipFileExport } from "./ui/ClipFileExport";
 import { SharedClipboardFeed } from "./ui/SharedClipboardFeed";
 import { createPortal } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -47,6 +48,7 @@ import Command from "lucide-react/dist/esm/icons/command.mjs";
 import Copy from "lucide-react/dist/esm/icons/copy.mjs";
 import CornerDownLeft from "lucide-react/dist/esm/icons/corner-down-left.mjs";
 import FileCode2 from "lucide-react/dist/esm/icons/file-code-2.mjs";
+import Download from "lucide-react/dist/esm/icons/download.mjs";
 import Folder from "lucide-react/dist/esm/icons/folder.mjs";
 import Flag from "lucide-react/dist/esm/icons/flag.mjs";
 import ListChecks from "lucide-react/dist/esm/icons/list-checks.mjs";
@@ -1365,6 +1367,7 @@ function App() {
   const [searchTriggerUpdating, setSearchTriggerUpdating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const clipFileExport = useClipFileExport(settings.export);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const sidebarSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const saveFolderSidebarWidth = useCallback((width: number): Promise<void> => {
@@ -6931,6 +6934,17 @@ function App() {
               >
                 Clear selection
               </Menu.Item>
+              <Menu.Item
+                leftSection={<Download size={14} strokeWidth={2.2} />}
+                disabled={clipFileExport.busy || selectedIds.size === 0}
+                onClick={() => void clipFileExport.save(Array.from(selectedIds))}
+              >
+                Save {formatCount(selectedIds.size)} selected as files…
+              </Menu.Item>
+              <Menu.Item leftSection={<Download size={14} strokeWidth={2.2} />} disabled={clipFileExport.busy || selectedIds.size === 0}
+                onClick={() => void clipFileExport.save(Array.from(selectedIds), "selected", true)}>
+                Save {formatCount(selectedIds.size)} selected as ZIP…
+              </Menu.Item>
               {selectedItems.length > 0 ? (
                 <>
                   <Menu.Divider />
@@ -7215,6 +7229,17 @@ function App() {
                   </div>
                   {markedActionItems !== null && !markedActionItemsLoading ? (
                     <>
+                      <Menu.Item
+                        leftSection={<Download size={14} strokeWidth={2.2} />}
+                        disabled={clipFileExport.busy || markedActionItems.length === 0}
+                        onClick={() => void clipFileExport.save(markedActionItems.map((item) => item.id), "marked")}
+                      >
+                        Save all {formatCount(markedActionItems.length)} marked as files…
+                      </Menu.Item>
+                      <Menu.Item leftSection={<Download size={14} strokeWidth={2.2} />} disabled={clipFileExport.busy || markedActionItems.length === 0}
+                        onClick={() => void clipFileExport.save(markedActionItems.map((item) => item.id), "marked", true)}>
+                        Save all {formatCount(markedActionItems.length)} marked as ZIP…
+                      </Menu.Item>
                       {renderBatchItemActions({ items: markedActionItems, noun: "marked", surface: "header" })}
                       <Menu.Item
                         leftSection={<Pencil size={14} strokeWidth={2.2} />}
@@ -7748,6 +7773,7 @@ function App() {
               ? " Find has no matches in these results."
               : ""}
         </PickerStatusAnnouncer>
+        <ClipFileExportDialog operation={clipFileExport} onClosed={focusSearch} />
         <UiButton ref={sharedFeedTriggerRef} type="button" variant="subtle" size="compact-xs" onClick={() => setSharedFeedOpen(true)}>Shared clipboard</UiButton>
         {sharedFeedOpen ? createPortal(
           <dialog ref={sharedFeedDialogRef} className="shared-feed-dialog" aria-label="Shared receptions"
@@ -8314,6 +8340,15 @@ function App() {
                         rightSection={<ShortcutBadge shortcut="Shift+F2" />}
                         onClick={() => void openMetadataForItems(itemDeleteTargets, "overview")}>
                         {hasMultiSelection ? "Edit metadata · " + itemDeleteTargets.length + " clips" : "Edit metadata"}
+                      </Menu.Item>
+                      <Menu.Item leftSection={<Download size={14} aria-hidden="true" />}
+                        disabled={clipFileExport.busy}
+                        onClick={() => void clipFileExport.save(itemIsMultiSelected ? Array.from(selectedIds) : [item.id])}>
+                        {itemIsMultiSelected ? `Save ${formatCount(selectedIds.size)} selected as files…` : "Save as file…"}
+                      </Menu.Item>
+                      <Menu.Item leftSection={<Download size={14} aria-hidden="true" />} disabled={clipFileExport.busy}
+                        onClick={() => void clipFileExport.save(itemIsMultiSelected ? Array.from(selectedIds) : [item.id], "selected", true)}>
+                        {itemIsMultiSelected ? `Save ${formatCount(selectedIds.size)} selected as ZIP…` : "Save as ZIP…"}
                       </Menu.Item>
                       {!hasMultiSelection ? (
                         <>

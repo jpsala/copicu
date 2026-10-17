@@ -1,16 +1,11 @@
 use crate::storage::{HistoryMovePosition, HistorySearchMode, HistorySearchRequest};
 use serde_json::{json, Map, Value};
-use std::{
-    fs::OpenOptions,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
 
 use crate::assistant_database as database;
 
 const HISTORY_CHANGED_EVENT: &str = "copicu://history/changed";
-const MAX_EXPORT_BYTES: usize = 32 * 1024 * 1024;
 
 pub fn catalog() -> Value {
     serde_json::from_str(include_str!("../../scripts/assistant-tools.json"))
@@ -176,24 +171,8 @@ fn decimal_ids(arguments: &Value, key: &str) -> Result<Vec<i64>, String> {
     values.iter().map(|value| id(Some(value), key)).collect()
 }
 fn create_new(path: &Path, bytes: &[u8]) -> Result<usize, String> {
-    if bytes.len() > MAX_EXPORT_BYTES {
-        return Err(format!("export exceeds {} byte limit", MAX_EXPORT_BYTES));
-    }
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| {
-            format!("refusing export because target cannot be created without overwrite: {e}")
-        })?;
-    if let Err(error) = file.write_all(bytes) {
-        drop(file);
-        let _ = std::fs::remove_file(path);
-        return Err(format!(
-            "failed to write export (partial file removed): {error}"
-        ));
-    }
-    Ok(bytes.len())
+    crate::clip_export::create_new(path, bytes)
+        .map_err(|e| format!("refusing export without overwrite: {e}"))
 }
 
 pub fn execute(

@@ -7,6 +7,9 @@ mod assistant;
 mod assistant_database;
 #[cfg(not(test))]
 mod assistant_operations;
+mod clip_export;
+
+static EXPORT_DIALOG_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 mod clipboard;
 mod clipboard_content;
 #[cfg(feature = "shared-clipboard")]
@@ -2513,6 +2516,124 @@ async fn set_history_item_inbox(
 
 #[cfg(not(test))]
 #[tauri::command]
+async fn choose_clip_export_folder(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    use std::sync::atomic::Ordering;
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "choose_clip_export_folder")?;
+    if EXPORT_DIALOG_OPEN.swap(true, Ordering::SeqCst) { return Err("An export destination dialog is already open".into()); }
+    let storage = storage.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let settings = storage.get_settings()?;
+        let suggested = match clip_export::suggested_folder(&settings.export.default_folder, None) {
+            Some(path) => Some(path),
+            None => storage.last_export_folder()?,
+        };
+        let mut dialog = window.app_handle().dialog().file().set_parent(&window).set_title("Save selected clips — choose destination");
+        if let Some(path) = suggested {
+            clip_export::destination(&path)?;
+            dialog = dialog.set_directory(path);
+        }
+        dialog.blocking_pick_folder().map(|path| {
+            let path = path.into_path().map_err(|_| "Invalid local destination")?;
+            let path = path.to_string_lossy().to_string();
+            clip_export::destination(&path)?;
+            Ok(path)
+        }).transpose()
+    }).await.map_err(|_| "Destination dialog failed".to_string());
+    EXPORT_DIALOG_OPEN.store(false, Ordering::SeqCst);
+    result?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn begin_clip_export(
+    window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>,
+    exports: State<'_, clip_export::batch::ExportState>, folder: String,
+    ids: Vec<i64>, compressed: bool, allow_ai: bool,
+) -> Result<String, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "begin_clip_export")?;
+    exports.begin(&storage, &folder, ids, compressed, allow_ai)
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn next_clip_export(
+    window: tauri::WebviewWindow, app: tauri::AppHandle, token: String,
+) -> Result<clip_export::ItemResult, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "next_clip_export")?;
+    tauri::async_runtime::spawn_blocking(move || app.state::<clip_export::batch::ExportState>().next(&app.state::<storage::AppStorage>(), &token))
+        .await.map_err(|_| "Export worker failed".to_string())?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn finish_clip_export(
+    window: tauri::WebviewWindow, app: tauri::AppHandle, token: String, publish: bool,
+) -> Result<clip_export::batch::Finished, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "finish_clip_export")?;
+    tauri::async_runtime::spawn_blocking(move || app.state::<clip_export::batch::ExportState>().finish(&app.state::<storage::AppStorage>(), &token, publish))
+        .await.map_err(|_| "Export finalization failed".to_string())?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn confirm_clip_export_ai(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, count: usize) -> Result<bool, String> {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+    use std::sync::atomic::Ordering;
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "confirm_clip_export_ai")?;
+    if count == 0 || count > 10_000 { return Err("Invalid AI export scope".into()); }
+    let settings = storage.get_settings()?;
+    if !settings.export.ai_names || !settings.ai.enabled || settings.export.naming_model.trim().is_empty() { return Ok(false); }
+    if EXPORT_DIALOG_OPEN.swap(true, Ordering::SeqCst) { return Err("An export dialog is already open".into()); }
+    let message = format!("This export includes {count} clips and may make up to {count} naming requests, sequentially with no retries. AI naming sends up to 4,000 characters of each supported text clip to your configured AI provider using model {}. Do not include secrets, credentials or personal data. Automatic detection is not exhaustive. Images use conventional names and are not sent. Continue with AI, or use conventional names for this export?", settings.export.naming_model);
+    let answer = tauri::async_runtime::spawn_blocking(move || window.app_handle().dialog().message(message).parent(&window).title("AI export names: confirm remote content").buttons(MessageDialogButtons::OkCancelCustom("Continue with AI".into(), "Use conventional names".into())).blocking_show())
+        .await.map_err(|_| "AI naming confirmation failed".to_string());
+    EXPORT_DIALOG_OPEN.store(false, Ordering::SeqCst);
+    answer
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn clip_export_models(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>, ai: Option<storage::AiSettings>) -> Result<assistant::AssistantModelCatalog, String> {
+    require_surface_window(&window, &[SETTINGS_WINDOW_LABEL], "clip_export_models")?;
+    let settings = match ai { Some(settings) => settings, None => storage.get_settings()?.ai };
+    if settings.endpoint.len() > 2048 || settings.api_key.len() > 8192 {
+        return Err("AI provider settings are too long".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || assistant::list_models_for_settings(&settings)).await.map_err(|_| "Model catalog worker failed".to_string())?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn open_clip_export_folder(
+    window: tauri::WebviewWindow,
+    folder: String,
+) -> Result<(), String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "open_clip_export_folder")?;
+    tauri::async_runtime::spawn_blocking(move || clip_export::open_destination(&folder))
+        .await.map_err(|_| "Could not open destination folder".to_string())?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+async fn export_selected_clip(
+    window: tauri::WebviewWindow,
+    storage: State<'_, storage::AppStorage>,
+    item_id: i64,
+    ordinal: usize,
+    folder: String,
+) -> Result<clip_export::ItemResult, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "export_selected_clip")?;
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || clip_export::export_item(&storage, item_id, ordinal, &folder))
+        .await.map_err(|_| "Export worker failed".to_string())?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
 async fn get_settings(
     storage: State<'_, storage::AppStorage>,
 ) -> Result<storage::AppSettings, String> {
@@ -4144,6 +4265,14 @@ pub fn run() {
             set_picker_default_search_scopes,
             set_picker_folder_sidebar_width,
             get_settings,
+            choose_clip_export_folder,
+            open_clip_export_folder,
+            begin_clip_export,
+            next_clip_export,
+            finish_clip_export,
+            confirm_clip_export_ai,
+            clip_export_models,
+            export_selected_clip,
             update_settings,
             set_external_editor_shortcut,
             set_picker_keep_open,
@@ -4247,6 +4376,7 @@ pub fn run() {
             app.manage(ItemPreviewState::default());
             app.manage(window_registry.clone());
             app.manage(storage.clone());
+            app.manage(clip_export::batch::ExportState::default());
             let initial_settings = storage
                 .get_settings()
                 .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?;
@@ -5116,6 +5246,7 @@ fn schedule_dev_empty_root_recovery<R: tauri::Runtime + 'static>(_window: tauri:
 
 #[cfg(not(test))]
 fn should_hide_on_focus_lost<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
+    if EXPORT_DIALOG_OPEN.load(std::sync::atomic::Ordering::SeqCst) { return false; }
     if window.is_always_on_top().unwrap_or(false) {
         return false;
     }
