@@ -16,22 +16,28 @@ Referencias de entrada: [desarrollo](../DEVELOPMENT.md), [decisiones anteriores]
 
 ## Distribución Vigente
 
-Stable/latest: [v0.5.10](https://github.com/jpsala/copicu/releases/tag/v0.5.10), publicado
-`2026-10-17T02:01:37Z` desde source/tag inmutable
-`a492175ffda4f00e9949867308f234e64565208b`. Incluye selección/marcados a TXT/PNG/ZIP,
-naming AI de texto opt-in, modelos por nombre y progreso/resultado en diálogo limpio.
+Stable/latest: [v0.5.11](https://github.com/jpsala/copicu/releases/tag/v0.5.11), publicado
+`2026-10-22T15:13:25Z` desde source/tag inmutable
+`f552a1581e5393a2def3df61b17b1b8479042cd9`. Apertura sin espera fija ni refresh
+duplicado, tags indexados, catálogos después de primera página y lector WAL
+acotado del feed, separado del mutex escritor. Sin migración ni cambio de retención.
 
-Firma updater/trusted comment, recursos, 271 entradas congeladas y tres assets
-públicos verificados. Endpoint latest real HTTP 200 con versión/URL/firma correctas;
-CI de la fuente aprobada. NSIS 14.658.871 bytes, SHA256
-`8774C3848D60D2BEABCCD6D3EE48A92E3047FC02D0F30A7C60A2019315058898`.
+Firma updater/trusted comment, 276 inputs congelados, recursos y tres assets
+públicos verificados. Endpoint latest HTTP 200 con versión/URL/firma correctas;
+CI de esa fuente aprobada. NSIS 14.687.776 bytes, SHA256
+`961CA90000680D42FB8F9DBA48C2518788200DAC3CCAFD20DEC4A013298CEA29`.
 
-El mismo instalador está instalado localmente: EXE `0.5.10` idéntico al payload,
-181 recursos comparados y proceso responsive relanzado. Diez casos del payload,
-once nativos y diez del binario instalado pasan con perfiles sintéticos; 423 Rust,
-578 renderer, 97 Node, 63 Sharing y 57 Bun pasan (omisiones explicitadas en notas).
-No acredita proveedor real, paste universal ni que otra PC ya se haya actualizado.
-[Notas y recibos v0.5.10](../releases/v0.5.10.md).
+Instalación local comprobada: EXE `0.5.11` idéntico al payload, 181 recursos
+comparados y proceso normal relanzado/responsive. Pasan diez checks del payload,
+once Win32 y diez del binario instalado con perfiles sintéticos. Rust 435,
+renderer 588 cubiertos entre corridas, Node 97, Sharing 63 y Bun 61; límites,
+omisiones y el retry por carga del browser están en [notas/recibos](../releases/v0.5.11.md).
+No acredita paste universal, tiempos hotkey→paint ni instalación en otra PC.
+
+Anterior [v0.5.10](https://github.com/jpsala/copicu/releases/tag/v0.5.10), publicado
+`2026-10-17T02:01:37Z` desde `a492175ffda4f00e9949867308f234e64565208b`: exportar
+selección/marcados a TXT/PNG/ZIP y naming AI opt-in. Sus hashes, firma, checks e
+instalación histórica se conservan en [notas/recibos v0.5.10](../releases/v0.5.10.md).
 
 Anterior [v0.5.9](https://github.com/jpsala/copicu/releases/tag/v0.5.9), source/tag
 `aa04577ef17cc09d8be9143f086261ae9317def8`: 35 scripts con defaults de activación,
@@ -230,7 +236,7 @@ Para una instalación existente, NSIS necesita `/S /UPDATE` para reemplazar de
 forma fiable un build local con la misma versión. `/S` solo puede salir con 0
 conservando el exe anterior. `install:current` añade `/UPDATE` si existe el exe;
 en una instalación inicial usa `/S`, conservando la preparación de WebView2.
-Verificar el ejecutable instalado, además del exit code. El bundler puede dejar
+Verificar el ejecutable instalado, además del exit code. Al invocar helpers PowerShell por fases, no interpretar un `$LASTEXITCODE` heredado o no inicializado como resultado de cmdlets: comprobar excepción, salida del instalador y postcondiciones. El bundler puede dejar
 el marcador `UNK` en el output Cargo y `NSS` en el instalado, así que sus hashes
 completos difieren por tres bytes. Repro y evidencia local en
 [aceptación de sharing](../../specs/016-shared-clipboard/local-acceptance.md).

@@ -1,6 +1,6 @@
 ---
 title: Lector WAL del feed, snapshots y cola acotada
-summary: Lector del feed integrado con cola y snapshots; build aislada reiniciada, 11 checks Win32 y 5 IPC pasan, con aceptación humana y retención pendientes.
+summary: Lector WAL del feed distribuido e instalado en v0.5.11; cola, snapshots y cancelación verificados, con retención y evaluación en otras PCs pendientes.
 keywords:
   - picker reader
   - WAL
@@ -13,7 +13,7 @@ keywords:
 
 # Lector interactivo del feed
 
-Implementado en el WIP bajo el pedido de JP de continuar con el corte recomendado. [Spec](../../specs/019-picker-history-reader/spec.md), [estudio arquitectónico](performance-architecture.md), [evidencia de integración](../../evidencia/2026-10-21-picker-performance/reader-integration/README.md), [track](../tracks/014-performance-memory.md). No instalado/publicado ni aceptado por JP. La optimización de retención es otro corte y **no está implementada aquí**.
+Implementado en el WIP bajo el pedido de JP de continuar con el corte recomendado. [Spec](../../specs/019-picker-history-reader/spec.md), [estudio arquitectónico](performance-architecture.md), [evidencia de integración](../../evidencia/2026-10-21-picker-performance/reader-integration/README.md), [track](../tracks/014-performance-memory.md). Publicado e instalado localmente en [v0.5.11](../releases/v0.5.11.md), después del feedback positivo de JP sobre la rapidez percibida en la build sintética. Eso no acredita rendimiento en otras PCs. La optimización de retención es otro corte y **no está implementada aquí**.
 
 ## Ruta y consistencia
 
@@ -53,4 +53,4 @@ Son tiempos de storage+cola/worker propios condicionados a solapamiento con mute
 
 Pasan tests Rust de equivalencia/UDF/cursor, read-only, snapshot durante escritura, cancelación/rollback, cola, sesión vieja, errores y release antes de thumbnails; unit tests del cliente y regresiones renderer. Un caso renderer tuvo fallo de cargar JS `ERR_NO_BUFFER_SPACE` en la corrida paralela y pasó 3/3 aislado, sin parchear producto para ocultarlo.
 
-Con permiso explícito de JP se detuvo sólo la instancia sintética anterior, revalidada por exe/CreationDate, y se reinició la build `src-tauri/target-reader-integration/release/copicu.exe`. [Smoke nativo](../../evidencia/2026-10-21-picker-performance/reader-integration/native-smoke/README.md): **11 casos Win32 y 5 verificaciones IPC pasan**, incluido C0 y los gates del lector por superficie/generación. Se dejó corriendo con 10k textos/100 tags sintéticos, `Ctrl+Shift+F10`, captura/AI/updater apagados; identidad operativa en el track, no asumir vigencia del PID. Instalada intacta, sin paste ni clipboard real. Gate técnico de reinicio/smoke cerrado; **aceptación humana, hotkey→input/feed y retención siguen pendientes**.
+Con permiso explícito de JP se detuvo sólo la instancia sintética anterior, revalidada por exe/CreationDate, y se reinició la build `src-tauri/target-reader-integration/release/copicu.exe`. [Smoke nativo](../../evidencia/2026-10-21-picker-performance/reader-integration/native-smoke/README.md): **11 casos Win32 y 5 verificaciones IPC pasan**, incluido C0 y los gates del lector por superficie/generación. Esa validación usó 10k textos/100 tags, `Ctrl+Shift+F10`, captura/AI/updater apagados. La dev sintética se cerró al empaquetar el release. Luego se verificaron el payload firmado y la instalación local `0.5.11` con perfiles sintéticos; recibos en las notas del release. Sin paste ni clipboard real en los checks. **Hotkey→input/feed, otras PCs y retención siguen pendientes**.

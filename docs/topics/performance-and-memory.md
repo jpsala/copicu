@@ -19,7 +19,7 @@ Topic durable para optimizar velocidad, consumo de memoria, CPU en idle, IPC y c
 
 Para demora de apertura/lista, entrar por [ruta crítica y mediciones del picker](picker-opening-performance.md): baseline preservada y primer corte implementado/medido en 0.5.10 (tags, coalescing, catálogos diferidos, overscan 6 y toggle sin espera fija). Regresiones y oracle Win32 pasan; aceptación humana, instalación y comparación en la PC reportada siguen pendientes.
 
-Para evaluar un corte estructural, consultar [arquitectura de rendimiento](performance-architecture.md): mapa del sistema actual, lecturas WAL, conteos, revisiones, proyecciones, IPC/render e idle; incluye experimentos sintéticos, comparación AppStorage release bajo contención y criterios de descarte. El [lector del feed](picker-history-reader.md) ya está integrado en WIP, medido y verificado en una build aislada reiniciada con permiso de JP. Smoke técnico no equivale a aceptación humana; retención y otras alternativas permanecen separadas.
+Para evaluar un corte estructural, consultar [arquitectura de rendimiento](performance-architecture.md): mapa del sistema actual, lecturas WAL, conteos, revisiones, proyecciones, IPC/render e idle; incluye experimentos sintéticos, comparación AppStorage release bajo contención y criterios de descarte. El [lector del feed](picker-history-reader.md) está medido, verificado y distribuido/instalado en v0.5.11, solicitado por JP tras feedback positivo de rapidez local. No acredita rendimiento en otras PCs; retención y otras alternativas permanecen separadas.
 
 ## Objetivo
 

@@ -1,6 +1,6 @@
 ---
 title: Apertura del picker, ruta crítica y mediciones
-summary: Baseline y primer corte medido de apertura en 0.5.10; tags optimizados, refresh coalescido, catálogos diferidos y overscan 6, con aceptación de JP pendiente.
+summary: Baseline y corte de apertura medidos en el WIP 0.5.10 y distribuidos en v0.5.11; tags, coalescing, catálogos y overscan, con medición de otra PC pendiente.
 keywords:
   - picker lento
   - apertura
@@ -15,7 +15,7 @@ keywords:
 
 Auditoría del 2026-10-21 sobre `8ab41ce`, versión fuente 0.5.10, por demora de la lista en otra PC. No identifica todavía la causa exacta en esa PC: faltan versión instalada, tamaño/composición del historial y distinguir primera apertura de reaperturas.
 
-**Conclusión:** había costes evitables antes y después de SQL. El primer corte está implementado y comparado abajo; no se reemplazó la instalación ni se publicó release. La consulta de tags era el mayor riesgo de escala medido; la primera página ya usaba un índice apropiado.
+**Conclusión:** había costes evitables antes y después de SQL. El primer corte está comparado abajo como WIP 0.5.10; después se distribuyó e instaló junto al lector WAL en [v0.5.11](../releases/v0.5.11.md). La consulta de tags era el mayor riesgo de escala medido; la primera página ya usaba un índice apropiado.
 
 Política general: [rendimiento y memoria](performance-and-memory.md). Trabajo y próximo corte: [track 014](../tracks/014-performance-memory.md). Fuentes congeladas antes de editar producto y resultados completos: [evidencia de rendimiento](../../evidencia/2026-10-21-picker-performance/README.md).
 

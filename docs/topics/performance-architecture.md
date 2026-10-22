@@ -20,7 +20,7 @@ keywords:
 
 ## Alcance y conclusión
 
-Investigación iniciada el 2026-10-21 sobre `8ab41ce` **más el WIP de la iteración 1**. Tras instrumentación/comparación nativa, JP aprobó integrar el primer [lector del feed](picker-history-reader.md): implementado en WIP, build aislada reiniciada y smoke nativo verificado; aceptación humana pendiente. No instalado/publicado ni migrado un perfil. Retención sigue siendo otro corte.
+Investigación iniciada el 2026-10-21 sobre `8ab41ce` **más el WIP de la iteración 1**. Tras instrumentación/comparación nativa, JP aprobó integrar el primer [lector del feed](picker-history-reader.md): integrado, probado con datos sintéticos y luego distribuido/instalado en [v0.5.11](../releases/v0.5.11.md) por pedido de JP tras feedback positivo local. No hubo migración de schema. Retención sigue siendo otro corte.
 
 La dirección recomendada es **separar el trabajo interactivo del trabajo auxiliar dentro del mismo proceso**, conservando Tauri/React/Rust/SQLite y el picker caliente. No empezar con microservicios, otro motor, otro framework ni un actor que serialice absolutamente todo. Primero medir espera frente a servicio; después, lecturas WAL acotadas, conteos fuera del camino de primera página y revisiones coherentes. Materializar previews y aislar render son cortes independientes, condicionados al tipo de carga.
 
@@ -169,4 +169,4 @@ Para comparaciones: mismos hashes/configuración/dataset/semilla, builds release
 - [FTS5, trigram](https://www.sqlite.org/fts5.html#the_trigram_tokenizer): posibilidades y restricciones de LIKE/ESCAPE/queries cortas.
 - Extractos consultados, fecha y hashes de páginas: `architecture-study/public-sources.json`; GET públicos sin código/datos privados enviados. Rusqlite: fuente local instalada 0.39.0, `src/{busy,inner_connection}.rs`, para timeout efectivo.
 
-**Vigente:** corte 1 más [lector del feed integrado en WIP](picker-history-reader.md). **Comprobado:** contención, conteos e integración storage; no hotkey→input/feed. **Pendiente:** otra PC, medición hotkey→input/feed y aceptación humana; retención aparte. Reinicio/smoke aislado comprobados con permiso explícito. No instalar, publicar, migrar perfiles privados ni operar procesos por esta documentación.
+**Vigente:** corte 1 más [lector del feed](picker-history-reader.md), distribuidos e instalados como v0.5.11 con permiso actual de JP. **Comprobado:** storage, smoke y paquete; no tiempos hotkey→input/feed. **Pendiente:** otra PC, memoria/idle y retención. El feedback humano local fue positivo. Ningún recibo concede permisos para nuevas instalaciones, publicaciones o procesos.

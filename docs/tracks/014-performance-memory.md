@@ -1,9 +1,9 @@
 ---
 title: Rendimiento, memoria e idle
 status: active
-summary: Lector integrado y build aislada reiniciada con permiso; 11 checks Win32 y 5 IPC pasan, sin instalada/paste, con aceptación humana y retención pendientes.
-last_worked: "2026-10-22T13:57:50Z"
-next: Recoger prueba humana de la build sintética y acordar el corte separado de retención; conservar pendientes hotkey→input/feed, memoria/idle y otra PC.
+summary: Mejoras de apertura y lector WAL publicados e instalados en v0.5.11; paquete/assets/CI/smoke verificados, con retención, latencia nativa y otras PCs pendientes.
+last_worked: "2026-10-22T15:31:39Z"
+next: Recoger feedback de v0.5.11 en otras PCs y acordar el corte separado de retención; medir hotkey→input/feed y memoria/idle sin confundirlos con benchmarks de storage.
 topics: [performance-and-memory, performance-architecture, picker-history-reader, sqlite-storage, filtering-and-query-syntax, picker-interaction]
 ---
 
@@ -36,23 +36,23 @@ Topic estable: `docs/topics/performance-and-memory.md`.
 
 ## Estado Actual
 
-JP pidió guardar los tiempos antes de implementar, reiniciar una versión nueva y probar/iterar. Se congeló la evidencia antes de modificar producto; comparación y contratos vigentes en [apertura del picker](../topics/picker-opening-performance.md), fuentes completas en [baseline e iteración 1](../../evidencia/2026-10-21-picker-performance/README.md).
+[v0.5.11](../releases/v0.5.11.md) está publicado como stable/latest e instalado localmente desde el mismo NSIS verificado, con permiso actual de JP. Fuente/tag inmutable `f552a1581e5393a2def3df61b17b1b8479042cd9`; CI de esa fuente y endpoint real del updater pasan. La dev sintética anterior quedó cerrada.
 
-- Implementado: consulta de tags por índice, workers para carpetas/root, reapertura coalescida por generación, catálogos después de primera página/paint, identidades estables, overscan 6 y toggle del picker sin sleep de 90 ms. No se cambiaron delays de paste, semántica de conteos/filtros ni máscara anti-stale.
-- Comparación con las mismas fixtures: `bench_picker_open.rs` release y seis probes renderer post-cambio, con muestras completas, traces y hashes. No sumar backend y mock renderer como latencia nativa.
-- Verificación: 424 Rust pasan/1 benchmark ignorado; 582 renderer pasan/2 screenshots opt-in omitidos; 11 casos Win32 pasan, incluido C0 con entrada global. Paste no corrido; no se leyó/escribió clipboard real.
-- El corte 1 dejó la build release `--no-bundle`, SHA256 `4fd7b454ee67987869152553eb2b639022168308476266ffea3db1fd78cbcaee`, aislada con 10k textos/100 tags, `Ctrl+Shift+F10`, captura/AI/updater apagados. Esa instancia (PID 30272, registro `.codex-run/picker-open-audit/interactive-session.json`) **se detuvo con permiso al reiniciar el lector integrado**; no es la build actualmente corriendo.
-- La instalada quedó intacta y conserva su shortcut. No hubo confirmación de reemplazo local; no ejecutar instalación/publicación/commit por este registro. Falta aceptación de JP y medir en la otra PC. La nueva build sigue etiquetada 0.5.10 con cambios de trabajo, no es un release publicado.
+- Incluye el primer corte de [apertura](../topics/picker-opening-performance.md) y el [lector WAL del feed](../topics/picker-history-reader.md), sin cambiar retención, schema ni delays de paste.
+- Se preservaron los tiempos antes de modificar producto; [baseline y comparaciones](../../evidencia/2026-10-21-picker-performance/README.md). No sumar mock renderer/storage ni convertirlos en hotkey→paint.
+- Release: 435 Rust, 97 Node, 63 Sharing y 61 Bun; 588 renderer cubiertos entre corridas, con retry de infraestructura y omisiones explícitas. Firma/recursos, 10 checks del payload, 11 Win32 y 10 del binario instalado pasan con perfiles sintéticos. No clipboard real/paste en checks.
+- JP reportó percepción de rapidez positiva en la build sintética y pidió distribuirla. Falta medir/recoger feedback de otras PCs, hotkey→input/feed y memoria/idle; retención sigue fuera del corte.
+- Se conservan sin incluir dos ediciones documentales ajenas de OS2. Recibos de distribución e instalación en las notas; no son permisos para operaciones futuras.
 
-## Nueva investigación de arquitectura
+## Investigación que motivó el lector
 
 JP pidió guardar todo y continuar en una tab nueva para estudiar más profundamente qué arquitectura puede mejorar aún más la performance de la aplicación. Ese pedido cambia el próximo foco: no equivale a elegir una arquitectura, autorizar una reescritura, instalar la build ni aceptar el primer corte.
 
-- Partir del código actual con cambios sin commit y de `evidencia/2026-10-21-picker-performance/`: baseline inmutable, experimento de overscan separado e iteración 1. No volver a presentar esos fixes como pendientes.
+- Se partió del WIP y de `evidencia/2026-10-21-picker-performance/`: baseline inmutable, experimento de overscan separado e iteración 1. No volver a presentar esos fixes como pendientes.
 - Investigar el sistema completo, distinguiendo reapertura caliente, arranque, búsqueda, captura/sync, contención de storage, IPC, thumbnails/render e idle/memoria. Comparar alternativas dentro del stack Tauri/TypeScript/Rust/SQLite antes de proponer reemplazos.
 - Hipótesis para evaluar, no decisiones: lecturas WAL separadas del escritor/actor o cola priorizada; snapshots/revisiones e invalidación selectiva; proyecciones/conteos incrementales; DTO/bootstrap y entrega de previews; cachés acotadas; separación de estado/render. Bibliografía pública sólo si aporta y sin enviar fuentes privadas.
 - Resultado recuperable: [arquitectura de rendimiento](../topics/performance-architecture.md) conserva mapa de costes/lagunas, matriz de alternativas, contratos de consistencia, recomendación gradual y experimentos que pueden refutarla. [Fuentes del estudio](../../evidencia/2026-10-21-picker-performance/architecture-study/README.md): SQL sintético con muestras completas y prueba determinista WAL, separados de los benchmarks nativos/renderer del corte 1. No implementar otra arquitectura sin acordar el corte con JP.
-- Pendientes del primer corte conservados: prueba humana, versión/composición/patrón de demora en la otra PC, autorización si se quiere reemplazar la instalada y medición nativa end-to-end. La build aislada no implica instalación ni aceptación.
+- La versión/composición/patrón de demora de la otra PC y la medición nativa end-to-end siguen pendientes. El feedback local y la publicación/instalación posteriores tienen sus recibos propios; no se infieren de aquella build aislada.
 
 JP aprobó continuar con instrumentación y comparación nativa. Se ejecutó el 2026-10-22 en harness Rust release, **no en la UI de la app**: [resultados/contratos](../topics/performance-architecture.md#corte-nativo-lecturas-y-contención), [muestras, versiones y reproducción](../../evidencia/2026-10-21-picker-performance/native-storage-study/README.md). 10k/100k, 102 muestras por variante: el lector experimental evita esperas detrás de scan/recaptura/retención; no acelera al escritor. Conteos siguen dominando búsqueda común y scans raros siguen caros. Un control factorial impide atribuir la diferencia serial entre conexiones a un beneficio intrínseco de read-only/BEGIN.
 
@@ -64,16 +64,16 @@ JP aprobó «sigamos con el corte recomendado». Se implementó primero el lecto
 
 - Runtime: un worker/lector read-only; snapshot SQL termina antes de thumbnails; sesión host y generaciones, un activo y hasta dos pendientes, cancelación cooperativa. Sólo refresh/paginación del feed optan; no cambio de conteos, cache, retención, foco/paste ni rutas de scripts/marcados/AI planner.
 - Verificación: tests Rust/cliente/renderer, build Tauri release `--no-bundle` y 102 muestras por variante/tamaño del servicio real. Bajo recaptura ilimitada, p95 compartido→lector: 10k 8,43→0,56 ms; 100k 84,96→0,78 ms. No son IPC ni hotkey→input/feed. Un caso renderer no cargó JS por `ERR_NO_BUFFER_SPACE` y pasó 3/3 aislado, sin parche de producto.
-- Build vigente de trabajo: `src-tauri/target-reader-integration/release/copicu.exe`, SHA256 `dd0ffc6897b43cbe04eed634f34890112fab8463eb1ed1dc4bce2522c0bed96d`, target separado sin instalación/publicación. JP dio después permiso explícito al reinicio aislado y smoke visible. Se revalidó y detuvo sólo el PID 30272 por exe/CreationDate; no se usó reinicio general ni kill por nombre/árbol.
+- Build de validación previa al release: `src-tauri/target-reader-integration/release/copicu.exe`, SHA256 `dd0ffc6897b43cbe04eed634f34890112fab8463eb1ed1dc4bce2522c0bed96d`, target separado sin instalación/publicación. JP dio después permiso explícito al reinicio aislado y smoke visible. Se revalidó y detuvo sólo el PID 30272 por exe/CreationDate; no se usó reinicio general ni kill por nombre/árbol.
 - [Smoke posterior](../../evidencia/2026-10-21-picker-performance/reader-integration/native-smoke/README.md): 11 casos Win32 pasan, incluido C0 externo→hotkey→type global visible; paste omitido. Otros 5 casos IPC reales verifican feed con token, descriptor/conteos, generación obsoleta, denegación a Settings y continuidad de la sesión. Sin clipboard real ni instalada.
-- Se dejó la build nueva corriendo con perfil **nuevo** de 10k textos/100 tags sintéticos, captura/AI/updater apagados y `Ctrl+Shift+F10`. Instancia observada PID 31132, CreationDate Unix ms `1792676793213`; registro operativo `.codex-run/picker-reader-integration/interactive-session.json`. Revalidar identidad y permiso antes de operar; no heredar autorización de este relato.
-- Gate técnico de reinicio/smoke cerrado, **no aceptación humana** ni tiempo nativo end-to-end. Retención, memoria/idle, imágenes/sharing, otra PC y hotkey→input/feed siguen pendientes. El `verification.json` de la carpeta padre conserva el estado previo al smoke; la etapa `native-smoke/` lo sustituye para ese gate sin sobrescribir originales. Sin instalación/publicación/commit.
+- La validación usó un perfil nuevo de 10k textos/100 tags, captura/AI/updater apagados y `Ctrl+Shift+F10`. Esa instancia se revalidó y detuvo durante el release; `.codex-run/picker-reader-integration/interactive-session.json` es ahora un registro histórico, no una instancia vigente.
+- Gate técnico de ese reinicio/smoke cerrado, sin inferir tiempo nativo end-to-end. El `verification.json` padre conserva el estado previo; `native-smoke/` lo sustituye para ese gate sin sobrescribir originales. La distribución/instalación posterior se registra abajo.
 
-## Release v0.5.11 en curso
+## Release v0.5.11 publicado e instalado
 
 JP reportó que la build sintética le gusta y se percibe rápida, y pidió un release para otras PCs más actualización local. Eso autoriza el cierre combinado de este corte; no transforma la observación local en benchmark ni aceptación en otras máquinas. Se fijó `v0.5.11` / core `0.5.11` con el helper, rama `main`/`origin` y tag remoto libre comprobados. [Notas y checks](../releases/v0.5.11.md); recibos locales `.tmp/release-0.5.11-20261022/`.
 
-NSIS/firma/manifest y payload verificados; tests/rechecks de release pasan con límites registrados. Se detuvo sólo la dev sintética revalidada para probar el paquete. Falta verificar publicación/latest, CI de la fuente inmutable e instalación del mismo artefacto. WIP ajeno de `local-codex-skills.md` y `os2-adoption.md` queda fuera; originales operativos privados se conservan localmente, sin exportación automática.
+Publicado `2026-10-22T15:13:25Z`, source/tag `f552a1581e5393a2def3df61b17b1b8479042cd9`, [CI 39801679801](https://github.com/jpsala/copicu/actions/runs/39801679801) SUCCESS. Tres assets descargados idénticos al candidato firmado; endpoint latest HTTP 200/version/URL/firma correctos. Instalación local `0.5.11` idéntica al payload, 181 recursos comparados y proceso normal responsive; smoke instalado sintético 10/10. NSIS SHA256 `961CA90000680D42FB8F9DBA48C2518788200DAC3CCAFD20DEC4A013298CEA29`. WIP ajeno de `local-codex-skills.md` y `os2-adoption.md` queda fuera; originales operativos privados se conservan localmente, sin exportación automática. No hay nuevo trabajo de retención ni aceptación en otras PCs.
 
 ## Mediciones anteriores
 

@@ -4,7 +4,7 @@
 
 JP aprobó continuar con el corte recomendado después del estudio nativo de storage. Este corte integra **un lector del feed**, no un actor de todas las operaciones. Retención queda para otro corte. No incluye instalación, publicación ni uso de perfiles privados para pruebas.
 
-Implementado en WIP, con tests y comparación release. JP autorizó después el reinicio aislado y smoke visible: se completaron 11 casos Win32 y 5 comprobaciones IPC sobre la build nueva, sin instalada ni paste. Gate técnico cerrado; aceptación humana y medición nativa de latencia siguen pendientes. Estado recuperable: [lector](../../docs/topics/picker-history-reader.md).
+Implementado y distribuido/instalado localmente en [v0.5.11](../../docs/releases/v0.5.11.md), solicitado por JP tras feedback positivo en la build sintética. Se completaron tests, comparación release, 11 casos Win32 y 5 comprobaciones IPC; el paquete final y el binario instalado tienen además sus propios smokes sintéticos. Sin paste ni clipboard real en checks. Latencia nativa y otras PCs siguen pendientes. Estado recuperable: [lector](../../docs/topics/picker-history-reader.md).
 
 Evidencia: [arquitectura](../../docs/topics/performance-architecture.md#corte-nativo-lecturas-y-contención), [muestras nativas](../../evidencia/2026-10-21-picker-performance/native-storage-study/README.md). Trabajo: [track 014](../../docs/tracks/014-performance-memory.md).
 
