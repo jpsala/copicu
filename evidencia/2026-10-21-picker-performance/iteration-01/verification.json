@@ -1,0 +1,36 @@
+{
+  "verifiedAt": "2026-10-21T23:24:33.513Z",
+  "rust": {
+    "passed": 424,
+    "ignored": 1,
+    "ignoredCase": "synthetic_50k_history_search_benchmark"
+  },
+  "renderer": {
+    "passed": 582,
+    "skipped": 2,
+    "skippedCases": "opt-in release screenshots in two viewport projects"
+  },
+  "native": {
+    "passed": 11,
+    "paste": "not run; the clipboard was not modified"
+  },
+  "build": {
+    "command": "CARGO_NET_OFFLINE=true node node_modules/@tauri-apps/cli/tauri.js build --no-bundle",
+    "executableSHA256": "4fd7b454ee67987869152553eb2b639022168308476266ffea3db1fd78cbcaee",
+    "productVersion": "0.5.10 (unreleased working tree)"
+  },
+  "interactive": {
+    "isolated": true,
+    "syntheticItems": 10000,
+    "syntheticTags": 100,
+    "shortcut": "Ctrl+Shift+F10",
+    "captureEnabled": false,
+    "updaterEnabled": false,
+    "aiEnabled": false,
+    "installationUpdated": false
+  },
+  "limits": [
+    "No paired hotkey-to-paint timing on the affected PC.",
+    "Renderer timings use mocked IPC and CDP CPU throttling, not native end-to-end latency."
+  ]
+}

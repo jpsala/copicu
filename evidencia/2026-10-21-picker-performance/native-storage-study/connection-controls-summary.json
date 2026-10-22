@@ -1,0 +1,284 @@
+{
+  "method": "Factorial controls: nine warm samples per mode/phase; median and maximum only, no p95 claim.",
+  "datasets": [],
+  "controls": {
+    "path": "evidencia/2026-10-21-picker-performance/native-storage-study/connection-controls-100k.txt",
+    "sha256": "b4fe5ecc9990318af10f59aabf270710375c4e346f2f9da10e130bae0121c387",
+    "configuration": {
+      "items": 100000,
+      "kind": "control-configuration",
+      "limits": "text-only, file-backed, no concurrent writers; setup and settings commit phases are sequential, not randomized",
+      "rounds": 9,
+      "sqlite": "3.51.3",
+      "warmups": 2
+    },
+    "plans": [
+      {
+        "kind": "control-plan",
+        "mode": "writer-auto",
+        "phase": "after-seed",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "writer-snapshot",
+        "phase": "after-seed",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "reader-auto",
+        "phase": "after-seed",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "reader-snapshot",
+        "phase": "after-seed",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "fresh-rw-auto",
+        "phase": "after-seed",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "fresh-rw-snapshot",
+        "phase": "after-seed",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "writer-auto",
+        "phase": "after-settings-commit",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "writer-snapshot",
+        "phase": "after-settings-commit",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "reader-auto",
+        "phase": "after-settings-commit",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "reader-snapshot",
+        "phase": "after-settings-commit",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "fresh-rw-auto",
+        "phase": "after-settings-commit",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      },
+      {
+        "kind": "control-plan",
+        "mode": "fresh-rw-snapshot",
+        "phase": "after-settings-commit",
+        "plan": [
+          "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+        ],
+        "pragmas": {
+          "busy_timeout": 5000,
+          "cache_size": -2000,
+          "foreign_keys": 1,
+          "mmap_size": 0,
+          "synchronous": 2,
+          "wal_autocheckpoint": 1000
+        }
+      }
+    ],
+    "cases": [
+      {
+        "phase": "after-seed",
+        "mode": "writer-auto",
+        "medianMs": 633.2642000000001,
+        "maxMs": 650.5563
+      },
+      {
+        "phase": "after-seed",
+        "mode": "writer-snapshot",
+        "medianMs": 636.7481,
+        "maxMs": 659.5023
+      },
+      {
+        "phase": "after-seed",
+        "mode": "reader-auto",
+        "medianMs": 635.4543,
+        "maxMs": 688.0427
+      },
+      {
+        "phase": "after-seed",
+        "mode": "reader-snapshot",
+        "medianMs": 630.3131,
+        "maxMs": 666.8123
+      },
+      {
+        "phase": "after-seed",
+        "mode": "fresh-rw-auto",
+        "medianMs": 188.0324,
+        "maxMs": 214.3414
+      },
+      {
+        "phase": "after-seed",
+        "mode": "fresh-rw-snapshot",
+        "medianMs": 190.4825,
+        "maxMs": 220.8378
+      },
+      {
+        "phase": "after-settings-commit",
+        "mode": "writer-auto",
+        "medianMs": 633.741,
+        "maxMs": 652.5107
+      },
+      {
+        "phase": "after-settings-commit",
+        "mode": "writer-snapshot",
+        "medianMs": 637.5843,
+        "maxMs": 665.3989
+      },
+      {
+        "phase": "after-settings-commit",
+        "mode": "reader-auto",
+        "medianMs": 188.916,
+        "maxMs": 241.4286
+      },
+      {
+        "phase": "after-settings-commit",
+        "mode": "reader-snapshot",
+        "medianMs": 188.83720000000002,
+        "maxMs": 208.2758
+      },
+      {
+        "phase": "after-settings-commit",
+        "mode": "fresh-rw-auto",
+        "medianMs": 627.0743,
+        "maxMs": 659.8929999999999
+      },
+      {
+        "phase": "after-settings-commit",
+        "mode": "fresh-rw-snapshot",
+        "medianMs": 624.0557,
+        "maxMs": 670.7281
+      }
+    ]
+  }
+}

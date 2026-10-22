@@ -1,0 +1,147 @@
+{
+  "capturedAt": "2026-10-22T13:26:01.051Z",
+  "baseCommit": "8ab41ce7de87b08b508add7ba05ac063e7bd1380",
+  "role": "First integrated picker reader, uncommitted; shared-writer path preserved for non-feed callers",
+  "sources": [
+    {
+      "path": "src-tauri/src/storage.rs",
+      "sha256": "32e550ef53a3e2d3383b74aa9a4f5a69376576270c7023eb881c222cdb1cef81"
+    },
+    {
+      "path": "src-tauri/src/storage/picker_reader.rs",
+      "sha256": "90e63636767937cf5d3e8c90f6e6687c83d324a0d3c08961fed4839956ba8ee3"
+    },
+    {
+      "path": "src-tauri/src/storage/picker_reader_tests.rs",
+      "sha256": "7cd4ea041fb941d8e36246ce0c91f209568992bc6c6c82c714b9a42f414c53b4"
+    },
+    {
+      "path": "src-tauri/src/storage/performance_study.rs",
+      "sha256": "5fd3104f9cfa7a3039f2748467009d21f9ec5faa882cdb9453bc7eb850a7fd70"
+    },
+    {
+      "path": "src-tauri/src/storage/search.rs",
+      "sha256": "a3fc19f1b392db4015ac480c8a878e383b824e9bfe5b9827d7d04bd7491aeb69"
+    },
+    {
+      "path": "src-tauri/src/storage/schema.rs",
+      "sha256": "a5cd28d82ce60fa5b2f183e702951cfe11d4ef10bd3cba151f5e1a23faea83ab"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "af73bc416e4443be7d4ce9c3c9932c3dbf27e13d998c3fb0403e9c96072da9e1"
+    },
+    {
+      "path": "src/main.tsx",
+      "sha256": "4e381c81ed6a3d22d4292d03b1d3731788f0222dbf676ee726b7f64846d221cc"
+    },
+    {
+      "path": "src/shared/pickerHistoryReader.ts",
+      "sha256": "cd541830a76840710ff66e6181983ad8b9f9fcf8685af719348e47ed2fbaa0ef"
+    },
+    {
+      "path": "tests/picker-history-reader.test.ts",
+      "sha256": "7d986d3e6e763a1df2351df781303899ea9a1a78be4fad94534ce1158ca4d3ae"
+    },
+    {
+      "path": "tests/visual/shell.spec.ts",
+      "sha256": "48bba41746b6a424c2ed241519e7a9645616bfb39244de3a57eeff380ef7c8ff"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "sha256": "818bff94fa471465bdd0b0c6c4bcf18e0baac45c1ce0499032da2b563854065c"
+    },
+    {
+      "path": "src-tauri/Cargo.lock",
+      "sha256": "364ef40cc6d22366ffc2cf597cd4fe0a24ec345fd7bc2653b6394a407245e319"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/browser-resource-error.json",
+      "sha256": "0bf7509a4863d12e153c0ae6b0693425df9de7ee98aa602ec6e1d546a980f46a"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/client-tests.txt",
+      "sha256": "d565d265fd08fcb17df26dcd00a08f4b9474e5eea3e06de8d878676897f9c5e6"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/native-100k-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/native-100k.txt",
+      "sha256": "13be894f8f72d5f759833b517ad14a2995c8b289a6ce5011d6dc1dc232ae85e5"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/native-10k-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/native-10k.txt",
+      "sha256": "698ff59ca9264207d4c5e1c64478e5193874e99460a058f8f146ceec2bdf4405"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/README.md",
+      "sha256": "7cd78b083cf4f488fe1f9eb66e6b162515c5e79967e76e03dffd0adb2a32c541"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/rust-tests.txt",
+      "sha256": "61c650c1831a51d6bf697f9a6968bfa4bbab85a73e139e012cfead56e2ac5231"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/summarize.mjs",
+      "sha256": "e7c46bdef7f9a270454170425d783d2ab0f96289e1752308d801495e03346f21"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/summary.json",
+      "sha256": "bf18e7068a6ceb1588d557bee55cda907c854223bea61302578547a2ed49be26"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/tauri-build.txt",
+      "sha256": "d4aa44250adb303d6dda6b9fa0b8a5bcbdf1b5daba79a678e90e8c59515c4fcd"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/verification.json",
+      "sha256": "8865c33812431aedadfd5644a499590ddff1abd2d83d1f9135a6afe86d07e164"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/visual-inbox-repeat.txt",
+      "sha256": "faac62dc8071446e3fc4551dfe90979c4c66890e4547a87a6fc38bd4a5191c04"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/reader-integration/visual-tests.txt",
+      "sha256": "f4a030cf138eb77182db0a546b3aac8222f73767a747ea75667e30d7027f04c0"
+    }
+  ],
+  "binaries": {
+    "test": {
+      "path": "src-tauri/target/release/deps/copicu_lib-145790ad1a79db38.exe",
+      "sha256": "3ee73e4f98bf5749ff68522aee2a917b78ba53ab5fb25a1337e2ed549b6eff8a"
+    },
+    "candidate": {
+      "path": "src-tauri/target-reader-integration/release/copicu.exe",
+      "sha256": "dd0ffc6897b43cbe04eed634f34890112fab8463eb1ed1dc4bce2522c0bed96d"
+    },
+    "oldDev": {
+      "path": "src-tauri/target/release/copicu.exe",
+      "sha256": "4fd7b454ee67987869152553eb2b639022168308476266ffea3db1fd78cbcaee"
+    }
+  },
+  "benchmark": {
+    "startUtc": "2026-10-22T13:09:10Z",
+    "endUtc": "2026-10-22T13:09:35Z",
+    "datasets": [
+      10000,
+      100000
+    ],
+    "samplesPerVariant": 102,
+    "sqlite": "3.51.3",
+    "scope": "Integrated native storage service vs shared AppStorage under same-item recapture, not IPC/UI/hotkey."
+  },
+  "limits": [
+    "Visible native smoke/restart still awaits explicit current permission.",
+    "No installed process/profile, clipboard payload, paste, install, commit or publication touched.",
+    "Retention optimization, retained-preview/catalog routing, CPU/memory and another PC remain outside this cut."
+  ]
+}

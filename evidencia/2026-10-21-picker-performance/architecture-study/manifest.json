@@ -1,0 +1,112 @@
+{
+  "capturedAt": "2026-10-21T23:54:21.880Z",
+  "baseCommit": "8ab41ce7de87b08b508add7ba05ac063e7bd1380",
+  "role": "Architecture research over iteration-01 WIP; no product changes or app process operations",
+  "sources": [
+    {
+      "path": "src/main.tsx",
+      "sha256": "5cbb84db8daab58ec81dd439a8029e1028d8c5fa01bda2d14ce0e02d4f67e2d5"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "6e25be52e2996266ff2426aab587bff31e442a185dc88b3f0828a0cec7b7ebc0"
+    },
+    {
+      "path": "src-tauri/src/storage.rs",
+      "sha256": "61fc6da10ba3ea2335f309b17e9f04fdb4e7e1b631edf3510cec50aaf3eca61a"
+    },
+    {
+      "path": "src-tauri/src/storage/search.rs",
+      "sha256": "a3fc19f1b392db4015ac480c8a878e383b824e9bfe5b9827d7d04bd7491aeb69"
+    },
+    {
+      "path": "src-tauri/src/storage/schema.rs",
+      "sha256": "a5cd28d82ce60fa5b2f183e702951cfe11d4ef10bd3cba151f5e1a23faea83ab"
+    },
+    {
+      "path": "src-tauri/examples/bench_picker_open.rs",
+      "sha256": "271f91117e0c61c4d4b4ad82f8fd3f6f4457ae98254694a046c4000d4c5425bd"
+    },
+    {
+      "path": "tests/visual/shell.spec.ts",
+      "sha256": "095231e145139a4c257baf508cc85712ebc2d993ca0ace8f4824c96abdbf40de"
+    },
+    {
+      "path": "src-tauri/src/clipboard.rs",
+      "sha256": "d43beb7248b9ac8f78cb50f10f2de1e213f63e3d4e0247b71fb6a5ad121acac2"
+    },
+    {
+      "path": "src-tauri/src/diagnostics.rs",
+      "sha256": "e569d508160ab3eda3fb13cb9feab29d85dfb13978a6686999e67f0067503a52"
+    },
+    {
+      "path": "src-tauri/src/find.rs",
+      "sha256": "ef6436c950aca11e9b4583a8164093207de2033d8b6a49f980544b1e1e978a19"
+    },
+    {
+      "path": "src-tauri/src/storage/folders.rs",
+      "sha256": "76f5f2916e20904480c63bc62a34ac72947844c3cff7cfee7ffd4f93ef15cc92"
+    },
+    {
+      "path": "src-tauri/src/storage/shared.rs",
+      "sha256": "c75c4ca9525a29db97295875608310fa353d43386d9c688bdfbcab0588b78fe0"
+    },
+    {
+      "path": "src-tauri/src/storage/blobs.rs",
+      "sha256": "45ef5af1d8755e454a670e040576f659be471c83ef97af0ebe8fe511cf712448"
+    },
+    {
+      "path": "src-tauri/src/shared_host.rs",
+      "sha256": "6dabd0e37ebe68500f015da6c07d47899ec4c545f2f95cb3c179c86798715b11"
+    },
+    {
+      "path": "src-tauri/src/shared_clipboard/control_sync.rs",
+      "sha256": "59980333b19b3fcdc50ef249479cf96acc39149ec13cea154d65d4779cff52cb"
+    },
+    {
+      "path": "src-tauri/src/window_focus.rs",
+      "sha256": "c43b3c3742b147db9b47d276e8eb6fd11c3c2a91d0ff3268ee5ad69686387575"
+    },
+    {
+      "path": "src/shared/previewMedia.ts",
+      "sha256": "8c30793e49956bbb1a41994cad478abf46af58ff72699240b276cebfcfaebcca"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "sha256": "818bff94fa471465bdd0b0c6c4bcf18e0baac45c1ce0499032da2b563854065c"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "evidencia/2026-10-21-picker-performance/architecture-study/public-sources.json",
+      "sha256": "924606fa0706aee831795eba51fdfa40a4caddf568899c6be8ac292603025631"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/architecture-study/README.md",
+      "sha256": "7d2df3e6c092f8400e75d084248b5a0ef36ad5a8553fac31ee21cebaf4b70cff"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/architecture-study/sql-probe.mjs",
+      "sha256": "333dc66e28829f451c5a94725f2bc4c7071b4a18ab82f3ac146fd49392e5ba7c"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/architecture-study/sql-results.json",
+      "sha256": "29c120fa6860fa97869a8ddbe53c14ea9962e8e52966b61841ed98c615b0b411"
+    }
+  ],
+  "checks": {
+    "iteration01SourceHashesMatched": 7,
+    "probeSourceHashesMatched": 6,
+    "syntheticSqlAndWalAssertions": "passed",
+    "syntax": "node --check passed",
+    "documentation": "bun run check: 0 errors, 3 existing size warnings, 15 tests passed",
+    "diffWhitespace": "git diff --check passed; new source/doc whitespace checked separately",
+    "productSuitesRerun": false,
+    "nativeUiOrPasteRun": false
+  },
+  "limits": [
+    "Raw Node/SQLite 3.53.0 SQL, not bundled AppStorage 3.51.3 or native end-to-end.",
+    "WAL deterministic interleaving validates a contract, not Rust mutex latency.",
+    "No authorization to implement another architecture, install, migrate user data or publish."
+  ]
+}

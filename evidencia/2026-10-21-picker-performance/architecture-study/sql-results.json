@@ -1,0 +1,538 @@
+{
+  "capturedAt": "2026-10-21T23:46:43.596Z",
+  "node": "v24.16.0",
+  "platform": "win32",
+  "osRelease": "10.0.26200",
+  "cpu": "AMD Ryzen 7 5700G with Radeon Graphics         ",
+  "sources": [
+    {
+      "path": "src-tauri/src/storage/schema.rs",
+      "sha256": "a5cd28d82ce60fa5b2f183e702951cfe11d4ef10bd3cba151f5e1a23faea83ab"
+    },
+    {
+      "path": "src-tauri/src/storage/search.rs",
+      "sha256": "a3fc19f1b392db4015ac480c8a878e383b824e9bfe5b9827d7d04bd7491aeb69"
+    },
+    {
+      "path": "src-tauri/src/storage.rs",
+      "sha256": "61fc6da10ba3ea2335f309b17e9f04fdb4e7e1b631edf3510cec50aaf3eca61a"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "6e25be52e2996266ff2426aab587bff31e442a185dc88b3f0828a0cec7b7ebc0"
+    },
+    {
+      "path": "src/main.tsx",
+      "sha256": "5cbb84db8daab58ec81dd439a8029e1028d8c5fa01bda2d14ce0e02d4f67e2d5"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/architecture-study/sql-probe.mjs",
+      "sha256": "333dc66e28829f451c5a94725f2bc4c7071b4a18ab82f3ac146fd49392e5ba7c"
+    }
+  ],
+  "migrations": 19,
+  "method": "Two warmups + nine measured rounds, alternating case order. In-memory warm SQL. No p95 claim, no native app or clipboard. SQL fields/order extracted from working tree. No attach_search_matches or thumbnails.",
+  "sql": {
+    "select": "id, content_kind, SUBSTR(text, 1, 2000) AS text, SUBSTR(text, 1, 2000) AS preview_text, LENGTH(text) AS text_char_count, 0 AS includes_content,\r\n         normalized_hash, created_at_unix_ms, last_used_at_unix_ms,\r\n         COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),\r\n         mime_primary, blob_path, thumbnail_path, byte_size, width, height,\r\n         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id, last_received_at_unix_ms",
+    "order": "(is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC",
+    "predicate": "(COALESCE(text, '') LIKE ? ESCAPE '\\' OR COALESCE(title, '') LIKE ? ESCAPE '\\' OR COALESCE(notes, '') LIKE ? ESCAPE '\\' OR COALESCE(tags, '') LIKE ? ESCAPE '\\' OR COALESCE(mime_primary, '') LIKE ? ESCAPE '\\' OR content_kind LIKE ? ESCAPE '\\' OR COALESCE(context_search_text, '') LIKE ? ESCAPE '\\')",
+    "sqlPage": "SELECT id, content_kind, SUBSTR(text, 1, 2000) AS text, SUBSTR(text, 1, 2000) AS preview_text, LENGTH(text) AS text_char_count, 0 AS includes_content,\r\n         normalized_hash, created_at_unix_ms, last_used_at_unix_ms,\r\n         COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),\r\n         mime_primary, blob_path, thumbnail_path, byte_size, width, height,\r\n         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id, last_received_at_unix_ms FROM clipboard_items WHERE (COALESCE(text, '') LIKE ? ESCAPE '\\' OR COALESCE(title, '') LIKE ? ESCAPE '\\' OR COALESCE(notes, '') LIKE ? ESCAPE '\\' OR COALESCE(tags, '') LIKE ? ESCAPE '\\' OR COALESCE(mime_primary, '') LIKE ? ESCAPE '\\' OR content_kind LIKE ? ESCAPE '\\' OR COALESCE(context_search_text, '') LIKE ? ESCAPE '\\') ORDER BY (is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC LIMIT 61",
+    "sqlCount": "SELECT COUNT(*) AS n FROM clipboard_items WHERE (COALESCE(text, '') LIKE ? ESCAPE '\\' OR COALESCE(title, '') LIKE ? ESCAPE '\\' OR COALESCE(notes, '') LIKE ? ESCAPE '\\' OR COALESCE(tags, '') LIKE ? ESCAPE '\\' OR COALESCE(mime_primary, '') LIKE ? ESCAPE '\\' OR content_kind LIKE ? ESCAPE '\\' OR COALESCE(context_search_text, '') LIKE ? ESCAPE '\\')",
+    "sqlUnfiltered": "SELECT id, content_kind, SUBSTR(text, 1, 2000) AS text, SUBSTR(text, 1, 2000) AS preview_text, LENGTH(text) AS text_char_count, 0 AS includes_content,\r\n         normalized_hash, created_at_unix_ms, last_used_at_unix_ms,\r\n         COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),\r\n         mime_primary, blob_path, thumbnail_path, byte_size, width, height,\r\n         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id, last_received_at_unix_ms FROM clipboard_items ORDER BY (is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC LIMIT 61"
+  },
+  "search": [
+    {
+      "count": 10000,
+      "kind": "common",
+      "expected": 10000,
+      "cases": [
+        {
+          "name": "page-only",
+          "samplesMs": [
+            0.22790000000000532,
+            0.24930000000000518,
+            0.22829999999999018,
+            0.7486000000000104,
+            0.2720999999999947,
+            0.240099999999984,
+            0.22149999999999181,
+            0.2711999999999932,
+            0.2255999999999858
+          ],
+          "medianMs": 0.240099999999984,
+          "maxMs": 0.7486000000000104,
+          "result": 61
+        },
+        {
+          "name": "count-only",
+          "samplesMs": [
+            2.7494999999999976,
+            2.546900000000008,
+            2.5298000000000087,
+            2.5915999999999997,
+            2.7182999999999993,
+            2.359800000000007,
+            2.518100000000004,
+            1.433099999999996,
+            2.099899999999991
+          ],
+          "medianMs": 2.5298000000000087,
+          "maxMs": 2.7494999999999976,
+          "result": 10000
+        },
+        {
+          "name": "total+count+page",
+          "samplesMs": [
+            2.8815000000000026,
+            2.85329999999999,
+            2.977100000000007,
+            2.7412999999999954,
+            2.737099999999998,
+            2.7479000000000156,
+            2.294799999999981,
+            1.8517999999999972,
+            2.1691999999999894
+          ],
+          "medianMs": 2.7412999999999954,
+          "maxMs": 2.977100000000007,
+          "result": 61
+        }
+      ],
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 10000,
+      "kind": "oldest-only",
+      "expected": 1,
+      "cases": [
+        {
+          "name": "page-only",
+          "samplesMs": [
+            12.1404,
+            12.412000000000035,
+            12.268700000000024,
+            12.368599999999958,
+            12.098500000000001,
+            12.001899999999978,
+            11.991700000000037,
+            12.10089999999991,
+            12.187099999999987
+          ],
+          "medianMs": 12.1404,
+          "maxMs": 12.412000000000035,
+          "result": 1
+        },
+        {
+          "name": "count-only",
+          "samplesMs": [
+            11.786799999999971,
+            11.42569999999995,
+            12.099500000000035,
+            11.769400000000019,
+            11.719899999999996,
+            12.148000000000025,
+            11.255300000000034,
+            11.996499999999969,
+            11.756500000000074
+          ],
+          "medianMs": 11.769400000000019,
+          "maxMs": 12.148000000000025,
+          "result": 1
+        },
+        {
+          "name": "total+count+page",
+          "samplesMs": [
+            23.67289999999997,
+            23.837699999999984,
+            23.197099999999978,
+            23.370900000000006,
+            23.813499999999976,
+            23.849199999999996,
+            23.82910000000004,
+            23.506200000000035,
+            23.967199999999934
+          ],
+          "medianMs": 23.813499999999976,
+          "maxMs": 23.967199999999934,
+          "result": 1
+        }
+      ],
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 10000,
+      "kind": "absent",
+      "expected": 0,
+      "cases": [
+        {
+          "name": "page-only",
+          "samplesMs": [
+            12.340100000000007,
+            11.789099999999962,
+            11.916000000000054,
+            12.003500000000031,
+            11.966599999999971,
+            11.633100000000013,
+            12.158800000000156,
+            12.102300000000014,
+            11.988700000000108
+          ],
+          "medianMs": 11.988700000000108,
+          "maxMs": 12.340100000000007,
+          "result": 0
+        },
+        {
+          "name": "count-only",
+          "samplesMs": [
+            12.324200000000019,
+            11.953300000000013,
+            11.841300000000047,
+            11.376999999999953,
+            11.646299999999997,
+            11.308599999999842,
+            11.766200000000026,
+            11.39839999999981,
+            11.614799999999832
+          ],
+          "medianMs": 11.646299999999997,
+          "maxMs": 12.324200000000019,
+          "result": 0
+        },
+        {
+          "name": "total+count+page",
+          "samplesMs": [
+            23.87869999999998,
+            23.364400000000046,
+            23.721000000000004,
+            23.439300000000003,
+            23.257699999999886,
+            23.284400000000005,
+            23.465999999999894,
+            23.49479999999994,
+            23.495600000000195
+          ],
+          "medianMs": 23.465999999999894,
+          "maxMs": 23.87869999999998,
+          "result": 0
+        }
+      ],
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "kind": "common",
+      "expected": 100000,
+      "cases": [
+        {
+          "name": "page-only",
+          "samplesMs": [
+            0.7881000000002132,
+            0.30880000000024665,
+            0.2240999999999076,
+            0.3216000000002168,
+            0.2272000000002663,
+            0.3087000000000444,
+            0.2213000000001557,
+            0.32900000000017826,
+            0.22359999999980573
+          ],
+          "medianMs": 0.3087000000000444,
+          "maxMs": 0.7881000000002132,
+          "result": 61
+        },
+        {
+          "name": "count-only",
+          "samplesMs": [
+            26.87649999999985,
+            26.88040000000001,
+            27.085999999999785,
+            26.72460000000001,
+            27.253299999999854,
+            26.89370000000008,
+            27.231399999999667,
+            26.851599999999962,
+            26.735000000000127
+          ],
+          "medianMs": 26.88040000000001,
+          "maxMs": 27.253299999999854,
+          "result": 100000
+        },
+        {
+          "name": "total+count+page",
+          "samplesMs": [
+            30.791599999999562,
+            27.259199999999964,
+            27.682800000000043,
+            28.056300000000192,
+            26.60739999999987,
+            28.108999999999924,
+            28.10450000000037,
+            26.903000000000247,
+            27.30520000000024
+          ],
+          "medianMs": 27.682800000000043,
+          "maxMs": 30.791599999999562,
+          "result": 61
+        }
+      ],
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "kind": "oldest-only",
+      "expected": 1,
+      "cases": [
+        {
+          "name": "page-only",
+          "samplesMs": [
+            122.31619999999975,
+            125.07359999999971,
+            122.13400000000001,
+            123.00849999999991,
+            122.83479999999963,
+            122.21000000000004,
+            123.19869999999992,
+            121.61689999999999,
+            122.63910000000033
+          ],
+          "medianMs": 122.63910000000033,
+          "maxMs": 125.07359999999971,
+          "result": 1
+        },
+        {
+          "name": "count-only",
+          "samplesMs": [
+            115.26789999999983,
+            114.82349999999951,
+            114.93009999999958,
+            118.0560000000005,
+            115.61350000000039,
+            115.6220000000003,
+            115.32759999999962,
+            114.4372999999996,
+            114.35210000000006
+          ],
+          "medianMs": 115.26789999999983,
+          "maxMs": 118.0560000000005,
+          "result": 1
+        },
+        {
+          "name": "total+count+page",
+          "samplesMs": [
+            238.33439999999973,
+            239.59400000000005,
+            237.77999999999975,
+            239.60369999999966,
+            237.10480000000007,
+            240.8715999999995,
+            238.65049999999974,
+            237.7471999999998,
+            238.07939999999962
+          ],
+          "medianMs": 238.33439999999973,
+          "maxMs": 240.8715999999995,
+          "result": 1
+        }
+      ],
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "kind": "absent",
+      "expected": 0,
+      "cases": [
+        {
+          "name": "page-only",
+          "samplesMs": [
+            121.75950000000012,
+            121.27570000000014,
+            122.87069999999949,
+            123.11429999999928,
+            122.15130000000136,
+            122.32020000000011,
+            123.00240000000122,
+            121.34149999999863,
+            120.90829999999914
+          ],
+          "medianMs": 122.15130000000136,
+          "maxMs": 123.11429999999928,
+          "result": 0
+        },
+        {
+          "name": "count-only",
+          "samplesMs": [
+            114.95389999999861,
+            114.4971000000005,
+            113.89310000000114,
+            114.03650000000016,
+            115.97069999999985,
+            115.33139999999912,
+            115.77660000000105,
+            114.17619999999988,
+            113.92640000000029
+          ],
+          "medianMs": 114.4971000000005,
+          "maxMs": 115.97069999999985,
+          "result": 0
+        },
+        {
+          "name": "total+count+page",
+          "samplesMs": [
+            237.36059999999998,
+            240.26410000000033,
+            237.20069999999942,
+            236.3734999999997,
+            237.52790000000095,
+            236.4258000000009,
+            236.70540000000074,
+            237.20780000000013,
+            238.9313000000002
+          ],
+          "medianMs": 237.20780000000013,
+          "maxMs": 240.26410000000033,
+          "result": 0
+        }
+      ],
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    }
+  ],
+  "projection": [
+    {
+      "count": 10000,
+      "longRows": 61,
+      "longCharacters": 250020,
+      "buildMs": 22.903500000000122,
+      "candidateSql": "SELECT id, content_kind, p.preview AS text, p.preview AS preview_text, p.chars AS text_char_count, 0 AS includes_content,\r\n         normalized_hash, created_at_unix_ms, last_used_at_unix_ms,\r\n         COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),\r\n         mime_primary, blob_path, thumbnail_path, byte_size, width, height,\r\n         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id, last_received_at_unix_ms FROM clipboard_items JOIN research_preview p USING(id) ORDER BY (is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC LIMIT 61",
+      "cases": [
+        {
+          "name": "current-preview",
+          "samplesMs": [
+            10.054200000000037,
+            9.981500000000096,
+            10.23350000000005,
+            10.287500000000136,
+            9.980599999999868,
+            9.875700000000052,
+            10.574599999999919,
+            11.229700000000093,
+            10.207100000000082
+          ],
+          "medianMs": 10.207100000000082,
+          "maxMs": 11.229700000000093,
+          "result": 61
+        },
+        {
+          "name": "materialized-preview-join",
+          "samplesMs": [
+            0.8516999999999371,
+            0.3768999999999778,
+            0.813799999999901,
+            0.3529000000000906,
+            0.9941999999998643,
+            0.3565000000000964,
+            0.8578999999999724,
+            0.5998999999999342,
+            0.9300000000000637
+          ],
+          "medianMs": 0.813799999999901,
+          "maxMs": 0.9941999999998643,
+          "result": 61
+        }
+      ],
+      "equivalence": true,
+      "staleWithoutMaintenance": true,
+      "equivalentAfterMaintenance": true,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity",
+        "SEARCH p USING INTEGER PRIMARY KEY (rowid=?)"
+      ]
+    },
+    {
+      "count": 100000,
+      "longRows": 61,
+      "longCharacters": 250020,
+      "buildMs": 144.01330000000053,
+      "candidateSql": "SELECT id, content_kind, p.preview AS text, p.preview AS preview_text, p.chars AS text_char_count, 0 AS includes_content,\r\n         normalized_hash, created_at_unix_ms, last_used_at_unix_ms,\r\n         COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(copy_count, 1),\r\n         mime_primary, blob_path, thumbnail_path, byte_size, width, height,\r\n         title, notes, tags, is_marked, marked_at_unix_ms, is_inbox, inbox_at_unix_ms, folder_id, last_received_at_unix_ms FROM clipboard_items JOIN research_preview p USING(id) ORDER BY (is_inbox != 0) DESC, CASE WHEN is_inbox != 0 THEN inbox_at_unix_ms END DESC, MAX(COALESCE(last_copied_at_unix_ms, created_at_unix_ms), COALESCE(last_received_at_unix_ms, 0)) DESC, id DESC LIMIT 61",
+      "cases": [
+        {
+          "name": "current-preview",
+          "samplesMs": [
+            10.056700000001001,
+            10.183600000000297,
+            10.354699999999866,
+            10.343600000000151,
+            10.208699999999226,
+            11.248600000000806,
+            10.673399999999674,
+            9.932399999999689,
+            10.02850000000035
+          ],
+          "medianMs": 10.208699999999226,
+          "maxMs": 11.248600000000806,
+          "result": 61
+        },
+        {
+          "name": "materialized-preview-join",
+          "samplesMs": [
+            0.8680000000003929,
+            0.4084000000002561,
+            0.9539999999997235,
+            0.4295000000001892,
+            1.0928000000003522,
+            0.5411000000003696,
+            0.9297999999998865,
+            0.6318000000010215,
+            0.8562000000001717
+          ],
+          "medianMs": 0.8562000000001717,
+          "maxMs": 1.0928000000003522,
+          "result": 61
+        }
+      ],
+      "equivalence": true,
+      "staleWithoutMaintenance": true,
+      "equivalentAfterMaintenance": true,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity",
+        "SEARCH p USING INTEGER PRIMARY KEY (rowid=?)"
+      ]
+    }
+  ],
+  "sqlite": "3.53.0",
+  "wal": {
+    "method": "Three commits, deterministic connection interleaving. No worker queue/mutex simulation, no latency prediction.",
+    "withoutTransaction": [
+      1,
+      2
+    ],
+    "withTransaction": [
+      2,
+      2
+    ],
+    "afterTransaction": 3,
+    "writerCommittedWhileReaderActive": true,
+    "pinnedCheckpoint": {
+      "busy": 0,
+      "log": 5,
+      "checkpointed": 4
+    },
+    "releasedCheckpoint": {
+      "busy": 0,
+      "log": 5,
+      "checkpointed": 5
+    },
+    "walBytesWhilePinned": 20632
+  }
+}

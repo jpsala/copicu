@@ -24,6 +24,11 @@ mod schema;
 mod search;
 #[path = "storage/folders.rs"]
 mod folders;
+#[path = "storage/picker_reader.rs"]
+pub mod picker_reader;
+#[cfg(test)]
+#[path = "storage/performance_study.rs"]
+mod performance_study;
 // Explicit sharing adapter; never initialized by normal migrations/startup.
 #[cfg(any(test, feature = "shared-clipboard"))]
 #[path = "storage/shared.rs"]
@@ -652,7 +657,7 @@ impl AppliedSearchDescriptor {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistorySearchRequest {
     pub query: String,
@@ -1740,16 +1745,24 @@ impl AppStorage {
         capture_tags: &[String],
         active_scenario: Option<ActiveScenarioSession>,
     ) -> Result<i64, String> {
+        #[cfg(test)]
+        let _capture_span = performance_study::span("capture.total");
         let normalized_capture_tags = normalize_tag_values(capture_tags)?;
         let now = now_unix_ms();
         let text_char_count = text.chars().count() as i64;
         let line_count = text.lines().count().max(1) as i64;
         let domain = first_url_domain(text);
         let (item_id, prune_outcome, projection_changed, feedback, created) = {
+            #[cfg(test)]
+            let lock_wait = performance_study::span("capture.mutex_wait");
             let mut conn = self
                 .conn
                 .lock()
                 .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+            #[cfg(test)]
+            drop(lock_wait);
+            #[cfg(test)]
+            let _lock_hold = performance_study::span("capture.mutex_hold");
             let tx = conn
                 .transaction()
                 .map_err(|error| format!("failed to start clipboard text capture: {error}"))?;
@@ -2259,6 +2272,33 @@ impl AppStorage {
     }
 
     pub fn history_search(&self, request: HistorySearchRequest) -> Result<HistoryPage, String> {
+        #[cfg(test)]
+        let _search_span = performance_study::span("search.total");
+        #[cfg(test)]
+        let lock_wait = performance_study::span("search.mutex_wait");
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
+        #[cfg(test)]
+        drop(lock_wait);
+        #[cfg(test)]
+        let lock_hold = performance_study::span("search.mutex_hold");
+        let mut page = self.history_search_on_connection(&conn, request)?;
+        drop(conn);
+        #[cfg(test)]
+        drop(lock_hold);
+        self.attach_thumbnail_data_urls(&mut page.items);
+        Ok(page)
+    }
+
+    // SQL/DTO only: callers own locking or a read transaction, then release it
+    // before attaching thumbnails. Both the legacy path and picker use this SQL.
+    fn history_search_on_connection(
+        &self,
+        conn: &Connection,
+        request: HistorySearchRequest,
+    ) -> Result<HistoryPage, String> {
         let trimmed = request.query.trim();
         let query_explanation = search_query_explanation(trimmed);
         let mut warnings = Vec::new();
@@ -2267,10 +2307,6 @@ impl AppStorage {
                 "AI search planning is not implemented yet; using structured search".to_string(),
             );
         }
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|_| "sqlite connection mutex poisoned".to_string())?;
         if request.plan.is_none()
             && query_explanation
                 .diagnostics
@@ -2401,8 +2437,6 @@ impl AppStorage {
                     request.include_content,
                 )?;
             }
-            drop(conn);
-            self.attach_thumbnail_data_urls(&mut page.items);
             return Ok(page);
         }
 
@@ -2432,8 +2466,6 @@ impl AppStorage {
         if custom_sort {
             page.next_cursor = None;
         }
-        drop(conn);
-        self.attach_thumbnail_data_urls(&mut page.items);
         Ok(page)
     }
 
@@ -4064,6 +4096,8 @@ impl AppStorage {
     }
 
     fn attach_thumbnail_data_urls(&self, items: &mut [HistoryItem]) {
+        #[cfg(test)]
+        let _span = performance_study::span("search.thumbnails");
         for item in items {
             item.thumbnail_data_url = self.thumbnail_data_url(item);
         }
@@ -4634,6 +4668,8 @@ fn query_items<P>(conn: &Connection, sql: &str, params: P) -> Result<Vec<History
 where
     P: rusqlite::Params,
 {
+    #[cfg(test)]
+    let _span = performance_study::span("search.page");
     let mut statement = conn
         .prepare(sql)
         .map_err(|error| format!("failed to prepare clipboard history query: {error}"))?;
@@ -4681,6 +4717,8 @@ fn attach_search_matches(
     plan: &SearchPlanV1,
     include_content: bool,
 ) -> Result<(), String> {
+    #[cfg(test)]
+    let _span = performance_study::span("search.matches");
     if items.is_empty() || !search_plan_has_positive_evidence(plan) {
         return Ok(());
     }
@@ -4752,6 +4790,8 @@ fn count_history_items(
     where_sql: &str,
     params: &[Value],
 ) -> Result<i64, String> {
+    #[cfg(test)]
+    let _span = performance_study::span("search.counts");
     let sql = format!("SELECT COUNT(*) FROM clipboard_items {where_sql}");
     conn.query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
         .map_err(|error| format!("failed to count clipboard history: {error}"))
@@ -4762,6 +4802,9 @@ fn default_true() -> bool {
 }
 
 fn query_tag_summaries(conn: &Connection, tag_id: Option<i64>) -> Result<Vec<TagSummary>, String> {
+    // Visit descendant tags first, then their indexed links. An unconstrained
+    // join can scan every clip/tag link once per catalog tag on picker reopen.
+    // Keep DISTINCT: one clip can carry both a parent and several descendants.
     let filter_sql = if tag_id.is_some() {
         "WHERE tags.id = ?1"
     } else {
@@ -4777,8 +4820,9 @@ fn query_tag_summaries(conn: &Connection, tag_id: Option<i64>) -> Result<Vec<Tag
             tags.sort_order,
             (
                 SELECT COUNT(DISTINCT hierarchy_links.item_id)
-                FROM clipboard_item_tags hierarchy_links
-                JOIN tags hierarchy_tags ON hierarchy_tags.id = hierarchy_links.tag_id
+                FROM tags hierarchy_tags
+                CROSS JOIN clipboard_item_tags hierarchy_links
+                    ON hierarchy_links.tag_id = hierarchy_tags.id
                 WHERE hierarchy_tags.slug = tags.slug
                    OR hierarchy_tags.slug LIKE tags.slug || '/%'
             ) AS item_count,
@@ -5749,6 +5793,8 @@ fn retention_limit_from_conn(conn: &Connection) -> i64 {
 }
 
 fn prune_history_from_conn(conn: &Connection) -> Result<PruneOutcome, String> {
+    #[cfg(test)]
+    let _span = performance_study::span("capture.prune");
     let limit = retention_limit_from_conn(conn);
     if limit == UNLIMITED_HISTORY_LIMIT {
         return Ok(PruneOutcome {
@@ -8868,6 +8914,57 @@ mod tests {
                 .map(|tag| tag.item_count),
             Some(1),
         );
+    }
+
+    #[test]
+    fn tag_summaries_preserve_counts_with_overlapping_hierarchies() {
+        let storage = test_storage_with_migrations();
+        let fixtures = [
+            vec!["Workspace", "Workspace/Key", "Workspace/Key/Leaf"],
+            vec!["workspace/Show"],
+            vec!["Workspaceish", "Other/Workspace"],
+            vec!["Árbol", "Árbol/niño", "日本", "日本/子"],
+            vec!["Percent%", "Under_score", "日本/子"],
+            vec!["PercentX/child", "UnderXscore/child"],
+            vec!["Unused"],
+        ];
+        for (index, tags) in fixtures.iter().enumerate() {
+            let id = index as i64 + 1;
+            insert_test_text_item(&storage, id, 40_000 + id, "synthetic tag counts");
+            storage.set_item_tags(SetItemTagsRequest {
+                item_id: id,
+                tags: tags.iter().map(|tag| (*tag).to_string()).collect(),
+            }).unwrap();
+        }
+        storage.set_item_tags(SetItemTagsRequest { item_id: 7, tags: vec![] }).unwrap();
+        // Oracle keeps the previous predicate, including ASCII case folding and
+        // current LIKE wildcard semantics. This optimization must not alter it.
+        let expected = {
+            let conn = storage.conn.lock().unwrap();
+            let mut statement = conn.prepare(
+                "SELECT tags.id, (
+                    SELECT COUNT(DISTINCT hierarchy_links.item_id)
+                    FROM clipboard_item_tags hierarchy_links
+                    JOIN tags hierarchy_tags ON hierarchy_tags.id = hierarchy_links.tag_id
+                    WHERE hierarchy_tags.slug = tags.slug
+                       OR hierarchy_tags.slug LIKE tags.slug || '/%'
+                 ) FROM tags ORDER BY tags.id"
+            ).unwrap();
+            statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
+                .unwrap().collect::<Result<Vec<_>, _>>().unwrap()
+        };
+        let summaries = storage.list_tags().unwrap();
+        let mut actual = summaries.iter().map(|tag| (tag.id, tag.item_count)).collect::<Vec<_>>();
+        actual.sort_unstable();
+        assert_eq!(actual, expected);
+        assert_eq!(summaries.iter().find(|tag| tag.slug == "workspace").unwrap().item_count, 2);
+        assert_eq!(summaries.iter().find(|tag| tag.slug == "unused").unwrap().item_count, 0);
+        for tag in summaries {
+            let conn = storage.conn.lock().unwrap();
+            let single = query_tag_summaries(&conn, Some(tag.id)).unwrap();
+            assert_eq!(single.len(), 1);
+            assert_eq!(single[0].item_count, tag.item_count);
+        }
     }
 
     #[test]

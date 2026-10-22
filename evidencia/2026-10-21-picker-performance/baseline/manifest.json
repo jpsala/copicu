@@ -1,0 +1,102 @@
+{
+  "capturedAt": "2026-10-21T22:57:29.196Z",
+  "sourceCommit": "8ab41ce",
+  "productVersion": "0.5.10",
+  "role": "Immutable pre-change baseline; synthetic data only",
+  "files": [
+    {
+      "path": "src/main.tsx",
+      "sha256": "02ddc2a75bb62a1729588ea1afa8ff2d4ec716af17221e306952ddfab0ca3e23"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "72a3b8022ddb632dab4e925f236d7518f64df471707a3d7beba947dbe9d0307e"
+    },
+    {
+      "path": "src-tauri/src/storage.rs",
+      "sha256": "f6db5c0d03644f00e62c541859c959dc28729ac6a2683468d7aaf8c4f2f66c15"
+    },
+    {
+      "path": "src-tauri/src/storage/search.rs",
+      "sha256": "a3fc19f1b392db4015ac480c8a878e383b824e9bfe5b9827d7d04bd7491aeb69"
+    },
+    {
+      "path": "src-tauri/src/storage/schema.rs",
+      "sha256": "a5cd28d82ce60fa5b2f183e702951cfe11d4ef10bd3cba151f5e1a23faea83ab"
+    },
+    {
+      "path": "src-tauri/examples/bench_picker_open.rs",
+      "sha256": "271f91117e0c61c4d4b4ad82f8fd3f6f4457ae98254694a046c4000d4c5425bd"
+    },
+    {
+      "path": "tests/visual/shell.spec.ts",
+      "sha256": "69a38f951fd7704e68f0c6c474e0f2fd73a0b89c77a62851daa15cddd3819316"
+    }
+  ],
+  "artifacts": [
+    {
+      "file": "native-100k-100tags.jsonl",
+      "sha256": "1834d031eb7183ddfc52ada3dad495a99b679efe4502469632f55997bb95dd13"
+    },
+    {
+      "file": "native-100k-500tags.jsonl",
+      "sha256": "a4960fcba3718a4c963fe7db63e8ca323d3c5efc3ca0d1d268e825dac6d8ed15"
+    },
+    {
+      "file": "native-10k-100tags.jsonl",
+      "sha256": "7c38376cac7a4f601839432d13bfb427cdf5747492e9f487b64cdc7433958c70"
+    },
+    {
+      "file": "native-10k-500tags.jsonl",
+      "sha256": "147c446d103a2188916a9c0c8eea380fae963668cc3e40b65c1e3fa9f46d9d3c"
+    },
+    {
+      "file": "picker-image-cpu1.json",
+      "sha256": "162200a4331982077e5982089c56a0ba7589a3573f38de55e7663f48b6ab7904"
+    },
+    {
+      "file": "picker-image-cpu4.json",
+      "sha256": "2ab11d88b7927193e14fd910e20532f7ee229c73a431c22724cc8520c2aa0483"
+    },
+    {
+      "file": "picker-long-cpu1.json",
+      "sha256": "b61eb75357274ab783016131fc17ffd7292c941279b764f56633356fb6126105"
+    },
+    {
+      "file": "picker-long-cpu4.json",
+      "sha256": "2ab60fa49a5b9f5a20f0b0d138bf9d1a6531e9f36b9a8ecf4b5c911cd622b93a"
+    },
+    {
+      "file": "picker-short-cpu1.json",
+      "sha256": "d1a82cd2d94d262b20854653d6a8b4bf12ce010f8a0d72c3e29cd7f454e8e67c"
+    },
+    {
+      "file": "picker-short-cpu4.json",
+      "sha256": "24acc4d2ccad47da7df6d6fb4835299a67359c072d9b9dab5299cf9aeb6407b1"
+    },
+    {
+      "file": "renderer-baseline-repeat.txt",
+      "sha256": "58b1d07a5135fa3e6690c6108a8d4a1c0a5ed50c0d7ef5b00eb7a006f9cd336f"
+    },
+    {
+      "file": "renderer-tail.txt",
+      "sha256": "61060fe85698282e68362eaabdf48293ae479a9724a00167cd8c050c9aeafb5c"
+    },
+    {
+      "file": "renderer.txt",
+      "sha256": "ff81c2eab62afcfaf0075415e8b450350d84a44b35c51be0e658a075fd99de0e"
+    },
+    {
+      "file": "sql-probe.mjs",
+      "sha256": "194c4e7d864cc13dbd266be53417e339aaf4944300f2bdbda74cd94a349b1640"
+    },
+    {
+      "file": "sql-results.json",
+      "sha256": "422a677ef1a1adfbb4fc930f5adefbf8235a3f80945a321bd13cf4430a2bfbbb"
+    },
+    {
+      "file": "sql.txt",
+      "sha256": "b54431cdd87b908dcaf8e142cc1fc1d74a4224dab3a17dd07362c7b02367b220"
+    }
+  ]
+}

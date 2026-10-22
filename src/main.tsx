@@ -33,6 +33,7 @@ import {
   Menu,
 } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
+import { createPickerHistoryClient, isPickerReadSuperseded } from "./shared/pickerHistoryReader";
 import { emitTo, listen, type Event } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -704,6 +705,8 @@ function historySearch(request: HistorySearchRequest) {
   return invoke<HistoryPage>("history_search", { request });
 }
 
+const pickerHistoryReader = createPickerHistoryClient<HistorySearchRequest, HistoryPage>(invoke);
+
 function getHistoryItem(id: number) {
   return invoke<HistoryItem>("get_history_item", { id });
 }
@@ -853,6 +856,16 @@ function listActions() {
 
 function listTags() {
   return invoke<TagSummary[]>("list_tags");
+}
+
+// Tag/folder summaries are flat records. Preserve identity on unchanged refresh
+// so the feed and CodeMirror completions do not rebuild for the same catalog.
+function sameCatalogRows<T extends object>(current: T[], next: T[]) {
+  return current.length === next.length && current.every((row, index) => {
+    const other = next[index];
+    const keys = Object.keys(row) as Array<keyof T>;
+    return keys.length === Object.keys(other).length && keys.every((key) => row[key] === other[key]);
+  });
 }
 
 function listSavedHistoryViews() {
@@ -1600,7 +1613,7 @@ function App() {
     },
     getItemKey: (index) => displayedHistory[index]?.id ?? `loader-${index}`,
     ...({ shouldAdjustScrollPositionOnItemSizeChange: () => false } as Record<string, unknown>),
-    overscan: 24,
+    overscan: 6,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
   const currentAppearanceLayoutKey = `${appearanceLayoutKey(settings.appearance)}:${appearanceViewport.narrow}:${appearanceViewport.coarsePointer}`;
@@ -3542,7 +3555,7 @@ function App() {
 
       let page: HistoryPage;
       try {
-        page = await historySearch({
+        page = await pickerHistoryReader.search({
           query: descriptorRequest?.query ?? searchInput.query,
           displayQuery: descriptorRequest?.displayQuery ?? trimmed,
           cursor: null,
@@ -3567,8 +3580,11 @@ function App() {
         const requestIsCurrent = requestSeq === historyRequestSeqRef.current
           && (!foreground || intentGeneration === searchIntentGenerationRef.current);
         if (requestIsCurrent) {
-          rememberFailure();
-          settleForegroundFailure();
+          const superseded = isPickerReadSuperseded(error);
+          if (!superseded) {
+            rememberFailure();
+            settleForegroundFailure();
+          }
           if (foreground) {
             setHistoryPending(false);
             setAiPlanning(false);
@@ -3580,6 +3596,7 @@ function App() {
               setForegroundSearchInFlight(false);
             }
           }
+          if (superseded) return;
           setHistoryError(String(error));
           dispatchSearch({
             type: "applyFailed",
@@ -3950,7 +3967,7 @@ function App() {
       invoke<FolderSummary[]>("list_folders"),
       invoke<number>("root_item_count"),
     ]);
-    setFolders(nextFolders);
+    setFolders((current) => sameCatalogRows(current, nextFolders) ? current : nextFolders);
     setRootItemCount(nextRootCount);
   }, []);
   useEffect(() => {
@@ -4320,7 +4337,7 @@ function App() {
     setHistoryLoadingMore(true);
 
     try {
-      const page = await historySearch({
+      const page = await pickerHistoryReader.search({
         query: descriptorRequest.query,
         displayQuery: descriptorRequest.displayQuery,
         cursor,
@@ -4371,7 +4388,7 @@ function App() {
       setHistoryQuery(appliedQuery);
       setHistoryError(null);
     } catch (error) {
-      if (loadSeq === historyLoadMoreSeqRef.current) {
+      if (loadSeq === historyLoadMoreSeqRef.current && !isPickerReadSuperseded(error)) {
         const paginationBlock = {
           descriptorFingerprint: appliedFingerprint,
           cursor,
@@ -5923,61 +5940,53 @@ function App() {
     });
 
 
+    let focusRefresh: { generation: number } | null = null;
+    let latestSessionGeneration = -1;
     const refreshOnFocus = (fromNativeShow = false) => {
-      if (!active) {
-        return;
-      }
+      if (!active) return;
       if (!fromNativeShow && document.visibilityState === "hidden") {
-        pickerWasHiddenRef.current = true;
+        pickerEventHandlersRef.current.markPickerHidden();
         return;
       }
-
+      // Show, focus and visibility can all announce the same opening. Share the
+      // in-flight work, but never let an older hidden session swallow a new show.
+      if (focusRefresh?.generation === reopenGenerationRef.current) return;
+      const flight = { generation: reopenGenerationRef.current };
+      focusRefresh = flight;
+      const current = () => active && focusRefresh === flight
+        && flight.generation === reopenGenerationRef.current;
       const focusSelectionSeq = selectionInteractionSeqRef.current;
       const focusQueryInteractionSeq = queryInteractionSeqRef.current;
       const focusRequestSeq = historyRequestSeqRef.current;
       void (async () => {
         let resetFromHost = false;
         try {
-          if (!(await getCurrentWindow().isVisible())) {
+          const visible = await getCurrentWindow().isVisible();
+          if (!current()) return;
+          if (!visible) {
             pickerEventHandlersRef.current.markPickerHidden();
             return;
           }
-          void listTags().then((tags) => {
-            if (active) {
-              setKnownTagSlugs(tags.map((tag) => tag.slug));
-              setPaletteTags(tags);
-            }
-          }).catch(() => undefined);
-          void reloadFolders().catch((error) => setActionError(String(error)));
           const session = await consumePickerSessionSnapshot();
+          // Consuming the host snapshot is destructive. Keep its pending capture
+          // even if hidden again while awaiting IPC, unless a newer one won.
+          if (active && session.generation >= latestSessionGeneration) {
+            latestSessionGeneration = session.generation;
+            if (session.pendingActivationItemId !== null) {
+              pendingHistoryActivationItemIdRef.current = session.pendingActivationItemId;
+            }
+          }
           resetFromHost = session.reset;
-          if (session.pendingActivationItemId !== null) {
-            pendingHistoryActivationItemIdRef.current = session.pendingActivationItemId;
-          }
-          const feedback = await invoke<Array<{ itemId: number; targetFolderId: number | null; existingFolderId: number | null }>>("consume_capture_folder_feedback");
-          if (active && feedback.length > 0) {
-            const knownFolders = await invoke<FolderSummary[]>("list_folders");
-            const latest = feedback[feedback.length - 1];
-            const target = latest.targetFolderId === null ? "/" : knownFolders.find((folder) => folder.id === latest.targetFolderId)?.path ?? "the selected folder";
-            const existing = latest.existingFolderId === null ? "/" : knownFolders.find((folder) => folder.id === latest.existingFolderId)?.path ?? "another folder";
-            pushToast({
-              title: "Capture already exists",
-              message: `${feedback.length > 1 ? `${feedback.length} captures deduplicated. Latest: ` : ""}Targeted ${target}; existing clip remains in ${existing}.`,
-              tone: "info",
-            });
-          }
         } catch (error) {
           console.warn("consume picker session failed", error);
         }
-        if (!active) {
-          return;
-        }
+        if (!current()) return;
         if (resetFromHost) {
           pickerEventHandlersRef.current.markPickerHidden();
+          flight.generation = reopenGenerationRef.current;
         }
-        const pendingHiddenReset = pickerWasHiddenRef.current;
         const resetAfterHidden =
-          pendingHiddenReset &&
+          pickerWasHiddenRef.current &&
           focusSelectionSeq === selectionInteractionSeqRef.current &&
           focusQueryInteractionSeq === queryInteractionSeqRef.current &&
           focusRequestSeq === historyRequestSeqRef.current;
@@ -5985,7 +5994,7 @@ function App() {
         if (resetAfterHidden) {
           pickerEventHandlersRef.current.resetPickerSession();
         }
-        const refresh = resetAfterHidden
+        await (resetAfterHidden
           ? pickerEventHandlersRef.current.refreshHistory({
               resetScroll: true,
               showPending: false,
@@ -5995,14 +6004,53 @@ function App() {
           : pickerEventHandlersRef.current.refreshAppliedHistory({
               respectManualScroll: true,
               showPending: false,
-            });
-        void refresh.then(activatePendingHistoryItem).catch((error) => {
-          if (active) {
-            setHistoryPending(false);
-            setHistoryError(String(error));
-          }
+            }));
+        if (!current()) return;
+        activatePendingHistoryItem();
+        // Let the fresh page commit/paint before catalog SQL can compete for the
+        // storage mutex, or catalog state updates rerender the entire picker.
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
         });
-      })();
+        if (!current()) return;
+        const [tags, , feedback] = await Promise.all([
+          listTags().catch(() => null),
+          reloadFolders().catch((error) => { if (current()) setActionError(String(error)); }),
+          invoke<Array<{ itemId: number; targetFolderId: number | null; existingFolderId: number | null }>>("consume_capture_folder_feedback")
+            .catch((error) => { console.warn("consume capture feedback failed", error); return []; }),
+        ]);
+        if (!active) return;
+        if (current() && tags) {
+          const slugs = tags.map((tag) => tag.slug);
+          setKnownTagSlugs((previous) => previous.length === slugs.length
+            && previous.every((slug, index) => slug === slugs[index]) ? previous : slugs);
+          setPaletteTags((previous) => sameCatalogRows(previous, tags) ? previous : tags);
+        }
+        if (feedback.length > 0) {
+          // Feedback was consumed from the host; keep the toast across a hide,
+          // and never turn a supplemental folder failure into a history error.
+          const knownFolders = await invoke<FolderSummary[]>("list_folders").catch((error) => {
+            console.warn("capture feedback folders failed", error);
+            return null;
+          });
+          if (!active || !knownFolders) return;
+          const latest = feedback[feedback.length - 1];
+          const target = latest.targetFolderId === null ? "/" : knownFolders.find((folder) => folder.id === latest.targetFolderId)?.path ?? "the selected folder";
+          const existing = latest.existingFolderId === null ? "/" : knownFolders.find((folder) => folder.id === latest.existingFolderId)?.path ?? "another folder";
+          pushToast({
+            title: "Capture already exists",
+            message: `${feedback.length > 1 ? `${feedback.length} captures deduplicated. Latest: ` : ""}Targeted ${target}; existing clip remains in ${existing}.`,
+            tone: "info",
+          });
+        }
+      })().catch((error) => {
+        if (current()) {
+          setHistoryPending(false);
+          setHistoryError(String(error));
+        }
+      }).finally(() => {
+        if (focusRefresh === flight) focusRefresh = null;
+      });
     };
     const refreshOnFocusEvent = () => refreshOnFocus();
     window.addEventListener("focus", refreshOnFocusEvent);

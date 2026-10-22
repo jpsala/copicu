@@ -1191,9 +1191,16 @@ async fn list_history_page(
 #[tauri::command]
 async fn history_search(
     app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     storage: State<'_, storage::AppStorage>,
+    reader: State<'_, storage::picker_reader::PickerHistoryReader>,
     request: storage::HistorySearchRequest,
+    picker_read: Option<storage::picker_reader::ReadToken>,
 ) -> Result<storage::HistoryPage, String> {
+    if let Some(token) = picker_read {
+        require_surface_window(&window, &[MAIN_WINDOW_LABEL], "picker history read")?;
+        return reader.search(token, request).await;
+    }
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         if request.mode == storage::HistorySearchMode::Ai && request.applied_descriptor.is_none() {
@@ -1203,6 +1210,16 @@ async fn history_search(
     })
     .await
     .map_err(|error| format!("history search worker failed: {error}"))?
+}
+
+#[cfg(not(test))]
+#[tauri::command]
+fn begin_picker_history_read_session(
+    window: tauri::WebviewWindow,
+    reader: State<'_, storage::picker_reader::PickerHistoryReader>,
+) -> Result<u64, String> {
+    require_surface_window(&window, &[MAIN_WINDOW_LABEL], "begin picker history read session")?;
+    reader.begin_session()
 }
 
 #[cfg(not(test))]
@@ -2319,15 +2336,21 @@ async fn apply_metadata_selection_intent(
 
 #[cfg(not(test))]
 #[tauri::command]
-fn list_folders(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::FolderSummary>, String> {
+async fn list_folders(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<Vec<storage::FolderSummary>, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL, METADATA_WINDOW_LABEL, SETTINGS_WINDOW_LABEL], "list_folders")?;
-    storage.list_folders()
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.list_folders())
+        .await
+        .map_err(|error| format!("folders worker failed: {error}"))?
 }
 #[cfg(not(test))]
 #[tauri::command]
-fn root_item_count(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<i64, String> {
+async fn root_item_count(window: tauri::WebviewWindow, storage: State<'_, storage::AppStorage>) -> Result<i64, String> {
     require_surface_window(&window, &[MAIN_WINDOW_LABEL], "root_item_count")?;
-    storage.root_item_count()
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || storage.root_item_count())
+        .await
+        .map_err(|error| format!("root count worker failed: {error}"))?
 }
 
 #[cfg(not(test))]
@@ -4200,6 +4223,7 @@ pub fn run() {
             search_items,
             list_history_page,
             history_search,
+            begin_picker_history_read_session,
             update_history_item_text,
             get_history_items_preview,
             find_start,
@@ -4376,6 +4400,8 @@ pub fn run() {
             app.manage(ItemPreviewState::default());
             app.manage(window_registry.clone());
             app.manage(storage.clone());
+            app.manage(storage::picker_reader::PickerHistoryReader::new(storage.clone())
+                .map_err(|error| tauri::Error::Anyhow(std::io::Error::other(error).into()))?);
             app.manage(clip_export::batch::ExportState::default());
             let initial_settings = storage
                 .get_settings()
@@ -5533,8 +5559,8 @@ fn refresh_assistant_shortcut<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
 
 #[cfg(not(test))]
 fn spawn_toggle_main_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
+    // Defer beyond the shortcut callback without imposing a fixed opening delay.
     thread::spawn(move || {
-        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
         let app_for_main_thread = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
             if let Err(error) = toggle_main_window(&app_for_main_thread) {
@@ -5549,7 +5575,6 @@ fn spawn_toggle_main_window<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R
 #[cfg(not(test))]
 fn spawn_toggle_main_window_without_focus<R: tauri::Runtime + 'static>(app: tauri::AppHandle<R>) {
     thread::spawn(move || {
-        thread::sleep(NATIVE_WINDOW_TASK_DELAY);
         let app_for_main_thread = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
             if let Err(error) = toggle_main_window_without_focus(&app_for_main_thread) {

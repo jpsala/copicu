@@ -417,6 +417,7 @@ type SettingsRaceRuntime = Window & {
 };
 
 type MockTauriOptions = {
+  readerSessionFailNext?: boolean;
   historySearchDelayMs?: number;
   historySearchDelaySequenceMs?: number[];
   historySearchFailNext?: boolean;
@@ -1860,6 +1861,14 @@ async function mockTauriInvoke(
             const batch = state.__copicuTestExportBatch;
             const published = batch.successes > 0 && (!batch.compressed || args.publish);
             return { archive: batch.compressed && published ? "synthetic-clips.zip" : null, published, warning: null };
+          }
+          case "begin_picker_history_read_session": {
+            const options = (window as any).__copicuTestMockOptions;
+            if (options?.readerSessionFailNext) {
+              options.readerSessionFailNext = false;
+              throw new Error("Synthetic reader registration failure");
+            }
+            return 1;
           }
           case "history_search":
           case "list_history_page": {
@@ -4710,7 +4719,9 @@ test("file export marked menu includes every page outside the current filter", a
   const writes = await page.evaluate(() => (window as any).__copicuTestExportWrites);
   expect(writes.map((item: any) => item.itemId)).toEqual(fixtures.map((item) => item.id));
   expect(writes.map((item: any) => item.ordinal)).toEqual(fixtures.map((_, index) => index + 1));
-  expect(calls.filter((call: any) => call.cmd === "history_search" && call.args.request.query === "is:marked").length).toBeGreaterThan(1);
+  const markedReads = calls.filter((call: any) => call.cmd === "history_search" && call.args.request.query === "is:marked");
+  expect(markedReads.length).toBeGreaterThan(1);
+  expect(markedReads.every((call: any) => call.args.pickerRead === undefined)).toBe(true);
   await expect(page.locator(".mark-menu-count")).toHaveText("125");
   await expect(page.locator(".selection-menu-count")).toHaveText("0");
 });
@@ -5832,6 +5843,54 @@ test("retained boundary refresh keeps cursor bridge continuity", async ({ page }
   expect(new Set(allIds).size).toBe(allIds.length);
 });
 
+test("picker reader registers once across refresh and pagination with monotonic tokens", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticPagedHistory);
+  await gotoShell(page);
+  await expect(page.locator("[title='Result count']")).toHaveText("80 total");
+  await page.locator(".history-feed-scroll").evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "history_search" && call.args.request.cursor).length)).toBeGreaterThan(0);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "history_search" && !call.args.request.cursor).length)).toBeGreaterThan(1);
+  const calls = await page.evaluate(() => (window as any).__copicuTestInvocations);
+  expect(calls.filter((call: any) => call.cmd === "begin_picker_history_read_session")).toHaveLength(1);
+  const tokens = calls.filter((call: any) => call.cmd === "history_search").map((call: any) => call.args.pickerRead);
+  expect(tokens.every((token: any) => token?.session === 1)).toBe(true);
+  expect(tokens.map((token: any) => token.generation)).toEqual(tokens.map((_: any, index: number) => index + 1));
+});
+
+test("picker reader registration failure recovers through Retry", async ({ page }) => {
+  await mockTauriInvoke(page, syntheticLongHistory, null, { readerSessionFailNext: true });
+  await gotoShell(page);
+  await expect(page.getByRole("alert")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "history_search").length)).toBe(0);
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.locator("[title='Result count']")).toHaveText("4 total");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "begin_picker_history_read_session").length)).toBe(2);
+});
+
+test("picker reader supersession is silent and a subsequent query still applies", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page);
+  await waitForDefaultHistoryReady(page);
+  await page.evaluate(() => {
+    const options = (window as any).__copicuTestMockOptions;
+    options.historySearchFailNext = true;
+    options.historySearchFailMessage = "HISTORY_SEARCH_SUPERSEDED";
+  });
+  const search = page.getByLabel("Search clipboard history");
+  await search.fill("unbroken");
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestMockOptions.historySearchFailNext)).toBe(false);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await search.fill("COPICU_SYNTH_MULTILINE_01");
+  await expect(page.locator("[title='Result count']")).toHaveText("1 / 4 matches");
+});
+
 test("initial history failure remains recoverable through Retry", async ({ page }) => {
   await mockTauriInvoke(page, syntheticLongHistory, null, { historySearchFailNext: true });
   await gotoShell(page);
@@ -6649,7 +6708,12 @@ test("overlapping first-page refresh does not leave pagination stuck", async ({ 
   await page.waitForFunction((before) =>
     (window as any).__copicuTestInvocations.filter((call: any) => call.cmd === "history_search").length > before,
   callsBeforeFinalPage);
-  await expect(page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ })).toBeAttached({ timeout: 5000 });
+  // The appended page extends the scroll range. Its last row need not be
+  // premounted by overscan while the viewport is still at the old page end.
+  await expect.poll(async () => {
+    await feed.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    return page.getByRole("group", { name: /COPICU_SYNTH_PAGE_80/ }).isVisible();
+  }, { timeout: 5000 }).toBe(true);
 });
 
 test("background refresh deferred during realtime search is replayed", async ({ page }) => {
@@ -7640,10 +7704,11 @@ test("native show refreshes a hidden picker without a new WebView focus event", 
 
 test("native show and focus together still reveal fresh history", async ({ page }) => {
   await mockTauriInvoke(page);
-  await gotoShell(page);
+  await gotoShell(page, "/?copicuDiagnostics=off");
   await waitForDefaultHistoryReady(page);
 
   await page.evaluate(async () => {
+    (window as any).__copicuTestInvocations = [];
     const runtime = window as Window & {
       __copicuTestWindowVisible: boolean;
       __copicuTestHistoryItems: Array<{ id: number; text: string; preview_text?: string; normalized_hash: string }>;
@@ -7670,10 +7735,93 @@ test("native show and focus together still reveal fresh history", async ({ page 
     runtime.__copicuTestWindowVisible = true;
     await runtime.__copicuTestEmitEvent("copicu://picker/shown", null);
     window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
   });
 
   await expect(page.locator("#history-item-9912")).toBeVisible();
   await expect(page.getByRole("status", { name: "Updating clipboard history" })).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "list_tags").length)).toBe(1);
+  const counts = await page.evaluate(() => {
+    const calls = (window as any).__copicuTestInvocations;
+    return ["history_search", "consume_picker_session_snapshot", "list_tags", "list_folders", "root_item_count"]
+      .map(cmd => calls.filter((call: any) => call.cmd === cmd).length);
+  });
+  expect(counts).toEqual([1, 1, 1, 1, 1]);
+});
+
+test("picker opening reveals fresh rows before delayed catalogs and capture feedback", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?copicuDiagnostics=off");
+  await waitForDefaultHistoryReady(page);
+  await page.evaluate(async () => {
+    const runtime = window as any;
+    runtime.__copicuTestWindowVisible = false;
+    await runtime.__copicuTestEmitEvent("copicu://picker/hidden", null);
+    runtime.__copicuTestHistoryItems.unshift({
+      ...runtime.__copicuTestHistoryItems[0], id: 9914,
+      text: "COPICU_SYNTH_FAST_FIRST_PAGE", preview_text: "COPICU_SYNTH_FAST_FIRST_PAGE",
+      normalized_hash: "fast-first-page-9914",
+    });
+    runtime.__copicuTestPickerSessionSnapshots.push({ reset: true, generation: 1, pendingActivationItemId: 9914 });
+    const original = runtime.__TAURI_INTERNALS__.invoke;
+    const pending: Array<() => void> = [];
+    runtime.__copicuTestPendingCatalogs = [];
+    runtime.__copicuTestReleaseCatalogs = () => pending.forEach(resolve => resolve());
+    runtime.__TAURI_INTERNALS__.invoke = async (cmd: string, args: any) => {
+      if (["list_tags", "list_folders", "root_item_count", "consume_capture_folder_feedback"].includes(cmd)) {
+        runtime.__copicuTestPendingCatalogs.push(cmd);
+        await new Promise<void>(resolve => pending.push(resolve));
+      }
+      return original(cmd, args);
+    };
+    runtime.__copicuTestWindowVisible = true;
+    await runtime.__copicuTestEmitEvent("copicu://picker/shown", null);
+  });
+  await expect(page.locator("#history-item-9914")).toBeVisible();
+  await expect(page.getByRole("status", { name: "Updating clipboard history" })).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestPendingCatalogs.length)).toBe(4);
+  await page.evaluate(() => (window as any).__copicuTestReleaseCatalogs());
+  await expect(page.locator("#history-item-9914 .feed-item")).toHaveAttribute("aria-current", "true");
+});
+
+test("picker opening after a second hide supersedes the previous in-flight refresh", async ({ page }) => {
+  await mockTauriInvoke(page);
+  await gotoShell(page, "/?copicuDiagnostics=off");
+  await waitForDefaultHistoryReady(page);
+  await page.evaluate(async () => {
+    const runtime = window as any;
+    runtime.__copicuTestWindowVisible = false;
+    await runtime.__copicuTestEmitEvent("copicu://picker/hidden", null);
+    runtime.__copicuTestInvocations = [];
+    runtime.__copicuTestPickerSessionSnapshots.push({ reset: true, generation: 1, pendingActivationItemId: null });
+    runtime.__copicuTestMockOptions.historySearchDelaySequenceMs = [400, 0];
+    runtime.__copicuTestWindowVisible = true;
+    await runtime.__copicuTestEmitEvent("copicu://picker/shown", null);
+  });
+  await expect.poll(() => page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "history_search").length)).toBe(1);
+  await page.evaluate(async () => {
+    const runtime = window as any;
+    runtime.__copicuTestWindowVisible = false;
+    await runtime.__copicuTestEmitEvent("copicu://picker/hidden", null);
+    runtime.__copicuTestHistoryItems.unshift({
+      ...runtime.__copicuTestHistoryItems[0], id: 9915,
+      text: "COPICU_SYNTH_NEWEST_OPEN", preview_text: "COPICU_SYNTH_NEWEST_OPEN",
+      normalized_hash: "newest-open-9915",
+    });
+    runtime.__copicuTestPickerSessionSnapshots.push({ reset: true, generation: 2, pendingActivationItemId: 9915 });
+    runtime.__copicuTestWindowVisible = true;
+    await runtime.__copicuTestEmitEvent("copicu://picker/shown", null);
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(page.locator("#history-item-9915")).toBeVisible();
+  await page.locator("#history-item-101 .feed-item").click();
+  await page.waitForTimeout(450);
+  await expect(page.locator("#history-item-101 .feed-item")).toHaveAttribute("aria-current", "true");
+  await expect(page.getByRole("status", { name: "Updating clipboard history" })).toBeHidden();
+  expect(await page.evaluate(() => (window as any).__copicuTestInvocations
+    .filter((call: any) => call.cmd === "history_search").length)).toBe(2);
 });
 
 test("native hide keeps stale clips concealed through a failed refresh and Retry", async ({ page }) => {

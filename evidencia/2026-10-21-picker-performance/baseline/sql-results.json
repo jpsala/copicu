@@ -1,0 +1,371 @@
+{
+  "node": "v24.16.0",
+  "migrations": 19,
+  "rows": [
+    {
+      "count": 10000,
+      "name": "first_page_61",
+      "medianMs": 0.2160999999999973,
+      "maxMs": 0.4252000000000038,
+      "rows": 61,
+      "jsonBytes": 67226,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 10000,
+      "name": "total_count",
+      "medianMs": 0.0020999999999986585,
+      "maxMs": 0.0031000000000034333,
+      "rows": 1,
+      "jsonBytes": 20,
+      "plan": [
+        "SCAN clipboard_items USING COVERING INDEX idx_clipboard_items_folder"
+      ]
+    },
+    {
+      "count": 10000,
+      "name": "root_count",
+      "medianMs": 0.22419999999999618,
+      "maxMs": 0.2394000000000034,
+      "rows": 1,
+      "jsonBytes": 20,
+      "plan": [
+        "SEARCH clipboard_items USING COVERING INDEX idx_clipboard_items_folder (folder_id=?)"
+      ]
+    },
+    {
+      "count": 10000,
+      "name": "filtered_count_content",
+      "medianMs": 2.1204000000000036,
+      "maxMs": 2.505600000000001,
+      "rows": 1,
+      "jsonBytes": 20,
+      "plan": [
+        "SCAN clipboard_items"
+      ]
+    },
+    {
+      "count": 10000,
+      "name": "filtered_page_content",
+      "medianMs": 0.23550000000000182,
+      "maxMs": 0.43359999999999843,
+      "rows": 61,
+      "jsonBytes": 67226,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 10000,
+      "name": "first_page_250k_chars",
+      "medianMs": 10.397999999999996,
+      "maxMs": 10.5959,
+      "rows": 61,
+      "jsonBytes": 155370,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 10000,
+      "name": "first_page_250k_chars_without_length",
+      "medianMs": 1.6608000000000231,
+      "maxMs": 2.0413000000000068,
+      "rows": 61,
+      "jsonBytes": 154028,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 10000,
+      "tagCount": 10,
+      "name": "list_tags",
+      "medianMs": 10.655700000000024,
+      "maxMs": 11.894200000000012,
+      "rows": 10,
+      "jsonBytes": 1354,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SCAN hierarchy_links USING COVERING INDEX sqlite_autoindex_clipboard_item_tags_1",
+        "SEARCH hierarchy_tags USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 10000,
+      "tagCount": 10,
+      "name": "list_tags_candidate_tag_first",
+      "medianMs": 0.7922000000000367,
+      "maxMs": 0.7934000000000196,
+      "rows": 10,
+      "jsonBytes": 1354,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN hierarchy_tags USING COVERING INDEX sqlite_autoindex_tags_1",
+        "SEARCH hierarchy_links USING COVERING INDEX idx_clipboard_item_tags_tag_id (tag_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 10000,
+      "tagCount": 100,
+      "name": "list_tags",
+      "medianMs": 103.40750000000003,
+      "maxMs": 105.30630000000002,
+      "rows": 100,
+      "jsonBytes": 13677,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SCAN hierarchy_links USING COVERING INDEX sqlite_autoindex_clipboard_item_tags_1",
+        "SEARCH hierarchy_tags USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 10000,
+      "tagCount": 100,
+      "name": "list_tags_candidate_tag_first",
+      "medianMs": 1.651200000000017,
+      "maxMs": 1.6814000000000533,
+      "rows": 100,
+      "jsonBytes": 13677,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN hierarchy_tags USING COVERING INDEX sqlite_autoindex_tags_1",
+        "SEARCH hierarchy_links USING COVERING INDEX idx_clipboard_item_tags_tag_id (tag_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 10000,
+      "tagCount": 500,
+      "name": "list_tags",
+      "medianMs": 522.0843000000002,
+      "maxMs": 523.4174000000003,
+      "rows": 500,
+      "jsonBytes": 69177,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SCAN hierarchy_links USING COVERING INDEX sqlite_autoindex_clipboard_item_tags_1",
+        "SEARCH hierarchy_tags USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 10000,
+      "tagCount": 500,
+      "name": "list_tags_candidate_tag_first",
+      "medianMs": 23.687400000000252,
+      "maxMs": 24.253900000000158,
+      "rows": 500,
+      "jsonBytes": 69177,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN hierarchy_tags USING COVERING INDEX sqlite_autoindex_tags_1",
+        "SEARCH hierarchy_links USING COVERING INDEX idx_clipboard_item_tags_tag_id (tag_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "first_page_61",
+      "medianMs": 0.20929999999952997,
+      "maxMs": 0.2157999999999447,
+      "rows": 61,
+      "jsonBytes": 67409,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "total_count",
+      "medianMs": 0.012300000000323053,
+      "maxMs": 0.014700000000630098,
+      "rows": 1,
+      "jsonBytes": 21,
+      "plan": [
+        "SCAN clipboard_items USING COVERING INDEX idx_clipboard_items_folder"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "root_count",
+      "medianMs": 1.788300000000163,
+      "maxMs": 3.1612999999997555,
+      "rows": 1,
+      "jsonBytes": 21,
+      "plan": [
+        "SEARCH clipboard_items USING COVERING INDEX idx_clipboard_items_folder (folder_id=?)"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "filtered_count_content",
+      "medianMs": 29.24290000000019,
+      "maxMs": 36.22050000000036,
+      "rows": 1,
+      "jsonBytes": 21,
+      "plan": [
+        "SCAN clipboard_items"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "filtered_page_content",
+      "medianMs": 0.4511999999995169,
+      "maxMs": 0.46820000000025175,
+      "rows": 61,
+      "jsonBytes": 67409,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "first_page_250k_chars",
+      "medianMs": 10.995700000000397,
+      "maxMs": 12.92239999999947,
+      "rows": 61,
+      "jsonBytes": 155492,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "name": "first_page_250k_chars_without_length",
+      "medianMs": 1.5138999999999214,
+      "maxMs": 1.7694000000001324,
+      "rows": 61,
+      "jsonBytes": 154150,
+      "plan": [
+        "SCAN clipboard_items USING INDEX idx_clipboard_items_recent_activity"
+      ]
+    },
+    {
+      "count": 100000,
+      "tagCount": 10,
+      "name": "list_tags",
+      "medianMs": 124.07220000000052,
+      "maxMs": 124.85780000000068,
+      "rows": 10,
+      "jsonBytes": 1364,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SCAN hierarchy_links USING COVERING INDEX sqlite_autoindex_clipboard_item_tags_1",
+        "SEARCH hierarchy_tags USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 100000,
+      "tagCount": 10,
+      "name": "list_tags_candidate_tag_first",
+      "medianMs": 11.981299999999464,
+      "maxMs": 12.783400000000256,
+      "rows": 10,
+      "jsonBytes": 1364,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN hierarchy_tags USING COVERING INDEX sqlite_autoindex_tags_1",
+        "SEARCH hierarchy_links USING COVERING INDEX idx_clipboard_item_tags_tag_id (tag_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 100000,
+      "tagCount": 100,
+      "name": "list_tags",
+      "medianMs": 1152.3896999999997,
+      "maxMs": 1157.8940999999995,
+      "rows": 100,
+      "jsonBytes": 13777,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SCAN hierarchy_links USING COVERING INDEX sqlite_autoindex_clipboard_item_tags_1",
+        "SEARCH hierarchy_tags USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 100000,
+      "tagCount": 100,
+      "name": "list_tags_candidate_tag_first",
+      "medianMs": 9.710300000000643,
+      "maxMs": 9.881600000000617,
+      "rows": 100,
+      "jsonBytes": 13777,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN hierarchy_tags USING COVERING INDEX sqlite_autoindex_tags_1",
+        "SEARCH hierarchy_links USING COVERING INDEX idx_clipboard_item_tags_tag_id (tag_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 100000,
+      "tagCount": 500,
+      "name": "list_tags",
+      "medianMs": 6100.912700000001,
+      "maxMs": 6151.160699999997,
+      "rows": 500,
+      "jsonBytes": 69677,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "SCAN hierarchy_links USING COVERING INDEX sqlite_autoindex_clipboard_item_tags_1",
+        "SEARCH hierarchy_tags USING INTEGER PRIMARY KEY (rowid=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "count": 100000,
+      "tagCount": 500,
+      "name": "list_tags_candidate_tag_first",
+      "medianMs": 34.87199999999575,
+      "maxMs": 37.84450000000652,
+      "rows": 500,
+      "jsonBytes": 69677,
+      "plan": [
+        "SCAN tags",
+        "SEARCH tag_configs USING INDEX sqlite_autoindex_tag_configs_1 (tag_id=?) LEFT-JOIN",
+        "CORRELATED SCALAR SUBQUERY 1",
+        "USE TEMP B-TREE FOR count(DISTINCT)",
+        "SCAN hierarchy_tags USING COVERING INDEX sqlite_autoindex_tags_1",
+        "SEARCH hierarchy_links USING COVERING INDEX idx_clipboard_item_tags_tag_id (tag_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    }
+  ],
+  "sqlite": "3.53.0"
+}

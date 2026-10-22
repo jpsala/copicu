@@ -1,0 +1,8 @@
+# Keep original operational captures locally; do not publish process/profile data or logs.
+**/*.txt
+**/native-window-checks.json
+**/interactive-session.json
+**/live-session-check.json
+**/stopped-previous-instance.json
+reader-integration/native-smoke/manifest.json
+reader-integration/native-smoke/verification.json

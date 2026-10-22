@@ -1,0 +1,722 @@
+{
+  "native": [
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "history_search_empty",
+      "beforeMs": 0.2153,
+      "afterMs": 0.2385,
+      "speedup": 0.9027253668763102
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "list_tags",
+      "beforeMs": 1055.3537,
+      "afterMs": 9.6006,
+      "speedup": 109.92580672041329
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "list_folders",
+      "beforeMs": 0.011399999999999999,
+      "afterMs": 0.011300000000000001,
+      "speedup": 1.0088495575221237
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "root_item_count",
+      "beforeMs": 1.8136,
+      "afterMs": 1.8425,
+      "speedup": 0.9843147896879241
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "count_marked",
+      "beforeMs": 2.0098,
+      "afterMs": 2.0077,
+      "speedup": 1.001045973003935
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "history_search_text_counts",
+      "beforeMs": 64.73320000000001,
+      "afterMs": 65.1234,
+      "speedup": 0.9940082980925444
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "history_search_text_no_counts",
+      "beforeMs": 0.4029,
+      "afterMs": 0.3611,
+      "speedup": 1.1157574079202437
+    },
+    {
+      "dataset": "native-100k-100tags.jsonl",
+      "case": "history_search_long_250k_chars",
+      "beforeMs": 14.605599999999999,
+      "afterMs": 14.531,
+      "speedup": 1.0051338517651915
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "history_search_empty",
+      "beforeMs": 0.2052,
+      "afterMs": 0.2004,
+      "speedup": 1.0239520958083832
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "list_tags",
+      "beforeMs": 5432.060100000001,
+      "afterMs": 28.8568,
+      "speedup": 188.2419429735799
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "list_folders",
+      "beforeMs": 0.0117,
+      "afterMs": 0.011600000000000001,
+      "speedup": 1.0086206896551724
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "root_item_count",
+      "beforeMs": 1.8400999999999998,
+      "afterMs": 1.9951,
+      "speedup": 0.922309658663726
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "count_marked",
+      "beforeMs": 2.0641000000000003,
+      "afterMs": 2.0753,
+      "speedup": 0.9946031899002555
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "history_search_text_counts",
+      "beforeMs": 76.8624,
+      "afterMs": 67.8801,
+      "speedup": 1.1323259688774765
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "history_search_text_no_counts",
+      "beforeMs": 0.39490000000000003,
+      "afterMs": 0.3293,
+      "speedup": 1.1992104464014577
+    },
+    {
+      "dataset": "native-100k-500tags.jsonl",
+      "case": "history_search_long_250k_chars",
+      "beforeMs": 14.968499999999999,
+      "afterMs": 14.5501,
+      "speedup": 1.0287558161112293
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "history_search_empty",
+      "beforeMs": 0.2115,
+      "afterMs": 0.2021,
+      "speedup": 1.0465116279069766
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "list_tags",
+      "beforeMs": 102.9486,
+      "afterMs": 1.712,
+      "speedup": 60.13352803738318
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "list_folders",
+      "beforeMs": 0.0111,
+      "afterMs": 0.0115,
+      "speedup": 0.9652173913043479
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "root_item_count",
+      "beforeMs": 0.187,
+      "afterMs": 0.2273,
+      "speedup": 0.8227012758468983
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "count_marked",
+      "beforeMs": 0.2044,
+      "afterMs": 0.1976,
+      "speedup": 1.034412955465587
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "history_search_text_counts",
+      "beforeMs": 6.8366,
+      "afterMs": 6.6838,
+      "speedup": 1.0228612465962477
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "history_search_text_no_counts",
+      "beforeMs": 0.3881,
+      "afterMs": 0.3199,
+      "speedup": 1.2131916223819943
+    },
+    {
+      "dataset": "native-10k-100tags.jsonl",
+      "case": "history_search_long_250k_chars",
+      "beforeMs": 14.4529,
+      "afterMs": 14.7013,
+      "speedup": 0.9831035350615251
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "history_search_empty",
+      "beforeMs": 0.1991,
+      "afterMs": 0.2017,
+      "speedup": 0.9871095686663361
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "list_tags",
+      "beforeMs": 515.2329,
+      "afterMs": 22.328899999999997,
+      "speedup": 23.07471035295066
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "list_folders",
+      "beforeMs": 0.0118,
+      "afterMs": 0.0123,
+      "speedup": 0.959349593495935
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "root_item_count",
+      "beforeMs": 0.2232,
+      "afterMs": 0.19699999999999998,
+      "speedup": 1.1329949238578683
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "count_marked",
+      "beforeMs": 0.2004,
+      "afterMs": 0.2096,
+      "speedup": 0.9561068702290075
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "history_search_text_counts",
+      "beforeMs": 6.9867,
+      "afterMs": 7.008699999999999,
+      "speedup": 0.9968610441308661
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "history_search_text_no_counts",
+      "beforeMs": 0.36010000000000003,
+      "afterMs": 0.3157,
+      "speedup": 1.1406398479569213
+    },
+    {
+      "dataset": "native-10k-500tags.jsonl",
+      "case": "history_search_long_250k_chars",
+      "beforeMs": 14.5812,
+      "afterMs": 14.3226,
+      "speedup": 1.018055381006242
+    }
+  ],
+  "renderer": [
+    {
+      "kind": "image",
+      "cpuRate": 1,
+      "signal": "shown",
+      "before": {
+        "revealMs": 42.09999990463257,
+        "lastMutationMs": 63.40000009536743,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "after": {
+        "revealMs": 34.5,
+        "lastMutationMs": 44.799999952316284,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "image",
+      "cpuRate": 1,
+      "signal": "shown-focus-visibility",
+      "before": {
+        "revealMs": 41.5,
+        "lastMutationMs": 61.700000047683716,
+        "searches": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "tags": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "after": {
+        "revealMs": 40,
+        "lastMutationMs": 42.200000047683716,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "image",
+      "cpuRate": 4,
+      "signal": "shown",
+      "before": {
+        "revealMs": 265.59999990463257,
+        "lastMutationMs": 407.09999990463257,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "after": {
+        "revealMs": 98.79999995231628,
+        "lastMutationMs": 183.40000009536743,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "image",
+      "cpuRate": 4,
+      "signal": "shown-focus-visibility",
+      "before": {
+        "revealMs": 248.40000009536743,
+        "lastMutationMs": 383.5,
+        "searches": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "tags": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "after": {
+        "revealMs": 98,
+        "lastMutationMs": 173,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "long",
+      "cpuRate": 1,
+      "signal": "shown",
+      "before": {
+        "revealMs": 44.39999985694885,
+        "lastMutationMs": 68.19999980926514,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "after": {
+        "revealMs": 37,
+        "lastMutationMs": 49.299999952316284,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "long",
+      "cpuRate": 1,
+      "signal": "shown-focus-visibility",
+      "before": {
+        "revealMs": 44.80000019073486,
+        "lastMutationMs": 67.30000019073486,
+        "searches": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "tags": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "after": {
+        "revealMs": 35.10000014305115,
+        "lastMutationMs": 48,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "long",
+      "cpuRate": 4,
+      "signal": "shown",
+      "before": {
+        "revealMs": 263.19999980926514,
+        "lastMutationMs": 406.5,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "after": {
+        "revealMs": 112.20000004768372,
+        "lastMutationMs": 201.09999990463257,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "long",
+      "cpuRate": 4,
+      "signal": "shown-focus-visibility",
+      "before": {
+        "revealMs": 261.7999999523163,
+        "lastMutationMs": 402.2999999523163,
+        "searches": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "tags": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "after": {
+        "revealMs": 108.89999985694885,
+        "lastMutationMs": 189.79999995231628,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "short",
+      "cpuRate": 1,
+      "signal": "shown",
+      "before": {
+        "revealMs": 41.799999952316284,
+        "lastMutationMs": 63,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "after": {
+        "revealMs": 36.5,
+        "lastMutationMs": 48.60000014305115,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "short",
+      "cpuRate": 1,
+      "signal": "shown-focus-visibility",
+      "before": {
+        "revealMs": 40.10000014305115,
+        "lastMutationMs": 58.5,
+        "searches": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "tags": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "after": {
+        "revealMs": 43.09999990463257,
+        "lastMutationMs": 44.39999985694885,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "short",
+      "cpuRate": 4,
+      "signal": "shown",
+      "before": {
+        "revealMs": 250.10000014305115,
+        "lastMutationMs": 382.2000000476837,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "after": {
+        "revealMs": 122.60000014305115,
+        "lastMutationMs": 229,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "kind": "short",
+      "cpuRate": 4,
+      "signal": "shown-focus-visibility",
+      "before": {
+        "revealMs": 232.70000004768372,
+        "lastMutationMs": 366.7999999523163,
+        "searches": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "tags": [
+          3,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "after": {
+        "revealMs": 121.29999995231628,
+        "lastMutationMs": 225.89999985694885,
+        "searches": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "tags": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ]
+}

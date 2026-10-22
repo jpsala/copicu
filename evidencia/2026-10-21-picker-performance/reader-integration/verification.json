@@ -1,0 +1,44 @@
+{
+  "verifiedAt": "2026-10-22T13:26:01.050Z",
+  "rust": {
+    "passed": 435,
+    "failed": 0,
+    "ignored": 4
+  },
+  "client": {
+    "passed": 4,
+    "failed": 0
+  },
+  "renderer": {
+    "firstRunPassed": 587,
+    "firstRunFailed": 1,
+    "skipped": 2,
+    "failure": "JS module load ERR_NO_BUFFER_SPACE; empty root before UI mounted",
+    "unchangedCaseRepeatPassed": 3,
+    "unchangedCaseRepeatFailed": 0,
+    "uniqueCasesCovered": 588
+  },
+  "documentation": {
+    "passed": 15,
+    "errors": 0,
+    "warnings": 3
+  },
+  "rustfmt": true,
+  "typescript": true,
+  "gitDiffWhitespace": true,
+  "build": {
+    "command": "CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 CARGO_TARGET_DIR=C:/dev/copicu/src-tauri/target-reader-integration node node_modules/@tauri-apps/cli/tauri.js build --no-bundle",
+    "path": "src-tauri/target-reader-integration/release/copicu.exe",
+    "sha256": "dd0ffc6897b43cbe04eed634f34890112fab8463eb1ed1dc4bce2522c0bed96d",
+    "productVersion": "0.5.10 unreleased working tree"
+  },
+  "oldDevExecutable": {
+    "path": "src-tauri/target/release/copicu.exe",
+    "sha256": "4fd7b454ee67987869152553eb2b639022168308476266ffea3db1fd78cbcaee"
+  },
+  "nativeUiSmoke": false,
+  "appRestarted": false,
+  "installationModified": false,
+  "acceptance": "pending",
+  "permission": "Specific request to restart only the identified synthetic instance and run visible Win32 smoke received no answer; no process operation authorized by silence."
+}

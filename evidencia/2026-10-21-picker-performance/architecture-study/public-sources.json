@@ -1,0 +1,86 @@
+[
+  {
+    "url": "https://www.sqlite.org/wal.html",
+    "resolvedUrl": "https://www.sqlite.org/wal.html",
+    "retrievedAt": "2026-10-21T23:47:54.176Z",
+    "htmlSha256": "f3467b530b883d4a00574fe1a898b3d121ed72764ae28cf66941080ac0badb9e",
+    "extraction": "HTML tags/scripts/styles removed and whitespace collapsed; excerpts, not an archived full page.",
+    "excerpts": [
+      {
+        "needle": "readers do not block writers",
+        "excerpt": "d disadvantages to using WAL instead of a rollback journal. Advantages include: WAL is significantly faster in most scenarios. WAL provides more concurrency as readers do not block writers and a writer does not block readers. Reading and writing can proceed concurrently. Disk I/O operations tends to be more sequential using WAL. WAL uses many fewer fsync() operations and is thus less vulnerable to problems on systems where the fsync() system call is broken. But there are also disadvantages: All processes using a database must be on the same host computer; WAL does not work over a network filesystem. This is because WAL requires all processes to share a small amount of memory and processes on separate host machines obviously cannot share memory with each other. Transactions that involve changes against multiple ATTACHed databases are atomic for each individual database, but are not atomic across all databases as a set. It is not possible to change the page_size after entering WAL mode, either on an empty database or by using VACUUM or by restoring from a backup using the backup API . You must be in a rollback journal mode to change the page si"
+      },
+      {
+        "needle": "one writer",
+        "excerpt": "ng that would interfere with the actions of readers, writers and readers can run at the same time. However, since there is only one WAL file, there can only be one writer at a time. A checkpoint operation takes content from the WAL file and transfers it back into the original database file. A checkpoint can run concurrently with readers, however the checkpoint must stop when it reaches a page in the WAL that is past the end mark of any current reader. The checkpoint has to stop at that point because otherwise it might overwrite part of the database file that the reader is actively using. The checkpoint remembers (in the wal-index) how far it got and will resume transferring content from the WAL to the database from where it left off on the next invocation. Thus a long-running read transaction can prevent a checkpointer from making progress. But presumably every read transaction will eventually end and the checkpointer will be able to continue. Whenever a write operation occurs, the writer checks how much progress the checkpointer has made, and if the entire WAL has been transferred into the database and synced and if no readers are making use"
+      },
+      {
+        "needle": "long-running read",
+        "excerpt": "mbers (in the wal-index) how far it got and will resume transferring content from the WAL to the database from where it left off on the next invocation. Thus a long-running read transaction can prevent a checkpointer from making progress. But presumably every read transaction will eventually end and the checkpointer will be able to continue. Whenever a write operation occurs, the writer checks how much progress the checkpointer has made, and if the entire WAL has been transferred into the database and synced and if no readers are making use of the WAL, then the writer will rewind the WAL back to the beginning and start putting new transactions at the beginning of the WAL. This mechanism prevents a WAL file from growing without bound. 2.3. Performance Considerations Write transactions are very fast since they only involve writing the content once (versus twice for rollback-journal transactions) and because the writes are all sequential. Further, syncing the content to the disk is not required, as long as the application is willing to sacrifice durability following a power loss or hard reboot. (Writers sync the WAL on every transaction commit i"
+      },
+      {
+        "needle": "1000 pages",
+        "excerpt": "ree primitive operations: reading, writing, and checkpointing. By default, SQLite does a checkpoint automatically when the WAL file reaches a threshold size of 1000 pages. (The SQLITE_DEFAULT_WAL_AUTOCHECKPOINT compile-time option can be used to specify a different default.) Applications using WAL do not have to do anything in order for these checkpoints to occur. But if they want to, applications can adjust the automatic checkpoint threshold. Or they can turn off the automatic checkpoints and run checkpoints during idle moments or in a separate thread or process. 2.2. Concurrency When a read operation begins on a WAL-mode database, it first remembers the location of the last valid commit record in the WAL. Call this point the \"end mark\". Because the WAL can be growing and adding new commit records while various readers connect to the database, each reader can potentially have its own end mark. But for any particular reader, the end mark is unchanged for the duration of the transaction, thus ensuring that a single read transaction only sees the database content as it existed at a single point in time. When a reader needs a page of content, it"
+      }
+    ]
+  },
+  {
+    "url": "https://www.sqlite.org/isolation.html",
+    "resolvedUrl": "https://www.sqlite.org/isolation.html",
+    "retrievedAt": "2026-10-21T23:47:54.801Z",
+    "htmlSha256": "23395653f04984e4310b287ed548202d874e06ecd2cba17f32b2714e5b7ebef7",
+    "extraction": "HTML tags/scripts/styles removed and whitespace collapsed; excerpts, not an archived full page.",
+    "excerpts": [
+      {
+        "needle": "snapshot isolation",
+        "excerpt": "riginal, unaltered content from the original database file at the same time that the writer is appending to the write-ahead log. In WAL mode , SQLite exhibits \"snapshot isolation\". When a read transaction starts, that reader continues to see an unchanging \"snapshot\" of the database file as it existed at the moment in time when the read transaction started. Any write transactions that commit while the read transaction is active are still invisible to the read transaction, because the reader is seeing a snapshot of database file from a prior moment in time. An example: Suppose there are two database connections X and Y. X starts a read transaction using BEGIN followed by one or more SELECT statements. Then Y comes along and runs an UPDATE statement to modify the database. X can subsequently do a SELECT against the records that Y modified but X will see the older unmodified entries because Y's changes are all invisible to X while X is holding a read transaction. If X wants to see the changes that Y made, then X must end its read transaction and start a new one (by running COMMIT followed by another BEGIN .) Another example: X starts a read trans"
+      },
+      {
+        "needle": "BEGIN IMMEDIATE",
+        "excerpt": "e and does not want to be troubled with possible SQLITE_BUSY_SNAPSHOT errors that arise because another connection jumped ahead of it in line, then X can issue BEGIN IMMEDIATE to start its transaction instead of just an ordinary BEGIN. The BEGIN IMMEDIATE command goes ahead and starts a write transaction, and thus blocks all other writers. If the BEGIN IMMEDIATE operation succeeds, then no subsequent operations in that transaction will ever fail with an SQLITE_BUSY error. No Isolation Between Operations On The Same Database Connection SQLite provides isolation between operations in separate database connections. However, there is no isolation between operations that occur within the same database connection. In other words, if X begins a write transaction using BEGIN IMMEDIATE then issues one or more UPDATE , DELETE , and/or INSERT statements, then those changes are visible to subsequent SELECT statements that are evaluated in database connection X. SELECT statements on a different database connection Y will show no changes until the X transaction commits. But SELECT statements in X will show the changes prior to the commit. Within a single d"
+      }
+    ]
+  },
+  {
+    "url": "https://www.sqlite.org/fts5.html",
+    "resolvedUrl": "https://www.sqlite.org/fts5.html",
+    "retrievedAt": "2026-10-21T23:47:55.414Z",
+    "htmlSha256": "de3092630358518a6869bf047055b3938e18b476e3fbc54f4e2146d1e593497f",
+    "extraction": "HTML tags/scripts/styles removed and whitespace collapsed; excerpts, not an archived full page.",
+    "excerpts": [
+      {
+        "needle": "The trigram tokenizer supports",
+        "excerpt": "ollowing queries all match the single row in the table SELECT * FROM tri('cdefg'); SELECT * FROM tri('cdefg AND pqr'); SELECT * FROM tri('\"hij klm\" NOT stuv'); The trigram tokenizer supports the following options: Option Usage case_sensitive This value may be set to 1 or 0 (the default). If it is set to 1, then matching is case sensitive. Otherwise, if this option is set to 0, matching is case insensitive. remove_diacritics This value may also be set to 1 or 0 (the default). It may only be set to 1 if the case_sensitive options is set to 0 - setting both options to 1 is an error. If this option is set, then diacritics are removed from the text before matching (e.g. so that \"á\" matches \"a\"). -- A case-sensitive trigram index CREATE VIRTUAL TABLE tri USING fts5(a, tokenize=\"trigram case_sensitive 1\"); Unless the remove_diacritics option is set, FTS5 tables that use the trigram tokenizer also support indexed GLOB and LIKE pattern matching. For example: SELECT * FROM tri WHERE a LIKE '%cdefg%'; SELECT * FROM tri WHERE a GLOB '*ij klm*xyz'; If an FTS5 trigram tokenizer is created with the case_sensitive option set to 1, it may only index GLOB quer"
+      },
+      {
+        "needle": "fewer than 3",
+        "excerpt": "yz'; If an FTS5 trigram tokenizer is created with the case_sensitive option set to 1, it may only index GLOB queries, not LIKE. Notes: Substrings consisting of fewer than 3 unicode characters do not match any rows when used with a full-text query. If a LIKE or GLOB pattern does not contain at least one sequence of non-wildcard unicode characters, FTS5 falls back to a linear scan of the entire table. If the FTS5 table is created with the detail=none or detail=column option specified, full-text queries may not contain any tokens longer than 3 unicode characters. LIKE and GLOB pattern matching may be slightly slower, but still works. If the index is to be used only for LIKE and/or GLOB pattern matching, these options are worth experimenting with to reduce the index size. The index cannot be used to optimize LIKE patterns if the LIKE operator has an ESCAPE clause. 4.3.5. Maximum Token Length FTS5 tokens are limited to a maximum size of 32768 bytes. If the tokenizer submits a token larger than this while tokenizing a document for indexing, or while tokenizing a query expression, FTS5 silently truncates it to the first 32768 bytes before further pr"
+      },
+      {
+        "needle": "The index cannot be used to optimize LIKE",
+        "excerpt": "r, but still works. If the index is to be used only for LIKE and/or GLOB pattern matching, these options are worth experimenting with to reduce the index size. The index cannot be used to optimize LIKE patterns if the LIKE operator has an ESCAPE clause. 4.3.5. Maximum Token Length FTS5 tokens are limited to a maximum size of 32768 bytes. If the tokenizer submits a token larger than this while tokenizing a document for indexing, or while tokenizing a query expression, FTS5 silently truncates it to the first 32768 bytes before further processing. No error is raised. This occurs even if truncating the token splits a single UTF-8 character, meaning the token is not valid UTF-8. This means that if a document or query term exceeds the limit, only its first 32768 bytes take part in indexing or matching. Two distinct inputs that share the same first 32768 bytes become indistinguishable to FTS5 once tokenized, which may allow a query to match rows it would not otherwise match, or vice-versa. 4.4. External Content and Contentless Tables Normally, when a row is inserted into an FTS5 table, in addition to building the index, FTS5 makes a copy of the orig"
+      }
+    ]
+  },
+  {
+    "url": "https://www.sqlite.org/c3ref/interrupt.html",
+    "resolvedUrl": "https://www.sqlite.org/c3ref/interrupt.html",
+    "retrievedAt": "2026-10-21T23:47:55.725Z",
+    "htmlSha256": "9d9d0e7b146e6ada5539b1360cb217b26643ec685819cf4f2834d28ef53f9996",
+    "extraction": "HTML tags/scripts/styles removed and whitespace collapsed; excerpts, not an archived full page.",
+    "excerpts": [
+      {
+        "needle": "sqlite3_interrupt",
+        "excerpt": "port Purchase Search About Documentation Download Support Purchase Search Documentation Search Changelog SQLite C Interface Interrupt A Long-Running Query void sqlite3_interrupt(sqlite3*); int sqlite3_is_interrupted(sqlite3*); This function causes any pending database operation to abort and return at its earliest opportunity. This routine is typically called in response to a user action such as pressing \"Cancel\" or Ctrl-C where the user wants a long query operation to halt immediately. It is safe to call this routine from a thread different from the thread that is currently running the database operation. But it is not safe to call this routine with a database connection that is closed or might close before sqlite3_interrupt() returns. If an SQL operation is very nearly finished at the time when sqlite3_interrupt() is called, then it might not have an opportunity to be interrupted and might continue to completion. An SQL operation that is interrupted will return SQLITE_INTERRUPT . If the interrupted SQL operation is an INSERT, UPDATE, or DELETE that is inside an explicit transaction, then the entire transaction will be rolled back automatical"
+      },
+      {
+        "needle": "thread",
+        "excerpt": "se to a user action such as pressing \"Cancel\" or Ctrl-C where the user wants a long query operation to halt immediately. It is safe to call this routine from a thread different from the thread that is currently running the database operation. But it is not safe to call this routine with a database connection that is closed or might close before sqlite3_interrupt() returns. If an SQL operation is very nearly finished at the time when sqlite3_interrupt() is called, then it might not have an opportunity to be interrupted and might continue to completion. An SQL operation that is interrupted will return SQLITE_INTERRUPT . If the interrupted SQL operation is an INSERT, UPDATE, or DELETE that is inside an explicit transaction, then the entire transaction will be rolled back automatically. The sqlite3_interrupt(D) call is in effect until all currently running SQL statements on database connection D complete. Any new SQL statements that are started after the sqlite3_interrupt() call and before the running statement count reaches zero are interrupted as if they had been running prior to the sqlite3_interrupt() call. New SQL statements that are started"
+      },
+      {
+        "needle": "running SQL statements",
+        "excerpt": "s inside an explicit transaction, then the entire transaction will be rolled back automatically. The sqlite3_interrupt(D) call is in effect until all currently running SQL statements on database connection D complete. Any new SQL statements that are started after the sqlite3_interrupt() call and before the running statement count reaches zero are interrupted as if they had been running prior to the sqlite3_interrupt() call. New SQL statements that are started after the running statement count reaches zero are not effected by the sqlite3_interrupt(). A call to sqlite3_interrupt(D) that occurs when there are no running SQL statements is a no-op and has no effect on SQL statements that are started after the sqlite3_interrupt() call returns. The sqlite3_is_interrupted(D) interface can be used to determine whether or not an interrupt is currently in effect for database connection D. It returns 1 if an interrupt is currently in effect, or 0 otherwise. See also lists of Objects , Constants , and Functions . "
+      }
+    ]
+  }
+]

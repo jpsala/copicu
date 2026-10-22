@@ -1,0 +1,9 @@
+{
+  "source": "Playwright trace from the initial full suite, synthetic browser only",
+  "at": "2026-10-22T12:51:40.730Z",
+  "url": "http://127.0.0.1:1421/assets/rolldown-runtime-QTnfLwEv.js",
+  "error": "net::ERR_NO_BUFFER_SPACE",
+  "status": -1,
+  "case": "Inbox organizer entry applies a valid structured filter, chromium-narrow-window",
+  "repeat": "3/3 passed unchanged with one worker"
+}

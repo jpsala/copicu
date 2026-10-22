@@ -1,0 +1,2 @@
+# Preserve captured synthetic evidence bytes (and their SHA256) across checkouts.
+evidencia/2026-10-21-picker-performance/** -text

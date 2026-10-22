@@ -39,12 +39,12 @@ All public demo assets use synthetic data; no maintainer clipboard history is in
 
 Current release:
 
-- [v0.5.10](https://github.com/jpsala/copicu/releases/tag/v0.5.10)
-- Asset: `Copicu_0.5.10_x64-setup.exe`
+- [v0.5.11](https://github.com/jpsala/copicu/releases/tag/v0.5.11)
+- Asset: `Copicu_0.5.11_x64-setup.exe`
 - Windows x64 NSIS installer
-- SHA256: `8774C3848D60D2BEABCCD6D3EE48A92E3047FC02D0F30A7C60A2019315058898`
+- SHA256: `961CA90000680D42FB8F9DBA48C2518788200DAC3CCAFD20DEC4A013298CEA29`
 
-Export selected or marked clips to files or ZIP, optional AI text names, clean export dialog and model selectors.
+Faster picker opening, indexed tag counts and bounded WAL feed reads isolated from capture and retention.
 
 Copicu is used daily by its maintainer, but it is still alpha software. Windows may show SmartScreen or Defender warnings for a young/unsigned desktop app that monitors clipboard and keyboard shortcuts. Verify downloads from GitHub Releases and the published SHA256.
 
@@ -105,6 +105,17 @@ Copicu is early-stage, but the core is functional:
 - use a command palette and local/global shortcut routes;
 - optionally use AI-assisted search/actions and a standalone conversational assistant when configured by the user;
 - show Markdown output windows for generated summaries, reports, drafts, or script results.
+
+### New In v0.5.11
+
+The picker avoids duplicate refreshes and loads its first page before auxiliary
+catalogs. Tag counts use the existing index, and a bounded read-only WAL worker
+keeps feed reads from waiting on the capture/retention mutex. Filter, selection,
+stale-content and focus safeguards remain intact. No new schema, runtime tool,
+FTS, retention behavior or paste delay is introduced.
+
+See [release notes](docs/releases/v0.5.11.md) for measurements and limits. Storage
+benchmarks are not native opening times or a guarantee for every query/PC.
 
 ### New In v0.5.10
 

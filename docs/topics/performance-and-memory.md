@@ -17,6 +17,10 @@ Referencias de entrada: [track](../tracks/014-performance-memory.md), [storage](
 
 Topic durable para optimizar velocidad, consumo de memoria, CPU en idle, IPC y costo de render del picker.
 
+Para demora de apertura/lista, entrar por [ruta crítica y mediciones del picker](picker-opening-performance.md): baseline preservada y primer corte implementado/medido en 0.5.10 (tags, coalescing, catálogos diferidos, overscan 6 y toggle sin espera fija). Regresiones y oracle Win32 pasan; aceptación humana, instalación y comparación en la PC reportada siguen pendientes.
+
+Para evaluar un corte estructural, consultar [arquitectura de rendimiento](performance-architecture.md): mapa del sistema actual, lecturas WAL, conteos, revisiones, proyecciones, IPC/render e idle; incluye experimentos sintéticos, comparación AppStorage release bajo contención y criterios de descarte. El [lector del feed](picker-history-reader.md) ya está integrado en WIP, medido y verificado en una build aislada reiniciada con permiso de JP. Smoke técnico no equivale a aceptación humana; retención y otras alternativas permanecen separadas.
+
 ## Objetivo
 
 Copicu debe sentirse inmediato como herramienta local keyboard-first:
@@ -52,6 +56,8 @@ Medicion local 2026-06-09 sobre build instalado de produccion, con la ventana pr
 - private memory total aproximada: 260 MB;
 - host Rust `copicu.exe`: aprox 8.8 MB private;
 - el costo dominante es WebView2, especialmente browser/renderer/GPU.
+
+Es una medición histórica, no baseline del build actual. El lifecycle específico vigente está en [ventanas custom](custom-window-system.md#superficies-relevantes): incluye metadata prewarm y superficies cache/hide; no asumir que hoy sólo persiste `main`. Medir esos costes antes de proponer retirarlas.
 
 Interpretacion:
 

@@ -1,0 +1,170 @@
+{
+  "capturedAt": "2026-10-22T11:57:37.715Z",
+  "baseCommit": "8ab41ce7de87b08b508add7ba05ac063e7bd1380",
+  "role": "Approved test-only native storage instrumentation/comparison; no production routing or deployment",
+  "toolchain": "Rust 1.89.0 GNU; release; rusqlite 0.39.0; bundled SQLite 3.51.3; default Cargo features",
+  "buildCommand": "cargo test --offline --release --lib --no-run",
+  "measurements": {
+    "matrix": {
+      "startUtc": "2026-10-22T11:23:40Z",
+      "tenKCompletedUtc": "2026-10-22T11:24:51Z",
+      "hundredKCompletedUtc": "2026-10-22T11:37:40Z",
+      "executableSha256": "558fcf38e0b566a83f3ed13664f15ab9bee040a7e575aafed31d7b53994421de",
+      "harnessSource": {
+        "path": "evidencia/2026-10-21-picker-performance/native-storage-study/measured-harness.rs",
+        "sha256": "9b82211f42956b0755a83b511d318e5f76c3c85de480ded4ea0caa1f4f4f2767"
+      },
+      "binaryPreserved": false,
+      "variant": "v1, 102 samples per mode/case/dataset"
+    },
+    "controls": {
+      "executable": {
+        "path": "src-tauri/target/release/deps/copicu_lib-145790ad1a79db38.exe",
+        "sha256": "71d3815b023facbdd7a4b946d2bca0c515cb7c55ee16581ff1265706c4ac6aaa"
+      },
+      "harnessSource": {
+        "path": "src-tauri/src/storage/performance_study.rs",
+        "sha256": "df25f4424e934bc1f22ac32140cb5a7baab08297c1a7d1bd2af29fb0ba4d3f13"
+      },
+      "variant": "v2, nine samples per mode/phase; matrix not rerun"
+    }
+  },
+  "sources": [
+    {
+      "path": "src-tauri/src/storage.rs",
+      "sha256": "bf4baeb14158a2127dc4ba09ba0b4aa22af2ecc61ff6a2071a91a2ff01b25ada"
+    },
+    {
+      "path": "src-tauri/src/storage/search.rs",
+      "sha256": "a3fc19f1b392db4015ac480c8a878e383b824e9bfe5b9827d7d04bd7491aeb69"
+    },
+    {
+      "path": "src-tauri/src/storage/schema.rs",
+      "sha256": "a5cd28d82ce60fa5b2f183e702951cfe11d4ef10bd3cba151f5e1a23faea83ab"
+    },
+    {
+      "path": "src-tauri/src/storage/performance_study.rs",
+      "sha256": "df25f4424e934bc1f22ac32140cb5a7baab08297c1a7d1bd2af29fb0ba4d3f13"
+    },
+    {
+      "path": "src-tauri/Cargo.toml",
+      "sha256": "818bff94fa471465bdd0b0c6c4bcf18e0baac45c1ce0499032da2b563854065c"
+    },
+    {
+      "path": "src-tauri/Cargo.lock",
+      "sha256": "364ef40cc6d22366ffc2cf597cd4fe0a24ec345fd7bc2653b6394a407245e319"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/connection-controls-100k.txt",
+      "sha256": "b4fe5ecc9990318af10f59aabf270710375c4e346f2f9da10e130bae0121c387"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/connection-controls-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/connection-controls-summary.json",
+      "sha256": "6a81a6deaaade7447e33ac428934ce7ecfb679bac079ec51e30e584557fc28e0"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/measured-harness.rs",
+      "sha256": "9b82211f42956b0755a83b511d318e5f76c3c85de480ded4ea0caa1f4f4f2767"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/native-100k-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/native-100k.txt",
+      "sha256": "b9cdebbe21e6beee99078667c1ff73c80ac80aa22e4a09914e93fdf6abe7c0fe"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/native-10k-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/native-10k.txt",
+      "sha256": "f78eaebe1187b6a493ff4355a8916cea83179ceea1981fa280754ea533d821bb"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/README.md",
+      "sha256": "abce53d43f23ce774975ea101ca6ff60392e3a72b82ec62da54828505ff20464"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/summarize.mjs",
+      "sha256": "da59e7e4c3b027a53ef4aec928c60510834db786e22969f73a498199e2c888b8"
+    },
+    {
+      "path": "evidencia/2026-10-21-picker-performance/native-storage-study/summary.json",
+      "sha256": "8e055402725f4ffd1df40822c446261121fa2ca6b7c14215e0977b61b457d668"
+    }
+  ],
+  "preservation": [
+    {
+      "path": "src/main.tsx",
+      "comparison": "byte-identical",
+      "matchesIteration01": true
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "comparison": "byte-identical",
+      "matchesIteration01": true
+    },
+    {
+      "path": "src-tauri/src/storage.rs",
+      "comparison": "after excluding only identified cfg(test) additions",
+      "matchesIteration01": true
+    },
+    {
+      "path": "src-tauri/src/storage/search.rs",
+      "comparison": "byte-identical",
+      "matchesIteration01": true
+    },
+    {
+      "path": "src-tauri/src/storage/schema.rs",
+      "comparison": "byte-identical",
+      "matchesIteration01": true
+    },
+    {
+      "path": "src-tauri/examples/bench_picker_open.rs",
+      "comparison": "byte-identical",
+      "matchesIteration01": true
+    },
+    {
+      "path": "tests/visual/shell.spec.ts",
+      "comparison": "byte-identical",
+      "matchesIteration01": true
+    }
+  ],
+  "productExecutable": {
+    "path": "src-tauri/target/release/copicu.exe",
+    "sha256": "4fd7b454ee67987869152553eb2b639022168308476266ffea3db1fd78cbcaee"
+  },
+  "checks": {
+    "newContractTest": "passed in v1 and v2: equivalence, pagination, UDFs, read-only, snapshot, rollback, instrumentation reset; v2 also checks scripts path",
+    "targetedExistingTests": {
+      "historySearch": 6,
+      "recapture": 1,
+      "failed": 0
+    },
+    "smoke": "200 items, one measured round/block, passed",
+    "matrix": "10k and 100k ignored test: each passed",
+    "factorial": "100k ignored control: passed",
+    "summaries": "both reproduce exactly from raw files",
+    "documentation": "15 tests passed; final docs check 0 errors, 3 existing size warnings",
+    "whitespace": "git diff --check and explicit untracked source/docs checks passed",
+    "rustfmt": "test-only module passed",
+    "syntax": "Node summarizer passed",
+    "fullProductSuitesRerun": false,
+    "nativeUiOrPasteRun": false
+  },
+  "limits": [
+    "Conditional contention: foreground launched when background acquired the real mutex, not a native picker p95.",
+    "No Tauri worker pool, IPC, UI, image or sharing workload, CPU/memory attribution or another PC.",
+    "Do not attribute serial speedup to read-only or BEGIN; controls show connection/setup state confounds not isolated.",
+    "v1 settings helpers ensured the already-existing default scripts directory (metadata-only verification); v2 binds it to the fixture. No installed DB or scripts contents were read.",
+    "No production architecture adopted; product binary unchanged, no app process restarted or installation/publication."
+  ]
+}

@@ -1,0 +1,9 @@
+{"debug":false,"items":100000,"linksPerItem":1,"profile":"synthetic file-backed WAL; warm samples; no native UI","sqlite":"3.51.3","tags":100}
+{"case":"history_search_empty","jsonBytes":103135,"lastSerializeMs":0.0628,"maxMs":0.24020000000000002,"medianMs":0.2385,"samplesMs":[0.2146,0.22599999999999998,0.2385,0.24000000000000002,0.24020000000000002]}
+{"case":"list_tags","jsonBytes":14177,"lastSerializeMs":0.050800000000000005,"maxMs":15.4692,"medianMs":9.6006,"samplesMs":[9.4739,9.555900000000001,9.6006,9.6445,15.4692]}
+{"case":"list_folders","jsonBytes":2,"lastSerializeMs":0.00019999999999999998,"maxMs":0.0208,"medianMs":0.011300000000000001,"samplesMs":[0.0106,0.0109,0.011300000000000001,0.0133,0.0208]}
+{"case":"root_item_count","jsonBytes":6,"lastSerializeMs":0.0,"maxMs":1.9465999999999999,"medianMs":1.8425,"samplesMs":[1.8056,1.8366,1.8425,1.8666,1.9465999999999999]}
+{"case":"count_marked","jsonBytes":1,"lastSerializeMs":0.0,"maxMs":2.1513999999999998,"medianMs":2.0077,"samplesMs":[1.9063,1.9601000000000002,2.0077,2.0821,2.1513999999999998]}
+{"case":"history_search_text_counts","jsonBytes":113146,"lastSerializeMs":0.0922,"maxMs":67.4336,"medianMs":65.1234,"samplesMs":[63.6931,64.5598,65.1234,66.7962,67.4336]}
+{"case":"history_search_text_no_counts","jsonBytes":113142,"lastSerializeMs":0.0809,"maxMs":0.3723,"medianMs":0.3611,"samplesMs":[0.34190000000000004,0.3497,0.3611,0.3719,0.3723]}
+{"case":"history_search_long_250k_chars","jsonBytes":276233,"lastSerializeMs":0.4111,"maxMs":14.6879,"medianMs":14.531,"samplesMs":[14.4776,14.4785,14.531,14.574,14.6879]}

@@ -1,0 +1,1740 @@
+{
+  "kind": "image",
+  "rate": 4,
+  "results": [
+    {
+      "signals": "shown",
+      "sample": 0,
+      "revealedMs": 167.89999985694885,
+      "lastMutationMs": 260.7999999523163,
+      "geometryReads": 27,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 1.3999998569488525,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.5,
+          "cursor": false,
+          "end": 2
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.5,
+          "cursor": false,
+          "end": 2
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.7000000476837158,
+          "cursor": false,
+          "end": 2
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 77.79999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 77.79999995231628,
+          "cursor": false,
+          "end": 77.79999995231628
+        },
+        {
+          "cmd": "history_search",
+          "start": 81.89999985694885,
+          "cursor": false,
+          "end": 83.09999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 83.5,
+          "cursor": false,
+          "end": 83.5
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 183.09999990463257,
+          "cursor": false,
+          "end": 184.79999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 184.5,
+          "cursor": false,
+          "end": 185.29999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 184.59999990463257,
+          "cursor": false,
+          "end": 185.29999995231628
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 184.79999995231628,
+          "cursor": false,
+          "end": 185.29999995231628
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 184.79999995231628,
+          "cursor": false,
+          "end": 185.29999995231628
+        }
+      ]
+    },
+    {
+      "signals": "shown",
+      "sample": 1,
+      "revealedMs": 144.10000014305115,
+      "lastMutationMs": 229.70000004768372,
+      "geometryReads": 27,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0,
+          "cursor": false,
+          "end": 0.20000004768371582
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 65.90000009536743
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 66.10000014305115,
+          "cursor": false,
+          "end": 66.10000014305115
+        },
+        {
+          "cmd": "history_search",
+          "start": 70.40000009536743,
+          "cursor": false,
+          "end": 71.60000014305115
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 72,
+          "cursor": false,
+          "end": 72
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 157.60000014305115,
+          "cursor": false,
+          "end": 158.80000019073486
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 158.60000014305115,
+          "cursor": false,
+          "end": 159.20000004768372
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 158.60000014305115,
+          "cursor": false,
+          "end": 159.20000004768372
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 158.80000019073486,
+          "cursor": false,
+          "end": 159.20000004768372
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 158.80000019073486,
+          "cursor": false,
+          "end": 159.20000004768372
+        }
+      ]
+    },
+    {
+      "signals": "shown",
+      "sample": 2,
+      "revealedMs": 178.5,
+      "lastMutationMs": 274.2999999523163,
+      "geometryReads": 27,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0,
+          "cursor": false,
+          "end": 0.19999980926513672
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.19999980926513672,
+          "cursor": false,
+          "end": 0.39999985694885254
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.19999980926513672,
+          "cursor": false,
+          "end": 0.39999985694885254
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.39999985694885254
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 84.39999985694885
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 84.39999985694885,
+          "cursor": false,
+          "end": 84.5
+        },
+        {
+          "cmd": "history_search",
+          "start": 88.29999995231628,
+          "cursor": false,
+          "end": 89.59999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 90,
+          "cursor": false,
+          "end": 90.19999980926514
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 194.29999995231628,
+          "cursor": false,
+          "end": 195.89999985694885
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 195.59999990463257,
+          "cursor": false,
+          "end": 196.09999990463257
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 195.59999990463257,
+          "cursor": false,
+          "end": 196.09999990463257
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 195.89999985694885,
+          "cursor": false,
+          "end": 196.09999990463257
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 195.89999985694885,
+          "cursor": false,
+          "end": 196.09999990463257
+        }
+      ]
+    },
+    {
+      "signals": "shown",
+      "sample": 3,
+      "revealedMs": 189.5,
+      "lastMutationMs": 292.7000000476837,
+      "geometryReads": 27,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.2999999523162842
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 91.5
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 91.5,
+          "cursor": false,
+          "end": 91.5
+        },
+        {
+          "cmd": "history_search",
+          "start": 95.40000009536743,
+          "cursor": false,
+          "end": 96.5
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 96.79999995231628,
+          "cursor": false,
+          "end": 96.79999995231628
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 205,
+          "cursor": false,
+          "end": 206.40000009536743
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 206.20000004768372,
+          "cursor": false,
+          "end": 206.79999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 206.20000004768372,
+          "cursor": false,
+          "end": 206.79999995231628
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 206.40000009536743,
+          "cursor": false,
+          "end": 206.79999995231628
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 206.40000009536743,
+          "cursor": false,
+          "end": 206.79999995231628
+        }
+      ]
+    },
+    {
+      "signals": "shown",
+      "sample": 4,
+      "revealedMs": 172,
+      "lastMutationMs": 270.40000009536743,
+      "geometryReads": 27,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.20000004768371582
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.6000001430511475
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.6000001430511475
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.6000001430511475
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 77.5
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 77.5,
+          "cursor": false,
+          "end": 77.60000014305115
+        },
+        {
+          "cmd": "history_search",
+          "start": 81.70000004768372,
+          "cursor": false,
+          "end": 82.5
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 82.79999995231628,
+          "cursor": false,
+          "end": 82.90000009536743
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 186.40000009536743,
+          "cursor": false,
+          "end": 187.79999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 187.70000004768372,
+          "cursor": false,
+          "end": 188.10000014305115
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 187.70000004768372,
+          "cursor": false,
+          "end": 188.29999995231628
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 187.79999995231628,
+          "cursor": false,
+          "end": 188.29999995231628
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 187.79999995231628,
+          "cursor": false,
+          "end": 188.29999995231628
+        }
+      ]
+    },
+    {
+      "signals": "shown",
+      "sample": 5,
+      "revealedMs": 159.90000009536743,
+      "lastMutationMs": 256.5,
+      "geometryReads": 27,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0,
+          "cursor": false,
+          "end": 0.09999990463256836
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 0.5
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 0.5
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 0.5
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.5,
+          "cursor": false,
+          "end": 72.29999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 72.29999995231628,
+          "cursor": false,
+          "end": 72.29999995231628
+        },
+        {
+          "cmd": "history_search",
+          "start": 76.59999990463257,
+          "cursor": false,
+          "end": 77.70000004768372
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 77.90000009536743,
+          "cursor": false,
+          "end": 78
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 176.09999990463257,
+          "cursor": false,
+          "end": 177.70000004768372
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 177.59999990463257,
+          "cursor": false,
+          "end": 178
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 177.59999990463257,
+          "cursor": false,
+          "end": 178
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 177.59999990463257,
+          "cursor": false,
+          "end": 178
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 177.70000004768372,
+          "cursor": false,
+          "end": 178
+        }
+      ]
+    },
+    {
+      "signals": "shown-focus-visibility",
+      "sample": 0,
+      "revealedMs": 163.39999985694885,
+      "lastMutationMs": 253.69999980926514,
+      "geometryReads": 33,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.09999990463256836,
+          "cursor": false,
+          "end": 0.09999990463256836
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.5,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.6999998092651367,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.8999998569488525,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.0999999046325684,
+          "cursor": false,
+          "end": 1.5
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.0999999046325684,
+          "cursor": false,
+          "end": 1.5
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.2999999523162842,
+          "cursor": false,
+          "end": 1.5
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.3999998569488525,
+          "cursor": false,
+          "end": 69.19999980926514
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.5999999046325684,
+          "cursor": false,
+          "end": 1.8999998569488525
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.5999999046325684,
+          "cursor": false,
+          "end": 1.8999998569488525
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 1.8999998569488525
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 75
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 1.8999998569488525
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 1.8999998569488525
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 1.8999998569488525
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.7999999523162842,
+          "cursor": false,
+          "end": 77
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 69.19999980926514,
+          "cursor": false,
+          "end": 69.19999980926514
+        },
+        {
+          "cmd": "history_search",
+          "start": 73.5,
+          "cursor": false,
+          "end": 74.59999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 74.79999995231628,
+          "cursor": false,
+          "end": 74.79999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 75,
+          "cursor": false,
+          "end": 75
+        },
+        {
+          "cmd": "history_search",
+          "start": 75.79999995231628,
+          "cursor": false,
+          "end": 76.39999985694885
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 76.39999985694885,
+          "cursor": false,
+          "end": 76.79999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 77,
+          "cursor": false,
+          "end": 77
+        },
+        {
+          "cmd": "history_search",
+          "start": 77.19999980926514,
+          "cursor": false,
+          "end": 77.59999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 77.79999995231628,
+          "cursor": false,
+          "end": 77.79999995231628
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 178.69999980926514,
+          "cursor": false,
+          "end": 180.79999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 180.29999995231628,
+          "cursor": false,
+          "end": 181.19999980926514
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 180.29999995231628,
+          "cursor": false,
+          "end": 181.19999980926514
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 180.79999995231628,
+          "cursor": false,
+          "end": 181.19999980926514
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 180.79999995231628,
+          "cursor": false,
+          "end": 181.19999980926514
+        },
+        {
+          "cmd": "shared_clipboard_status",
+          "start": 261.09999990463257,
+          "cursor": false,
+          "end": 262.09999990463257
+        }
+      ]
+    },
+    {
+      "signals": "shown-focus-visibility",
+      "sample": 1,
+      "revealedMs": 165.69999980926514,
+      "lastMutationMs": 255.89999985694885,
+      "geometryReads": 33,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.09999990463256836,
+          "cursor": false,
+          "end": 0.19999980926513672
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 74
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 79.09999990463257
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 1.3999998569488525
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.1999998092651367,
+          "cursor": false,
+          "end": 79.89999985694885
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 74,
+          "cursor": false,
+          "end": 74
+        },
+        {
+          "cmd": "history_search",
+          "start": 77.89999985694885,
+          "cursor": false,
+          "end": 78.69999980926514
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 78.89999985694885,
+          "cursor": false,
+          "end": 78.89999985694885
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 79.29999995231628,
+          "cursor": false,
+          "end": 79.29999995231628
+        },
+        {
+          "cmd": "history_search",
+          "start": 79.29999995231628,
+          "cursor": false,
+          "end": 79.59999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 79.69999980926514,
+          "cursor": false,
+          "end": 79.69999980926514
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 79.89999985694885,
+          "cursor": false,
+          "end": 79.89999985694885
+        },
+        {
+          "cmd": "history_search",
+          "start": 80,
+          "cursor": false,
+          "end": 80.29999995231628
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 80.29999995231628,
+          "cursor": false,
+          "end": 80.29999995231628
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 181.19999980926514,
+          "cursor": false,
+          "end": 182.89999985694885
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 182.59999990463257,
+          "cursor": false,
+          "end": 183.19999980926514
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 182.59999990463257,
+          "cursor": false,
+          "end": 183.19999980926514
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 182.79999995231628,
+          "cursor": false,
+          "end": 183.19999980926514
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 182.79999995231628,
+          "cursor": false,
+          "end": 183.19999980926514
+        }
+      ]
+    },
+    {
+      "signals": "shown-focus-visibility",
+      "sample": 2,
+      "revealedMs": 160.89999985694885,
+      "lastMutationMs": 252.79999995231628,
+      "geometryReads": 33,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0,
+          "cursor": false,
+          "end": 0
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0,
+          "cursor": false,
+          "end": 0.19999980926513672
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.19999980926513672,
+          "cursor": false,
+          "end": 0.19999980926513672
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.19999980926513672,
+          "cursor": false,
+          "end": 0.39999985694885254
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.19999980926513672,
+          "cursor": false,
+          "end": 0.39999985694885254
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.39999985694885254,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 70.5
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 76
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1,
+          "cursor": false,
+          "end": 1.0999999046325684
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1,
+          "cursor": false,
+          "end": 76.59999990463257
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 70.5,
+          "cursor": false,
+          "end": 70.5
+        },
+        {
+          "cmd": "history_search",
+          "start": 74.79999995231628,
+          "cursor": false,
+          "end": 75.69999980926514
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 75.79999995231628,
+          "cursor": false,
+          "end": 75.79999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 76,
+          "cursor": false,
+          "end": 76
+        },
+        {
+          "cmd": "history_search",
+          "start": 76.19999980926514,
+          "cursor": false,
+          "end": 76.39999985694885
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 76.39999985694885,
+          "cursor": false,
+          "end": 76.39999985694885
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 76.59999990463257,
+          "cursor": false,
+          "end": 76.59999990463257
+        },
+        {
+          "cmd": "history_search",
+          "start": 76.59999990463257,
+          "cursor": false,
+          "end": 76.79999995231628
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 76.79999995231628,
+          "cursor": false,
+          "end": 77
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 176.59999990463257,
+          "cursor": false,
+          "end": 178.29999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 178,
+          "cursor": false,
+          "end": 178.39999985694885
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 178,
+          "cursor": false,
+          "end": 178.39999985694885
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 178.19999980926514,
+          "cursor": false,
+          "end": 178.39999985694885
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 178.29999995231628,
+          "cursor": false,
+          "end": 178.39999985694885
+        }
+      ]
+    },
+    {
+      "signals": "shown-focus-visibility",
+      "sample": 3,
+      "revealedMs": 157.90000009536743,
+      "lastMutationMs": 246.20000004768372,
+      "geometryReads": 33,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.20000004768371582
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 0.5999999046325684
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 0.7999999523162842
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.5999999046325684,
+          "cursor": false,
+          "end": 0.7999999523162842
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 0.7999999523162842
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.7999999523162842,
+          "cursor": false,
+          "end": 69.20000004768372
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1,
+          "cursor": false,
+          "end": 1.2999999523162842
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1,
+          "cursor": false,
+          "end": 1.2999999523162842
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 1.2999999523162842
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 73.79999995231628
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 1.2999999523162842
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 1.2999999523162842
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.2999999523162842,
+          "cursor": false,
+          "end": 1.2999999523162842
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.2999999523162842,
+          "cursor": false,
+          "end": 74.29999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 69.20000004768372,
+          "cursor": false,
+          "end": 69.20000004768372
+        },
+        {
+          "cmd": "history_search",
+          "start": 72.79999995231628,
+          "cursor": false,
+          "end": 73.59999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 73.70000004768372,
+          "cursor": false,
+          "end": 73.70000004768372
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 73.90000009536743,
+          "cursor": false,
+          "end": 73.90000009536743
+        },
+        {
+          "cmd": "history_search",
+          "start": 73.90000009536743,
+          "cursor": false,
+          "end": 74.09999990463257
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 74.29999995231628,
+          "cursor": false,
+          "end": 74.29999995231628
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 74.29999995231628,
+          "cursor": false,
+          "end": 74.29999995231628
+        },
+        {
+          "cmd": "history_search",
+          "start": 74.5,
+          "cursor": false,
+          "end": 74.70000004768372
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 74.90000009536743,
+          "cursor": false,
+          "end": 75
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 173.70000004768372,
+          "cursor": false,
+          "end": 174.90000009536743
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 174.70000004768372,
+          "cursor": false,
+          "end": 175.09999990463257
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 174.70000004768372,
+          "cursor": false,
+          "end": 175.09999990463257
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 174.90000009536743,
+          "cursor": false,
+          "end": 175.09999990463257
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 174.90000009536743,
+          "cursor": false,
+          "end": 175.09999990463257
+        }
+      ]
+    },
+    {
+      "signals": "shown-focus-visibility",
+      "sample": 4,
+      "revealedMs": 155.29999995231628,
+      "lastMutationMs": 245,
+      "geometryReads": 33,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0,
+          "cursor": false,
+          "end": 0
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0,
+          "cursor": false,
+          "end": 0.40000009536743164
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.40000009536743164
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.20000004768371582,
+          "cursor": false,
+          "end": 0.40000009536743164
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.40000009536743164
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.6000001430511475
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.40000009536743164,
+          "cursor": false,
+          "end": 0.6000001430511475
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.6000001430511475,
+          "cursor": false,
+          "end": 0.6000001430511475
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.6000001430511475,
+          "cursor": false,
+          "end": 69.90000009536743
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.9000000953674316,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.9000000953674316,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1,
+          "cursor": false,
+          "end": 75.70000004768372
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1,
+          "cursor": false,
+          "end": 1
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1,
+          "cursor": false,
+          "end": 76.10000014305115
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 69.90000009536743,
+          "cursor": false,
+          "end": 70.10000014305115
+        },
+        {
+          "cmd": "history_search",
+          "start": 74.20000004768372,
+          "cursor": false,
+          "end": 75.20000004768372
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 75.40000009536743,
+          "cursor": false,
+          "end": 75.40000009536743
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 75.70000004768372,
+          "cursor": false,
+          "end": 75.70000004768372
+        },
+        {
+          "cmd": "history_search",
+          "start": 75.70000004768372,
+          "cursor": false,
+          "end": 75.90000009536743
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 76.10000014305115,
+          "cursor": false,
+          "end": 76.10000014305115
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 76.10000014305115,
+          "cursor": false,
+          "end": 76.20000004768372
+        },
+        {
+          "cmd": "history_search",
+          "start": 76.29999995231628,
+          "cursor": false,
+          "end": 76.60000014305115
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 76.70000004768372,
+          "cursor": false,
+          "end": 76.70000004768372
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 170.90000009536743,
+          "cursor": false,
+          "end": 172.60000014305115
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 172.29999995231628,
+          "cursor": false,
+          "end": 172.90000009536743
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 172.29999995231628,
+          "cursor": false,
+          "end": 172.90000009536743
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 172.60000014305115,
+          "cursor": false,
+          "end": 172.90000009536743
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 172.60000014305115,
+          "cursor": false,
+          "end": 172.90000009536743
+        }
+      ]
+    },
+    {
+      "signals": "shown-focus-visibility",
+      "sample": 5,
+      "revealedMs": 161.5,
+      "lastMutationMs": 257.2000000476837,
+      "geometryReads": 33,
+      "mutations": 3,
+      "mounted": 9,
+      "visible": 3,
+      "calls": [
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.09999990463256836,
+          "cursor": false,
+          "end": 0.09999990463256836
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.09999990463256836,
+          "cursor": false,
+          "end": 0.2999999523162842
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.09999990463256836,
+          "cursor": false,
+          "end": 0.2999999523162842
+        },
+        {
+          "cmd": "get_compound_hotkey_pending",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 0.2999999523162842
+        },
+        {
+          "cmd": "plugin:window|is_visible",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 0.2999999523162842
+        },
+        {
+          "cmd": "list_tags",
+          "start": 0.2999999523162842,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "list_folders",
+          "start": 0.5,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 0.5,
+          "cursor": false,
+          "end": 0.7000000476837158
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 0.7000000476837158,
+          "cursor": false,
+          "end": 71.09999990463257
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1,
+          "cursor": false,
+          "end": 1.2000000476837158
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1,
+          "cursor": false,
+          "end": 1.2000000476837158
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.0999999046325684,
+          "cursor": false,
+          "end": 1.2000000476837158
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 76.59999990463257
+        },
+        {
+          "cmd": "list_tags",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 1.2000000476837158
+        },
+        {
+          "cmd": "list_folders",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 1.2000000476837158
+        },
+        {
+          "cmd": "root_item_count",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 1.2000000476837158
+        },
+        {
+          "cmd": "consume_picker_session_snapshot",
+          "start": 1.2000000476837158,
+          "cursor": false,
+          "end": 77.20000004768372
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 71.09999990463257,
+          "cursor": false,
+          "end": 71.29999995231628
+        },
+        {
+          "cmd": "history_search",
+          "start": 75.40000009536743,
+          "cursor": false,
+          "end": 76.29999995231628
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 76.5,
+          "cursor": false,
+          "end": 76.59999990463257
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 76.59999990463257,
+          "cursor": false,
+          "end": 76.59999990463257
+        },
+        {
+          "cmd": "history_search",
+          "start": 76.79999995231628,
+          "cursor": false,
+          "end": 77
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 77,
+          "cursor": false,
+          "end": 77
+        },
+        {
+          "cmd": "consume_capture_folder_feedback",
+          "start": 77.20000004768372,
+          "cursor": false,
+          "end": 77.20000004768372
+        },
+        {
+          "cmd": "history_search",
+          "start": 77.29999995231628,
+          "cursor": false,
+          "end": 77.40000009536743
+        },
+        {
+          "cmd": "count_marked_history_items",
+          "start": 77.5,
+          "cursor": false,
+          "end": 77.5
+        },
+        {
+          "cmd": "shared_clipboard_set_active_item",
+          "start": 177.40000009536743,
+          "cursor": false,
+          "end": 178.79999995231628
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 178.59999990463257,
+          "cursor": false,
+          "end": 179
+        },
+        {
+          "cmd": "plugin:event|listen",
+          "start": 178.59999990463257,
+          "cursor": false,
+          "end": 179
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 178.79999995231628,
+          "cursor": false,
+          "end": 179
+        },
+        {
+          "cmd": "plugin:event|unlisten",
+          "start": 178.79999995231628,
+          "cursor": false,
+          "end": 179
+        }
+      ]
+    }
+  ]
+}

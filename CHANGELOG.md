@@ -4,6 +4,17 @@ All notable changes to Copicu are documented here.
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-10-22
+
+- Load the picker with less duplicated work: indexed tag counts, coalesced
+  show/focus/visibility, catalogs after the first page, smaller overscan and no
+  fixed hotkey wait.
+- Isolate feed reads from the writer using a bounded WAL reader with coherent
+  page snapshots, session/generation ownership and cooperative cancellation.
+- Preserve filter/selection/stale-content guards and non-feed APIs. Retention,
+  paste delays and the storage schema are unchanged.
+  [Release notes](docs/releases/v0.5.11.md).
+
 ## [0.5.9] - 2026-10-16
 
 - Install all 35 bundled scripts with explicit activation defaults: 28 active
